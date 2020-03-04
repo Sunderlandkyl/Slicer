@@ -148,6 +148,15 @@ protected:
     vtkSmartPointer<vtkTextProperty> TextProperty;
   };
 
+  class InteractionPipeline
+  {
+  public:
+    InteractionPipeline();
+    virtual ~InteractionPipeline();
+
+    //vtkNew<vtk
+  };
+
   // Calculate view size and scale factor
   virtual void UpdateViewScaleFactor() = 0;
 

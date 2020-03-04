@@ -238,6 +238,15 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
   /// Get the number of class names in the list
   int GetNumberOfPlaceNodeClassNamesInList() { return static_cast<int>(this->PlaceNodeClassNameList.size()); };
 
+  /// Returns true if this is the only node that is selected
+  bool IsOnlyNodeSelected(vtkMRMLNode*);
+
+  /// Returns a list of all selected nodes in the secene
+  void GetSelectedNodes(std::vector<vtkMRMLNode*>& selectedNodes);
+
+  /// Sets Selected to false on all nodes
+  void DeselectAllNodes();
+
 protected:
   vtkMRMLSelectionNode();
   ~vtkMRMLSelectionNode() override;

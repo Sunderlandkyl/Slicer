@@ -19,6 +19,7 @@ Version:   $Revision: 1.2 $
 #include "vtkMRMLUnitNode.h"
 
 // VTK includes
+#include <vtkCollectionIterator.h>
 #include <vtkCommand.h>
 #include <vtkObjectFactory.h>
 #include <vtkStdString.h>
@@ -655,4 +656,58 @@ void vtkMRMLSelectionNode::SetReferenceActivePlaceNodeClassName (const char *cla
 {
   this->SetActivePlaceNodeClassName(className);
   this->InvokeEvent(vtkMRMLSelectionNode::ActivePlaceNodeClassNameChangedEvent);
+}
+
+//----------------------------------------------------------------------------
+bool vtkMRMLSelectionNode::IsOnlyNodeSelected(vtkMRMLNode* node)
+{
+  if (!node || !node->GetSelectable() || !node->GetSelected())
+    {
+    return false;
+    }
+
+  std::vector<vtkMRMLNode*> selectedNodes;
+  this->GetSelectedNodes(selectedNodes);
+  return selectedNodes.size() == 1;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSelectionNode::GetSelectedNodes(std::vector<vtkMRMLNode*> &selectedNodes)
+{
+  selectedNodes.clear();
+  if (!this->Scene)
+    {
+    return;
+    }
+
+  vtkCollection* nodes = this->Scene->GetNodes();
+  vtkNew<vtkCollectionIterator> iter;
+  iter->SetCollection(nodes);
+  iter->InitTraversal();
+  while (!iter->IsDoneWithTraversal())
+    {
+    vtkMRMLNode* node = vtkMRMLNode::SafeDownCast(iter->GetCurrentObject());
+    if (node && node->GetSelectable() && node->GetSelected())
+      {
+      selectedNodes.push_back(node);
+      }
+    iter->GoToNextItem();
+    }
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSelectionNode::DeselectAllNodes()
+{
+  vtkCollection* nodes = this->Scene->GetNodes();
+  vtkNew<vtkCollectionIterator> iter;
+  iter->SetCollection(nodes);
+  iter->InitTraversal();
+  while (!iter->IsDoneWithTraversal())
+    {
+    vtkMRMLNode* node = vtkMRMLNode::SafeDownCast(iter->GetCurrentObject());
+    if (node)
+      {
+      node->SetSelected(false);
+      }
+    }
 }
