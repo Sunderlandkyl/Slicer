@@ -17,24 +17,35 @@
 =========================================================================*/
 
 // VTK includes
+#include "vtkActor2DCollection.h"
+#include "vtkAppendPolyData.h"
+#include "vtkArrayCalculator.h"
+#include "vtkConeSource.h"
 #include "vtkSlicerMarkupsWidgetRepresentation.h"
 #include "vtkCamera.h"
 #include "vtkDoubleArray.h"
 #include "vtkFocalPlanePointPlacer.h"
 #include "vtkLine.h"
+#include "vtkLookupTable.h"
 #include "vtkMarkupsGlyphSource2D.h"
 #include "vtkPointData.h"
 #include "vtkPointSetToLabelHierarchy.h"
+#include "vtkPolyDataMapper2D.h"
+#include "vtkProperty2D.h"
+#include "vtkRegularPolygonSource.h"
 #include "vtkRenderer.h"
 #include "vtkSphereSource.h"
 #include "vtkStringArray.h"
 #include "vtkTextActor.h"
 #include "vtkTextProperty.h"
+#include "vtkTransform.h"
+#include "vtkTransformPolyDataFilter.h"
 
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
 
+//----------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation::ControlPointsPipeline::ControlPointsPipeline()
 {
   this->TextProperty = vtkSmartPointer<vtkTextProperty>::New();
@@ -98,7 +109,104 @@ vtkSlicerMarkupsWidgetRepresentation::ControlPointsPipeline::ControlPointsPipeli
   this->GlyphSourceSphere->SetRadius(0.5);
 };
 
+//----------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation::ControlPointsPipeline::~ControlPointsPipeline()
+= default;
+
+//----------------------------------------------------------------------
+vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInteractionPipeline()
+{
+  // X axis polydata
+  this->AxisRotationGlyph = vtkSmartPointer<vtkRegularPolygonSource>::New();
+  this->AxisRotationGlyph->SetNumberOfSides(180);
+  this->AxisRotationGlyph->GeneratePolygonOff();
+  this->AxisRotationGlyph->SetNormal(1, 0, 0);
+
+  this->AxisTranslationGlyph = vtkSmartPointer<vtkConeSource>::New();
+  this->AxisTranslationGlyph->SetDirection(1, 0, 0);
+  this->AxisTranslationGlyph->SetCenter(1, 0, 0);
+  this->AxisTranslationGlyph->SetRadius(0.125);
+  this->AxisTranslationGlyph->SetHeight(0.25);
+  this->AxisTranslationGlyph->SetResolution(15);
+
+  this->AxisGlyphAppend = vtkSmartPointer<vtkAppendPolyData>::New();
+  this->AxisGlyphAppend->AddInputConnection(this->AxisRotationGlyph->GetOutputPort());
+  this->AxisGlyphAppend->AddInputConnection(this->AxisTranslationGlyph->GetOutputPort());
+
+  this->XAxisScalarFilter = vtkSmartPointer<vtkArrayCalculator>::New();
+  this->XAxisScalarFilter->SetInputConnection(this->AxisGlyphAppend->GetOutputPort());
+  this->XAxisScalarFilter->SetFunction("0");
+  this->XAxisScalarFilter->SetAttributeTypeToCellData();
+  this->XAxisScalarFilter->SetResultArrayType(VTK_UNSIGNED_CHAR);
+
+  // Y axis polydata
+  vtkNew<vtkTransform> rotationXToY;
+  rotationXToY->RotateZ(90);
+  this->YAxisTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->YAxisTransform->SetTransform(rotationXToY);
+  this->YAxisTransform->SetInputConnection(this->AxisGlyphAppend->GetOutputPort());
+
+  this->YAxisScalarFilter = vtkSmartPointer<vtkArrayCalculator>::New();
+  this->YAxisScalarFilter->SetInputConnection(this->YAxisTransform->GetOutputPort());
+  this->YAxisScalarFilter->SetFunction("1");
+  this->YAxisScalarFilter->SetAttributeTypeToCellData();
+  this->YAxisScalarFilter->SetResultArrayType(VTK_UNSIGNED_CHAR);
+
+  // Z axis polydata
+  vtkNew<vtkTransform> rotationXToZ;
+  rotationXToZ->RotateY(-90);
+  this->ZAxisTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ZAxisTransform->SetTransform(rotationXToZ);
+  this->ZAxisTransform->SetInputConnection(this->AxisGlyphAppend->GetOutputPort());
+
+  this->ZAxisScalarFilter = vtkSmartPointer<vtkArrayCalculator>::New();
+  this->ZAxisScalarFilter->SetInputConnection(this->ZAxisTransform->GetOutputPort());
+  this->ZAxisScalarFilter->SetFunction("2");
+  this->ZAxisScalarFilter->SetAttributeTypeToCellData();
+  this->ZAxisScalarFilter->SetResultArrayType(VTK_UNSIGNED_CHAR);
+
+  this->Append = vtkSmartPointer<vtkAppendPolyData>::New();
+  this->Append->AddInputConnection(this->XAxisScalarFilter->GetOutputPort());
+  this->Append->AddInputConnection(this->YAxisScalarFilter->GetOutputPort());
+  this->Append->AddInputConnection(this->ZAxisScalarFilter->GetOutputPort());
+
+  this->ScaleTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ScaleTransform->SetInputConnection(this->Append->GetOutputPort());
+
+  this->ColorTable = vtkSmartPointer<vtkLookupTable>::New();
+  this->ColorTable->SetNumberOfTableValues(3);
+  this->ColorTable->SetTableRange(0, 2);
+  this->ColorTable->SetTableValue(0, 1.0, 0.0, 0.0, 1.0); // R
+  this->ColorTable->SetTableValue(1, 0.0, 1.0, 0.0, 1.0); // G
+  this->ColorTable->SetTableValue(2, 0.0, 0.0, 1.0, 1.0); // B
+  this->ColorTable->Build();
+
+  this->TransformToWorld = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->TransformToWorld->SetInputConnection(this->ScaleTransform->GetOutputPort());
+
+  vtkNew<vtkCoordinate> coordinate;
+  coordinate->SetCoordinateSystemToWorld();
+
+  this->Mapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+  this->Mapper->SetInputConnection(this->TransformToWorld->GetOutputPort());
+  this->Mapper->SetColorModeToMapScalars();
+  this->Mapper->SetLookupTable(this->ColorTable);
+  this->Mapper->SetScalarVisibility(true);
+  this->Mapper->UseLookupTableScalarRangeOn();
+  this->Mapper->SetTransformCoordinate(coordinate);
+
+  this->Property = vtkSmartPointer<vtkProperty2D>::New();
+  this->Property->SetPointSize(10.);
+  this->Property->SetLineWidth(2.);
+  this->Property->SetOpacity(1.);
+
+  this->Actor = vtkSmartPointer<vtkActor2D>::New();
+  this->Actor->SetProperty(this->Property);
+  this->Actor->SetMapper(this->Mapper);
+};
+
+//----------------------------------------------------------------------
+vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::~MarkupsInteractionPipeline()
 = default;
 
 //----------------------------------------------------------------------
@@ -123,6 +231,14 @@ vtkSlicerMarkupsWidgetRepresentation::vtkSlicerMarkupsWidgetRepresentation()
 
   this->AlwaysOnTop = false;
 
+  this->InteractionPipeline = nullptr;
+  this->SetupInteractionPipeline();
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::SetupInteractionPipeline()
+{
+  this->InteractionPipeline = new MarkupsInteractionPipeline;
 }
 
 //----------------------------------------------------------------------
@@ -135,8 +251,12 @@ vtkSlicerMarkupsWidgetRepresentation::~vtkSlicerMarkupsWidgetRepresentation()
     }
   // Force deleting variables to prevent circular dependency keeping objects alive
   this->PointPlacer = nullptr;
+
+  delete this->InteractionPipeline;
+  this->InteractionPipeline = nullptr;
 }
 
+//----------------------------------------------------------------------
 int vtkSlicerMarkupsWidgetRepresentation::GetNumberOfControlPoints()
 {
   vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
@@ -478,7 +598,7 @@ void vtkSlicerMarkupsWidgetRepresentation::BuildLine(vtkPolyData* linePolyData, 
 
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation::UpdateFromMRML(
-    vtkMRMLNode* vtkNotUsed(caller), unsigned long event, void *vtkNotUsed(callData))
+    vtkMRMLNode* node, unsigned long event, void *vtkNotUsed(callData))
 {
   if (!event || event == vtkMRMLTransformableNode::TransformModifiedEvent)
     {
@@ -499,6 +619,25 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateFromMRML(
   this->TextActor->SetVisibility(this->MarkupsDisplayNode->GetPropertiesLabelVisibility());
 
   this->NeedToRenderOn(); // TODO: to improve performance, call this only if it is actually needed
+
+  if (this->InteractionPipeline)
+    {
+    this->UpdateInteractionPipeline();
+    }
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::UpdateInteractionPipeline()
+{
+  bool selected = false;
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  if (markupsNode)
+    {
+    selected = markupsNode->GetSelected();
+    }
+
+  //this->InteractionPipeline->Actor->SetVisibility(selected);
+  this->InteractionPipeline->Actor->SetVisibility(true);
 }
 
 //----------------------------------------------------------------------
@@ -658,4 +797,70 @@ vtkStringArray* vtkSlicerMarkupsWidgetRepresentation::GetLabels(int controlPoint
     return nullptr;
     }
   return this->ControlPoints[controlPointType]->Labels;
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::GetActors(vtkPropCollection* pc)
+{
+  if (this->InteractionPipeline)
+    {
+    this->InteractionPipeline->Actor->GetActors(pc);
+    }
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::ReleaseGraphicsResources(vtkWindow* window)
+{
+  if (this->InteractionPipeline)
+    {
+    this->InteractionPipeline->Actor->ReleaseGraphicsResources(window);
+    }
+}
+
+//----------------------------------------------------------------------
+int vtkSlicerMarkupsWidgetRepresentation::RenderOverlay(vtkViewport* viewport)
+{
+  int count = 0;
+  if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility())
+    {
+    count += this->InteractionPipeline->Actor->RenderOverlay(viewport);
+    }
+  return count;
+}
+
+//----------------------------------------------------------------------
+int vtkSlicerMarkupsWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* viewport)
+{
+  int count = 0;
+  if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility())
+    {
+    double interactionWidgetScale = 7.0 * this->ControlPointSize;
+    vtkNew<vtkTransform> scaleTransform;
+    scaleTransform->Scale(interactionWidgetScale, interactionWidgetScale, interactionWidgetScale);
+    this->InteractionPipeline->ScaleTransform->SetTransform(scaleTransform);
+    count += this->InteractionPipeline->Actor->RenderOpaqueGeometry(viewport);
+    }
+  return count;
+}
+
+//----------------------------------------------------------------------
+int vtkSlicerMarkupsWidgetRepresentation::RenderTranslucentPolygonalGeometry(vtkViewport* viewport)
+{
+  int count = 0;
+  if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility())
+    {
+    count += this->InteractionPipeline->Actor->RenderTranslucentPolygonalGeometry(viewport);
+    }
+  return count;
+}
+
+//----------------------------------------------------------------------
+vtkTypeBool vtkSlicerMarkupsWidgetRepresentation::HasTranslucentPolygonalGeometry()
+{
+  if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility() &&
+    this->InteractionPipeline->Actor->HasTranslucentPolygonalGeometry())
+    {
+    return true;
+    }
+  return false;
 }

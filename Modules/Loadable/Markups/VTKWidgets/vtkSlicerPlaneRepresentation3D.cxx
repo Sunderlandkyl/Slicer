@@ -45,6 +45,7 @@
 #include "vtkMRMLMarkupsPlaneNode.h"
 #include "vtkMRMLScene.h"
 #include "vtkMRMLSelectionNode.h"
+#include "vtkMRMLViewNode.h"
 
 vtkStandardNewMacro(vtkSlicerPlaneRepresentation3D);
 
@@ -65,27 +66,6 @@ vtkSlicerPlaneRepresentation3D::vtkSlicerPlaneRepresentation3D()
 
   this->ArrowActor->SetMapper(this->ArrowMapper);
   this->ArrowActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
-
-  this->XArcFilter->GeneratePolygonOff();
-  this->XArcFilter->SetNumberOfSides(180);
-  this->XArcMapper->SetInputConnection(this->XArcFilter->GetOutputPort());
-  this->XArcActor->SetMapper(this->XArcMapper);
-  this->XArcActor->GetProperty()->SetColor(1, 0, 0);
-  this->XArcActor->GetProperty()->SetLineWidth(5);
-
-  this->YArcFilter->GeneratePolygonOff();
-  this->YArcFilter->SetNumberOfSides(180);
-  this->YArcMapper->SetInputConnection(this->YArcFilter->GetOutputPort());
-  this->YArcActor->SetMapper(this->YArcMapper);
-  this->YArcActor->GetProperty()->SetColor(0, 1, 0);
-  this->YArcActor->GetProperty()->SetLineWidth(5);
-
-  this->ZArcFilter->GeneratePolygonOff();
-  this->ZArcFilter->SetNumberOfSides(180);
-  this->ZArcMapper->SetInputConnection(this->ZArcFilter->GetOutputPort());
-  this->ZArcActor->SetMapper(this->ZArcMapper);
-  this->ZArcActor->GetProperty()->SetColor(0, 0, 1);
-  this->ZArcActor->GetProperty()->SetLineWidth(5);
 
   this->LabelFormat = "%-#6.3g";
 }
@@ -166,62 +146,6 @@ void vtkSlicerPlaneRepresentation3D::BuildPlane()
 }
 
 //----------------------------------------------------------------------
-void vtkSlicerPlaneRepresentation3D::BuildArcs()
-{
-  vtkMRMLMarkupsPlaneNode* markupsNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
-  if (!markupsNode || markupsNode->GetNumberOfControlPoints() != 3)
-    {
-    this->PlaneMapper->SetInputData(vtkNew<vtkPolyData>());
-    this->ArrowMapper->SetInputData(vtkNew<vtkPolyData>());
-    return;
-    }
-
-  bool showArcs = markupsNode->GetNumberOfControlPoints() >= 3 && markupsNode->GetSelected();
-
-  vtkMRMLScene* scene = markupsNode->GetScene();
-  if (showArcs && scene)
-    {
-    vtkMRMLSelectionNode* selectionNode = vtkMRMLSelectionNode::SafeDownCast(scene->GetFirstNodeByClass("vtkMRMLSelectionNode"));
-    if (selectionNode)
-      {
-      showArcs = selectionNode->IsOnlyNodeSelected(markupsNode);
-      }
-    }
-
-  this->XArcActor->SetVisibility(showArcs);
-  this->YArcActor->SetVisibility(showArcs);
-  this->ZArcActor->SetVisibility(showArcs);
-  if (!showArcs)
-    {
-    return;
-    }
-
-  double origin[3] = { 0 };
-  markupsNode->GetOriginWorld(origin);
-  this->XArcFilter->SetCenter(origin);
-  this->YArcFilter->SetCenter(origin);
-  this->ZArcFilter->SetCenter(origin);
-
-  double x[3], y[3], z[3] = { 0 };
-  markupsNode->GetPlaneAxes(x, y, z);
-  this->XArcFilter->SetNormal(x);
-  this->YArcFilter->SetNormal(y);
-  this->ZArcFilter->SetNormal(z);
-
-  this->XArcFilter->SetRadius(this->ControlPointSize * 2);
-  this->YArcFilter->SetRadius(this->ControlPointSize * 2);
-  this->ZArcFilter->SetRadius(this->ControlPointSize * 2);
-
-  //double xRadiusVector[3], yRadiusVector[3], zRadiusVector[3] = { 0 };
-  //vtkMath::Add(y, z, xRadiusVector);
-  //vtkMath::Add(x, z, yRadiusVector);
-  //vtkMath::Add(x, y, zRadiusVector);
-  //this->XArcFilter->SetMajorRadiusVector(xRadiusVector);
-  //this->YArcFilter->SetMajorRadiusVector(yRadiusVector);
-  //this->ZArcFilter->SetMajorRadiusVector(zRadiusVector);
-}
-
-//----------------------------------------------------------------------
 void vtkSlicerPlaneRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void *callData /*=nullptr*/)
 {
   Superclass::UpdateFromMRML(caller, event, callData);
@@ -243,7 +167,6 @@ void vtkSlicerPlaneRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
 
   // Update plane geometry
   this->BuildPlane();
-  this->BuildArcs();
 
   // Update plane display properties
   this->PlaneActor->SetVisibility(markupsNode->GetNumberOfControlPoints() >= 3);
@@ -262,14 +185,47 @@ void vtkSlicerPlaneRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
 }
 
 //----------------------------------------------------------------------
+void vtkSlicerPlaneRepresentation3D::UpdateInteractionPipeline()
+{
+  Superclass::UpdateInteractionPipeline();
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  if (!planeNode)
+    {
+    return;
+    }
+
+  vtkMRMLViewNode* viewNode = vtkMRMLViewNode::SafeDownCast(this->ViewNode);
+  if (!viewNode)
+    {
+    return;
+    }
+
+  double x[3], y[3], z[3] = { 0 };
+  planeNode->GetPlaneAxesWorld(x, y, z);
+
+  vtkNew<vtkMatrix4x4> modelToWorldMatrix;
+  for (int i = 0; i < 3; ++i)
+    {
+    modelToWorldMatrix->SetElement(i, 0, x[i]);
+    modelToWorldMatrix->SetElement(i, 1, y[i]);
+    modelToWorldMatrix->SetElement(i, 2, z[i]);
+    }
+
+  double origin[3] = { 0 };
+  planeNode->GetOriginWorld(origin);
+
+  vtkNew<vtkTransform> transform;
+  transform->Translate(origin);
+  transform->Concatenate(modelToWorldMatrix);
+  this->InteractionPipeline->TransformToWorld->SetTransform(transform);
+}
+
+//----------------------------------------------------------------------
 void vtkSlicerPlaneRepresentation3D::GetActors(vtkPropCollection *pc)
 {
   this->Superclass::GetActors(pc);
   this->PlaneActor->GetActors(pc);
   this->TextActor->GetActors(pc);
-  this->XArcActor->GetActors(pc);
-  this->YArcActor->GetActors(pc);
-  this->ZArcActor->GetActors(pc);
 }
 
 //----------------------------------------------------------------------
@@ -279,9 +235,6 @@ void vtkSlicerPlaneRepresentation3D::ReleaseGraphicsResources(
   this->Superclass::ReleaseGraphicsResources(win);
   this->PlaneActor->ReleaseGraphicsResources(win);
   this->TextActor->ReleaseGraphicsResources(win);
-  this->XArcActor->ReleaseGraphicsResources(win);
-  this->YArcActor->ReleaseGraphicsResources(win);
-  this->ZArcActor->ReleaseGraphicsResources(win);
 }
 
 //----------------------------------------------------------------------
@@ -295,18 +248,6 @@ int vtkSlicerPlaneRepresentation3D::RenderOverlay(vtkViewport *viewport)
   if (this->TextActor->GetVisibility())
     {
     count += this->TextActor->RenderOverlay(viewport);
-    }
-  if (this->XArcActor->GetVisibility())
-    {
-    count += this->XArcActor->RenderOverlay(viewport);
-    }
-  if (this->YArcActor->GetVisibility())
-    {
-    count += this->YArcActor->RenderOverlay(viewport);
-    }
-  if (this->ZArcActor->GetVisibility())
-    {
-    count += this->ZArcActor->RenderOverlay(viewport);
     }
   return count;
 }
@@ -324,21 +265,6 @@ int vtkSlicerPlaneRepresentation3D::RenderOpaqueGeometry(
   if (this->TextActor->GetVisibility())
     {
     count += this->TextActor->RenderOpaqueGeometry(viewport);
-    }
-  if (this->XArcActor->GetVisibility())
-    {
-    this->XArcFilter->SetRadius(this->ControlPointSize * 2);
-    count += this->XArcActor->RenderOpaqueGeometry(viewport);
-    }
-  if (this->YArcActor->GetVisibility())
-    {
-    this->YArcFilter->SetRadius(this->ControlPointSize * 2);
-    count += this->YArcActor->RenderOpaqueGeometry(viewport);
-    }
-  if (this->ZArcActor->GetVisibility())
-    {
-    this->ZArcFilter->SetRadius(this->ControlPointSize * 2);
-    count += this->ZArcActor->RenderOpaqueGeometry(viewport);
     }
   return count;
 }
@@ -359,18 +285,6 @@ int vtkSlicerPlaneRepresentation3D::RenderTranslucentPolygonalGeometry(
     {
     count += this->TextActor->RenderTranslucentPolygonalGeometry(viewport);
     }
-  if (this->XArcActor->GetVisibility())
-    {
-    count += this->XArcActor->RenderTranslucentPolygonalGeometry(viewport);
-    }
-  if (this->YArcActor->GetVisibility())
-    {
-    count += this->YArcActor->RenderTranslucentPolygonalGeometry(viewport);
-    }
-  if (this->ZArcActor->GetVisibility())
-    {
-    count += this->ZArcActor->RenderTranslucentPolygonalGeometry(viewport);
-    }
   return count;
 }
 
@@ -386,18 +300,6 @@ vtkTypeBool vtkSlicerPlaneRepresentation3D::HasTranslucentPolygonalGeometry()
     return true;
     }
   if (this->TextActor->GetVisibility() && this->TextActor->HasTranslucentPolygonalGeometry())
-    {
-    return true;
-    }
-  if (this->XArcActor->GetVisibility() && this->XArcActor->HasTranslucentPolygonalGeometry())
-    {
-    return true;
-    }
-  if (this->YArcActor->GetVisibility() && this->YArcActor->HasTranslucentPolygonalGeometry())
-    {
-    return true;
-    }
-  if (this->ZArcActor->GetVisibility() && this->ZArcActor->HasTranslucentPolygonalGeometry())
     {
     return true;
     }
@@ -427,49 +329,13 @@ void vtkSlicerPlaneRepresentation3D::CanInteract(
     return;
     }
 
-  this->CanInteractWithHandles(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2);
-  this->CanInteractWithPlane(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2);
+  Superclass::CanInteract(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2);
   if (foundComponentType != vtkMRMLMarkupsDisplayNode::ComponentNone)
     {
     return;
     }
 
   this->CanInteractWithPlane(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2);
-}
-
-//-----------------------------------------------------------------------------
-void vtkSlicerPlaneRepresentation3D::CanInteractWithHandles(
-  vtkMRMLInteractionEventData* interactionEventData,
-  int& foundComponentType, int& foundComponentIndex, double& closestDistance2)
-{
-  /// TODO: Implement handles in a better way
-
-  //// Create the tree
-  //vtkSmartPointer<vtkCellLocator> cellLocator =
-  //  vtkSmartPointer<vtkCellLocator>::New();
-  //this->XArcFilter->Update();
-  //if (this->XArcFilter->GetOutput() && this->XArcFilter->GetOutput()->GetNumberOfPoints() == 0)
-  //  {
-  //  return;
-  //  }
-
-  //cellLocator->SetDataSet(this->XArcFilter->GetOutput());
-  //cellLocator->BuildLocator();
-
-  //const double* worldPosition = interactionEventData->GetWorldPosition();
-  //double closestPoint[3];//the coordinates of the closest point will be returned here
-  //double distance2; //the squared distance to the closest point will be returned here
-  //vtkIdType cellId; //the cell id of the cell containing the closest point will be returned here
-  //int subId; //this is rarely used (in triangle strips only, I believe)
-  //cellLocator->FindClosestPoint(worldPosition, closestPoint, cellId, subId, distance2);
-
-  //double toleranceWorld = this->ControlPointSize / 2;
-  //if (distance2 < toleranceWorld)
-  //  {
-  //  closestDistance2 = distance2;
-  //  foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentPlane;
-  //  foundComponentIndex = 0;
-  //  }
 }
 
 //-----------------------------------------------------------------------------

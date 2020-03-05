@@ -586,3 +586,34 @@ void vtkSlicerPlaneRepresentation2D::BuildPlane()
   planeEndFadeFar->Push(-1*displayNode->GetLineColorFadingEnd());
   this->PlaneClipperEndFadeFar->SetClipFunction(planeEndFadeFar);
 }
+
+//----------------------------------------------------------------------
+void vtkSlicerPlaneRepresentation2D::UpdateInteractionPipeline()
+{
+  Superclass::UpdateInteractionPipeline();
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  if (!planeNode)
+    {
+    return;
+    }
+
+  double x[3], y[3], z[3] = { 0 };
+  planeNode->GetPlaneAxesWorld(x, y, z);
+
+  vtkNew<vtkMatrix4x4> modelToWorldMatrix;
+  for (int i = 0; i < 3; ++i)
+  {
+    modelToWorldMatrix->SetElement(i, 0, x[i]);
+    modelToWorldMatrix->SetElement(i, 1, y[i]);
+    modelToWorldMatrix->SetElement(i, 2, z[i]);
+  }
+
+  double origin[3] = { 0 };
+  planeNode->GetOriginWorld(origin);
+
+  vtkNew<vtkTransform> transform;
+  transform->Translate(origin);
+  transform->Concatenate(modelToWorldMatrix);
+  transform->Concatenate(this->WorldToSliceTransform);
+  this->InteractionPipeline->TransformToWorld->SetTransform(transform);
+}

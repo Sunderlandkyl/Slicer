@@ -81,6 +81,8 @@ public:
 
   void BuildPlane();
 
+  void UpdateInteractionPipeline();
+
 protected:
   vtkSlicerPlaneRepresentation2D();
   ~vtkSlicerPlaneRepresentation2D() override;

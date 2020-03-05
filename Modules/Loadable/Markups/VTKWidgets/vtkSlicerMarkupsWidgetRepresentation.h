@@ -47,9 +47,16 @@
 #include "vtkMRMLMarkupsDisplayNode.h"
 #include "vtkMRMLMarkupsNode.h"
 
+class vtkActor2D;
+class vtkAppendPolyData;
+class vtkArrayCalculator;
+class vtkConeSource;
 class vtkMarkupsGlyphSource2D;
 class vtkPointPlacer;
 class vtkPointSetToLabelHierarchy;
+class vtkPolyDataMapper2D;
+class vtkProperty2D;
+class vtkRegularPolygonSource;
 class vtkSphereSource;
 class vtkTextActor;
 class vtkTextProperty;
@@ -75,6 +82,14 @@ public:
 
   /// Update the representation from markups node
   void UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void *callData = nullptr) override;
+
+  /// Methods to make this class behave as a vtkProp.
+  void GetActors(vtkPropCollection*) override;
+  void ReleaseGraphicsResources(vtkWindow*) override;
+  int RenderOverlay(vtkViewport* viewport) override;
+  int RenderOpaqueGeometry(vtkViewport* viewport) override;
+  int RenderTranslucentPolygonalGeometry(vtkViewport* viewport) override;
+  vtkTypeBool HasTranslucentPolygonalGeometry() override;
 
   /// Get number of control points.
   virtual int GetNumberOfControlPoints();
@@ -148,14 +163,35 @@ protected:
     vtkSmartPointer<vtkTextProperty> TextProperty;
   };
 
-  class InteractionPipeline
+  class MarkupsInteractionPipeline
   {
   public:
-    InteractionPipeline();
-    virtual ~InteractionPipeline();
+    MarkupsInteractionPipeline();
+    virtual ~MarkupsInteractionPipeline();
 
-    //vtkNew<vtk
+    vtkSmartPointer<vtkRegularPolygonSource>    AxisRotationGlyph;
+    vtkSmartPointer<vtkConeSource>              AxisTranslationGlyph;
+    vtkSmartPointer<vtkAppendPolyData>          AxisGlyphAppend;
+
+    vtkSmartPointer<vtkArrayCalculator>         XAxisScalarFilter;
+
+    vtkSmartPointer<vtkTransformPolyDataFilter> YAxisTransform;
+    vtkSmartPointer<vtkArrayCalculator>         YAxisScalarFilter;
+
+    vtkSmartPointer<vtkTransformPolyDataFilter> ZAxisTransform;
+    vtkSmartPointer<vtkArrayCalculator>         ZAxisScalarFilter;
+
+    vtkSmartPointer<vtkAppendPolyData>          Append;
+    vtkSmartPointer<vtkTransformPolyDataFilter> ScaleTransform;
+    vtkSmartPointer<vtkTransformPolyDataFilter> TransformToWorld;
+    vtkSmartPointer<vtkLookupTable>             ColorTable;
+    vtkSmartPointer<vtkPolyDataMapper2D>        Mapper;
+    vtkSmartPointer<vtkActor2D>                 Actor;
+    vtkSmartPointer<vtkProperty2D>              Property;
   };
+
+  /// Update the interaction pipeline
+  virtual void UpdateInteractionPipeline();
 
   // Calculate view size and scale factor
   virtual void UpdateViewScaleFactor() = 0;
@@ -198,7 +234,10 @@ protected:
 
   double* GetWidgetColor(int controlPointType);
 
-  ControlPointsPipeline* ControlPoints[NumberOfControlPointTypes]; // Unselected, Selected, Active, Project, ProjectBehind
+  ControlPointsPipeline* ControlPoints[NumberOfControlPointTypes]; // Unselected, Selected, Active, Project,
+
+  virtual void SetupInteractionPipeline();
+  MarkupsInteractionPipeline* InteractionPipeline;
 
 private:
   vtkSlicerMarkupsWidgetRepresentation(const vtkSlicerMarkupsWidgetRepresentation&) = delete;

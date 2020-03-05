@@ -79,9 +79,6 @@ public:
   void CanInteract(vtkMRMLInteractionEventData* interactionEventData,
     int &foundComponentType, int &foundComponentIndex, double &closestDistance2) override;
 
-  void CanInteractWithHandles(vtkMRMLInteractionEventData* interactionEventData,
-    int& foundComponentType, int& foundComponentIndex, double& closestDistance2);
-
   void CanInteractWithPlane(vtkMRMLInteractionEventData* interactionEventData,
     int& foundComponentType, int& foundComponentIndex, double& closestDistance2);
 
@@ -97,22 +94,10 @@ protected:
   vtkNew<vtkGlyph3DMapper>  ArrowMapper;
   vtkNew<vtkActor>          ArrowActor;
 
-  vtkNew<vtkRegularPolygonSource> XArcFilter;
-  vtkNew<vtkPolyDataMapper> XArcMapper;
-  vtkNew<vtkActor> XArcActor;
-
-  vtkNew<vtkRegularPolygonSource> YArcFilter;
-  vtkNew<vtkPolyDataMapper> YArcMapper;
-  vtkNew<vtkActor> YArcActor;
-
-  vtkNew<vtkRegularPolygonSource> ZArcFilter;
-  vtkNew<vtkPolyDataMapper> ZArcMapper;
-  vtkNew<vtkActor> ZArcActor;
-
   std::string LabelFormat;
 
   void BuildPlane();
-  void BuildArcs();
+  virtual void UpdateInteractionPipeline() override;
 
 private:
   vtkSlicerPlaneRepresentation3D(const vtkSlicerPlaneRepresentation3D&) = delete;

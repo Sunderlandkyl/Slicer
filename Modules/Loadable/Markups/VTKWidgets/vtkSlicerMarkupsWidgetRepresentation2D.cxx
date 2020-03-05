@@ -626,6 +626,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteractWithLine(
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation2D::GetActors(vtkPropCollection *pc)
 {
+  Superclass::GetActors(pc);
   for (int i = 0; i < NumberOfControlPointTypes; i++)
     {
     ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
@@ -639,6 +640,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetActors(vtkPropCollection *pc)
 void vtkSlicerMarkupsWidgetRepresentation2D::ReleaseGraphicsResources(
   vtkWindow *win)
 {
+  Superclass::ReleaseGraphicsResources(win);
   for (int i = 0; i < NumberOfControlPointTypes; i++)
     {
     ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
@@ -651,7 +653,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::ReleaseGraphicsResources(
 //----------------------------------------------------------------------
 int vtkSlicerMarkupsWidgetRepresentation2D::RenderOverlay(vtkViewport *viewport)
 {
-  int count = 0;
+  int count = Superclass::RenderOverlay(viewport);
   for (int i = 0; i < NumberOfControlPointTypes; i++)
     {
     ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
@@ -675,7 +677,7 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderOverlay(vtkViewport *viewport)
 int vtkSlicerMarkupsWidgetRepresentation2D::RenderOpaqueGeometry(
   vtkViewport *viewport)
 {
-  int count = 0;
+  int count = Superclass::RenderOpaqueGeometry(viewport);
   if (this->TextActor->GetVisibility())
     {
     count += this->TextActor->RenderOpaqueGeometry(viewport);
@@ -699,7 +701,7 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderOpaqueGeometry(
 int vtkSlicerMarkupsWidgetRepresentation2D::RenderTranslucentPolygonalGeometry(
   vtkViewport *viewport)
 {
-  int count = 0;
+  int count = Superclass::RenderTranslucentPolygonalGeometry(viewport);
   if (this->TextActor->GetVisibility())
     {
     count += this->TextActor->RenderTranslucentPolygonalGeometry(viewport);
@@ -1042,7 +1044,6 @@ bool vtkSlicerMarkupsWidgetRepresentation2D::GetAllControlPointsVisible()
    }
   return true;
 }
-
 
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation2D::UpdateDistanceColorMap(

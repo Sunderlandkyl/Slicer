@@ -531,6 +531,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller,
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation3D::GetActors(vtkPropCollection *pc)
 {
+  Superclass::GetActors(pc);
   for (int i = 0; i < NumberOfControlPointTypes; i++)
    {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
@@ -543,6 +544,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::GetActors(vtkPropCollection *pc)
 void vtkSlicerMarkupsWidgetRepresentation3D::ReleaseGraphicsResources(
   vtkWindow *win)
 {
+  Superclass::ReleaseGraphicsResources(win);
   for (int i = 0; i < NumberOfControlPointTypes; i++)
     {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
@@ -554,7 +556,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::ReleaseGraphicsResources(
 //----------------------------------------------------------------------
 int vtkSlicerMarkupsWidgetRepresentation3D::RenderOverlay(vtkViewport *viewport)
 {
-  int count=0;
+  int count = Superclass::RenderOverlay(viewport);
   for (int i = 0; i < NumberOfControlPointTypes; i++)
     {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
@@ -574,7 +576,6 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOverlay(vtkViewport *viewport)
 int vtkSlicerMarkupsWidgetRepresentation3D::RenderOpaqueGeometry(
   vtkViewport *viewport)
 {
-
   // Recompute glyph size if it is relative to the screen size
   // (it gets smaller/larger as the camera is moved or zoomed)
   bool updateControlPointSize = false;
@@ -598,7 +599,7 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOpaqueGeometry(
       }
     }
 
-  int count=0;
+  int count = Superclass::RenderOpaqueGeometry(viewport);
   vtkCamera* cam = this->Renderer->GetActiveCamera();
   double cameraPosition[3] = { 0.0, 0.0, 0.0 };
   double viewUp[3] = { 0.0, 1.0, 0.0 };
@@ -638,7 +639,7 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOpaqueGeometry(
 int vtkSlicerMarkupsWidgetRepresentation3D::RenderTranslucentPolygonalGeometry(
   vtkViewport *viewport)
 {
-  int count=0;
+  int count = Superclass::RenderTranslucentPolygonalGeometry(viewport);
   for (int i = 0; i < NumberOfControlPointTypes; i++)
     {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
