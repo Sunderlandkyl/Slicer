@@ -116,11 +116,20 @@ vtkSlicerMarkupsWidgetRepresentation::ControlPointsPipeline::~ControlPointsPipel
 //----------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInteractionPipeline()
 {
+  vtkVector3d xAxisRotationHandlePosition = { 0,1,1 };
+  vtkMath::Normalize(xAxisRotationHandlePosition.GetData());
+
+  this->RotationHandlePositions.push_back(xAxisRotationHandlePosition);
+  vtkVector3d xAxisTranslationHandlePosition = { 1, 0, 0 };
+  this->TranslationHandlePositions.push_back(xAxisRotationHandlePosition);
+
   // X axis polydata
-  this->AxisRotationGlyph = vtkSmartPointer<vtkRegularPolygonSource>::New();
-  this->AxisRotationGlyph->SetNumberOfSides(180);
-  this->AxisRotationGlyph->GeneratePolygonOff();
-  this->AxisRotationGlyph->SetNormal(1, 0, 0);
+  this->AxisRotationGlyph = vtkSmartPointer<vtkSphereSource>::New();
+  this->AxisRotationGlyph->SetCenter(xAxisRotationHandlePosition.GetData());
+  this->AxisRotationGlyph->SetRadius(0.125);
+  //this->AxisRotationGlyph->SetNumberOfSides(180);
+  //this->AxisRotationGlyph->GeneratePolygonOff();
+  //this->AxisRotationGlyph->SetNormal(1, 0, 0);
 
   this->AxisTranslationGlyph = vtkSmartPointer<vtkConeSource>::New();
   this->AxisTranslationGlyph->SetDirection(1, 0, 0);
@@ -142,9 +151,15 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   // Y axis polydata
   vtkNew<vtkTransform> rotationXToY;
   rotationXToY->RotateZ(90);
+  rotationXToY->Scale(1, -1, 1);
   this->YAxisTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->YAxisTransform->SetTransform(rotationXToY);
   this->YAxisTransform->SetInputConnection(this->AxisGlyphAppend->GetOutputPort());
+
+  vtkVector3d yAxisRotationHandlePosition(rotationXToY->TransformPoint(xAxisRotationHandlePosition.GetData()));
+  this->RotationHandlePositions.push_back(yAxisRotationHandlePosition);
+  this->TranslationHandlePositions.push_back(
+    vtkVector3d(rotationXToY->TransformDoublePoint(xAxisTranslationHandlePosition.GetData())));
 
   this->YAxisScalarFilter = vtkSmartPointer<vtkArrayCalculator>::New();
   this->YAxisScalarFilter->SetInputConnection(this->YAxisTransform->GetOutputPort());
@@ -155,9 +170,16 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   // Z axis polydata
   vtkNew<vtkTransform> rotationXToZ;
   rotationXToZ->RotateY(-90);
+  rotationXToY->Scale(1, 1, -1);
   this->ZAxisTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->ZAxisTransform->SetTransform(rotationXToZ);
   this->ZAxisTransform->SetInputConnection(this->AxisGlyphAppend->GetOutputPort());
+
+  vtkVector3d zAxisRotationHandlePosition(rotationXToZ->TransformPoint(xAxisRotationHandlePosition.GetData()));
+  vtkMath::Normalize(zAxisRotationHandlePosition.GetData());
+  this->RotationHandlePositions.push_back(zAxisRotationHandlePosition);
+  this->TranslationHandlePositions.push_back(
+    vtkVector3d(rotationXToZ->TransformDoublePoint(xAxisTranslationHandlePosition.GetData())));
 
   this->ZAxisScalarFilter = vtkSmartPointer<vtkArrayCalculator>::New();
   this->ZAxisScalarFilter->SetInputConnection(this->ZAxisTransform->GetOutputPort());
@@ -165,13 +187,17 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   this->ZAxisScalarFilter->SetAttributeTypeToCellData();
   this->ZAxisScalarFilter->SetResultArrayType(VTK_UNSIGNED_CHAR);
 
+  // Combine to a single polydata
   this->Append = vtkSmartPointer<vtkAppendPolyData>::New();
   this->Append->AddInputConnection(this->XAxisScalarFilter->GetOutputPort());
   this->Append->AddInputConnection(this->YAxisScalarFilter->GetOutputPort());
   this->Append->AddInputConnection(this->ZAxisScalarFilter->GetOutputPort());
 
-  this->ScaleTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->ScaleTransform->SetInputConnection(this->Append->GetOutputPort());
+  this->ScaleModelTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ScaleModelTransform->SetInputConnection(this->Append->GetOutputPort());
+
+  this->ModelToWorldTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ModelToWorldTransform->SetInputConnection(this->ScaleModelTransform->GetOutputPort());
 
   this->ColorTable = vtkSmartPointer<vtkLookupTable>::New();
   this->ColorTable->SetNumberOfTableValues(3);
@@ -181,14 +207,11 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   this->ColorTable->SetTableValue(2, 0.0, 0.0, 1.0, 1.0); // B
   this->ColorTable->Build();
 
-  this->TransformToWorld = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->TransformToWorld->SetInputConnection(this->ScaleTransform->GetOutputPort());
-
   vtkNew<vtkCoordinate> coordinate;
   coordinate->SetCoordinateSystemToWorld();
 
   this->Mapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-  this->Mapper->SetInputConnection(this->TransformToWorld->GetOutputPort());
+  this->Mapper->SetInputConnection(this->ModelToWorldTransform->GetOutputPort());
   this->Mapper->SetColorModeToMapScalars();
   this->Mapper->SetLookupTable(this->ColorTable);
   this->Mapper->SetScalarVisibility(true);
@@ -837,7 +860,7 @@ int vtkSlicerMarkupsWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* view
     double interactionWidgetScale = 7.0 * this->ControlPointSize;
     vtkNew<vtkTransform> scaleTransform;
     scaleTransform->Scale(interactionWidgetScale, interactionWidgetScale, interactionWidgetScale);
-    this->InteractionPipeline->ScaleTransform->SetTransform(scaleTransform);
+    this->InteractionPipeline->ScaleModelTransform->SetTransform(scaleTransform);
     count += this->InteractionPipeline->Actor->RenderOpaqueGeometry(viewport);
     }
   return count;

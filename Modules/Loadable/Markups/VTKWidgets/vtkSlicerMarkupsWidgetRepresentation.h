@@ -169,7 +169,7 @@ protected:
     MarkupsInteractionPipeline();
     virtual ~MarkupsInteractionPipeline();
 
-    vtkSmartPointer<vtkRegularPolygonSource>    AxisRotationGlyph;
+    vtkSmartPointer<vtkSphereSource>            AxisRotationGlyph;
     vtkSmartPointer<vtkConeSource>              AxisTranslationGlyph;
     vtkSmartPointer<vtkAppendPolyData>          AxisGlyphAppend;
 
@@ -182,12 +182,15 @@ protected:
     vtkSmartPointer<vtkArrayCalculator>         ZAxisScalarFilter;
 
     vtkSmartPointer<vtkAppendPolyData>          Append;
-    vtkSmartPointer<vtkTransformPolyDataFilter> ScaleTransform;
-    vtkSmartPointer<vtkTransformPolyDataFilter> TransformToWorld;
+    vtkSmartPointer<vtkTransformPolyDataFilter> ScaleModelTransform;
+    vtkSmartPointer<vtkTransformPolyDataFilter> ModelToWorldTransform;
     vtkSmartPointer<vtkLookupTable>             ColorTable;
     vtkSmartPointer<vtkPolyDataMapper2D>        Mapper;
     vtkSmartPointer<vtkActor2D>                 Actor;
     vtkSmartPointer<vtkProperty2D>              Property;
+
+    std::vector<vtkVector3d> RotationHandlePositions;
+    std::vector<vtkVector3d> TranslationHandlePositions;
   };
 
   /// Update the interaction pipeline

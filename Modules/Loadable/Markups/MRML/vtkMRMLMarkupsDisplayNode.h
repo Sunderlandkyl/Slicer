@@ -88,7 +88,9 @@ public:
     ComponentControlPoint,
     ComponentCenterPoint,
     ComponentLine,
-    ComponentPlane
+    ComponentPlane,
+    ComponentRotationHandle,
+    ComponentTranslationHandle,
     };
   struct ComponentInfo
     {

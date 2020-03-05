@@ -217,7 +217,7 @@ void vtkSlicerPlaneRepresentation3D::UpdateInteractionPipeline()
   vtkNew<vtkTransform> transform;
   transform->Translate(origin);
   transform->Concatenate(modelToWorldMatrix);
-  this->InteractionPipeline->TransformToWorld->SetTransform(transform);
+  this->InteractionPipeline->ModelToWorldTransform->SetTransform(transform);
 }
 
 //----------------------------------------------------------------------

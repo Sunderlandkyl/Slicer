@@ -38,6 +38,8 @@
 #include "vtkStringArray.h"
 #include "vtkTextActor.h"
 #include "vtkTextProperty.h"
+#include "vtkTransform.h"
+#include "vtkTransformPolyDataFilter.h"
 
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
@@ -274,7 +276,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteract(
 
   double displayPosition3[3] = { 0.0, 0.0, 0.0 };
   // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
-  // virtual reality, and then we expect a valid world position in tha absence of display position.
+  // virtual reality, and then we expect a valid world position in the absence of display position.
   if (interactionEventData->IsDisplayPositionValid())
     {
     const int* displayPosition = interactionEventData->GetDisplayPosition();
@@ -398,6 +400,9 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteract(
       }
     }
 
+  // See if we can interact with the handle
+  this->CanInteractWithHandles(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2);
+
   /* This would probably faster for many points:
 
   this->BuildLocator();
@@ -413,6 +418,69 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteract(
     }
   return (this->GetActiveNode() >= 0);
   */
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation3D::CanInteractWithHandles(
+  vtkMRMLInteractionEventData* interactionEventData,
+  int& foundComponentType, int& foundComponentIndex, double& closestDistance2)
+{
+  if (!this->InteractionPipeline || !this->InteractionPipeline->Actor->GetVisibility())
+    {
+    return;
+    }
+
+  double displayPosition3[3] = { 0.0, 0.0, 0.0 };
+  // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
+  // virtual reality, and then we expect a valid world position in the absence of display position.
+  if (interactionEventData->IsDisplayPositionValid())
+    {
+    const int* displayPosition = interactionEventData->GetDisplayPosition();
+    displayPosition3[0] = static_cast<double>(displayPosition[0]);
+    displayPosition3[1] = static_cast<double>(displayPosition[1]);
+    }
+  else if (!interactionEventData->IsWorldPositionValid())
+    {
+    return;
+    }
+
+  for (int i = 0; i < 3; ++i)
+    {
+    vtkVector3d position = this->InteractionPipeline->RotationHandlePositions[i];
+    double* rotationHandleScaled = this->InteractionPipeline->ScaleModelTransform->GetTransform()->TransformPoint(position.GetData());
+    double* rotationHandleWorld = this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformPoint(rotationHandleScaled);
+    double rotationHandleDisplay[3] = { 0 };
+
+    if (interactionEventData->IsDisplayPositionValid())
+      {
+      double pixelTolerance = this->ControlPointSize / 2.0 / this->GetViewScaleFactorAtPosition(rotationHandleWorld)
+        + this->PickingTolerance * this->ScreenScaleFactor;
+      this->Renderer->SetWorldPoint(rotationHandleWorld);
+      this->Renderer->WorldToDisplay();
+      this->Renderer->GetDisplayPoint(rotationHandleDisplay);
+      rotationHandleDisplay[2] = 0.0;
+      double dist2 = vtkMath::Distance2BetweenPoints(rotationHandleDisplay, displayPosition3);
+      if (dist2 < pixelTolerance * pixelTolerance && dist2 < closestDistance2)
+        {
+        closestDistance2 = dist2;
+        foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentRotationHandle;
+        foundComponentIndex = i;
+        }
+      }
+    else
+      {
+      const double* worldPosition = interactionEventData->GetWorldPosition();
+      double worldTolerance = this->ControlPointSize / 2.0 +
+        this->PickingTolerance / interactionEventData->GetWorldToPhysicalScale();
+      double dist2 = vtkMath::Distance2BetweenPoints(rotationHandleWorld, worldPosition);
+      if (dist2 < worldTolerance * worldTolerance && dist2 < closestDistance2)
+        {
+        closestDistance2 = dist2;
+        foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentRotationHandle;
+        foundComponentIndex = i;
+        }
+      }
+    }
 }
 
 //----------------------------------------------------------------------
