@@ -426,29 +426,28 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteractWithHandles(
   int& foundComponentType, int& foundComponentIndex, double& closestDistance2)
 {
   if (!this->InteractionPipeline || !this->InteractionPipeline->Actor->GetVisibility())
-    {
+  {
     return;
-    }
+  }
 
   double displayPosition3[3] = { 0.0, 0.0, 0.0 };
   // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
   // virtual reality, and then we expect a valid world position in the absence of display position.
   if (interactionEventData->IsDisplayPositionValid())
-    {
+  {
     const int* displayPosition = interactionEventData->GetDisplayPosition();
     displayPosition3[0] = static_cast<double>(displayPosition[0]);
     displayPosition3[1] = static_cast<double>(displayPosition[1]);
-    }
+  }
   else if (!interactionEventData->IsWorldPositionValid())
-    {
+  {
     return;
-    }
+  }
 
-  for (int i = 0; i < 3; ++i)
+  vtkSlicerMarkupsWidgetRepresentation::HandleInfoList handleInfoList = this->InteractionPipeline->GetHandleInfo();
+  for (vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::HandleInfo handleInfo : handleInfoList)
     {
-    vtkVector3d position = this->InteractionPipeline->RotationHandlePositions[i];
-    double* rotationHandleScaled = this->InteractionPipeline->ScaleModelTransform->GetTransform()->TransformPoint(position.GetData());
-    double* rotationHandleWorld = this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformPoint(rotationHandleScaled);
+    double* rotationHandleWorld = handleInfo.PositionWorld;
     double rotationHandleDisplay[3] = { 0 };
 
     if (interactionEventData->IsDisplayPositionValid())
@@ -463,8 +462,8 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteractWithHandles(
       if (dist2 < pixelTolerance * pixelTolerance && dist2 < closestDistance2)
         {
         closestDistance2 = dist2;
-        foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentRotationHandle;
-        foundComponentIndex = i;
+        foundComponentType = handleInfo.ComponentType;
+        foundComponentIndex = handleInfo.Index;
         }
       }
     else
@@ -476,8 +475,8 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteractWithHandles(
       if (dist2 < worldTolerance * worldTolerance && dist2 < closestDistance2)
         {
         closestDistance2 = dist2;
-        foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentRotationHandle;
-        foundComponentIndex = i;
+        foundComponentType = handleInfo.ComponentType;
+        foundComponentIndex = handleInfo.Index;
         }
       }
     }

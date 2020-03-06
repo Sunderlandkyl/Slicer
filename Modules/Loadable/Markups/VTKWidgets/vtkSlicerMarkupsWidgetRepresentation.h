@@ -49,8 +49,10 @@
 
 class vtkActor2D;
 class vtkAppendPolyData;
+class vtkArcSource;
 class vtkArrayCalculator;
 class vtkConeSource;
+class vtkGlyph3D;
 class vtkMarkupsGlyphSource2D;
 class vtkPointPlacer;
 class vtkPointSetToLabelHierarchy;
@@ -60,6 +62,7 @@ class vtkRegularPolygonSource;
 class vtkSphereSource;
 class vtkTextActor;
 class vtkTextProperty;
+class vtkTensorGlyph;
 
 class vtkMRMLInteractionEventData;
 
@@ -166,32 +169,59 @@ protected:
   class MarkupsInteractionPipeline
   {
   public:
-    MarkupsInteractionPipeline();
+    MarkupsInteractionPipeline(vtkSlicerMarkupsWidgetRepresentation* representation);
     virtual ~MarkupsInteractionPipeline();
 
-    vtkSmartPointer<vtkSphereSource>            AxisRotationGlyph;
-    vtkSmartPointer<vtkConeSource>              AxisTranslationGlyph;
-    vtkSmartPointer<vtkAppendPolyData>          AxisGlyphAppend;
+    vtkWeakPointer<vtkSlicerMarkupsWidgetRepresentation> Representation;
 
-    vtkSmartPointer<vtkArrayCalculator>         XAxisScalarFilter;
+    vtkSmartPointer<vtkSphereSource>            AxisRotationHandleSource;
+    vtkSmartPointer<vtkArcSource>               AxisRotationArcSource;
+    vtkSmartPointer<vtkAppendPolyData>          AxisRotationGlyphSource;
 
-    vtkSmartPointer<vtkTransformPolyDataFilter> YAxisTransform;
-    vtkSmartPointer<vtkArrayCalculator>         YAxisScalarFilter;
+    vtkSmartPointer<vtkConeSource>              AxisTranslationGlyphSource;
 
-    vtkSmartPointer<vtkTransformPolyDataFilter> ZAxisTransform;
-    vtkSmartPointer<vtkArrayCalculator>         ZAxisScalarFilter;
+    vtkSmartPointer<vtkPolyData>                RotationHandlePoints;
+    vtkSmartPointer<vtkPolyData>                TranslationHandlePoints;
+
+    vtkSmartPointer<vtkTransformPolyDataFilter> RotationScaleTransform;
+    vtkSmartPointer<vtkTransformPolyDataFilter> TranslationScaleTransform;
+
+    vtkSmartPointer<vtkTensorGlyph>             AxisRotationGlypher;
+    vtkSmartPointer<vtkTensorGlyph>             AxisTranslationGlypher;
 
     vtkSmartPointer<vtkAppendPolyData>          Append;
-    vtkSmartPointer<vtkTransformPolyDataFilter> ScaleModelTransform;
     vtkSmartPointer<vtkTransformPolyDataFilter> ModelToWorldTransform;
     vtkSmartPointer<vtkLookupTable>             ColorTable;
     vtkSmartPointer<vtkPolyDataMapper2D>        Mapper;
     vtkSmartPointer<vtkActor2D>                 Actor;
     vtkSmartPointer<vtkProperty2D>              Property;
 
-    std::vector<vtkVector3d> RotationHandlePositions;
-    std::vector<vtkVector3d> TranslationHandlePositions;
+    virtual void CreateRotationHandles();
+    virtual void CreateTranslationHandles();
+
+    virtual void UpdateHandleColors();
+
+    struct HandleInfo
+    {
+      HandleInfo(int index, int componentType, double positionWorld[3])
+        : Index(index)
+        , ComponentType(componentType)
+      {
+        if (positionWorld)
+          {
+          this->PositionWorld[0] = positionWorld[0];
+          this->PositionWorld[1] = positionWorld[1];
+          this->PositionWorld[2] = positionWorld[2];
+          }
+      }
+      int Index;
+      int ComponentType;
+      double PositionWorld[3];
+    };
+
+    std::vector<HandleInfo> GetHandleInfo();
   };
+  typedef std::vector<MarkupsInteractionPipeline::HandleInfo> HandleInfoList;
 
   /// Update the interaction pipeline
   virtual void UpdateInteractionPipeline();

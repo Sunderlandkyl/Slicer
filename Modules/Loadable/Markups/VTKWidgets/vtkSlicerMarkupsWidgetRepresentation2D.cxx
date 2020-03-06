@@ -38,9 +38,11 @@
 #include "vtkSlicerMarkupsWidgetRepresentation2D.h"
 #include "vtkSphereSource.h"
 #include "vtkStringArray.h"
+#include "vtkTensorGlyph.h"
 #include "vtkTextActor.h"
 #include "vtkTextProperty.h"
 #include "vtkTransform.h"
+#include "vtkTransformPolyDataFilter.h"
 
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
@@ -677,7 +679,19 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderOverlay(vtkViewport *viewport)
 int vtkSlicerMarkupsWidgetRepresentation2D::RenderOpaqueGeometry(
   vtkViewport *viewport)
 {
-  int count = Superclass::RenderOpaqueGeometry(viewport);
+  //int count = Superclass::RenderOpaqueGeometry(viewport);
+  int count = 0;
+  if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility())
+    {
+    double interactionWidgetScale = 7.0 * this->ControlPointSize * this->ViewScaleFactorMmPerPixel;
+    vtkNew<vtkTransform> scaleTransform;
+    scaleTransform->Scale(interactionWidgetScale, interactionWidgetScale, interactionWidgetScale);
+    this->InteractionPipeline->RotationScaleTransform->SetTransform(scaleTransform);
+    this->InteractionPipeline->TranslationScaleTransform->SetTransform(scaleTransform);
+    this->InteractionPipeline->AxisRotationGlypher->SetScaleFactor(interactionWidgetScale);
+    this->InteractionPipeline->AxisTranslationGlypher->SetScaleFactor(interactionWidgetScale);
+    count += this->InteractionPipeline->Actor->RenderOpaqueGeometry(viewport);
+    }
   if (this->TextActor->GetVisibility())
     {
     count += this->TextActor->RenderOpaqueGeometry(viewport);
