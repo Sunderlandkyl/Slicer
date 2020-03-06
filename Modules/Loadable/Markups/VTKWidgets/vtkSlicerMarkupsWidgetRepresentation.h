@@ -212,11 +212,12 @@ protected:
           this->PositionWorld[0] = positionWorld[0];
           this->PositionWorld[1] = positionWorld[1];
           this->PositionWorld[2] = positionWorld[2];
+          this->PositionWorld[3] = 1.0;
           }
       }
       int Index;
       int ComponentType;
-      double PositionWorld[3];
+      double PositionWorld[4];
     };
 
     std::vector<HandleInfo> GetHandleInfo();

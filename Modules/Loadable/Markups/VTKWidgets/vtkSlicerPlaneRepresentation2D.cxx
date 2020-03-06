@@ -612,9 +612,9 @@ void vtkSlicerPlaneRepresentation2D::UpdateInteractionPipeline()
   planeNode->GetOriginWorld(origin);
 
   vtkNew<vtkTransform> transform;
-  transform->Concatenate(this->WorldToSliceTransform);
   transform->Translate(origin);
   transform->Concatenate(modelToWorldMatrix);
-  this->InteractionPipeline->Mapper->SetTransformCoordinate(nullptr);
   this->InteractionPipeline->ModelToWorldTransform->SetTransform(transform);
+  reinterpret_cast<MarkupsInteractionPipeline2D*>(
+    this->InteractionPipeline)->WorldToSliceTransform->SetTransform(this->WorldToSliceTransform); // TODO: Add accessor
 }

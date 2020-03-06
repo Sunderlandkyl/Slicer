@@ -137,7 +137,6 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationArcSource->GetOutputPort());
 
   this->AxisTranslationGlyphSource = vtkSmartPointer<vtkConeSource>::New();
-  this->AxisTranslationGlyphSource->SetCenter(handleRadius, 0, 0);
   this->AxisTranslationGlyphSource->SetRadius(handleRadius);
   this->AxisTranslationGlyphSource->SetHeight(2 * handleRadius);
 
@@ -385,7 +384,6 @@ vtkSlicerMarkupsWidgetRepresentation::vtkSlicerMarkupsWidgetRepresentation()
   this->AlwaysOnTop = false;
 
   this->InteractionPipeline = nullptr;
-  this->SetupInteractionPipeline();
 }
 
 //----------------------------------------------------------------------
@@ -753,6 +751,11 @@ void vtkSlicerMarkupsWidgetRepresentation::BuildLine(vtkPolyData* linePolyData, 
 void vtkSlicerMarkupsWidgetRepresentation::UpdateFromMRML(
     vtkMRMLNode* node, unsigned long event, void *vtkNotUsed(callData))
 {
+  if (!this->InteractionPipeline)
+    {
+    this->SetupInteractionPipeline();
+    }
+
   if (!event || event == vtkMRMLTransformableNode::TransformModifiedEvent)
     {
     this->MarkupsTransformModifiedTime.Modified();

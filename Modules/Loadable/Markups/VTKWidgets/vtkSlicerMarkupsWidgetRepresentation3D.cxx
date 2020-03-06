@@ -426,23 +426,23 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteractWithHandles(
   int& foundComponentType, int& foundComponentIndex, double& closestDistance2)
 {
   if (!this->InteractionPipeline || !this->InteractionPipeline->Actor->GetVisibility())
-  {
+    {
     return;
-  }
+    }
 
   double displayPosition3[3] = { 0.0, 0.0, 0.0 };
   // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
   // virtual reality, and then we expect a valid world position in the absence of display position.
   if (interactionEventData->IsDisplayPositionValid())
-  {
+    {
     const int* displayPosition = interactionEventData->GetDisplayPosition();
     displayPosition3[0] = static_cast<double>(displayPosition[0]);
     displayPosition3[1] = static_cast<double>(displayPosition[1]);
-  }
+    }
   else if (!interactionEventData->IsWorldPositionValid())
-  {
+    {
     return;
-  }
+    }
 
   vtkSlicerMarkupsWidgetRepresentation::HandleInfoList handleInfoList = this->InteractionPipeline->GetHandleInfo();
   for (vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::HandleInfo handleInfo : handleInfoList)

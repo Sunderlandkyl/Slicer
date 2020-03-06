@@ -61,6 +61,10 @@ vtkSlicerMarkupsWidget::vtkSlicerMarkupsWidget()
   this->SetKeyboardEventTranslation(WidgetStateOnWidget, vtkEvent::NoModifier, 127, 1, "Delete", WidgetEventControlPointDelete);
   this->SetKeyboardEventTranslation(WidgetStateOnWidget, vtkEvent::NoModifier, 8, 1, "BackSpace", WidgetEventControlPointDelete);
 
+  // Handle interactions
+  this->SetEventTranslationClickAndDrag(WidgetStateOnWidget, vtkCommand::LeftButtonPressEvent, vtkEvent::NoModifier,
+    WidgetStateTranslate, WidgetEventTranslateStart, WidgetEventTranslateEnd);
+
   this->SetEventTranslation(WidgetStateOnWidget, vtkMRMLInteractionEventData::LeftButtonClickEvent, vtkEvent::NoModifier, WidgetEventJumpCursor);
   this->SetEventTranslation(WidgetStateOnWidget, vtkCommand::LeftButtonDoubleClickEvent, vtkEvent::NoModifier, WidgetEventAction);
 
@@ -917,6 +921,11 @@ void vtkSlicerMarkupsWidget::TranslateWidget(double eventPos[2])
   vector[0] = worldPos[0] - ref[0];
   vector[1] = worldPos[1] - ref[1];
   vector[2] = worldPos[2] - ref[2];
+
+  if (this->GetMarkupsDisplayNode() && this->GetMarkupsDisplayNode()->GetActiveComponentType() == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+    {
+    // Lock to axis
+    }
 
   int wasModified = markupsNode->StartModify();
   for (int i = 0; i < markupsNode->GetNumberOfControlPoints(); i++)
