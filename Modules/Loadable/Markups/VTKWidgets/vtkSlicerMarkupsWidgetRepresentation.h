@@ -138,6 +138,9 @@ public:
   /// controlPointType can be Unselected, Selected, Active, Project, ProjectBack.
   virtual vtkStringArray* GetLabels(int pipeline);
 
+  ///TODO
+  virtual void GetInteractionAxis(int index, double axis[3]);
+
 protected:
   vtkSlicerMarkupsWidgetRepresentation();
   ~vtkSlicerMarkupsWidgetRepresentation() override;

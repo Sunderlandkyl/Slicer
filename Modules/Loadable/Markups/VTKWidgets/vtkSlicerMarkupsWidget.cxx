@@ -874,6 +874,7 @@ void vtkSlicerMarkupsWidget::TranslateWidget(double eventPos[2])
   double ref[3] = { 0. };
   double worldPos[3], worldOrient[9];
 
+  vtkSlicerMarkupsWidgetRepresentation* rep = vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(this->WidgetRep);
   vtkSlicerMarkupsWidgetRepresentation2D* rep2d = vtkSlicerMarkupsWidgetRepresentation2D::SafeDownCast(this->WidgetRep);
   vtkSlicerMarkupsWidgetRepresentation3D* rep3d = vtkSlicerMarkupsWidgetRepresentation3D::SafeDownCast(this->WidgetRep);
   if (rep2d)
@@ -924,7 +925,13 @@ void vtkSlicerMarkupsWidget::TranslateWidget(double eventPos[2])
 
   if (this->GetMarkupsDisplayNode() && this->GetMarkupsDisplayNode()->GetActiveComponentType() == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
     {
-    // Lock to axis
+    int index = this->GetMarkupsDisplayNode()->GetActiveComponentIndex();
+    double axis[3] = { 0 };
+    rep->GetInteractionAxis(index, axis);
+    double distance = vtkMath::Dot(vector, axis);
+    vector[0] = distance * axis[0];
+    vector[1] = distance * axis[1];
+    vector[2] = distance * axis[2];
     }
 
   int wasModified = markupsNode->StartModify();

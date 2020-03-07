@@ -1023,3 +1023,18 @@ vtkTypeBool vtkSlicerMarkupsWidgetRepresentation::HasTranslucentPolygonalGeometr
     }
   return false;
 }
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::GetInteractionAxis(int index, double axis[3])
+{
+  if (!axis || index < 0 || index > 2)
+    {
+    // TODO add to pipeline?
+    return;
+    }
+
+  double modelAxis[3] = { 0 };
+  modelAxis[index] = 1;
+  double origin[3] = { 0,0,0 };
+  this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformVectorAtPoint(origin, modelAxis, axis);
+}
