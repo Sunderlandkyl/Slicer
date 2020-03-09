@@ -57,12 +57,16 @@ public:
   {
     WidgetStateDefine = WidgetStateUser, // click in empty area will place a new point
     WidgetStateTranslateControlPoint, // translating the active point by mouse move
+    WidgetStateOnTranslationHandle,
+    WidgetStateOnRotationHandle,
   };
 
   /// Widget events
   enum
   {
     WidgetEventControlPointPlace = WidgetEventUser,
+    WidgetEventClickAndDragStart,
+    WidgetEventClickAndDragEnd,
     WidgetEventStopPlace,
     WidgetEventControlPointMoveStart,
     WidgetEventControlPointMoveEnd,
@@ -112,6 +116,9 @@ public:
   int GetActiveControlPoint();
 
   vtkSlicerMarkupsWidgetRepresentation* GetMarkupsRepresentation();
+
+  int GetActiveComponentType();
+  int GetActiveComponentIndex();
 
 protected:
   vtkSlicerMarkupsWidget();

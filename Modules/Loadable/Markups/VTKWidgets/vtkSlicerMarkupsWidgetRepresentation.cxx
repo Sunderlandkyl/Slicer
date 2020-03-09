@@ -150,9 +150,11 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
 
   this->RotationScaleTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->RotationScaleTransform->SetInputData(this->RotationHandlePoints);
+  this->RotationScaleTransform->SetTransform(vtkNew<vtkTransform>());
 
   this->TranslationScaleTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->TranslationScaleTransform->SetInputData(this->TranslationHandlePoints);
+  this->TranslationScaleTransform->SetTransform(vtkNew<vtkTransform>());
 
   this->AxisRotationGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
   this->AxisRotationGlypher->SetInputConnection(this->RotationScaleTransform->GetOutputPort());
@@ -180,6 +182,7 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
 
   this->ModelToWorldTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->ModelToWorldTransform->SetInputConnection(this->Append->GetOutputPort());
+  this->ModelToWorldTransform->SetTransform(vtkNew<vtkTransform>());
 
   vtkNew<vtkCoordinate> coordinate;
   coordinate->SetCoordinateSystemToWorld();
@@ -610,7 +613,6 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateCenter()
   centerWorldPos[0] *= inv_N;
   centerWorldPos[1] *= inv_N;
   centerWorldPos[2] *= inv_N;
-
   markupsNode->SetCenterPositionFromPointer(centerWorldPos);
 }
 
@@ -679,6 +681,7 @@ bool vtkSlicerMarkupsWidgetRepresentation::GetTransformationReferencePoint(doubl
     {
     return false;
     }
+
   this->UpdateCenter();
   markupsNode->GetCenterPosition(referencePointWorld);
   return true;
@@ -794,6 +797,13 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateInteractionPipeline()
 
   this->InteractionPipeline->UpdateHandleColors();
   this->InteractionPipeline->Actor->SetVisibility(true);
+
+  double origin[3] = { 0 };
+  markupsNode->GetCenterPositionWorld(origin);
+
+  vtkNew<vtkTransform> transform;
+  transform->Translate(origin);
+  this->InteractionPipeline->ModelToWorldTransform->SetTransform(transform);
 }
 
 //----------------------------------------------------------------------
@@ -1037,4 +1047,31 @@ void vtkSlicerMarkupsWidgetRepresentation::GetInteractionAxis(int index, double 
   modelAxis[index] = 1;
   double origin[3] = { 0,0,0 };
   this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformVectorAtPoint(origin, modelAxis, axis);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::GetInteractionOrigin(double origin[3])
+{
+  if (!origin)
+  {
+    // TODO add to pipeline?
+    return;
+  }
+
+  double tempOrigin[3] = { 0,0,0 };
+  this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformPoint(tempOrigin, origin);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::GetInteractionModelToWorldMatrix(vtkTransform* matrix)
+{
+  if (!matrix)
+    {
+    return;
+    }
+
+  if (this->InteractionPipeline->ModelToWorldTransform->GetTransform())
+    {
+    matrix->DeepCopy(this->InteractionPipeline->ModelToWorldTransform->GetTransform());
+    }
 }

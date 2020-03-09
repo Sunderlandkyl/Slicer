@@ -140,6 +140,10 @@ public:
 
   ///TODO
   virtual void GetInteractionAxis(int index, double axis[3]);
+  /// TODO
+  virtual void GetInteractionOrigin(double origin[3]);
+  // TODO
+  virtual void GetInteractionModelToWorldMatrix(vtkTransform* matrix);
 
 protected:
   vtkSlicerMarkupsWidgetRepresentation();
