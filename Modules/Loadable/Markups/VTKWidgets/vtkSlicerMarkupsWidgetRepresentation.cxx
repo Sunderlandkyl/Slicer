@@ -441,8 +441,8 @@ double vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetOpac
       }
     else if (angle > 90 - startFade)
       {
-      double difference = angle - (90-startFade);
-      opacity = 1.0 - angle / endFade;
+      double difference = angle - (90 - startFade);
+      opacity = 1.0 - (difference / endFade);
       }
     }
   else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
@@ -455,7 +455,7 @@ double vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetOpac
     else if (angle < startFade)
       {
       double difference = angle - endFade;
-      opacity = angle / endFade;
+      opacity = (difference / endFade);
       }
     }
   return opacity;
@@ -486,7 +486,9 @@ vtkSlicerMarkupsWidgetRepresentation::HandleInfoList vtkSlicerMarkupsWidgetRepre
     this->RotationHandlePoints->GetPoint(i, handlePosition);
     this->RotationScaleTransform->GetTransform()->TransformPoint(handlePosition, handlePosition);
     this->ModelToWorldTransform->GetTransform()->TransformPoint(handlePosition, handlePosition);
-    HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, handlePosition);
+    double color[4] = { 0 };
+    this->GetHandleColor(vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, i, color);
+    HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, handlePosition, color);
     handleInfoList.push_back(info);
     }
 
@@ -496,7 +498,9 @@ vtkSlicerMarkupsWidgetRepresentation::HandleInfoList vtkSlicerMarkupsWidgetRepre
     this->TranslationHandlePoints->GetPoint(i, handlePosition);
     this->TranslationScaleTransform->GetTransform()->TransformPoint(handlePosition, handlePosition);
     this->ModelToWorldTransform->GetTransform()->TransformPoint(handlePosition, handlePosition);
-    HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle, handlePosition);
+    double color[4] = { 0 };
+    this->GetHandleColor(vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle, i, color);
+    HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle, handlePosition, color);
     handleInfoList.push_back(info);
     }
   return handleInfoList;

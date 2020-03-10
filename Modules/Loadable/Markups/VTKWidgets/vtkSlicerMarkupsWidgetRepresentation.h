@@ -215,7 +215,7 @@ protected:
 
     struct HandleInfo
     {
-      HandleInfo(int index, int componentType, double positionWorld[3])
+      HandleInfo(int index, int componentType, double positionWorld[3], double color[4])
         : Index(index)
         , ComponentType(componentType)
       {
@@ -226,11 +226,16 @@ protected:
             this->PositionWorld[i] = positionWorld[i];
             }
           this->PositionWorld[3] = 1.0;
+          for (int i = 0; i < 4; ++i)
+            {
+            this->Color[i] = color[i];
+            }
           }
       }
       int Index;
       int ComponentType;
       double PositionWorld[4];
+      double Color[4];
     };
 
     std::vector<HandleInfo> GetHandleInfo();
