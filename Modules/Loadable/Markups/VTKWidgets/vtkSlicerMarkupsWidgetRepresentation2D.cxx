@@ -725,6 +725,7 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderOpaqueGeometry(
   int count = 0;
   if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility())
     {
+    this->InteractionPipeline->UpdateHandleColors();
     double interactionWidgetScale = 7.0 * this->ControlPointSize * this->ViewScaleFactorMmPerPixel;
     vtkNew<vtkTransform> scaleTransform;
     scaleTransform->Scale(interactionWidgetScale, interactionWidgetScale, interactionWidgetScale);
@@ -1233,6 +1234,7 @@ double vtkSlicerMarkupsWidgetRepresentation2D::GetMaximumControlPointPickingDist
 void vtkSlicerMarkupsWidgetRepresentation2D::SetupInteractionPipeline()
 {
   this->InteractionPipeline = new MarkupsInteractionPipeline2D(this);
+  this->InteractionPipeline->InitializePipeline();
 }
 
 //----------------------------------------------------------------------
@@ -1243,4 +1245,25 @@ vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::MarkupsInt
   this->WorldToSliceTransform->SetInputConnection(this->ModelToWorldTransform->GetOutputPort());
   this->Mapper->SetInputConnection(this->WorldToSliceTransform->GetOutputPort());
   this->Mapper->SetTransformCoordinate(nullptr);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::GetViewPlaneNormal(double viewPlaneNormal[3])
+{
+  if (!viewPlaneNormal)
+    {
+    return;
+    }
+
+  if (!this->WorldToSliceTransform->GetTransform())
+    {
+    return;
+    }
+
+  double tempNormal[4] = { 0, 0, 1, 0 };
+  vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->Representation->GetViewNode());
+  sliceNode->GetSliceToRAS()->MultiplyPoint(tempNormal, tempNormal);
+  viewPlaneNormal[0] = tempNormal[0];
+  viewPlaneNormal[1] = tempNormal[1];
+  viewPlaneNormal[2] = tempNormal[2];
 }

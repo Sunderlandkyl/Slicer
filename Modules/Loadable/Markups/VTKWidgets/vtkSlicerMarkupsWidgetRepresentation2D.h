@@ -172,6 +172,8 @@ protected:
     MarkupsInteractionPipeline2D(vtkSlicerMarkupsWidgetRepresentation* representation);
     virtual ~MarkupsInteractionPipeline2D() {};
 
+    virtual void GetViewPlaneNormal(double viewPlaneNormal[3]) override;
+
     vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransform;
   };
 

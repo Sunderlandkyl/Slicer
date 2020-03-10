@@ -51,6 +51,7 @@ class vtkActor2D;
 class vtkAppendPolyData;
 class vtkArcSource;
 class vtkArrayCalculator;
+class vtkArrowSource;
 class vtkConeSource;
 class vtkGlyph3D;
 class vtkMarkupsGlyphSource2D;
@@ -185,7 +186,8 @@ protected:
     vtkSmartPointer<vtkArcSource>               AxisRotationArcSource;
     vtkSmartPointer<vtkAppendPolyData>          AxisRotationGlyphSource;
 
-    vtkSmartPointer<vtkConeSource>              AxisTranslationGlyphSource;
+    vtkSmartPointer<vtkArrowSource>             AxisTranslationGlyphSource;
+    vtkSmartPointer<vtkTransformPolyDataFilter> AxisTranslationGlyphTransformer;
 
     vtkSmartPointer<vtkPolyData>                RotationHandlePoints;
     vtkSmartPointer<vtkPolyData>                TranslationHandlePoints;
@@ -203,10 +205,13 @@ protected:
     vtkSmartPointer<vtkActor2D>                 Actor;
     vtkSmartPointer<vtkProperty2D>              Property;
 
+    virtual void InitializePipeline();
     virtual void CreateRotationHandles();
     virtual void CreateTranslationHandles();
-
     virtual void UpdateHandleColors();
+    virtual void GetHandleColor(int type, int index, double color[4]);
+    virtual double GetOpacity(int type, int index);
+    virtual void GetViewPlaneNormal(double normal[3]);
 
     struct HandleInfo
     {
@@ -216,9 +221,10 @@ protected:
       {
         if (positionWorld)
           {
-          this->PositionWorld[0] = positionWorld[0];
-          this->PositionWorld[1] = positionWorld[1];
-          this->PositionWorld[2] = positionWorld[2];
+          for (int i = 0; i < 3; ++i)
+            {
+            this->PositionWorld[i] = positionWorld[i];
+            }
           this->PositionWorld[3] = 1.0;
           }
       }
