@@ -597,8 +597,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteractWithHandles(
   vtkSlicerMarkupsWidgetRepresentation::HandleInfoList handleInfoList = this->InteractionPipeline->GetHandleInfo();
   for (vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::HandleInfo handleInfo : handleInfoList)
     {
-    double epsilon = 0.001;
-    if (handleInfo.Color[3] < epsilon)
+    if (!handleInfo.IsVisible())
       {
       continue;
       }

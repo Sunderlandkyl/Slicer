@@ -236,6 +236,11 @@ protected:
       int ComponentType;
       double PositionWorld[4];
       double Color[4];
+      bool IsVisible()
+        {
+        double epsilon = 0.001;
+        return this->Color[3] > epsilon;
+        }
     };
 
     std::vector<HandleInfo> GetHandleInfo();
