@@ -145,6 +145,12 @@ public:
   virtual void GetInteractionOrigin(double origin[3]);
   // TODO
   virtual void GetInteractionModelToWorldMatrix(vtkTransform* matrix);
+  ///TODO
+  virtual void GetInteractionHandlePositionWorld(int type, int index, double position[3]);
+  ///TODO
+  virtual void GetInteractionHandleVector(int type, int index, double axis[3]);
+  ///TODO
+  virtual void GetInteractionHandleVectorWorld(int type, int index, double axis[3]);
 
 protected:
   vtkSlicerMarkupsWidgetRepresentation();
@@ -177,10 +183,10 @@ protected:
   class MarkupsInteractionPipeline
   {
   public:
-    MarkupsInteractionPipeline(vtkSlicerMarkupsWidgetRepresentation* representation);
+    MarkupsInteractionPipeline(vtkMRMLAbstractWidgetRepresentation* representation);
     virtual ~MarkupsInteractionPipeline();
 
-    vtkWeakPointer<vtkSlicerMarkupsWidgetRepresentation> Representation;
+    vtkWeakPointer<vtkMRMLAbstractWidgetRepresentation> Representation;
 
     vtkSmartPointer<vtkSphereSource>            AxisRotationHandleSource;
     vtkSmartPointer<vtkArcSource>               AxisRotationArcSource;
@@ -209,13 +215,22 @@ protected:
     virtual void CreateRotationHandles();
     virtual void CreateTranslationHandles();
     virtual void UpdateHandleColors();
+
+    virtual void SetWidgetScale(double scale);
     virtual void GetHandleColor(int type, int index, double color[4]);
     virtual double GetOpacity(int type, int index);
+
+    //TODO
+    virtual void GetInteractionAxis(int index, double axis[3]);
+    /// TODO
+    virtual void GetInteractionOrigin(double origin[3]);
+    // TODO
+    virtual void GetInteractionModelToWorldMatrix(vtkTransform* matrix);
     virtual void GetViewPlaneNormal(double normal[3]);
 
     struct HandleInfo
     {
-      HandleInfo(int index, int componentType, double positionWorld[3], double color[4])
+      HandleInfo(int index, int componentType, double positionWorld[3], double positionLocal[3], double color[4])
         : Index(index)
         , ComponentType(componentType)
       {
@@ -226,6 +241,11 @@ protected:
             this->PositionWorld[i] = positionWorld[i];
             }
           this->PositionWorld[3] = 1.0;
+          for (int i = 0; i < 3; ++i)
+            {
+            this->PositionLocal[i] = positionLocal[i];
+            }
+          this->PositionLocal[3] = 1.0;
           for (int i = 0; i < 4; ++i)
             {
             this->Color[i] = color[i];
@@ -234,6 +254,7 @@ protected:
       }
       int Index;
       int ComponentType;
+      double PositionLocal[4];
       double PositionWorld[4];
       double Color[4];
       bool IsVisible()
@@ -243,7 +264,7 @@ protected:
         }
     };
 
-    std::vector<HandleInfo> GetHandleInfo();
+    std::vector<HandleInfo> GetHandleInfoList();
   };
   typedef std::vector<MarkupsInteractionPipeline::HandleInfo> HandleInfoList;
 

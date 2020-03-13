@@ -594,7 +594,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteractWithHandles(
   vtkNew<vtkMatrix4x4> rasToxyMatrix;
   vtkMatrix4x4::Invert(sliceNode->GetXYToRAS(), rasToxyMatrix);
 
-  vtkSlicerMarkupsWidgetRepresentation::HandleInfoList handleInfoList = this->InteractionPipeline->GetHandleInfo();
+  vtkSlicerMarkupsWidgetRepresentation::HandleInfoList handleInfoList = this->InteractionPipeline->GetHandleInfoList();
   for (vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::HandleInfo handleInfo : handleInfoList)
     {
     if (!handleInfo.IsVisible())
@@ -732,12 +732,7 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderOpaqueGeometry(
     {
     this->InteractionPipeline->UpdateHandleColors();
     double interactionWidgetScale = 7.0 * this->ControlPointSize * this->ViewScaleFactorMmPerPixel;
-    vtkNew<vtkTransform> scaleTransform;
-    scaleTransform->Scale(interactionWidgetScale, interactionWidgetScale, interactionWidgetScale);
-    this->InteractionPipeline->RotationScaleTransform->SetTransform(scaleTransform);
-    this->InteractionPipeline->TranslationScaleTransform->SetTransform(scaleTransform);
-    this->InteractionPipeline->AxisRotationGlypher->SetScaleFactor(interactionWidgetScale);
-    this->InteractionPipeline->AxisTranslationGlypher->SetScaleFactor(interactionWidgetScale);
+    this->InteractionPipeline->SetWidgetScale(interactionWidgetScale);
     count += this->InteractionPipeline->Actor->RenderOpaqueGeometry(viewport);
     }
   if (this->TextActor->GetVisibility())
@@ -1247,6 +1242,7 @@ vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::MarkupsInt
   : MarkupsInteractionPipeline(representation)
 {
   this->WorldToSliceTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->WorldToSliceTransform->SetTransform(vtkNew<vtkTransform>());
   this->WorldToSliceTransform->SetInputConnection(this->ModelToWorldTransform->GetOutputPort());
   this->Mapper->SetInputConnection(this->WorldToSliceTransform->GetOutputPort());
   this->Mapper->SetTransformCoordinate(nullptr);
@@ -1266,8 +1262,11 @@ void vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::GetVi
     }
 
   double tempNormal[4] = { 0, 0, 1, 0 };
-  vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->Representation->GetViewNode());
-  sliceNode->GetSliceToRAS()->MultiplyPoint(tempNormal, tempNormal);
+  if (this->Representation)
+    {
+    vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->Representation->GetViewNode());
+    sliceNode->GetSliceToRAS()->MultiplyPoint(tempNormal, tempNormal);
+    }
   viewPlaneNormal[0] = tempNormal[0];
   viewPlaneNormal[1] = tempNormal[1];
   viewPlaneNormal[2] = tempNormal[2];

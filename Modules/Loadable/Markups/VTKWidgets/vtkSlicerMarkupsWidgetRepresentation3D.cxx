@@ -444,7 +444,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteractWithHandles(
     return;
     }
 
-  vtkSlicerMarkupsWidgetRepresentation::HandleInfoList handleInfoList = this->InteractionPipeline->GetHandleInfo();
+  vtkSlicerMarkupsWidgetRepresentation::HandleInfoList handleInfoList = this->InteractionPipeline->GetHandleInfoList();
   for (vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::HandleInfo handleInfo : handleInfoList)
     {
     if (!handleInfo.IsVisible())
