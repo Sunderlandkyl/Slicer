@@ -19,8 +19,13 @@ set(SlicerExecutionModel_EXTRA_EXECUTABLE_TARGET_LIBRARIES
   CACHE INTERNAL "SlicerExecutionModel extra executable target libraries" FORCE
   )
 
+if (NOT Slicer_USE_SYSTEM_vtkAddon)
+  list(APPEND dirs
+    vtkAddon
+    )
+endif()
+
 list(APPEND dirs
-  vtkAddon
   vtkTeem
   vtkITK
   vtkSegmentationCore
