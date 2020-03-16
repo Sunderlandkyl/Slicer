@@ -1288,4 +1288,10 @@ void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandlePositionWorld(int
     this->InteractionPipeline->RotationScaleTransform->GetTransform()->TransformPoint(position, position);
     this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformPoint(position, position);
     }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+    {
+    this->InteractionPipeline->TranslationHandlePoints->GetPoint(index, position);
+    this->InteractionPipeline->TranslationScaleTransform->GetTransform()->TransformPoint(position, position);
+    this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformPoint(position, position);
+    }
 }
