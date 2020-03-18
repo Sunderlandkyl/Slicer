@@ -591,6 +591,7 @@ void vtkSlicerPlaneRepresentation2D::BuildPlane()
 void vtkSlicerPlaneRepresentation2D::UpdateInteractionPipeline()
 {
   Superclass::UpdateInteractionPipeline();
+  this->InteractionPipeline->Actor->SetVisibility(true);
   vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
   if (!planeNode)
     {

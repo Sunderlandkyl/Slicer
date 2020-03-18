@@ -188,6 +188,7 @@ void vtkSlicerPlaneRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
 void vtkSlicerPlaneRepresentation3D::UpdateInteractionPipeline()
 {
   Superclass::UpdateInteractionPipeline();
+  this->InteractionPipeline->Actor->SetVisibility(true);
   vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
   if (!planeNode)
     {

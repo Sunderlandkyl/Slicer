@@ -551,7 +551,7 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateInteractionPipeline()
     {
     selected = markupsNode->GetSelected();
     }
-  this->InteractionPipeline->Actor->SetVisibility(true);
+  this->InteractionPipeline->Actor->SetVisibility(false);
 
   double origin[3] = { 0 };
   markupsNode->GetCenterPositionWorld(origin);
@@ -858,7 +858,7 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   this->AxisRotationGlyphSource = vtkSmartPointer <vtkAppendPolyData>::New();
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationHandleSource->GetOutputPort());
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationArcSource->GetOutputPort());
-  this->AxisRotationGlyphSource->AddInputConnection(line->GetOutputPort());
+  //this->AxisRotationGlyphSource->AddInputConnection(line->GetOutputPort());
 
   this->AxisTranslationGlyphSource = vtkSmartPointer<vtkArrowSource>::New();
   this->AxisTranslationGlyphSource->SetTipRadius(handleRadius);
