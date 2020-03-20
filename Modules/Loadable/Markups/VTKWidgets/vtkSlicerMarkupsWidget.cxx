@@ -38,6 +38,7 @@
 #include <vtkRenderWindow.h>
 #include <vtkRenderer.h>
 #include <vtkTransform.h>
+#include <vtkViewport.h>
 
 //----------------------------------------------------------------------
 vtkSlicerMarkupsWidget::vtkSlicerMarkupsWidget()
@@ -949,7 +950,6 @@ void vtkSlicerMarkupsWidget::TranslateWidget(double eventPos[2])
       }
     }
 
-
   vtkNew<vtkTransform> worldToScreenTransform;
   if (rep3d)
     {
@@ -986,17 +986,17 @@ void vtkSlicerMarkupsWidget::TranslateWidget(double eventPos[2])
       cameraToWorldMatrix->SetElement(i, 1, cameraViewRight[i]);
       cameraToWorldMatrix->SetElement(i, 2, cameraDOP[i]);
       }
-    renderer->GetViewport();
+
     vtkMatrix4x4* compositeProjectionTransformMatrix =
-      camera->GetCompositeProjectionTransformMatrix(renderer->GetPixelAspect()[0] / renderer->GetPixelAspect()[1],
+      camera->GetCompositeProjectionTransformMatrix(renderer->GetAspect()[0] / renderer->GetAspect()[1],
       camera->GetClippingRange()[0], camera->GetClippingRange()[1]);
     vtkNew<vtkMatrix4x4> worldToScreenMatrix;
     worldToScreenMatrix->DeepCopy(compositeProjectionTransformMatrix);
     //vtkMatrix4x4::Invert(cameraToWorldMatrix, worldToScreenMatrix);
     worldToScreenTransform->SetMatrix(worldToScreenMatrix);
     //worldToScreenTransform->Concatenate(compositeProjectionTransformMatrix);
-    worldToScreenTransform->PostMultiply();
-    worldToScreenTransform->Translate(renderer->GetAspect()[0] / 2, renderer->GetAspect()[1] / 2, 0);
+    worldToScreenTransform->PreMultiply();
+    worldToScreenTransform->Translate(renderer->GetSize()[0]/2, renderer->GetSize()[1]/2, 0);
     }
   else if (rep2d)
     {
@@ -1244,163 +1244,123 @@ void vtkSlicerMarkupsWidget::RotateWidget(double eventPos[2])
     worldPos[i] -= center[i];
     }
 
-  vtkNew<vtkTransform> worldToScreenTransform;
-  if (rep3d)
-    {
-    vtkRenderer* renderer = rep3d->GetRenderer();
-    vtkCamera* camera = renderer->GetActiveCamera();
-
-    // Camera parameters
-    // Camera position
-    double cameraPos[4] = { 0 };
-    camera->GetPosition(cameraPos);
-    cameraPos[3] = 1.0;
-    // Focal point position
-    double cameraFP[4] = { 0 };
-    camera->GetFocalPoint(cameraFP);
-    cameraFP[3] = 1.0;
-    // Direction of projection
-    double cameraDOP[3] = { 0 };
-    for (int i = 0; i < 3; i++)
-      {
-      cameraDOP[i] = cameraFP[i] - cameraPos[i];
-      }
-    vtkMath::Normalize(cameraDOP);
-    // Camera view up
-    double cameraViewUp[3] = { 0 };
-    camera->GetViewUp(cameraViewUp);
-    vtkMath::Normalize(cameraViewUp);
-
-    renderer->SetWorldPoint(cameraFP[0], cameraFP[1], cameraFP[2], cameraFP[3]);
-    renderer->WorldToDisplay();
-    double* displayCoords = renderer->GetDisplayPoint();
-    double selectionZ = displayCoords[2];
-
-    vtkNew<vtkMatrix4x4> cameraToWorldMatrix;
-    double cameraViewRight[3] = { 1, 0, 0 };
-    vtkMath::Cross(cameraDOP, cameraViewUp, cameraViewRight);
-    for (int i = 0; i < 3; i++)
-      {
-      cameraToWorldMatrix->SetElement(i, 3, cameraPos[i]);
-      cameraToWorldMatrix->SetElement(i, 0, cameraViewUp[i]);
-      cameraToWorldMatrix->SetElement(i, 1, cameraViewRight[i]);
-      cameraToWorldMatrix->SetElement(i, 2, cameraDOP[i]);
-      }
-    renderer->GetViewport();
-    vtkMatrix4x4* compositeProjectionTransformMatrix =
-      camera->GetCompositeProjectionTransformMatrix(renderer->GetSize()[0] / renderer->GetSize()[1],
-      camera->GetClippingRange()[0], camera->GetClippingRange()[1]);
-    vtkNew<vtkMatrix4x4> worldToScreenMatrix;
-    worldToScreenMatrix->DeepCopy(compositeProjectionTransformMatrix);
-    vtkMatrix4x4::Invert(cameraToWorldMatrix, worldToScreenMatrix);
-    worldToScreenTransform->Concatenate(worldToScreenMatrix);
-    //worldToScreenTransform->Concatenate(compositeProjectionTransformMatrix);
-    //worldToScreenTransform->Translate(-renderer->GetSize()[0] / 2, renderer->GetSize()[1] / 2, 0.0);
-    //worldToScreenTransform->SetMatrix(worldToScreenMatrix);
-    }
-  else if (rep2d)
-    {
-    vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(rep2d->GetViewNode());
-    vtkMatrix4x4* xyToRAS = sliceNode->GetXYToRAS();
-    vtkNew<vtkMatrix4x4> worldToScreenMatrix;
-    vtkMatrix4x4::Invert(xyToRAS, worldToScreenMatrix);
-    worldToScreenTransform->SetMatrix(worldToScreenMatrix);
-    }
-
   double angle = vtkMath::DegreesFromRadians(
     vtkMath::AngleBetweenVectors(lastWorldPos, worldPos));
   double rotationNormal[3] = { 0 };
   vtkMath::Cross(lastWorldPos, worldPos, rotationNormal);
   double rotationAxis[3] = { 0, 1, 0 };
   if (this->GetActiveComponentType() == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
-  {
+    {
     int index = this->GetMarkupsDisplayNode()->GetActiveComponentIndex();
     rep->GetInteractionAxis(index, rotationAxis); // Axis of rotation
     double origin[3] = { 0, 0, 0 };
     rep->GetInteractionOrigin(origin);
 
-    double originDisplay[3] = { 0 };
-    worldToScreenTransform->TransformPoint(origin, originDisplay);
-
-    double rotationAxisDisplay[3] = { 0 };
-    worldToScreenTransform->TransformVector(rotationAxis, rotationAxisDisplay);
-    vtkMath::Normalize(rotationAxisDisplay);
-
-    vtkNew<vtkPlane> axisPlane;
-    axisPlane->SetNormal(rotationAxisDisplay);
-    axisPlane->SetOrigin(originDisplay);
+    vtkNew<vtkPlane> axisPlaneWorld;
+    axisPlaneWorld->SetNormal(rotationAxis);
+    axisPlaneWorld->SetOrigin(origin);
 
     double rotationHandlePositionWorld[3] = { 0 };
     rep->GetInteractionHandlePositionWorld(vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, index, rotationHandlePositionWorld);
 
-    double rotationHandlePositionDisplay[3] = { 0 };
-    worldToScreenTransform->TransformPoint(rotationHandlePositionWorld, rotationHandlePositionDisplay);
-    double rotationHandlePoint0[3] = { rotationHandlePositionDisplay[0], rotationHandlePositionDisplay[1], -1000 };
-    double rotationHandlePoint1[3] = { rotationHandlePositionDisplay[0], rotationHandlePositionDisplay[1], 1000};
-    double t = 0;
-    if (!axisPlane->IntersectWithLine(rotationHandlePoint0, rotationHandlePoint1, t, rotationHandlePositionDisplay))
+    double destinationPositionWorld[3] = { 0,0,0 };
+    if (rep3d)
       {
-      // No intersection
-      }
+      vtkRenderer* renderer = rep3d->GetRenderer();
+      vtkCamera* camera = renderer->GetActiveCamera();
 
-    double destinationPoint0[3] = { displayPos[0], displayPos[1], -1000 };
-    double destinationPoint1[3] = { displayPos[0], displayPos[1], 1000};
-    double destinationPointDisplay[3] = { 0 };
-    if (!axisPlane->IntersectWithLine(destinationPoint0, destinationPoint1, t, destinationPointDisplay))
+      // Focal point position
+      double cameraFP[4] = { 0 };
+      camera->GetFocalPoint(cameraFP);
+
+      double cameraPos[3] = { 0 };
+      camera->GetPosition(cameraPos);
+
+      renderer->SetWorldPoint(cameraFP[0], cameraFP[1], cameraFP[2], cameraFP[3]);
+      renderer->WorldToDisplay();
+      double* displayCoords = renderer->GetDisplayPoint();
+      double selectionZ = displayCoords[2];
+
+      renderer->SetDisplayPoint(displayPos[0], displayPos[1], selectionZ);
+      renderer->DisplayToWorld();
+      double* worldCoords = renderer->GetWorldPoint();
+      if (worldCoords[3] == 0.0)
+        {
+        vtkWarningMacro("Bad homogeneous coordinates");
+        return;
+        }
+      double pickPosition[3] = { 0 };
+      for (int i = 0; i < 3; i++)
+        {
+        pickPosition[i] = worldCoords[i] / worldCoords[3];
+        }
+
+      double vectorPoint0[3] = { 0 };
+      double projectionVector[3] = { 0 };
+
+      if (camera->GetParallelProjection())
+        {
+        camera->GetDirectionOfProjection(projectionVector);
+        for (int i = 0; i < 3; i++)
+          {
+          vectorPoint0[i] = pickPosition[i];
+          }
+        }
+      else
+        {
+        // Camera position
+        double cameraPosition[4] = { 0 };
+        camera->GetPosition(cameraPosition);
+
+        //  Compute the ray endpoints.  The ray is along the line running from
+        //  the camera position to the selection point, starting where this line
+        //  intersects the front clipping plane, and terminating where this
+        //  line intersects the back clipping plane.
+        for (int i = 0; i < 3; i++)
+          {
+          projectionVector[i] = pickPosition[i] - cameraPosition[i];
+          vectorPoint0[i] = cameraPosition[i];
+          }
+        }
+
+      double vectorPoint1[3] = { 0 };
+      vtkMath::Add(vectorPoint0, projectionVector, vectorPoint1);
+
+      double intersection[3] = { 0 };
+      double t; // not used
+      axisPlaneWorld->IntersectWithLine(vectorPoint0, vectorPoint1, t, intersection);
+
+      double rotationHandleVector[3] = { 0 };
+      rep->GetInteractionHandleVectorWorld(vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, index, rotationHandleVector);
+      double destinationVector[3] = { 0 };
+      vtkMath::Subtract(intersection, origin, destinationVector);
+
+      angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(rotationHandleVector, destinationVector));
+      }
+    else if (rep2d)
       {
-      // No intersection
+      vtkNew<vtkTransform> displayToWorldTransform;
+      vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(rep2d->GetViewNode());
+      vtkMatrix4x4* xyToRASMatrix = sliceNode->GetXYToRAS();
+      displayToWorldTransform->SetMatrix(xyToRASMatrix);
+
+      double vectorPoint0[3] = { displayPos[0], displayPos[1], 0.0 };
+      displayToWorldTransform->TransformPoint(vectorPoint0, vectorPoint0);
+
+      double vectorPoint1[3] = { displayPos[0], displayPos[1], 1.0 };
+      displayToWorldTransform->TransformPoint(vectorPoint1, vectorPoint1);
+
+      double intersection[3] = { 0 };
+      double t; // not used
+      axisPlaneWorld->IntersectWithLine(vectorPoint0, vectorPoint1, t, intersection);
+
+      double rotationHandleVector[3] = { 0 };
+      rep->GetInteractionHandleVectorWorld(vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, index, rotationHandleVector);
+      double destinationVector[3] = { 0 };
+      vtkMath::Subtract(intersection, origin, destinationVector);
+
+      angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(rotationHandleVector, destinationVector));
       }
-
-    double rotationHandleVectorDisplay[3] = { 0 };
-    vtkMath::Subtract(rotationHandlePositionDisplay, originDisplay, rotationHandleVectorDisplay);
-    vtkMath::Normalize(rotationHandleVectorDisplay);
-
-    double destinationVectorDisplay[3] = { 0 };
-    vtkMath::Subtract(destinationPointDisplay, originDisplay, destinationVectorDisplay);
-    vtkMath::Normalize(destinationVectorDisplay);
-
-    angle = -vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(rotationHandleVectorDisplay, destinationVectorDisplay));
-    double rotationNormalDisplay[3] = { 0 };
-    vtkMath::Cross(rotationHandleVectorDisplay, destinationVectorDisplay, rotationNormalDisplay);
-
-    vtkNew<vtkTransform> screenToWorldTransform;
-    screenToWorldTransform->DeepCopy(worldToScreenTransform);
-    screenToWorldTransform->Inverse();
-    screenToWorldTransform->TransformVector(rotationNormalDisplay, rotationNormal);
-    //if (vtkMath::Dot(rotationNormalDisplay, rotationAxisDisplay) < 0)
-    //  {
-    //  angle *= -1;
-    //  }
-
-    //vtkNew<vtkTransform> testTransform;
-    //testTransform->RotateWXYZ(angle, rotationAxisDisplay);
-    //double testVector[3] = { 0 };
-    //testTransform->TransformVector(rotationHandleVectorDisplay, testVector);
-    //vtkMath::Normalize(testVector);
-    //if (vtkMath::Dot(destinationVectorDisplay, testVector) > 1.0 - 0.1)
-    //  {
-    //  angle *= -1;
-    //  }
-    //else
-    //  {
-    //  vtkErrorMacro("NoFlip");
-
-    //  }
-    //vtkErrorMacro("DOT: " << vtkMath::Dot(destinationVectorDisplay, testVector));
-    //vtkErrorMacro("R display: " << rotationHandleVectorDisplay[0] << "\t" << rotationHandleVectorDisplay[1] << "\t" << rotationHandleVectorDisplay[2]);
-    //vtkErrorMacro("D display: " << destinationVectorDisplay[0] << "\t" << destinationVectorDisplay[1] << "\t" << destinationVectorDisplay[2]);
-    //vtkErrorMacro("Axis:      " << rotationAxis[0] << "\t" << rotationAxis[1] << "\t" << rotationAxis[2]);
-    //vtkErrorMacro("T display:   " << testVector[0] << "\t" << testVector[1] << "\t" << testVector[2]);
-    //vtkErrorMacro("Test deg:  " << vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(testVector, destinationVectorDisplay)));
-    //vtkErrorMacro("Angle:     " << angle);
-    //if (rep2d != nullptr)
-    //  {
-    //  angle *= -1;
-    //  }
-    //else if (rep3d)
-    //{
-
-    //}
     }
   else
     {
@@ -1409,7 +1369,6 @@ void vtkSlicerMarkupsWidget::RotateWidget(double eventPos[2])
     rotationAxis[2] = rotationNormal[2];
     }
 
-  //vtkErrorMacro(<< vtkMath::Dot(rotationNormal, rotationAxis));
   if (vtkMath::Dot(rotationNormal, rotationAxis) < 0)
     {
     angle *= -1;
@@ -1419,23 +1378,6 @@ void vtkSlicerMarkupsWidget::RotateWidget(double eventPos[2])
   rotateTransform->Translate(center);
   rotateTransform->RotateWXYZ(angle, rotationAxis);
   rotateTransform->Translate(-1 * center[0], -1 * center[1], -1 * center[2]);
-
-  //////////////////// TEMP
-  //double projectedWorldPos[3] = { 0 };
-  //double normalized[3] = { worldPos[0], worldPos[1], worldPos[2] };
-  //vtkMath::ProjectVector(normalized, rotationAxis, projectedWorldPos);
-  //vtkMath::Subtract(normalized, projectedWorldPos, projectedWorldPos);
-  //vtkMath::Normalize(projectedWorldPos);
-
-  //double vector[3] = { 0 };
-  //rep->GetInteractionHandleVectorWorld(vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, this->GetMarkupsDisplayNode()->GetActiveComponentIndex(), vector);
-
-  //vtkErrorMacro("PreRotate:  " << vector[0] << "\t" << vector[1] << "\t" << vector[2]);
-  //rotateTransform->TransformVector(vector, vector);
-  //vtkErrorMacro("PostRotate: " << vector[0] << "\t" << vector[1] << "\t" << vector[2] << "\tAngle: " << angle);
-  //vtkErrorMacro("Expected  : " << projectedWorldPos[0] << "\t" << projectedWorldPos[1] << "\t" <<
-  //  projectedWorldPos[2] << "\tAngle: " << vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(vector, projectedWorldPos)));
-  //////////////////// TEMP -- END
 
   MRMLNodeModifyBlocker blocker(markupsNode);
   for (int i = 0; i < markupsNode->GetNumberOfControlPoints(); i++)
