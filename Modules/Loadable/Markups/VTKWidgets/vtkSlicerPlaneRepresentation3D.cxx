@@ -52,22 +52,22 @@ vtkStandardNewMacro(vtkSlicerPlaneRepresentation3D);
 //----------------------------------------------------------------------
 vtkSlicerPlaneRepresentation3D::vtkSlicerPlaneRepresentation3D()
 {
-  this->PlaneMapper->SetInputData(vtkNew<vtkPolyData>());
+  this->ArrowFilter->SetTipResolution(50);
+
+  this->ArrowGlypher->SetSourceConnection(this->ArrowFilter->GetOutputPort());
+  this->ArrowGlypher->OrientOn();
+  this->ArrowGlypher->ScalingOn();
+  this->ArrowGlypher->SetVectorModeToUseVector();
+  this->ArrowGlypher->SetScaleModeToDataScalingOff();
+  this->ArrowGlypher->SetInputArrayToProcess(1, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS, vtkDataSetAttributes::SCALARS);
+
+  this->Append->AddInputConnection(this->PlaneFilter->GetOutputPort());
+  this->Append->AddInputConnection(this->ArrowGlypher->GetOutputPort());
+
+  this->PlaneMapper->SetInputConnection(this->Append->GetOutputPort());
 
   this->PlaneActor->SetMapper(this->PlaneMapper);
   this->PlaneActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
-
-  this->ArrowFilter->SetTipResolution(50);
-
-  this->ArrowMapper->SetOrientationModeToDirection();
-  this->ArrowMapper->SetOrientationArray(vtkDataObject::FIELD_ASSOCIATION_POINTS);
-  this->ArrowMapper->SetSourceConnection(this->ArrowFilter->GetOutputPort());
-  this->ArrowMapper->SetScalarVisibility(false);
-
-  this->ArrowActor->SetMapper(this->ArrowMapper);
-  this->ArrowActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
-
-  this->LabelFormat = "%-#6.3g";
 }
 
 //----------------------------------------------------------------------
