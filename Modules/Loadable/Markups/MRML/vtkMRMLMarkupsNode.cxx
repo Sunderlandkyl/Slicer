@@ -414,7 +414,7 @@ vtkMRMLMarkupsNode::ControlPoint* vtkMRMLMarkupsNode::GetNthControlPointCustomLo
 {
   if (n < 0 || n >= this->GetNumberOfControlPoints())
     {
-      vtkErrorMacro("vtkMRMLMarkupsNode::" << failedMethodName << " failed: control point " <<
+    vtkErrorMacro("vtkMRMLMarkupsNode::" << failedMethodName << " failed: control point " <<
         n << " does not exist");
     return nullptr;
     }

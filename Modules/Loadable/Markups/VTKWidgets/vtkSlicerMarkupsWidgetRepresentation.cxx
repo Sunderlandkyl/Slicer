@@ -551,14 +551,17 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateInteractionPipeline()
     {
     selected = markupsNode->GetSelected();
     }
-  this->InteractionPipeline->Actor->SetVisibility(false);
+  //this->InteractionPipeline->Actor->SetVisibility(selected);
+  //if (!selected)
+  //  {
+  //  return;
+  //  }
 
   double origin[3] = { 0 };
   markupsNode->GetCenterPositionWorld(origin);
 
-  vtkNew<vtkTransform> transform;
-  transform->Translate(origin);
-  this->InteractionPipeline->ModelToWorldTransform->SetTransform(transform);
+  this->InteractionPipeline->ModelToWorldOrigin->Identity();
+  this->InteractionPipeline->ModelToWorldOrigin->Translate(origin);
 }
 
 //----------------------------------------------------------------------
@@ -832,7 +835,30 @@ void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandleVectorWorld(int t
 {
   this->GetInteractionHandleVector(type, index, axis);
   double origin[3] = { 0 };
-  this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformVectorAtPoint(origin, axis, axis);
+  this->InteractionPipeline->ModelToWorldTransform->TransformVectorAtPoint(origin, axis, axis);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandlePositionWorld(int type, int index, double position[3])
+{
+  if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
+  {
+    this->InteractionPipeline->RotationHandlePoints->GetPoint(index, position);
+    this->InteractionPipeline->RotationScaleTransform->GetTransform()->TransformPoint(position, position);
+    this->InteractionPipeline->ModelToWorldTransform->TransformPoint(position, position);
+  }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+  {
+    this->InteractionPipeline->TranslationHandlePoints->GetPoint(index, position);
+    this->InteractionPipeline->TranslationScaleTransform->GetTransform()->TransformPoint(position, position);
+    this->InteractionPipeline->ModelToWorldTransform->TransformPoint(position, position);
+  }
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::RotateInteractionWidget(double angle, double vector[3])
+{
+  this->InteractionPipeline->ModelToWorldOrientation->RotateWXYZ(angle, vector);
 }
 
 //----------------------------------------------------------------------
@@ -908,9 +934,17 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   this->Append->AddInputConnection(this->AxisRotationGlypher->GetOutputPort());
   this->Append->AddInputConnection(this->AxisTranslationGlypher->GetOutputPort());
 
-  this->ModelToWorldTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->ModelToWorldTransform->SetInputConnection(this->Append->GetOutputPort());
-  this->ModelToWorldTransform->SetTransform(vtkNew<vtkTransform>());
+  this->ModelToWorldOrigin = vtkSmartPointer<vtkTransform>::New();
+  this->ModelToWorldOrientation = vtkSmartPointer<vtkTransform>::New();
+
+  this->ModelToWorldTransform = vtkSmartPointer<vtkTransform>::New();
+  this->ModelToWorldTransform->Concatenate(this->ModelToWorldOrigin);
+  this->ModelToWorldTransform->Concatenate(this->ModelToWorldOrientation);
+
+  this->ModelToWorldTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ModelToWorldTransformFilter->SetInputConnection(this->Append->GetOutputPort());
+  this->ModelToWorldTransformFilter->SetTransform(this->ModelToWorldTransform);
+
 
   this->ColorTable = vtkSmartPointer<vtkLookupTable>::New();
 
@@ -918,7 +952,7 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   coordinate->SetCoordinateSystemToWorld();
 
   this->Mapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-  this->Mapper->SetInputConnection(this->ModelToWorldTransform->GetOutputPort());
+  this->Mapper->SetInputConnection(this->ModelToWorldTransformFilter->GetOutputPort());
   this->Mapper->SetColorModeToMapScalars();
   this->Mapper->ColorByArrayComponent("color", 0);
   this->Mapper->SetLookupTable(this->ColorTable);
@@ -1148,10 +1182,11 @@ double vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetOpac
     {
     vtkMath::MultiplyScalar(axis, -1);
     }
-  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal, axis));
 
-  double endFade = 10;
-  double startFade = 20;
+  double startFade = 30;
+  double endFade = 20;
+  double fadeDistance = startFade - endFade;
+  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal, axis));
   if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
     {
     // TODO: Magic numbers
@@ -1162,12 +1197,11 @@ double vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetOpac
     else if (angle > 90 - startFade)
       {
       double difference = angle - (90 - startFade);
-      opacity = 1.0 - (difference / endFade);
+      opacity = 1.0 - (difference / fadeDistance);
       }
     }
   else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
     {
-    // TODO: Magic numbers
     if (angle < endFade)
       {
       opacity = 0.0;
@@ -1175,7 +1209,7 @@ double vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetOpac
     else if (angle < startFade)
       {
       double difference = angle - endFade;
-      opacity = (difference / endFade);
+      opacity = (difference / fadeDistance);
       }
     }
   return opacity;
@@ -1205,7 +1239,7 @@ vtkSlicerMarkupsWidgetRepresentation::HandleInfoList vtkSlicerMarkupsWidgetRepre
     double handlePositionWorld[3] = { 0 };
     this->RotationHandlePoints->GetPoint(i, handlePositionLocal);
     this->RotationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
-    this->ModelToWorldTransform->GetTransform()->TransformPoint(handlePositionWorld, handlePositionWorld);
+    this->ModelToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
     double color[4] = { 0 };
     this->GetHandleColor(vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, i, color);
     HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, handlePositionWorld, handlePositionLocal, color);
@@ -1218,7 +1252,7 @@ vtkSlicerMarkupsWidgetRepresentation::HandleInfoList vtkSlicerMarkupsWidgetRepre
     double handlePositionWorld[3] = { 0 };
     this->TranslationHandlePoints->GetPoint(i, handlePositionLocal);
     this->TranslationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
-    this->ModelToWorldTransform->GetTransform()->TransformPoint(handlePositionWorld, handlePositionWorld);
+    this->ModelToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
     double color[4] = { 0 };
     this->GetHandleColor(vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle, i, color);
     HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle, handlePositionWorld, handlePositionLocal, color);
@@ -1250,7 +1284,7 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetIntera
   double modelAxis[3] = { 0 };
   modelAxis[index] = 1;
   double origin[3] = { 0,0,0 };
-  this->ModelToWorldTransform->GetTransform()->TransformVectorAtPoint(origin, modelAxis, axis);
+  this->ModelToWorldTransform->TransformVectorAtPoint(origin, modelAxis, axis);
 }
 
 //----------------------------------------------------------------------
@@ -1263,7 +1297,7 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetIntera
     }
 
   double tempOrigin[3] = { 0,0,0 };
-  this->ModelToWorldTransform->GetTransform()->TransformPoint(tempOrigin, origin);
+  this->ModelToWorldTransform->TransformPoint(tempOrigin, origin);
 }
 
 //----------------------------------------------------------------------
@@ -1274,24 +1308,8 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetIntera
     return;
     }
 
-  if (this->ModelToWorldTransform->GetTransform())
+  if (this->ModelToWorldTransform)
     {
-    matrix->DeepCopy(this->ModelToWorldTransform->GetTransform());
-    }
-}
-//----------------------------------------------------------------------
-void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandlePositionWorld(int type, int index, double position[3])
-{
-  if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
-    {
-    this->InteractionPipeline->RotationHandlePoints->GetPoint(index, position);
-    this->InteractionPipeline->RotationScaleTransform->GetTransform()->TransformPoint(position, position);
-    this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformPoint(position, position);
-    }
-  else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
-    {
-    this->InteractionPipeline->TranslationHandlePoints->GetPoint(index, position);
-    this->InteractionPipeline->TranslationScaleTransform->GetTransform()->TransformPoint(position, position);
-    this->InteractionPipeline->ModelToWorldTransform->GetTransform()->TransformPoint(position, position);
+    matrix->DeepCopy(this->ModelToWorldTransform);
     }
 }

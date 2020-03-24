@@ -188,18 +188,23 @@ void vtkSlicerPlaneRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
 void vtkSlicerPlaneRepresentation3D::UpdateInteractionPipeline()
 {
   Superclass::UpdateInteractionPipeline();
-  this->InteractionPipeline->Actor->SetVisibility(true);
+
   vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
-  if (!planeNode)
+  if (!planeNode || planeNode->GetNumberOfControlPoints() < 3)
     {
+    this->InteractionPipeline->Actor->SetVisibility(false);
     return;
     }
+
 
   vtkMRMLViewNode* viewNode = vtkMRMLViewNode::SafeDownCast(this->ViewNode);
   if (!viewNode)
     {
+    this->InteractionPipeline->Actor->SetVisibility(false);
     return;
     }
+
+  this->InteractionPipeline->Actor->SetVisibility(true);
 
   double x[3], y[3], z[3] = { 0 };
   planeNode->GetPlaneAxesWorld(x, y, z);
@@ -215,10 +220,10 @@ void vtkSlicerPlaneRepresentation3D::UpdateInteractionPipeline()
   double origin[3] = { 0 };
   planeNode->GetOriginWorld(origin);
 
-  vtkNew<vtkTransform> transform;
-  transform->Translate(origin);
-  transform->Concatenate(modelToWorldMatrix);
-  this->InteractionPipeline->ModelToWorldTransform->SetTransform(transform);
+  this->InteractionPipeline->ModelToWorldOrigin->Identity();
+  this->InteractionPipeline->ModelToWorldOrigin->Translate(origin);
+  this->InteractionPipeline->ModelToWorldOrientation->Identity();
+  this->InteractionPipeline->ModelToWorldOrientation->Concatenate(modelToWorldMatrix);
 }
 
 //----------------------------------------------------------------------

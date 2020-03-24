@@ -1243,7 +1243,7 @@ vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::MarkupsInt
 {
   this->WorldToSliceTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->WorldToSliceTransform->SetTransform(vtkNew<vtkTransform>());
-  this->WorldToSliceTransform->SetInputConnection(this->ModelToWorldTransform->GetOutputPort());
+  this->WorldToSliceTransform->SetInputConnection(this->ModelToWorldTransformFilter->GetOutputPort());
   this->Mapper->SetInputConnection(this->WorldToSliceTransform->GetOutputPort());
   this->Mapper->SetTransformCoordinate(nullptr);
 }

@@ -151,6 +151,8 @@ public:
   virtual void GetInteractionHandleVector(int type, int index, double axis[3]);
   ///TODO
   virtual void GetInteractionHandleVectorWorld(int type, int index, double axis[3]);
+  ///TODO
+  virtual void RotateInteractionWidget(double angle, double vector[3]);
 
 protected:
   vtkSlicerMarkupsWidgetRepresentation();
@@ -205,7 +207,10 @@ protected:
     vtkSmartPointer<vtkTensorGlyph>             AxisTranslationGlypher;
 
     vtkSmartPointer<vtkAppendPolyData>          Append;
-    vtkSmartPointer<vtkTransformPolyDataFilter> ModelToWorldTransform;
+    vtkSmartPointer<vtkTransformPolyDataFilter> ModelToWorldTransformFilter;
+    vtkSmartPointer<vtkTransform>               ModelToWorldOrigin;
+    vtkSmartPointer<vtkTransform>               ModelToWorldOrientation;
+    vtkSmartPointer<vtkTransform>               ModelToWorldTransform;
     vtkSmartPointer<vtkLookupTable>             ColorTable;
     vtkSmartPointer<vtkPolyDataMapper2D>        Mapper;
     vtkSmartPointer<vtkActor2D>                 Actor;
@@ -234,23 +239,20 @@ protected:
         : Index(index)
         , ComponentType(componentType)
       {
-        if (positionWorld)
-          {
-          for (int i = 0; i < 3; ++i)
-            {
-            this->PositionWorld[i] = positionWorld[i];
-            }
-          this->PositionWorld[3] = 1.0;
-          for (int i = 0; i < 3; ++i)
-            {
-            this->PositionLocal[i] = positionLocal[i];
-            }
-          this->PositionLocal[3] = 1.0;
-          for (int i = 0; i < 4; ++i)
-            {
-            this->Color[i] = color[i];
-            }
-          }
+      for (int i = 0; i < 3; ++i)
+        {
+        this->PositionWorld[i] = positionWorld[i];
+        }
+      this->PositionWorld[3] = 1.0;
+      for (int i = 0; i < 3; ++i)
+        {
+        this->PositionLocal[i] = positionLocal[i];
+        }
+      this->PositionLocal[3] = 1.0;
+      for (int i = 0; i < 4; ++i)
+        {
+        this->Color[i] = color[i];
+        }
       }
       int Index;
       int ComponentType;

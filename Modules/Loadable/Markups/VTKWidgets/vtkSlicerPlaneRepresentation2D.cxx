@@ -193,9 +193,9 @@ void vtkSlicerPlaneRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
       double sliceNormalVectorWorld[4] = { 0, 0, 1, 0 };
       vtkMatrix4x4* xyToRAS = this->GetSliceNode()->GetXYToRAS();
       xyToRAS->MultiplyPoint(sliceNormalVectorXY, sliceNormalVectorWorld);
-      double sliceThicknessMm = vtkMath::Norm(sliceNormalVectorWorld);
+      double sliceThicknessMM = vtkMath::Norm(sliceNormalVectorWorld);
       double* scalarRange = plane->GetScalarRange();
-      if (scalarRange[0] > 0.5 * sliceThicknessMm || scalarRange[1] < -0.5 * sliceThicknessMm)
+      if (scalarRange[0] > 0.5 * sliceThicknessMM || scalarRange[1] < -0.5 * sliceThicknessMM)
         {
         visible = false;
         }
@@ -591,12 +591,14 @@ void vtkSlicerPlaneRepresentation2D::BuildPlane()
 void vtkSlicerPlaneRepresentation2D::UpdateInteractionPipeline()
 {
   Superclass::UpdateInteractionPipeline();
-  this->InteractionPipeline->Actor->SetVisibility(true);
   vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
-  if (!planeNode)
+  if (!planeNode || planeNode->GetNumberOfControlPoints() < 3)
     {
+    this->InteractionPipeline->Actor->SetVisibility(false);
     return;
     }
+
+  this->InteractionPipeline->Actor->SetVisibility(true);
 
   double x[3], y[3], z[3] = { 0 };
   planeNode->GetPlaneAxesWorld(x, y, z);
@@ -613,9 +615,10 @@ void vtkSlicerPlaneRepresentation2D::UpdateInteractionPipeline()
   planeNode->GetOriginWorld(origin);
 
   vtkNew<vtkTransform> transform;
-  transform->Translate(origin);
-  transform->Concatenate(modelToWorldMatrix);
-  this->InteractionPipeline->ModelToWorldTransform->SetTransform(transform);
+  this->InteractionPipeline->ModelToWorldOrigin->Identity();
+  this->InteractionPipeline->ModelToWorldOrigin->Translate(origin);
+  this->InteractionPipeline->ModelToWorldOrientation->Identity();
+  this->InteractionPipeline->ModelToWorldOrientation->Concatenate(modelToWorldMatrix);
   reinterpret_cast<MarkupsInteractionPipeline2D*>(
     this->InteractionPipeline)->WorldToSliceTransform->SetTransform(this->WorldToSliceTransform); // TODO: Add accessor
 }
