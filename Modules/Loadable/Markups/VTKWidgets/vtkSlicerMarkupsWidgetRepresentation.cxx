@@ -558,7 +558,16 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateInteractionPipeline()
   //  }
 
   double origin[3] = { 0 };
-  markupsNode->GetCenterPositionWorld(origin);
+  int numberOfControlPoints = markupsNode->GetNumberOfMarkups();
+  for (int i = 0; i < numberOfControlPoints; ++i)
+    {
+    double controlPointPosition[3] = { 0 };
+    markupsNode->GetNthControlPointPosition(i, controlPointPosition);
+
+    origin[0] += controlPointPosition[0] / numberOfControlPoints;
+    origin[1] += controlPointPosition[1] / numberOfControlPoints;
+    origin[2] += controlPointPosition[2] / numberOfControlPoints;
+    }
 
   this->InteractionPipeline->ModelToWorldOrigin->Identity();
   this->InteractionPipeline->ModelToWorldOrigin->Translate(origin);
