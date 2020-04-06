@@ -586,3 +586,21 @@ void vtkSlicerPlaneRepresentation2D::BuildPlane()
   planeEndFadeFar->Push(-1*displayNode->GetLineColorFadingEnd());
   this->PlaneClipperEndFadeFar->SetClipFunction(planeEndFadeFar);
 }
+
+//----------------------------------------------------------------------
+void vtkSlicerPlaneRepresentation2D::UpdateInteractionPipeline()
+{
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  if (!planeNode || planeNode->GetNumberOfControlPoints() < 3)
+    {
+    this->InteractionPipeline->Actor->SetVisibility(false);
+    return;
+    }
+  if (!this->PlaneActor->GetVisibility())
+    {
+    this->InteractionPipeline->Actor->SetVisibility(false);
+    return;
+    }
+
+  Superclass::UpdateInteractionPipeline();
+}

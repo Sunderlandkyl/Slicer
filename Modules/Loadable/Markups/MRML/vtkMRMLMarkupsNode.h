@@ -561,6 +561,9 @@ public:
   /// Get a copy of all control point positions in world coordinate system
   void GetControlPointPositionsWorld(vtkPoints* points);
 
+  /// 4x4 matrix detailing the orientation and position in world coordinates of the interaction handles.
+  virtual vtkMatrix4x4* GetInteractionHandleToWorld();
+
 protected:
   vtkMRMLMarkupsNode();
   ~vtkMRMLMarkupsNode() override;
@@ -605,6 +608,9 @@ protected:
   /// Helper function to write measurements to node Description property.
   /// This is a short-term solution until measurements display is properly implemented.
   virtual void WriteMeasurementsToDescription();
+
+  /// Calculates the handle to world matrix based on the current control points
+  virtual void UpdateInteractionHandleToWorld();
 
   // Used for limiting number of markups that may be placed.
   int MaximumNumberOfControlPoints;
@@ -653,6 +659,10 @@ protected:
   vtkVector3d CenterPos;
 
   std::vector< vtkSmartPointer<vtkMRMLMeasurement> > Measurements;
+
+  // Transform that moves the xyz unit vectors and origin of the interaction handles to world coordinates
+  vtkSmartPointer<vtkMatrix4x4> InteractionHandleToWorld;
+
 };
 
 #endif

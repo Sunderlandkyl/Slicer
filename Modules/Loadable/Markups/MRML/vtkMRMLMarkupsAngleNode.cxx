@@ -22,6 +22,7 @@
 #include "vtkMRMLScene.h"
 
 // VTK includes
+#include <vtkMatrix4x4.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
 
@@ -30,7 +31,6 @@
 
 //----------------------------------------------------------------------------
 vtkMRMLNodeNewMacro(vtkMRMLMarkupsAngleNode);
-
 
 //----------------------------------------------------------------------------
 vtkMRMLMarkupsAngleNode::vtkMRMLMarkupsAngleNode()
@@ -92,4 +92,60 @@ void vtkMRMLMarkupsAngleNode::UpdateMeasurements()
       }
     }
   this->WriteMeasurementsToDescription();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsAngleNode::UpdateInteractionHandleToWorld()
+{
+  if (this->GetNumberOfControlPoints() < 3)
+    {
+    return;
+    }
+
+  double p0[3], p1[3], p2[3] = { 0 };
+  this->GetNthControlPointPositionWorld(0, p0);
+  this->GetNthControlPointPositionWorld(1, p1);
+  this->GetNthControlPointPositionWorld(2, p2);
+
+  double epsilon = 0.00001;
+  double v0[3] = { 1, 0, 0 };
+  vtkMath::Subtract(p0, p1, v0);
+  if (vtkMath::Norm(v0) < epsilon)
+    {
+    return;
+    }
+  vtkMath::Normalize(v0);
+
+  double v1[3] = { 0 };
+  vtkMath::Subtract(p2, p1, v1);
+  if (vtkMath::Norm(v1) < epsilon)
+    {
+    return;
+    }
+  vtkMath::Normalize(v1);
+
+  if (std::abs(vtkMath::Dot(v0, v1)) > 1 - epsilon)
+    {
+    return;
+    }
+
+  double* x = v0;
+
+  double z[3] = { 0 };
+  vtkMath::Cross(v0, v1, z);
+  vtkMath::Normalize(z);
+
+  double y[3] = { 0 };
+  vtkMath::Cross(z, x, y);
+  vtkMath::Normalize(y);
+
+  vtkNew<vtkMatrix4x4> modelToWorldMatrix;
+  for (int i = 0; i < 3; ++i)
+    {
+    modelToWorldMatrix->SetElement(i, 0, x[i]);
+    modelToWorldMatrix->SetElement(i, 1, y[i]);
+    modelToWorldMatrix->SetElement(i, 2, z[i]);
+    modelToWorldMatrix->SetElement(i, 3, p1[i]);
+    }
+  this->InteractionHandleToWorld->DeepCopy(modelToWorldMatrix);
 }

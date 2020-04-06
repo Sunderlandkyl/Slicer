@@ -669,3 +669,23 @@ vtkMatrix4x4* vtkMRMLMarkupsPlaneNode::GetLocalToPlaneTransform()
 {
   return this->LocalToPlaneTransform;
 }
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsPlaneNode::UpdateInteractionHandleToWorld()
+{
+  double x[3], y[3], z[3] = { 0 };
+  this->GetPlaneAxesWorld(x, y, z);
+
+  double origin[3] = { 0 };
+  this->GetOriginWorld(origin);
+
+  vtkNew<vtkMatrix4x4> modelToWorldMatrix;
+  for (int i = 0; i < 3; ++i)
+    {
+    modelToWorldMatrix->SetElement(i, 0, x[i]);
+    modelToWorldMatrix->SetElement(i, 1, y[i]);
+    modelToWorldMatrix->SetElement(i, 2, z[i]);
+    modelToWorldMatrix->SetElement(i, 3, origin[i]);
+    }
+  this->InteractionHandleToWorld->DeepCopy(modelToWorldMatrix);
+}

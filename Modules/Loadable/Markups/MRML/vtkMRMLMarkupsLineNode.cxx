@@ -19,8 +19,10 @@
 #include "vtkMRMLMarkupsDisplayNode.h"
 #include "vtkMRMLMarkupsLineNode.h"
 #include "vtkMRMLMarkupsFiducialStorageNode.h"
+#include "vtkMatrix4x4.h"
 #include "vtkMRMLScene.h"
 #include "vtkMRMLUnitNode.h"
+#include "vtkTransform.h"
 
 // VTK includes
 #include <vtkNew.h>
@@ -94,4 +96,44 @@ void vtkMRMLMarkupsLineNode::UpdateMeasurements()
     this->SetNthMeasurement(0, "length", length, unit, printFormat);
     }
   this->WriteMeasurementsToDescription();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsLineNode::UpdateInteractionHandleToWorld()
+{
+  Superclass::UpdateInteractionHandleToWorld();
+  if (this->GetNumberOfControlPoints() < 2)
+    {
+    return;
+    }
+
+  double xVector[4] = { 1, 0, 0, 0 };
+  this->InteractionHandleToWorld->MultiplyPoint(xVector, xVector);
+
+  double lineVector[4] = { 0 };
+  double linePoint0[3];
+  this->GetNthControlPointPosition(0, linePoint0);
+  double linePoint1[3];
+  this->GetNthControlPointPosition(1, linePoint1);
+  vtkMath::Subtract(linePoint1, linePoint0, lineVector);
+
+  double rotationVector[3] = { 0 };
+  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(lineVector, xVector));
+  double epsilon = 0.001;
+  if (angle < epsilon)
+    {
+    return;
+    }
+  vtkMath::Cross(xVector, lineVector, rotationVector);
+
+  double origin[4] = { 0, 0, 0, 1 };
+  this->InteractionHandleToWorld->MultiplyPoint(origin, origin);
+
+  vtkNew<vtkTransform> modelToWorldMatrix;
+  modelToWorldMatrix->PostMultiply();
+  modelToWorldMatrix->Concatenate(this->InteractionHandleToWorld);
+  modelToWorldMatrix->Translate(-origin[0], -origin[1], -origin[2]);
+  modelToWorldMatrix->RotateWXYZ(angle, rotationVector);
+  modelToWorldMatrix->Translate(origin);
+  this->InteractionHandleToWorld->DeepCopy(modelToWorldMatrix->GetMatrix());
 }

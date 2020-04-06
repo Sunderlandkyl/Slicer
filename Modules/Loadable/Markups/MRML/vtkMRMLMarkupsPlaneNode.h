@@ -136,6 +136,9 @@ protected:
   /// orientation.
   void CreatePlane();
 
+  /// Calculates the handle to world matrix based on the current control points
+  void UpdateInteractionHandleToWorld() override;
+
   vtkMRMLMarkupsPlaneNode();
   ~vtkMRMLMarkupsPlaneNode() override;
   vtkMRMLMarkupsPlaneNode(const vtkMRMLMarkupsPlaneNode&);

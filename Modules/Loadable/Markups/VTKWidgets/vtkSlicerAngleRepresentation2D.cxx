@@ -458,3 +458,16 @@ void vtkSlicerAngleRepresentation2D::SetMarkupsNode(vtkMRMLMarkupsNode *markupsN
     }
   this->Superclass::SetMarkupsNode(markupsNode);
 }
+
+//-----------------------------------------------------------------------------
+void vtkSlicerAngleRepresentation2D::UpdateInteractionPipeline()
+{
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  if (!markupsNode || markupsNode->GetNumberOfControlPoints() < 3)
+    {
+    this->InteractionPipeline->Actor->SetVisibility(false);
+    return;
+    }
+
+  Superclass::UpdateInteractionPipeline();
+}

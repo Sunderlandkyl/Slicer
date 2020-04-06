@@ -43,8 +43,11 @@
 #include <vtkPointData.h>
 #include <vtkPolyData.h>
 #include <vtkStringArray.h>
+#include <vtkTransform.h>
 #include <vtkTransformPolyDataFilter.h>
 #include <vtkTrivialProducer.h>
+#include "vtk_eigen.h"
+#include VTK_EIGEN(Dense)
 
 // STD includes
 #include <sstream>
@@ -94,6 +97,8 @@ vtkMRMLMarkupsNode::vtkMRMLMarkupsNode()
   this->CurveCoordinateSystemGeneratorWorld->SetInputConnection(this->CurvePolyToWorldTransformer->GetOutputPort());
 
   this->TransformedCurvePolyLocator = vtkSmartPointer<vtkPointLocator>::New();
+
+  this->InteractionHandleToWorld = vtkSmartPointer<vtkMatrix4x4>::New();
 }
 
 //----------------------------------------------------------------------------
@@ -111,6 +116,7 @@ void vtkMRMLMarkupsNode::WriteXML(ostream& of, int nIndent)
   vtkMRMLWriteXMLBeginMacro(of);
   vtkMRMLWriteXMLBooleanMacro(locked, Locked);
   vtkMRMLWriteXMLStdStringMacro(markupLabelFormat, MarkupLabelFormat);
+  vtkMRMLWriteXMLMatrix4x4Macro(interactionHandleToWorld, InteractionHandleToWorld);
   vtkMRMLWriteXMLEndMacro();
 
   int textLength = static_cast<int>(this->TextList->GetNumberOfValues());
@@ -133,6 +139,7 @@ void vtkMRMLMarkupsNode::ReadXMLAttributes(const char** atts)
   vtkMRMLReadXMLBeginMacro(atts);
   vtkMRMLReadXMLBooleanMacro(locked, Locked);
   vtkMRMLReadXMLStdStringMacro(markupLabelFormat, MarkupLabelFormat);
+  vtkMRMLReadXMLOwnedMatrix4x4Macro(interactionHandleToWorld, InteractionHandleToWorld);
   vtkMRMLReadXMLEndMacro();
 
   /* TODO: read measurements
@@ -168,6 +175,7 @@ void vtkMRMLMarkupsNode::Copy(vtkMRMLNode *anode)
   vtkMRMLCopyBeginMacro(anode);
   vtkMRMLCopyBooleanMacro(Locked);
   vtkMRMLCopyStdStringMacro(MarkupLabelFormat);
+  vtkMRMLCopyOwnedMatrix4x4Macro(InteractionHandleToWorld);
   vtkMRMLCopyEndMacro();
 
   this->TextList->DeepCopy(node->TextList);
@@ -238,6 +246,7 @@ void vtkMRMLMarkupsNode::PrintSelf(ostream& os, vtkIndent indent)
   vtkMRMLPrintBeginMacro(os, indent);
   vtkMRMLPrintBooleanMacro(Locked);
   vtkMRMLPrintStdStringMacro(MarkupLabelFormat);
+  vtkMRMLPrintMatrix4x4Macro(InteractionHandleToWorld)
   vtkMRMLPrintEndMacro();
 
   os << indent << "MaximumNumberOfControlPoints: ";
@@ -414,8 +423,8 @@ vtkMRMLMarkupsNode::ControlPoint* vtkMRMLMarkupsNode::GetNthControlPointCustomLo
 {
   if (n < 0 || n >= this->GetNumberOfControlPoints())
     {
-      vtkErrorMacro("vtkMRMLMarkupsNode::" << failedMethodName << " failed: control point " <<
-        n << " does not exist");
+    vtkErrorMacro("vtkMRMLMarkupsNode::" << failedMethodName << " failed: control point " <<
+      n << " does not exist");
     return nullptr;
     }
 
@@ -2008,4 +2017,93 @@ void vtkMRMLMarkupsNode::WriteMeasurementsToDescription()
     description += (*measurementIt)->GetName() + std::string(": ") + (*measurementIt)->GetValueWithUnitsAsPrintableString();
   }
   this->SetDescription(description.c_str());
+}
+
+//---------------------------------------------------------------------------
+vtkMatrix4x4* vtkMRMLMarkupsNode::GetInteractionHandleToWorld()
+{
+  if (this->InteractionHandleToWorld->GetMTime() < this->CurveInputPoly->GetMTime() ||
+      this->InteractionHandleToWorld->GetMTime() < this->CurveInputPoly->GetPoints()->GetMTime() ||
+      this->InteractionHandleToWorld->GetMTime() < this->GetMTime())
+    {
+    this->UpdateInteractionHandleToWorld();
+    }
+  return this->InteractionHandleToWorld;
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::UpdateInteractionHandleToWorld()
+{
+  // The origin of the coordinate system is at the center of mass of the control points
+  double origin[3] = { 0 };
+  int numberOfControlPoints = this->GetNumberOfMarkups();
+  for (int i = 0; i < numberOfControlPoints; ++i)
+    {
+    double controlPointPosition[3] = { 0 };
+    this->GetNthControlPointPosition(i, controlPointPosition);
+
+    origin[0] += controlPointPosition[0] / numberOfControlPoints;
+    origin[1] += controlPointPosition[1] / numberOfControlPoints;
+    origin[2] += controlPointPosition[2] / numberOfControlPoints;
+    }
+
+  for (int i = 0; i < 3; ++i)
+    {
+    this->InteractionHandleToWorld->SetElement(i, 3, origin[i]);
+    }
+
+  if (this->GetNumberOfControlPoints() < 3)
+    {
+    return;
+    }
+
+  // The orientation of the coordinate system is adjusted so that the z axis aligns with the normal of the
+  // best fit plane defined by the control points.
+  vtkIdType numberOfPoints = this->GetNumberOfControlPoints();
+  Eigen::MatrixXd pointCoords(3, numberOfPoints);
+  double point[3] = { 0.0 };
+  for (vtkIdType pointIndex = 0; pointIndex < numberOfPoints; ++pointIndex)
+    {
+    this->GetNthControlPointPositionWorld(pointIndex, point);
+    pointCoords(0, pointIndex) = point[0];
+    pointCoords(1, pointIndex) = point[1];
+    pointCoords(2, pointIndex) = point[2];
+    }
+  pointCoords.row(0).array() -= origin[0];
+  pointCoords.row(1).array() -= origin[1];
+  pointCoords.row(2).array() -= origin[2];
+  Eigen::BDCSVD<Eigen::MatrixXd> svd(pointCoords, Eigen::ComputeFullU);
+
+  double normal[3] = { 0 };
+  for (int i = 0; i < 3; i++)
+    {
+    normal[i] = svd.matrixU()(i, 2);
+    }
+
+  double zVector[4] = { 0, 0, 1, 0 };
+  this->InteractionHandleToWorld->MultiplyPoint(zVector, zVector);
+
+  if (vtkMath::Dot(zVector, normal) < 0)
+    {
+    zVector[0] = -zVector[0];
+    zVector[1] = -zVector[1];
+    zVector[2] = -zVector[2];
+    }
+
+  double rotationVector[3] = { 0 };
+  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(zVector, normal));
+  double epsilon = 0.001;
+  if (angle < epsilon)
+    {
+    return;
+    }
+  vtkMath::Cross(zVector, normal, rotationVector);
+
+  vtkNew<vtkTransform> modelToWorldMatrix;
+  modelToWorldMatrix->PostMultiply();
+  modelToWorldMatrix->Concatenate(this->InteractionHandleToWorld);
+  modelToWorldMatrix->Translate(-origin[0], -origin[1], -origin[2]);
+  modelToWorldMatrix->RotateWXYZ(angle, rotationVector);
+  modelToWorldMatrix->Translate(origin);
+  this->InteractionHandleToWorld->DeepCopy(modelToWorldMatrix->GetMatrix());
 }
