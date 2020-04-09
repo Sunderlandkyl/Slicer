@@ -116,7 +116,7 @@ void vtkMRMLMarkupsNode::WriteXML(ostream& of, int nIndent)
   vtkMRMLWriteXMLBeginMacro(of);
   vtkMRMLWriteXMLBooleanMacro(locked, Locked);
   vtkMRMLWriteXMLStdStringMacro(markupLabelFormat, MarkupLabelFormat);
-  vtkMRMLWriteXMLMatrix4x4Macro(interactionHandleToWorld, InteractionHandleToWorld);
+  vtkMRMLWriteXMLMatrix4x4Macro(interactionHandleModelToLocal, InteractionHandleModelToLocal);
   vtkMRMLWriteXMLEndMacro();
 
   int textLength = static_cast<int>(this->TextList->GetNumberOfValues());
@@ -139,7 +139,7 @@ void vtkMRMLMarkupsNode::ReadXMLAttributes(const char** atts)
   vtkMRMLReadXMLBeginMacro(atts);
   vtkMRMLReadXMLBooleanMacro(locked, Locked);
   vtkMRMLReadXMLStdStringMacro(markupLabelFormat, MarkupLabelFormat);
-  vtkMRMLReadXMLOwnedMatrix4x4Macro(interactionHandleToWorld, InteractionHandleToWorld);
+  vtkMRMLReadXMLOwnedMatrix4x4Macro(interactionHandleModelToLocal, InteractionHandleModelToLocal);
   vtkMRMLReadXMLEndMacro();
 
   /* TODO: read measurements
@@ -175,7 +175,7 @@ void vtkMRMLMarkupsNode::Copy(vtkMRMLNode *anode)
   vtkMRMLCopyBeginMacro(anode);
   vtkMRMLCopyBooleanMacro(Locked);
   vtkMRMLCopyStdStringMacro(MarkupLabelFormat);
-  vtkMRMLCopyOwnedMatrix4x4Macro(InteractionHandleToWorld);
+  vtkMRMLCopyOwnedMatrix4x4Macro(InteractionHandleModelToLocal);
   vtkMRMLCopyEndMacro();
 
   this->TextList->DeepCopy(node->TextList);
@@ -246,7 +246,7 @@ void vtkMRMLMarkupsNode::PrintSelf(ostream& os, vtkIndent indent)
   vtkMRMLPrintBeginMacro(os, indent);
   vtkMRMLPrintBooleanMacro(Locked);
   vtkMRMLPrintStdStringMacro(MarkupLabelFormat);
-  vtkMRMLPrintMatrix4x4Macro(InteractionHandleToWorld)
+  vtkMRMLPrintMatrix4x4Macro(InteractionHandleModelToLocal)
   vtkMRMLPrintEndMacro();
 
   os << indent << "MaximumNumberOfControlPoints: ";
@@ -2020,7 +2020,7 @@ void vtkMRMLMarkupsNode::WriteMeasurementsToDescription()
 }
 
 //---------------------------------------------------------------------------
-vtkMatrix4x4* vtkMRMLMarkupsNode::GetInteractionHandleToWorld()
+vtkMatrix4x4* vtkMRMLMarkupsNode::GetInteractionHandleModelToLocal()
 {
   if (this->InteractionHandleModelToLocal->GetMTime() < this->CurveInputPoly->GetMTime() ||
       this->InteractionHandleModelToLocal->GetMTime() < this->CurveInputPoly->GetPoints()->GetMTime() ||
@@ -2060,50 +2060,50 @@ void vtkMRMLMarkupsNode::UpdateInteractionHandleToWorld()
   // The orientation of the coordinate system is adjusted so that the z axis aligns with the normal of the
   // best fit plane defined by the control points.
   vtkIdType numberOfPoints = this->GetNumberOfControlPoints();
-  Eigen::MatrixXd pointCoords_World(3, numberOfPoints);
+  Eigen::MatrixXd pointCoords_Local(3, numberOfPoints);
   double point_Local[3] = { 0.0 };
   for (vtkIdType pointIndex = 0; pointIndex < numberOfPoints; ++pointIndex)
     {
     this->GetNthControlPointPosition(pointIndex, point_Local);
-    pointCoords_World(0, pointIndex) = point_Local[0];
-    pointCoords_World(1, pointIndex) = point_Local[1];
-    pointCoords_World(2, pointIndex) = point_Local[2];
+    pointCoords_Local(0, pointIndex) = point_Local[0];
+    pointCoords_Local(1, pointIndex) = point_Local[1];
+    pointCoords_Local(2, pointIndex) = point_Local[2];
     }
-  pointCoords_World.row(0).array() -= origin_Local[0];
-  pointCoords_World.row(1).array() -= origin_Local[1];
-  pointCoords_World.row(2).array() -= origin_Local[2];
-  Eigen::BDCSVD<Eigen::MatrixXd> svd(pointCoords_World, Eigen::ComputeFullU);
+  pointCoords_Local.row(0).array() -= origin_Local[0];
+  pointCoords_Local.row(1).array() -= origin_Local[1];
+  pointCoords_Local.row(2).array() -= origin_Local[2];
+  Eigen::BDCSVD<Eigen::MatrixXd> svd(pointCoords_Local, Eigen::ComputeFullU);
 
-  double normal_World[3] = { 0 };
+  double normal_Local[3] = { 0 };
   for (int i = 0; i < 3; i++)
     {
-    normal_World[i] = svd.matrixU()(i, 2);
+    normal_Local[i] = svd.matrixU()(i, 2);
     }
 
-  double modelZ_World[4] = { 0.0, 0.0, 1.0, 0.0 };
-  this->InteractionHandleModelToLocal->MultiplyPoint(modelZ_World, modelZ_World);
+  double modelZ_Local[4] = { 0.0, 0.0, 1.0, 0.0 };
+  this->InteractionHandleModelToLocal->MultiplyPoint(modelZ_Local, modelZ_Local);
 
-  if (vtkMath::Dot(modelZ_World, normal_World) < 0.0)
+  if (vtkMath::Dot(modelZ_Local, normal_Local) < 0.0)
     {
-    modelZ_World[0] = -modelZ_World[0];
-    modelZ_World[1] = -modelZ_World[1];
-    modelZ_World[2] = -modelZ_World[2];
+    modelZ_Local[0] = -modelZ_Local[0];
+    modelZ_Local[1] = -modelZ_Local[1];
+    modelZ_Local[2] = -modelZ_Local[2];
     }
 
-  double rotationVector[3] = { 0 };
-  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(modelZ_World, normal_World));
+  double rotationVector_Local[3] = { 0 };
+  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(modelZ_Local, normal_Local));
   double epsilon = 0.001;
   if (angle < epsilon)
     {
     return;
     }
-  vtkMath::Cross(modelZ_World, normal_World, rotationVector);
+  vtkMath::Cross(modelZ_Local, normal_Local, rotationVector_Local);
 
-  vtkNew<vtkTransform> modelToWorldMatrix;
-  modelToWorldMatrix->PostMultiply();
-  modelToWorldMatrix->Concatenate(this->InteractionHandleModelToLocal);
-  modelToWorldMatrix->Translate(-origin_World[0], -origin_World[1], -origin_World[2]);
-  modelToWorldMatrix->RotateWXYZ(angle, rotationVector);
-  modelToWorldMatrix->Translate(origin_World);
-  this->InteractionHandleModelToLocal->DeepCopy(modelToWorldMatrix->GetMatrix());
+  vtkNew<vtkTransform> modelToLocalMatrix;
+  modelToLocalMatrix->PostMultiply();
+  modelToLocalMatrix->Concatenate(this->InteractionHandleModelToLocal);
+  modelToLocalMatrix->Translate(-origin_Local[0], -origin_Local[1], -origin_Local[2]);
+  modelToLocalMatrix->RotateWXYZ(angle, rotationVector_Local);
+  modelToLocalMatrix->Translate(origin_Local);
+  this->InteractionHandleModelToLocal->DeepCopy(modelToLocalMatrix->GetMatrix());
 }

@@ -102,50 +102,50 @@ void vtkMRMLMarkupsAngleNode::UpdateInteractionHandleToWorld()
     return;
     }
 
-  double point0_World[3] = { 0.0 };
-  double point1_World[3] = { 0.0 };
-  double point2_World[3] = { 0.0 };
-  this->GetNthControlPointPositionWorld(0, point0_World);
-  this->GetNthControlPointPositionWorld(1, point1_World);
-  this->GetNthControlPointPositionWorld(2, point2_World);
+  double point0_Local[3] = { 0.0 };
+  double point1_Local[3] = { 0.0 };
+  double point2_Local[3] = { 0.0 };
+  this->GetNthControlPointPosition(0, point0_Local);
+  this->GetNthControlPointPosition(1, point1_Local);
+  this->GetNthControlPointPosition(2, point2_Local);
 
   double epsilon = 1e-5;
-  double modelX_World[3] = { 1.0, 0.0, 0.0 };
-  vtkMath::Subtract(point0_World, point1_World, modelX_World);
-  if (vtkMath::Norm(modelX_World) < epsilon)
+  double modelX_Local[3] = { 1.0, 0.0, 0.0 };
+  vtkMath::Subtract(point0_Local, point1_Local, modelX_Local);
+  if (vtkMath::Norm(modelX_Local) < epsilon)
     {
     return;
     }
-  vtkMath::Normalize(modelX_World);
+  vtkMath::Normalize(modelX_Local);
 
-  double vectorPoint1ToPoint2_World[3] = { 0.0 };
-  vtkMath::Subtract(point2_World, point1_World, vectorPoint1ToPoint2_World);
-  if (vtkMath::Norm(vectorPoint1ToPoint2_World) < epsilon)
+  double vectorPoint1ToPoint2_Local[3] = { 0.0 };
+  vtkMath::Subtract(point2_Local, point1_Local, vectorPoint1ToPoint2_Local);
+  if (vtkMath::Norm(vectorPoint1ToPoint2_Local) < epsilon)
     {
     return;
     }
-  vtkMath::Normalize(vectorPoint1ToPoint2_World);
+  vtkMath::Normalize(vectorPoint1ToPoint2_Local);
 
-  if (std::abs(vtkMath::Dot(modelX_World, vectorPoint1ToPoint2_World)) > 1.0 - epsilon)
+  if (std::abs(vtkMath::Dot(modelX_Local, vectorPoint1ToPoint2_Local)) > 1.0 - epsilon)
     {
     return;
     }
 
-  double modelZ_World[3] = { 0.0 };
-  vtkMath::Cross(modelX_World, vectorPoint1ToPoint2_World, modelZ_World);
-  vtkMath::Normalize(modelZ_World);
+  double modelZ_Local[3] = { 0.0 };
+  vtkMath::Cross(modelX_Local, vectorPoint1ToPoint2_Local, modelZ_Local);
+  vtkMath::Normalize(modelZ_Local);
 
-  double modelY_World[3] = { 0.0 };
-  vtkMath::Cross(modelZ_World, modelX_World, modelY_World);
-  vtkMath::Normalize(modelY_World);
+  double modelY_Local[3] = { 0.0 };
+  vtkMath::Cross(modelZ_Local, modelX_Local, modelY_Local);
+  vtkMath::Normalize(modelY_Local);
 
-  vtkNew<vtkMatrix4x4> modelToWorldMatrix;
+  vtkNew<vtkMatrix4x4> modelToLocalMatrix;
   for (int i = 0; i < 3; ++i)
     {
-    modelToWorldMatrix->SetElement(i, 0, modelX_World[i]);
-    modelToWorldMatrix->SetElement(i, 1, modelY_World[i]);
-    modelToWorldMatrix->SetElement(i, 2, modelZ_World[i]);
-    modelToWorldMatrix->SetElement(i, 3, point1_World[i]);
+    modelToLocalMatrix->SetElement(i, 0, modelX_Local[i]);
+    modelToLocalMatrix->SetElement(i, 1, modelY_Local[i]);
+    modelToLocalMatrix->SetElement(i, 2, modelZ_Local[i]);
+    modelToLocalMatrix->SetElement(i, 3, point1_Local[i]);
     }
-  this->InteractionHandleToWorld->DeepCopy(modelToWorldMatrix);
+  this->InteractionHandleModelToLocal->DeepCopy(modelToLocalMatrix);
 }

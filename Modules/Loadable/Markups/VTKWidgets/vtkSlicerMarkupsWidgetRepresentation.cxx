@@ -46,6 +46,7 @@
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
+#include <vtkMRMLTransformNode.h>
 
 //----------------------------------------------------------------------
 static const double INTERACTION_HANDLE_SCALE_FACTOR = 7.0;
@@ -561,8 +562,19 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateInteractionPipeline()
 
   this->InteractionPipeline->Actor->SetVisibility(this->MarkupsDisplayNode->GetHandlesInteractive());
 
-  vtkMatrix4x4* interactionHandleToWorld = markupsNode->GetInteractionHandleToWorld();
-  this->InteractionPipeline->ModelToWorldTransform->SetMatrix(interactionHandleToWorld);
+  vtkMatrix4x4* interactionHandleModelToLocal = markupsNode->GetInteractionHandleModelToLocal();
+
+  vtkNew<vtkTransform> modelToWorldTransform;
+  modelToWorldTransform->PostMultiply();
+  modelToWorldTransform->Concatenate(interactionHandleModelToLocal);
+  if (markupsNode->GetParentTransformNode())
+    {
+    vtkNew<vtkMatrix4x4> localToWorldMatrix;
+    markupsNode->GetParentTransformNode()->GetMatrixTransformToWorld(localToWorldMatrix);
+    modelToWorldTransform->Concatenate(localToWorldMatrix);
+    }
+
+  this->InteractionPipeline->ModelToWorldTransform->DeepCopy(modelToWorldTransform);
 }
 
 //----------------------------------------------------------------------

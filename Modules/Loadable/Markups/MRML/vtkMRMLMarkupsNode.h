@@ -562,7 +562,7 @@ public:
   void GetControlPointPositionsWorld(vtkPoints* points);
 
   /// 4x4 matrix detailing the orientation and position in world coordinates of the interaction handles.
-  virtual vtkMatrix4x4* GetInteractionHandleToWorld();
+  virtual vtkMatrix4x4* GetInteractionHandleModelToLocal();
 
 protected:
   vtkMRMLMarkupsNode();
@@ -660,7 +660,7 @@ protected:
 
   std::vector< vtkSmartPointer<vtkMRMLMeasurement> > Measurements;
 
-  // Transform that moves the xyz unit vectors and origin of the interaction handles to world coordinates
+  // Transform that moves the xyz unit vectors and origin of the interaction handles to local coordinates
   vtkSmartPointer<vtkMatrix4x4> InteractionHandleModelToLocal;
 
 };

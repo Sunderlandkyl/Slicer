@@ -39,6 +39,9 @@
 #include <vtkRenderer.h>
 #include <vtkTransform.h>
 
+// MRML includes
+#include "vtkMRMLTransformNode.h"
+
 //----------------------------------------------------------------------
 vtkSlicerMarkupsWidget::vtkSlicerMarkupsWidget()
 {
@@ -1213,11 +1216,22 @@ void vtkSlicerMarkupsWidget::RotateWidget(double eventPos[2])
 
   // The orientation of some markup types are not fully defined by their control points (line, etc.).
   // For these cases, we need to manually apply a rotation to the interaction handles.
-  vtkNew<vtkTransform> modelToWorldTransform;
-  modelToWorldTransform->PostMultiply();
-  modelToWorldTransform->Concatenate(markupsNode->GetInteractionHandleToWorld());
-  modelToWorldTransform->RotateWXYZ(angle, rotationAxis_World);
-  markupsNode->GetInteractionHandleToWorld()->DeepCopy(modelToWorldTransform->GetMatrix());
+  double rotationAxis_Local[3] = { rotationAxis_World[0], rotationAxis_World[1], rotationAxis_World[2] };
+  if (markupsNode->GetParentTransformNode() && markupsNode->GetParentTransformNode()->IsTransformToWorldLinear())
+    {
+    vtkNew<vtkMatrix4x4> transformFromWorldMatrix;
+    markupsNode->GetParentTransformNode()->GetMatrixTransformFromWorld(transformFromWorldMatrix);
+
+    vtkNew<vtkTransform> transformFromWorld;
+    transformFromWorld->Concatenate(transformFromWorldMatrix);
+    transformFromWorld->TransformVector(rotationAxis_World, rotationAxis_Local);
+    }
+
+  vtkNew<vtkTransform> modelToLocalTransform;
+  modelToLocalTransform->PostMultiply();
+  modelToLocalTransform->Concatenate(markupsNode->GetInteractionHandleModelToLocal());
+  modelToLocalTransform->RotateWXYZ(angle, rotationAxis_Local);
+  markupsNode->GetInteractionHandleModelToLocal()->DeepCopy(modelToLocalTransform->GetMatrix());
 
   for (int i = 0; i < markupsNode->GetNumberOfControlPoints(); i++)
     {
