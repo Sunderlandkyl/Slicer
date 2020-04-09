@@ -579,7 +579,9 @@ void vtkMRMLMarkupsPlaneNode::GetSize(double size[3])
     localToPlaneTransform->TransformPoint(point1, point1);
     localToPlaneTransform->TransformPoint(point2, point2);
 
-    double x[3], y[3], z[3] = { 0 };
+    double x[3] = { 0.0 };
+    double y[3] = { 0.0 };
+    double z[3] = { 0.0 };
     this->GetPlaneAxes(x, y, z);
 
     // Update the plane
@@ -673,19 +675,21 @@ vtkMatrix4x4* vtkMRMLMarkupsPlaneNode::GetLocalToPlaneTransform()
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsPlaneNode::UpdateInteractionHandleToWorld()
 {
-  double x[3], y[3], z[3] = { 0 };
-  this->GetPlaneAxesWorld(x, y, z);
+  double modelX_World[3] = { 0.0 };
+  double modelY_World[3] = { 0.0 };
+  double modelZ_World[3] = { 0.0 };
+  this->GetPlaneAxesWorld(modelX_World, modelY_World, modelZ_World);
 
-  double origin[3] = { 0 };
-  this->GetOriginWorld(origin);
+  double origin_World[3] = { 0 };
+  this->GetOriginWorld(origin_World);
 
   vtkNew<vtkMatrix4x4> modelToWorldMatrix;
   for (int i = 0; i < 3; ++i)
     {
-    modelToWorldMatrix->SetElement(i, 0, x[i]);
-    modelToWorldMatrix->SetElement(i, 1, y[i]);
-    modelToWorldMatrix->SetElement(i, 2, z[i]);
-    modelToWorldMatrix->SetElement(i, 3, origin[i]);
+    modelToWorldMatrix->SetElement(i, 0, modelX_World[i]);
+    modelToWorldMatrix->SetElement(i, 1, modelY_World[i]);
+    modelToWorldMatrix->SetElement(i, 2, modelZ_World[i]);
+    modelToWorldMatrix->SetElement(i, 3, origin_World[i]);
     }
   this->InteractionHandleToWorld->DeepCopy(modelToWorldMatrix);
 }

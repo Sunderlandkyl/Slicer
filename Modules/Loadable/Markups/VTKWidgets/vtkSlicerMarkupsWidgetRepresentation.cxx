@@ -48,6 +48,9 @@
 #include <vtkMRMLInteractionEventData.h>
 
 //----------------------------------------------------------------------
+static const double INTERACTION_HANDLE_SCALE_FACTOR = 7.0;
+
+//----------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation::ControlPointsPipeline::ControlPointsPipeline()
 {
   this->TextProperty = vtkSmartPointer<vtkTextProperty>::New();
@@ -757,7 +760,7 @@ int vtkSlicerMarkupsWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* view
   if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility())
     {
     this->InteractionPipeline->UpdateHandleColors();
-    double interactionWidgetScale = 7.0 * this->ControlPointSize;
+    double interactionWidgetScale = INTERACTION_HANDLE_SCALE_FACTOR * this->ControlPointSize;
     this->InteractionPipeline->SetWidgetScale(interactionWidgetScale);
     count += this->InteractionPipeline->Actor->RenderOpaqueGeometry(viewport);
     }

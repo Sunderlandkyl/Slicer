@@ -661,7 +661,7 @@ protected:
   std::vector< vtkSmartPointer<vtkMRMLMeasurement> > Measurements;
 
   // Transform that moves the xyz unit vectors and origin of the interaction handles to world coordinates
-  vtkSmartPointer<vtkMatrix4x4> InteractionHandleToWorld;
+  vtkSmartPointer<vtkMatrix4x4> InteractionHandleModelToLocal;
 
 };
 

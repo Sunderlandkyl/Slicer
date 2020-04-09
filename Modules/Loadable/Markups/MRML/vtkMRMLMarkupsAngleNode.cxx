@@ -102,50 +102,50 @@ void vtkMRMLMarkupsAngleNode::UpdateInteractionHandleToWorld()
     return;
     }
 
-  double p0[3], p1[3], p2[3] = { 0 };
-  this->GetNthControlPointPositionWorld(0, p0);
-  this->GetNthControlPointPositionWorld(1, p1);
-  this->GetNthControlPointPositionWorld(2, p2);
+  double point0_World[3] = { 0.0 };
+  double point1_World[3] = { 0.0 };
+  double point2_World[3] = { 0.0 };
+  this->GetNthControlPointPositionWorld(0, point0_World);
+  this->GetNthControlPointPositionWorld(1, point1_World);
+  this->GetNthControlPointPositionWorld(2, point2_World);
 
-  double epsilon = 0.00001;
-  double v0[3] = { 1, 0, 0 };
-  vtkMath::Subtract(p0, p1, v0);
-  if (vtkMath::Norm(v0) < epsilon)
+  double epsilon = 1e-5;
+  double modelX_World[3] = { 1.0, 0.0, 0.0 };
+  vtkMath::Subtract(point0_World, point1_World, modelX_World);
+  if (vtkMath::Norm(modelX_World) < epsilon)
     {
     return;
     }
-  vtkMath::Normalize(v0);
+  vtkMath::Normalize(modelX_World);
 
-  double v1[3] = { 0 };
-  vtkMath::Subtract(p2, p1, v1);
-  if (vtkMath::Norm(v1) < epsilon)
+  double vectorPoint1ToPoint2_World[3] = { 0.0 };
+  vtkMath::Subtract(point2_World, point1_World, vectorPoint1ToPoint2_World);
+  if (vtkMath::Norm(vectorPoint1ToPoint2_World) < epsilon)
     {
     return;
     }
-  vtkMath::Normalize(v1);
+  vtkMath::Normalize(vectorPoint1ToPoint2_World);
 
-  if (std::abs(vtkMath::Dot(v0, v1)) > 1 - epsilon)
+  if (std::abs(vtkMath::Dot(modelX_World, vectorPoint1ToPoint2_World)) > 1.0 - epsilon)
     {
     return;
     }
 
-  double* x = v0;
+  double modelZ_World[3] = { 0.0 };
+  vtkMath::Cross(modelX_World, vectorPoint1ToPoint2_World, modelZ_World);
+  vtkMath::Normalize(modelZ_World);
 
-  double z[3] = { 0 };
-  vtkMath::Cross(v0, v1, z);
-  vtkMath::Normalize(z);
-
-  double y[3] = { 0 };
-  vtkMath::Cross(z, x, y);
-  vtkMath::Normalize(y);
+  double modelY_World[3] = { 0.0 };
+  vtkMath::Cross(modelZ_World, modelX_World, modelY_World);
+  vtkMath::Normalize(modelY_World);
 
   vtkNew<vtkMatrix4x4> modelToWorldMatrix;
   for (int i = 0; i < 3; ++i)
     {
-    modelToWorldMatrix->SetElement(i, 0, x[i]);
-    modelToWorldMatrix->SetElement(i, 1, y[i]);
-    modelToWorldMatrix->SetElement(i, 2, z[i]);
-    modelToWorldMatrix->SetElement(i, 3, p1[i]);
+    modelToWorldMatrix->SetElement(i, 0, modelX_World[i]);
+    modelToWorldMatrix->SetElement(i, 1, modelY_World[i]);
+    modelToWorldMatrix->SetElement(i, 2, modelZ_World[i]);
+    modelToWorldMatrix->SetElement(i, 3, point1_World[i]);
     }
   this->InteractionHandleToWorld->DeepCopy(modelToWorldMatrix);
 }

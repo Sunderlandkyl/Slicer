@@ -107,33 +107,35 @@ void vtkMRMLMarkupsLineNode::UpdateInteractionHandleToWorld()
     return;
     }
 
-  double xVector[4] = { 1, 0, 0, 0 };
-  this->InteractionHandleToWorld->MultiplyPoint(xVector, xVector);
+  double modelX_World[4] = { 1.0, 0.0, 0.0, 0.0 };
+  this->InteractionHandleToWorld->MultiplyPoint(modelX_World, modelX_World);
 
-  double lineVector[4] = { 0 };
-  double linePoint0[3];
-  this->GetNthControlPointPosition(0, linePoint0);
-  double linePoint1[3];
-  this->GetNthControlPointPosition(1, linePoint1);
-  vtkMath::Subtract(linePoint1, linePoint0, lineVector);
+  double point0_World[3];
+  this->GetNthControlPointPositionWorld(0, point0_World);
+  double point1_World[3];
+  this->GetNthControlPointPositionWorld(1, point1_World);
 
-  double rotationVector[3] = { 0 };
-  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(lineVector, xVector));
-  double epsilon = 0.001;
+  double vectorPoint0ToPoint1_World[4] = { 0.0 };
+  vtkMath::Subtract(point1_World, point0_World, vectorPoint0ToPoint1_World);
+
+  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(vectorPoint0ToPoint1_World, modelX_World));
+  double epsilon = 1e-5;
   if (angle < epsilon)
     {
     return;
     }
-  vtkMath::Cross(xVector, lineVector, rotationVector);
 
-  double origin[4] = { 0, 0, 0, 1 };
-  this->InteractionHandleToWorld->MultiplyPoint(origin, origin);
+  double rotationVector_World[3] = { 0.0 };
+  vtkMath::Cross(modelX_World, vectorPoint0ToPoint1_World, rotationVector_World);
+
+  double origin_World[4] = { 0.0, 0.0, 0.0, 1.0 };
+  this->InteractionHandleToWorld->MultiplyPoint(origin_World, origin_World);
 
   vtkNew<vtkTransform> modelToWorldMatrix;
   modelToWorldMatrix->PostMultiply();
   modelToWorldMatrix->Concatenate(this->InteractionHandleToWorld);
-  modelToWorldMatrix->Translate(-origin[0], -origin[1], -origin[2]);
-  modelToWorldMatrix->RotateWXYZ(angle, rotationVector);
-  modelToWorldMatrix->Translate(origin);
+  modelToWorldMatrix->Translate(-origin_World[0], -origin_World[1], -origin_World[2]);
+  modelToWorldMatrix->RotateWXYZ(angle, rotationVector_World);
+  modelToWorldMatrix->Translate(origin_World);
   this->InteractionHandleToWorld->DeepCopy(modelToWorldMatrix->GetMatrix());
 }

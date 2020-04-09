@@ -98,7 +98,7 @@ vtkMRMLMarkupsNode::vtkMRMLMarkupsNode()
 
   this->TransformedCurvePolyLocator = vtkSmartPointer<vtkPointLocator>::New();
 
-  this->InteractionHandleToWorld = vtkSmartPointer<vtkMatrix4x4>::New();
+  this->InteractionHandleModelToLocal = vtkSmartPointer<vtkMatrix4x4>::New();
 }
 
 //----------------------------------------------------------------------------
@@ -2022,34 +2022,34 @@ void vtkMRMLMarkupsNode::WriteMeasurementsToDescription()
 //---------------------------------------------------------------------------
 vtkMatrix4x4* vtkMRMLMarkupsNode::GetInteractionHandleToWorld()
 {
-  if (this->InteractionHandleToWorld->GetMTime() < this->CurveInputPoly->GetMTime() ||
-      this->InteractionHandleToWorld->GetMTime() < this->CurveInputPoly->GetPoints()->GetMTime() ||
-      this->InteractionHandleToWorld->GetMTime() < this->GetMTime())
+  if (this->InteractionHandleModelToLocal->GetMTime() < this->CurveInputPoly->GetMTime() ||
+      this->InteractionHandleModelToLocal->GetMTime() < this->CurveInputPoly->GetPoints()->GetMTime() ||
+      this->InteractionHandleModelToLocal->GetMTime() < this->GetMTime())
     {
     this->UpdateInteractionHandleToWorld();
     }
-  return this->InteractionHandleToWorld;
+  return this->InteractionHandleModelToLocal;
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsNode::UpdateInteractionHandleToWorld()
 {
   // The origin of the coordinate system is at the center of mass of the control points
-  double origin[3] = { 0 };
+  double origin_Local[3] = { 0 };
   int numberOfControlPoints = this->GetNumberOfMarkups();
   for (int i = 0; i < numberOfControlPoints; ++i)
     {
-    double controlPointPosition[3] = { 0 };
-    this->GetNthControlPointPosition(i, controlPointPosition);
+    double controlPointPosition_Local[3] = { 0.0 };
+    this->GetNthControlPointPosition(i, controlPointPosition_Local);
 
-    origin[0] += controlPointPosition[0] / numberOfControlPoints;
-    origin[1] += controlPointPosition[1] / numberOfControlPoints;
-    origin[2] += controlPointPosition[2] / numberOfControlPoints;
+    origin_Local[0] += controlPointPosition_Local[0] / numberOfControlPoints;
+    origin_Local[1] += controlPointPosition_Local[1] / numberOfControlPoints;
+    origin_Local[2] += controlPointPosition_Local[2] / numberOfControlPoints;
     }
 
   for (int i = 0; i < 3; ++i)
     {
-    this->InteractionHandleToWorld->SetElement(i, 3, origin[i]);
+    this->InteractionHandleModelToLocal->SetElement(i, 3, origin_Local[i]);
     }
 
   if (this->GetNumberOfControlPoints() < 3)
@@ -2060,50 +2060,50 @@ void vtkMRMLMarkupsNode::UpdateInteractionHandleToWorld()
   // The orientation of the coordinate system is adjusted so that the z axis aligns with the normal of the
   // best fit plane defined by the control points.
   vtkIdType numberOfPoints = this->GetNumberOfControlPoints();
-  Eigen::MatrixXd pointCoords(3, numberOfPoints);
-  double point[3] = { 0.0 };
+  Eigen::MatrixXd pointCoords_World(3, numberOfPoints);
+  double point_Local[3] = { 0.0 };
   for (vtkIdType pointIndex = 0; pointIndex < numberOfPoints; ++pointIndex)
     {
-    this->GetNthControlPointPositionWorld(pointIndex, point);
-    pointCoords(0, pointIndex) = point[0];
-    pointCoords(1, pointIndex) = point[1];
-    pointCoords(2, pointIndex) = point[2];
+    this->GetNthControlPointPosition(pointIndex, point_Local);
+    pointCoords_World(0, pointIndex) = point_Local[0];
+    pointCoords_World(1, pointIndex) = point_Local[1];
+    pointCoords_World(2, pointIndex) = point_Local[2];
     }
-  pointCoords.row(0).array() -= origin[0];
-  pointCoords.row(1).array() -= origin[1];
-  pointCoords.row(2).array() -= origin[2];
-  Eigen::BDCSVD<Eigen::MatrixXd> svd(pointCoords, Eigen::ComputeFullU);
+  pointCoords_World.row(0).array() -= origin_Local[0];
+  pointCoords_World.row(1).array() -= origin_Local[1];
+  pointCoords_World.row(2).array() -= origin_Local[2];
+  Eigen::BDCSVD<Eigen::MatrixXd> svd(pointCoords_World, Eigen::ComputeFullU);
 
-  double normal[3] = { 0 };
+  double normal_World[3] = { 0 };
   for (int i = 0; i < 3; i++)
     {
-    normal[i] = svd.matrixU()(i, 2);
+    normal_World[i] = svd.matrixU()(i, 2);
     }
 
-  double zVector[4] = { 0, 0, 1, 0 };
-  this->InteractionHandleToWorld->MultiplyPoint(zVector, zVector);
+  double modelZ_World[4] = { 0.0, 0.0, 1.0, 0.0 };
+  this->InteractionHandleModelToLocal->MultiplyPoint(modelZ_World, modelZ_World);
 
-  if (vtkMath::Dot(zVector, normal) < 0)
+  if (vtkMath::Dot(modelZ_World, normal_World) < 0.0)
     {
-    zVector[0] = -zVector[0];
-    zVector[1] = -zVector[1];
-    zVector[2] = -zVector[2];
+    modelZ_World[0] = -modelZ_World[0];
+    modelZ_World[1] = -modelZ_World[1];
+    modelZ_World[2] = -modelZ_World[2];
     }
 
   double rotationVector[3] = { 0 };
-  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(zVector, normal));
+  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(modelZ_World, normal_World));
   double epsilon = 0.001;
   if (angle < epsilon)
     {
     return;
     }
-  vtkMath::Cross(zVector, normal, rotationVector);
+  vtkMath::Cross(modelZ_World, normal_World, rotationVector);
 
   vtkNew<vtkTransform> modelToWorldMatrix;
   modelToWorldMatrix->PostMultiply();
-  modelToWorldMatrix->Concatenate(this->InteractionHandleToWorld);
-  modelToWorldMatrix->Translate(-origin[0], -origin[1], -origin[2]);
+  modelToWorldMatrix->Concatenate(this->InteractionHandleModelToLocal);
+  modelToWorldMatrix->Translate(-origin_World[0], -origin_World[1], -origin_World[2]);
   modelToWorldMatrix->RotateWXYZ(angle, rotationVector);
-  modelToWorldMatrix->Translate(origin);
-  this->InteractionHandleToWorld->DeepCopy(modelToWorldMatrix->GetMatrix());
+  modelToWorldMatrix->Translate(origin_World);
+  this->InteractionHandleModelToLocal->DeepCopy(modelToWorldMatrix->GetMatrix());
 }
