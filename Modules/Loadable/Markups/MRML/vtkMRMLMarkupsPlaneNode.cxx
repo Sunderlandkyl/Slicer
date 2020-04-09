@@ -673,7 +673,7 @@ vtkMatrix4x4* vtkMRMLMarkupsPlaneNode::GetLocalToPlaneTransform()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLMarkupsPlaneNode::UpdateInteractionHandleToWorld()
+void vtkMRMLMarkupsPlaneNode::UpdateInteractionHandleModelToLocal()
 {
   double modelX_Local[3] = { 0.0 };
   double modelY_Local[3] = { 0.0 };

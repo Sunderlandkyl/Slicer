@@ -95,7 +95,7 @@ void vtkMRMLMarkupsAngleNode::UpdateMeasurements()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLMarkupsAngleNode::UpdateInteractionHandleToWorld()
+void vtkMRMLMarkupsAngleNode::UpdateInteractionHandleModelToLocal()
 {
   if (this->GetNumberOfControlPoints() < 3)
     {

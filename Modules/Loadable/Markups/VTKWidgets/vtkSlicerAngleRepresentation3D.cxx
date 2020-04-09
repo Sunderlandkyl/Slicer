@@ -407,6 +407,6 @@ void vtkSlicerAngleRepresentation3D::UpdateInteractionPipeline()
     this->InteractionPipeline->Actor->SetVisibility(false);
     return;
     }
-
+  // Final visibility handled by superclass in vtkSlicerMarkupsWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
 }

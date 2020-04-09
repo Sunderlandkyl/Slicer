@@ -29,6 +29,9 @@
 // Slicer MRML includes
 #include "vtkMRMLScene.h"
 
+// vtkAddon includes
+#include "vtkAddonMathUtilities.h"
+
 // VTK includes
 #include <vtkAbstractTransform.h>
 #include <vtkBitArray.h>
@@ -40,6 +43,7 @@
 #include <vtkMatrix4x4.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
+#include <vtkPlane.h>
 #include <vtkPointData.h>
 #include <vtkPolyData.h>
 #include <vtkStringArray.h>
@@ -341,6 +345,8 @@ void vtkMRMLMarkupsNode::RemoveAllControlPoints()
   this->CurveInputPoly->GetPoints()->Reset();
   this->CurveInputPoly->GetPoints()->Squeeze();
 
+  this->UpdateInteractionHandleModelToLocal();
+
   this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointRemovedEvent);
   if (definedPointsExisted)
     {
@@ -497,6 +503,8 @@ int vtkMRMLMarkupsNode::AddControlPoint(ControlPoint *controlPoint)
   this->CurveInputPoly->GetPoints()->InsertNextPoint(controlPoint->Position);
   this->CurveInputPoly->GetPoints()->Modified();
 
+  this->UpdateInteractionHandleModelToLocal();
+
   int controlPointIndex = this->GetNumberOfControlPoints() - 1;
   this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointAddedEvent,  static_cast<void*>(&controlPointIndex));
   this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointModifiedEvent, static_cast<void*>(&controlPointIndex));
@@ -641,6 +649,7 @@ void vtkMRMLMarkupsNode::RemoveNthControlPoint(int pointIndex)
   this->ControlPoints.erase(this->ControlPoints.begin() + pointIndex);
 
   this->UpdateCurvePolyFromControlPoints();
+  this->UpdateInteractionHandleModelToLocal();
 
   if (positionWasDefined)
     {
@@ -682,6 +691,7 @@ bool vtkMRMLMarkupsNode::InsertControlPoint(ControlPoint *controlPoint, int targ
   std::vector < ControlPoint* >::iterator result = this->ControlPoints.insert(pos, controlPoint);
 
   this->UpdateCurvePolyFromControlPoints();
+  this->UpdateInteractionHandleModelToLocal();
 
   // let observers know that a markup was added
   this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointAddedEvent, static_cast<void*>(&targetIndex));
@@ -747,6 +757,7 @@ void vtkMRMLMarkupsNode::SwapControlPoints(int m1, int m2)
   *controlPoint2 = controlPoint1Backup;
 
   this->UpdateCurvePolyFromControlPoints();
+  this->UpdateInteractionHandleModelToLocal();
 
   // and let listeners know that two control points have changed
   this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointModifiedEvent, static_cast<void*>(&m1));
@@ -795,6 +806,8 @@ void vtkMRMLMarkupsNode::SetNthControlPointPosition(const int pointIndex,
   vtkPoints* points = this->CurveInputPoly->GetPoints();
   points->SetPoint(pointIndex, x, y, z);
   points->Modified();
+
+  this->UpdateInteractionHandleModelToLocal();
 
   // throw an event to let listeners know the position has changed
   int n = pointIndex;
@@ -866,6 +879,8 @@ void vtkMRMLMarkupsNode::SetNthControlPointPositionOrientationWorldFromArray(
   vtkPoints* points = this->CurveInputPoly->GetPoints();
   points->SetPoint(pointIndex, controlPoint->Position);
   points->Modified();
+
+  this->UpdateInteractionHandleModelToLocal();
 
   // throw an event to let listeners know the position has changed
   int n = pointIndex;
@@ -2022,21 +2037,20 @@ void vtkMRMLMarkupsNode::WriteMeasurementsToDescription()
 //---------------------------------------------------------------------------
 vtkMatrix4x4* vtkMRMLMarkupsNode::GetInteractionHandleModelToLocal()
 {
-  if (this->InteractionHandleModelToLocal->GetMTime() < this->CurveInputPoly->GetMTime() ||
-      this->InteractionHandleModelToLocal->GetMTime() < this->CurveInputPoly->GetPoints()->GetMTime() ||
-      this->InteractionHandleModelToLocal->GetMTime() < this->GetMTime())
+  if (this->InteractionHandleModelToLocal->GetMTime() < this->GetMTime())
     {
-    this->UpdateInteractionHandleToWorld();
+    this->UpdateInteractionHandleModelToLocal();
     }
   return this->InteractionHandleModelToLocal;
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLMarkupsNode::UpdateInteractionHandleToWorld()
+void vtkMRMLMarkupsNode::UpdateInteractionHandleModelToLocal()
 {
   // The origin of the coordinate system is at the center of mass of the control points
   double origin_Local[3] = { 0 };
   int numberOfControlPoints = this->GetNumberOfMarkups();
+  vtkNew<vtkPoints> controlPoints_Local;
   for (int i = 0; i < numberOfControlPoints; ++i)
     {
     double controlPointPosition_Local[3] = { 0.0 };
@@ -2045,6 +2059,8 @@ void vtkMRMLMarkupsNode::UpdateInteractionHandleToWorld()
     origin_Local[0] += controlPointPosition_Local[0] / numberOfControlPoints;
     origin_Local[1] += controlPointPosition_Local[1] / numberOfControlPoints;
     origin_Local[2] += controlPointPosition_Local[2] / numberOfControlPoints;
+
+    controlPoints_Local->InsertNextPoint(controlPointPosition_Local);
     }
 
   for (int i = 0; i < 3; ++i)
@@ -2059,26 +2075,12 @@ void vtkMRMLMarkupsNode::UpdateInteractionHandleToWorld()
 
   // The orientation of the coordinate system is adjusted so that the z axis aligns with the normal of the
   // best fit plane defined by the control points.
-  vtkIdType numberOfPoints = this->GetNumberOfControlPoints();
-  Eigen::MatrixXd pointCoords_Local(3, numberOfPoints);
-  double point_Local[3] = { 0.0 };
-  for (vtkIdType pointIndex = 0; pointIndex < numberOfPoints; ++pointIndex)
-    {
-    this->GetNthControlPointPosition(pointIndex, point_Local);
-    pointCoords_Local(0, pointIndex) = point_Local[0];
-    pointCoords_Local(1, pointIndex) = point_Local[1];
-    pointCoords_Local(2, pointIndex) = point_Local[2];
-    }
-  pointCoords_Local.row(0).array() -= origin_Local[0];
-  pointCoords_Local.row(1).array() -= origin_Local[1];
-  pointCoords_Local.row(2).array() -= origin_Local[2];
-  Eigen::BDCSVD<Eigen::MatrixXd> svd(pointCoords_Local, Eigen::ComputeFullU);
+
+  vtkNew<vtkPlane> bestFitPlane_Local;
+  vtkAddonMathUtilities::FitPlaneToPoints(controlPoints_Local, bestFitPlane_Local);
 
   double normal_Local[3] = { 0 };
-  for (int i = 0; i < 3; i++)
-    {
-    normal_Local[i] = svd.matrixU()(i, 2);
-    }
+  bestFitPlane_Local->GetNormal(normal_Local);
 
   double modelZ_Local[4] = { 0.0, 0.0, 1.0, 0.0 };
   this->InteractionHandleModelToLocal->MultiplyPoint(modelZ_Local, modelZ_Local);

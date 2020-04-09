@@ -99,9 +99,9 @@ void vtkMRMLMarkupsLineNode::UpdateMeasurements()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLMarkupsLineNode::UpdateInteractionHandleToWorld()
+void vtkMRMLMarkupsLineNode::UpdateInteractionHandleModelToLocal()
 {
-  Superclass::UpdateInteractionHandleToWorld();
+  Superclass::UpdateInteractionHandleModelToLocal();
   if (this->GetNumberOfControlPoints() < 2)
     {
     return;
@@ -131,11 +131,11 @@ void vtkMRMLMarkupsLineNode::UpdateInteractionHandleToWorld()
   double origin_Local[4] = { 0.0, 0.0, 0.0, 1.0 };
   this->InteractionHandleModelToLocal->MultiplyPoint(origin_Local, origin_Local);
 
-  vtkNew<vtkTransform> modelToWorldMatrix;
-  modelToWorldMatrix->PostMultiply();
-  modelToWorldMatrix->Concatenate(this->InteractionHandleModelToLocal);
-  modelToWorldMatrix->Translate(-origin_Local[0], -origin_Local[1], -origin_Local[2]);
-  modelToWorldMatrix->RotateWXYZ(angle, rotationVector_Local);
-  modelToWorldMatrix->Translate(origin_Local);
-  this->InteractionHandleModelToLocal->DeepCopy(modelToWorldMatrix->GetMatrix());
+  vtkNew<vtkTransform> modelToLocalMatrix;
+  modelToLocalMatrix->PostMultiply();
+  modelToLocalMatrix->Concatenate(this->InteractionHandleModelToLocal);
+  modelToLocalMatrix->Translate(-origin_Local[0], -origin_Local[1], -origin_Local[2]);
+  modelToLocalMatrix->RotateWXYZ(angle, rotationVector_Local);
+  modelToLocalMatrix->Translate(origin_Local);
+  this->InteractionHandleModelToLocal->DeepCopy(modelToLocalMatrix->GetMatrix());
 }

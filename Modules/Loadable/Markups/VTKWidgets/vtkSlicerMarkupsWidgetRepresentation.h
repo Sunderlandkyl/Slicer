@@ -55,6 +55,7 @@ class vtkArrowSource;
 class vtkConeSource;
 class vtkGlyph3D;
 class vtkMarkupsGlyphSource2D;
+class vtkMRMLInteractionEventData;
 class vtkPointPlacer;
 class vtkPointSetToLabelHierarchy;
 class vtkPolyDataMapper2D;
@@ -64,8 +65,7 @@ class vtkSphereSource;
 class vtkTextActor;
 class vtkTextProperty;
 class vtkTensorGlyph;
-
-class vtkMRMLInteractionEventData;
+class vtkTubeFilter;
 
 class VTK_SLICER_MARKUPS_MODULE_VTKWIDGETS_EXPORT vtkSlicerMarkupsWidgetRepresentation : public vtkMRMLAbstractWidgetRepresentation
 {
@@ -190,6 +190,7 @@ protected:
 
     vtkSmartPointer<vtkSphereSource>                    AxisRotationHandleSource;
     vtkSmartPointer<vtkArcSource>                       AxisRotationArcSource;
+    vtkSmartPointer<vtkTubeFilter>                      AxisRotationTubeFilter;
     vtkSmartPointer<vtkAppendPolyData>                  AxisRotationGlyphSource;
 
     vtkSmartPointer<vtkArrowSource>                     AxisTranslationGlyphSource;

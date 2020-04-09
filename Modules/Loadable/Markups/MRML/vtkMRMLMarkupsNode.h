@@ -610,7 +610,7 @@ protected:
   virtual void WriteMeasurementsToDescription();
 
   /// Calculates the handle to world matrix based on the current control points
-  virtual void UpdateInteractionHandleToWorld();
+  virtual void UpdateInteractionHandleModelToLocal();
 
   // Used for limiting number of markups that may be placed.
   int MaximumNumberOfControlPoints;

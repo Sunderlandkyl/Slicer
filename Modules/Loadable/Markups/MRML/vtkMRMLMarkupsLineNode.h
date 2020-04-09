@@ -69,7 +69,7 @@ protected:
   void UpdateMeasurements() override;
 
   /// Calculates the handle to world matrix based on the current control points
-  void UpdateInteractionHandleToWorld() override;
+  void UpdateInteractionHandleModelToLocal() override;
 };
 
 #endif
