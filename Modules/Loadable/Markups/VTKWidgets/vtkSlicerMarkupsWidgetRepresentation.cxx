@@ -567,18 +567,9 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateInteractionPipeline()
 
   this->InteractionPipeline->Actor->SetVisibility(this->MarkupsDisplayNode->GetHandlesInteractive());
 
-  vtkMatrix4x4* interactionHandleModelToLocal = markupsNode->GetInteractionHandleModelToLocal();
-
   vtkNew<vtkTransform> modelToWorldTransform;
   modelToWorldTransform->PostMultiply();
-  modelToWorldTransform->Concatenate(interactionHandleModelToLocal);
-  if (markupsNode->GetParentTransformNode())
-    {
-    vtkNew<vtkMatrix4x4> localToWorldMatrix;
-    markupsNode->GetParentTransformNode()->GetMatrixTransformToWorld(localToWorldMatrix);
-    modelToWorldTransform->Concatenate(localToWorldMatrix);
-    }
-
+  modelToWorldTransform->Concatenate(markupsNode->GetInteractionHandleModelToWorld());
   this->InteractionPipeline->ModelToWorldTransform->DeepCopy(modelToWorldTransform);
 }
 

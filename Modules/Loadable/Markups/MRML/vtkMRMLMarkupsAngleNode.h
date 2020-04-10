@@ -67,7 +67,7 @@ protected:
   void operator=(const vtkMRMLMarkupsAngleNode&);
 
   /// Calculates the handle to world matrix based on the current control points
-  void UpdateInteractionHandleModelToLocal() override;
+  void UpdateInteractionHandleModelToWorld() override;
 
   void UpdateMeasurements() override;
 };

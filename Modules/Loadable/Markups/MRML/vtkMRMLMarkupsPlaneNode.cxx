@@ -673,23 +673,23 @@ vtkMatrix4x4* vtkMRMLMarkupsPlaneNode::GetLocalToPlaneTransform()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLMarkupsPlaneNode::UpdateInteractionHandleModelToLocal()
+void vtkMRMLMarkupsPlaneNode::UpdateInteractionHandleModelToWorld()
 {
-  double modelX_Local[3] = { 0.0 };
-  double modelY_Local[3] = { 0.0 };
-  double modelZ_Local[3] = { 0.0 };
-  this->GetPlaneAxes(modelX_Local, modelY_Local, modelZ_Local);
+  double modelX_World[3] = { 0.0 };
+  double modelY_World[3] = { 0.0 };
+  double modelZ_World[3] = { 0.0 };
+  this->GetPlaneAxesWorld(modelX_World, modelY_World, modelZ_World);
 
   double origin_Local[3] = { 0 };
   this->GetOrigin(origin_Local);
 
-  vtkNew<vtkMatrix4x4> modelToLocalMatrix;
+  vtkNew<vtkMatrix4x4> modelToWorldMatrix;
   for (int i = 0; i < 3; ++i)
     {
-    modelToLocalMatrix->SetElement(i, 0, modelX_Local[i]);
-    modelToLocalMatrix->SetElement(i, 1, modelY_Local[i]);
-    modelToLocalMatrix->SetElement(i, 2, modelZ_Local[i]);
-    modelToLocalMatrix->SetElement(i, 3, origin_Local[i]);
+    modelToWorldMatrix->SetElement(i, 0, modelX_World[i]);
+    modelToWorldMatrix->SetElement(i, 1, modelY_World[i]);
+    modelToWorldMatrix->SetElement(i, 2, modelZ_World[i]);
+    modelToWorldMatrix->SetElement(i, 3, origin_Local[i]);
     }
-  this->InteractionHandleModelToLocal->DeepCopy(modelToLocalMatrix);
+  this->InteractionHandleModelToWorld->DeepCopy(modelToWorldMatrix);
 }

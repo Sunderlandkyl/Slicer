@@ -99,26 +99,26 @@ void vtkMRMLMarkupsLineNode::UpdateMeasurements()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLMarkupsLineNode::UpdateInteractionHandleModelToLocal()
+void vtkMRMLMarkupsLineNode::UpdateInteractionHandleModelToWorld()
 {
-  Superclass::UpdateInteractionHandleModelToLocal();
+  Superclass::UpdateInteractionHandleModelToWorld();
   if (this->GetNumberOfControlPoints() < 2)
     {
     return;
     }
 
-  double modelX_Local[4] = { 1.0, 0.0, 0.0, 0.0 };
-  this->InteractionHandleModelToLocal->MultiplyPoint(modelX_Local, modelX_Local);
+  double modelX_World[4] = { 1.0, 0.0, 0.0, 0.0 };
+  this->InteractionHandleModelToWorld->MultiplyPoint(modelX_World, modelX_World);
 
-  double point0_Local[3];
-  this->GetNthControlPointPosition(0, point0_Local);
-  double point1_Local[3];
-  this->GetNthControlPointPosition(1, point1_Local);
+  double point0_World[3];
+  this->GetNthControlPointPositionWorld(0, point0_World);
+  double point1_World[3];
+  this->GetNthControlPointPositionWorld(1, point1_World);
 
-  double vectorPoint0ToPoint1_Local[4] = { 0.0 };
-  vtkMath::Subtract(point1_Local, point0_Local, vectorPoint0ToPoint1_Local);
+  double vectorPoint0ToPoint1_World[4] = { 0.0 };
+  vtkMath::Subtract(point1_World, point0_World, vectorPoint0ToPoint1_World);
 
-  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(vectorPoint0ToPoint1_Local, modelX_Local));
+  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(vectorPoint0ToPoint1_World, modelX_World));
   double epsilon = 1e-5;
   if (angle < epsilon)
     {
@@ -126,16 +126,16 @@ void vtkMRMLMarkupsLineNode::UpdateInteractionHandleModelToLocal()
     }
 
   double rotationVector_Local[3] = { 0.0 };
-  vtkMath::Cross(modelX_Local, vectorPoint0ToPoint1_Local, rotationVector_Local);
+  vtkMath::Cross(modelX_World, vectorPoint0ToPoint1_World, rotationVector_Local);
 
-  double origin_Local[4] = { 0.0, 0.0, 0.0, 1.0 };
-  this->InteractionHandleModelToLocal->MultiplyPoint(origin_Local, origin_Local);
+  double origin_World[4] = { 0.0, 0.0, 0.0, 1.0 };
+  this->InteractionHandleModelToWorld->MultiplyPoint(origin_World, origin_World);
 
-  vtkNew<vtkTransform> modelToLocalMatrix;
-  modelToLocalMatrix->PostMultiply();
-  modelToLocalMatrix->Concatenate(this->InteractionHandleModelToLocal);
-  modelToLocalMatrix->Translate(-origin_Local[0], -origin_Local[1], -origin_Local[2]);
-  modelToLocalMatrix->RotateWXYZ(angle, rotationVector_Local);
-  modelToLocalMatrix->Translate(origin_Local);
-  this->InteractionHandleModelToLocal->DeepCopy(modelToLocalMatrix->GetMatrix());
+  vtkNew<vtkTransform> modelToWorldMatrix;
+  modelToWorldMatrix->PostMultiply();
+  modelToWorldMatrix->Concatenate(this->InteractionHandleModelToWorld);
+  modelToWorldMatrix->Translate(-origin_World[0], -origin_World[1], -origin_World[2]);
+  modelToWorldMatrix->RotateWXYZ(angle, rotationVector_Local);
+  modelToWorldMatrix->Translate(origin_World);
+  this->InteractionHandleModelToWorld->DeepCopy(modelToWorldMatrix->GetMatrix());
 }
