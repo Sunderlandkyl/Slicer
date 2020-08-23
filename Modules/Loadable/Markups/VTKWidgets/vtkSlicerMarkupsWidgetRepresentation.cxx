@@ -537,6 +537,7 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateFromMRML(
     if (this->MarkupsDisplayNode)
       {
       markupsNode = vtkMRMLMarkupsNode::SafeDownCast(this->MarkupsDisplayNode->GetDisplayableNode());
+      this->AlwaysOnTop = this->MarkupsDisplayNode->GetAlwaysOnTop();
       }
     this->SetMarkupsNode(markupsNode);
     }

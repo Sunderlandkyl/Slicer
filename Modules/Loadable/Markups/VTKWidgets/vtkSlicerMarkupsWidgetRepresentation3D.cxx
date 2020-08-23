@@ -633,6 +633,14 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller,
     controlPoints->TextProperty->SetOpacity(this->MarkupsDisplayNode->GetOpacity() * hierarchyOpacity);
     controlPoints->TextProperty->SetFontSize(static_cast<int>(5. * this->MarkupsDisplayNode->GetTextScale()));
 
+    controlPoints->SelectVisiblePoints->SetTolerance(0.0);
+    if (this->AlwaysOnTop)
+      {
+      // If AlwaysOnTop, then the depth of the widget will be 0.0.
+      // The point should never be occluded, so set tolerance to 1.0.
+      controlPoints->SelectVisiblePoints->SetTolerance(1.0);
+      }
+
     if (this->MarkupsDisplayNode->GlyphTypeIs3D())
       {
       this->GetControlPointsPipeline(controlPointType)->Glypher->SetSourceConnection(

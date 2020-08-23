@@ -112,7 +112,9 @@ void qMRMLMarkupsDisplayNodeWidgetPrivate::init()
   QObject::connect(this->OutlineOpacitySliderWidget, SIGNAL(valueChanged(double)),
     q, SLOT(onOutlineOpacitySliderWidgetChanged(double)));
 
-    // populate the glyph type combo box
+  QObject::connect(this->AlwaysOnTopCheckBox, SIGNAL(toggled(bool)), q, SLOT(setAlwaysOnTop(bool)));
+
+  // populate the glyph type combo box
   if (this->glyphTypeComboBox->count() == 0)
     {
     vtkNew<vtkMRMLMarkupsDisplayNode> displayNode;
@@ -325,6 +327,10 @@ void qMRMLMarkupsDisplayNodeWidget::updateWidgetFromMRML()
   wasBlocking = d->OutlineOpacitySliderWidget->blockSignals(true);
   d->OutlineOpacitySliderWidget->setValue(d->MarkupsDisplayNode ? d->MarkupsDisplayNode->GetOutlineOpacity() : 0.0);
   d->OutlineOpacitySliderWidget->blockSignals(wasBlocking);
+
+  wasBlocking = d->AlwaysOnTopCheckBox->blockSignals(true);
+  d->AlwaysOnTopCheckBox->setChecked(d->MarkupsDisplayNode ? d->MarkupsDisplayNode->GetAlwaysOnTop() : false);
+  d->AlwaysOnTopCheckBox->blockSignals(wasBlocking);
 
   emit displayNodeChanged();
 }
@@ -596,4 +602,15 @@ void qMRMLMarkupsDisplayNodeWidget::onOutlineOpacitySliderWidgetChanged(double o
     return;
     }
   d->MarkupsDisplayNode->SetOutlineOpacity(opacity);
+}
+
+//-----------------------------------------------------------------------------
+void qMRMLMarkupsDisplayNodeWidget::setAlwaysOnTop(bool alwaysOnTop)
+{
+  Q_D(qMRMLMarkupsDisplayNodeWidget);
+  if (!d->MarkupsDisplayNode)
+    {
+    return;
+    }
+  d->MarkupsDisplayNode->SetAlwaysOnTop(alwaysOnTop);
 }

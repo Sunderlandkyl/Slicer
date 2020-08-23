@@ -373,6 +373,11 @@ public:
   vtkMRMLProceduralColorNode* GetLineColorNode();
   virtual const char* GetLineColorNodeReferenceRole();
 
+  /// Always display the markup widget on top of other widgets in the 2D and 3D viewers
+  vtkGetMacro(AlwaysOnTop, bool);
+  vtkSetMacro(AlwaysOnTop, bool);
+  vtkBooleanMacro(AlwaysOnTop, bool);
+
   /// The visibility and interactability of the interaction handles
   vtkGetMacro(HandlesInteractive, bool);
   vtkSetMacro(HandlesInteractive, bool);
@@ -421,6 +426,8 @@ protected:
   double LineColorFadingEnd;
   double LineColorFadingSaturation;
   double LineColorFadingHueOffset;
+
+  bool AlwaysOnTop;
 
   bool HandlesInteractive;
 };
