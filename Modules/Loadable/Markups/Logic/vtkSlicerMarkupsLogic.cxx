@@ -31,6 +31,7 @@
 #include "vtkMRMLMarkupsLineNode.h"
 #include "vtkMRMLMarkupsNode.h"
 #include "vtkMRMLMarkupsPlaneNode.h"
+#include "vtkMRMLMarkupsROINode.h"
 #include "vtkMRMLMarkupsStorageNode.h"
 
 // Annotation MRML includes
@@ -192,6 +193,7 @@ void vtkSlicerMarkupsLogic::ObserveMRMLScene()
     selectionNode->AddNewPlaceNodeClassNameToList("vtkMRMLMarkupsCurveNode", ":/Icons/MarkupsCurveMouseModePlace.png", "Open Curve");
     selectionNode->AddNewPlaceNodeClassNameToList("vtkMRMLMarkupsClosedCurveNode", ":/Icons/MarkupsClosedCurveMouseModePlace.png", "Closed Curve");
     selectionNode->AddNewPlaceNodeClassNameToList("vtkMRMLMarkupsPlaneNode", ":/Icons/MarkupsPlaneMouseModePlace.png", "Plane");
+    selectionNode->AddNewPlaceNodeClassNameToList("vtkMRMLMarkupsROINode", ":/Icons/MarkupsROIModePlace.png", "ROI");
 
     // trigger an update on the mouse mode toolbar
     this->GetMRMLScene()->EndState(vtkMRMLScene::BatchProcessState);
@@ -215,6 +217,7 @@ void vtkSlicerMarkupsLogic::RegisterNodes()
   scene->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsCurveNode>::New());
   scene->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsClosedCurveNode>::New());
   scene->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsPlaneNode>::New());
+  scene->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsROINode>::New());
 
   // Display nodes
   scene->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsDisplayNode>::New());
@@ -249,7 +252,7 @@ void vtkSlicerMarkupsLogic::OnMRMLSceneNodeAdded(vtkMRMLNode* node)
     vtkObserveMRMLNodeEventsMacro(node, events.GetPointer());
     }
   // a node could have been added by a node selector's create new node method,
-  // but make sure that the scen eis not batch processing before responding to
+  // but make sure that the scene is not batch processing before responding to
   // the event
   if (!node->IsA("vtkMRMLMarkupsNode"))
     {

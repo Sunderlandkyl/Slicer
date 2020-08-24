@@ -113,6 +113,17 @@
        </property>
       </widget>
      </item>
+     <item>
+      <widget class="QPushButton" name="createROIPushButton">
+       <property name="text">
+        <string/>
+       </property>
+       <property name="icon">
+        <iconset resource="../qSlicerMarkupsModule.qrc">
+         <normaloff>:/Icons/MarkupsROIModePlaceAdd.png</normaloff>:/Icons/MarkupsROIModePlaceAdd.png</iconset>
+       </property>
+      </widget>
+     </item>
     </layout>
    </item>
    <item>

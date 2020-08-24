@@ -337,6 +337,8 @@ void qSlicerMarkupsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
     q, SLOT(onCreateMarkupsClosedCurve()));
   QObject::connect(this->createPlanePushButton, SIGNAL(clicked()),
     q, SLOT(onCreateMarkupsPlane()));
+  QObject::connect(this->createROIPushButton, SIGNAL(clicked()),
+    q, SLOT(onCreateMarkupsROI()));
 
   // Make sure that the Jump to Slices radio buttons match the default of the
   // MRML slice node
@@ -1643,6 +1645,15 @@ void qSlicerMarkupsModuleWidget::onCreateMarkupsPlane()
     {
     this->onActiveMarkupMRMLNodeAdded(this->mrmlScene()->AddNewNodeByClass("vtkMRMLMarkupsPlaneNode"));
     }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerMarkupsModuleWidget::onCreateMarkupsROI()
+{
+  if (this->mrmlScene())
+  {
+    this->onActiveMarkupMRMLNodeAdded(this->mrmlScene()->AddNewNodeByClass("vtkMRMLMarkupsROINode"));
+  }
 }
 
 //-----------------------------------------------------------------------------

@@ -159,6 +159,7 @@ public slots:
   void onCreateMarkupsOpenCurve();
   void onCreateMarkupsClosedCurve();
   void onCreateMarkupsPlane();
+  void onCreateMarkupsROI();
 
   /// Toggle the markups node visibility flag
   void onListVisibileInvisiblePushButtonClicked();

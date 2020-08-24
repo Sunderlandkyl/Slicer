@@ -19,6 +19,7 @@ set(${KIT}_SRCS
   vtkMRML${MODULE_NAME}CurveNode.cxx
   vtkMRML${MODULE_NAME}ClosedCurveNode.cxx
   vtkMRML${MODULE_NAME}PlaneNode.cxx
+  vtkMRML${MODULE_NAME}ROINode.cxx
   vtkMRML${MODULE_NAME}Node.cxx
   vtkMRML${MODULE_NAME}FiducialStorageNode.cxx
   vtkMRML${MODULE_NAME}JsonStorageNode.cxx
