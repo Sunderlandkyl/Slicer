@@ -40,7 +40,7 @@ vtkMRMLMarkupsLineNode::vtkMRMLMarkupsLineNode()
   this->MaximumNumberOfControlPoints = 2;
   this->RequiredNumberOfControlPoints = 2;
 
-  this->MeasurementsInDescription = { "length" };
+  //this->MeasurementsInDescription = { "length" };
 }
 
 //----------------------------------------------------------------------------
