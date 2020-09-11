@@ -71,10 +71,6 @@ public:
   vtkGetMacro(FiducialLabelsVisible, int);
   vtkSetMacro(FiducialLabelsVisible, int);
 
-  /// Field of view size
-  vtkGetMacro(FieldOfView, double);
-  vtkSetMacro(FieldOfView, double);
-
   /// Axis label size
   vtkGetMacro(LetterSize, double);
   vtkSetMacro(LetterSize, double);
@@ -306,7 +302,6 @@ protected:
   int BoxVisible;
   int AxisLabelsVisible;
   int AxisLabelsCameraDependent;
-  double FieldOfView;
   double LetterSize;
 
   /// Parameters of automatic spin

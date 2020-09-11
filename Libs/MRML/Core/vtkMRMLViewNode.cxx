@@ -33,7 +33,6 @@ vtkMRMLViewNode::vtkMRMLViewNode()
   this->AxisLabelsCameraDependent = 1;
   this->FiducialsVisible = 1;
   this->FiducialLabelsVisible = 1;
-  this->FieldOfView = 200;
   this->LetterSize = 0.05;
   this->AnimationMode = vtkMRMLViewNode::Off;
   this->ViewAxisMode = vtkMRMLViewNode::LookFrom;
@@ -82,7 +81,6 @@ void vtkMRMLViewNode::WriteXML(ostream& of, int nIndent)
   this->Superclass::WriteXML(of, nIndent);
 
   vtkMRMLWriteXMLBeginMacro(of);
-  vtkMRMLWriteXMLFloatMacro(fieldOfView, FieldOfView);
   vtkMRMLWriteXMLFloatMacro(letterSize, LetterSize);
   vtkMRMLWriteXMLBooleanMacro(boxVisible, BoxVisible);
   vtkMRMLWriteXMLBooleanMacro(fiducialsVisible, FiducialsVisible);
@@ -118,7 +116,6 @@ void vtkMRMLViewNode::ReadXMLAttributes(const char** atts)
   this->Superclass::ReadXMLAttributes(atts);
 
   vtkMRMLReadXMLBeginMacro(atts);
-  vtkMRMLReadXMLFloatMacro(fieldOfView, FieldOfView);
   vtkMRMLReadXMLFloatMacro(letterSize, LetterSize);
   vtkMRMLReadXMLBooleanMacro(boxVisible, BoxVisible);
   vtkMRMLReadXMLBooleanMacro(fiducialsVisible, FiducialsVisible);
@@ -155,7 +152,6 @@ void vtkMRMLViewNode::CopyContent(vtkMRMLNode* anode, bool deepCopy/*=true*/)
   Superclass::CopyContent(anode, deepCopy);
 
   vtkMRMLCopyBeginMacro(anode);
-  vtkMRMLCopyFloatMacro(FieldOfView);
   vtkMRMLCopyFloatMacro(LetterSize);
   vtkMRMLCopyBooleanMacro(BoxVisible);
   vtkMRMLCopyBooleanMacro(FiducialsVisible);
@@ -189,7 +185,6 @@ void vtkMRMLViewNode::PrintSelf(ostream& os, vtkIndent indent)
   this->Superclass::PrintSelf(os,indent);
 
   vtkMRMLPrintBeginMacro(os, indent);
-  vtkMRMLPrintFloatMacro(FieldOfView);
   vtkMRMLPrintFloatMacro(LetterSize);
   vtkMRMLPrintBooleanMacro(BoxVisible);
   vtkMRMLPrintBooleanMacro(FiducialsVisible);

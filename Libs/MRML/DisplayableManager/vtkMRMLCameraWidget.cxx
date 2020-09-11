@@ -899,14 +899,9 @@ bool vtkMRMLCameraWidget::Dolly(double factor)
   if (camera->GetParallelProjection())
     {
     camera->SetParallelScale(camera->GetParallelScale() / factor);
-    if (this->GetCameraNode() && this->GetCameraNode()->GetScene())
+    if (this->CameraNode)
       {
-      vtkMRMLScene* scene = this->GetCameraNode()->GetScene();
-      vtkMRMLViewNode* viewNode = vtkMRMLViewNode::SafeDownCast(scene->GetNodeByID(this->GetCameraNode()->GetActiveTag()));
-      if (viewNode)
-        {
-        viewNode->SetFieldOfView(camera->GetParallelScale());
-        }
+      this->CameraNode->SetParallelProjection(camera->GetParallelScale());
       }
     }
   else

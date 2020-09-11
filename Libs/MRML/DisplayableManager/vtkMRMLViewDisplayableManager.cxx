@@ -469,8 +469,16 @@ void vtkMRMLViewDisplayableManager::vtkInternal::UpdateRenderMode()
     }
   else if (this->External->GetMRMLViewNode()->GetRenderMode() == vtkMRMLViewNode::Orthographic)
     {
-    cam->ParallelProjectionOn();
-    cam->SetParallelScale(this->External->GetMRMLViewNode()->GetFieldOfView());
+    if (this->CameraNode)
+      {
+      double parallelScale = this->CameraNode->GetParallelScale();
+      if (!cam->GetParallelProjection())
+        {
+        parallelScale = this->CameraNode->GetViewAngle();
+        }
+      cam->ParallelProjectionOn();
+      cam->SetParallelScale(parallelScale);
+      }
     }
 }
 

@@ -458,7 +458,7 @@ void qMRMLThreeDView::lookFromViewAxis(const ctkAxesWidget::Axis& axis)
     qCritical() << "qMRMLThreeDView::lookFromViewAxis: no valid view node.";
     return;
     }
-  double fov = d->MRMLViewNode->GetFieldOfView();
+  double fov = this->cameraNode()->GetParallelScale(); // TODO
   Q_ASSERT(fov >= 0.0);
   this->lookFromAxis(axis, fov);
 }
