@@ -367,7 +367,8 @@ public:
   void SetNthControlPointPositionFromArray(const int pointIndex, const double pos[3], int positionStatus = PositionDefined);
   /// Set of the Nth control point position from coordinates
   /// \sa SetNthControlPointPositionFromPointer, SetNthControlPointPositionFromArray
-  void SetNthControlPointPosition(const int pointIndex, const double x, const double y, const double z, int positionStatus = PositionDefined);
+  virtual void SetNthControlPointPosition(const int pointIndex,
+    const double x, const double y, const double z,int positionStatus = PositionDefined);
   /// Set of the Nth control point position using World coordinate system
   /// Calls SetNthControlPointPosition after transforming the passed in coordinate
   /// \sa SetNthControlPointPosition
@@ -377,7 +378,7 @@ public:
   void SetNthControlPointPositionWorldFromArray(const int pointIndex, const double pos[3], int positionStatus = PositionDefined);
   /// Set of the Nth control point position and orientation from an array using World coordinate system.
   /// \sa SetNthControlPointPosition
-  void SetNthControlPointPositionOrientationWorldFromArray(const int pointIndex,
+  virtual void SetNthControlPointPositionOrientationWorldFromArray(const int pointIndex,
     const double pos[3], const double orientationMatrix[9], const char* associatedNodeID, int positionStatus = PositionDefined);
 
   /// Get the position of the center

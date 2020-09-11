@@ -84,6 +84,18 @@ public:
   void GetOriginWorld(double origin[3]);
   void SetOriginWorld(const double origin[3]);
 
+  ///
+  virtual void UpdateBoxROIControlPoints();
+
+  /// Set of the Nth control point position from coordinates
+  /// \sa SetNthControlPointPositionFromPointer, SetNthControlPointPositionFromArray
+  void SetNthControlPointPosition(const int pointIndex,
+    const double x, const double y, const double z, int positionStatus = vtkMRMLMarkupsNode::PositionDefined) override;
+  /// Set of the Nth control point position and orientation from an array using World coordinate system.
+  /// \sa SetNthControlPointPosition
+  void SetNthControlPointPositionOrientationWorldFromArray(const int pointIndex,
+    const double pos[3], const double orientationMatrix[9], const char* associatedNodeID, int positionStatus = vtkMRMLMarkupsNode::PositionDefined) override;
+
 protected:
 
   vtkMRMLMarkupsROINode();
