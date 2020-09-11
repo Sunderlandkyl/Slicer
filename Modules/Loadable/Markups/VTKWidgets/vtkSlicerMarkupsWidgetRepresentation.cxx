@@ -34,8 +34,8 @@
 #include "vtkMRMLViewNode.h"
 #include "vtkPointData.h"
 #include "vtkPointSetToLabelHierarchy.h"
-#include "vtkPolyDataMapper2D.h"
-#include "vtkProperty2D.h"
+#include "vtkPolyDataMapper.h"
+#include "vtkProperty.h"
 #include "vtkRenderer.h"
 #include "vtkSphereSource.h"
 #include "vtkStringArray.h"
@@ -46,13 +46,15 @@
 #include "vtkTransformPolyDataFilter.h"
 #include "vtkTubeFilter.h"
 
+#include <vtkPolyDataNormals.h>
+
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
 #include <vtkMRMLTransformNode.h>
 
 //----------------------------------------------------------------------
-static const double INTERACTION_HANDLE_RADIUS = 0.125;
+static const double INTERACTION_HANDLE_RADIUS = 0.0625;
 static const double INTERACTION_HANDLE_DIAMETER = INTERACTION_HANDLE_RADIUS * 2.0;
 static const double INTERACTION_HANDLE_ROTATION_ARC_TUBE_RADIUS = INTERACTION_HANDLE_RADIUS * 0.4;
 static const double INTERACTION_HANDLE_ROTATION_ARC_RADIUS = 0.80;
@@ -841,6 +843,7 @@ int vtkSlicerMarkupsWidgetRepresentation::RenderTranslucentPolygonalGeometry(vtk
   int count = 0;
   if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility())
     {
+    this->InteractionPipeline->Actor->SetPropertyKeys(this->GetPropertyKeys());
     count += this->InteractionPipeline->Actor->RenderTranslucentPolygonalGeometry(viewport);
     }
   return count;
@@ -939,6 +942,8 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
 
   this->AxisRotationHandleSource = vtkSmartPointer<vtkSphereSource>::New();
   this->AxisRotationHandleSource->SetRadius(INTERACTION_HANDLE_RADIUS);
+  this->AxisRotationHandleSource->SetPhiResolution(16);
+  this->AxisRotationHandleSource->SetThetaResolution(16);
 
   this->AxisRotationArcSource = vtkSmartPointer<vtkArcSource>::New();
   this->AxisRotationArcSource->SetAngle(90);
@@ -949,11 +954,13 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   this->AxisRotationArcSource->SetPoint2(
     INTERACTION_HANDLE_ROTATION_ARC_RADIUS / sqrt(2) - INTERACTION_HANDLE_ROTATION_ARC_RADIUS,
     INTERACTION_HANDLE_ROTATION_ARC_RADIUS/sqrt(2), 0);
-  this->AxisRotationArcSource->SetResolution(6);
+  this->AxisRotationArcSource->SetResolution(16);
 
   this->AxisRotationTubeFilter = vtkSmartPointer<vtkTubeFilter>::New();
   this->AxisRotationTubeFilter->SetInputConnection(this->AxisRotationArcSource->GetOutputPort());
   this->AxisRotationTubeFilter->SetRadius(INTERACTION_HANDLE_ROTATION_ARC_TUBE_RADIUS);
+  this->AxisRotationTubeFilter->SetNumberOfSides(16);
+  this->AxisRotationTubeFilter->SetCapping(true);
 
   this->AxisRotationGlyphSource = vtkSmartPointer <vtkAppendPolyData>::New();
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationHandleSource->GetOutputPort());
@@ -961,7 +968,10 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
 
   this->AxisTranslationGlyphSource = vtkSmartPointer<vtkArrowSource>::New();
   this->AxisTranslationGlyphSource->SetTipRadius(INTERACTION_HANDLE_RADIUS);
+  this->AxisTranslationGlyphSource->SetShaftRadius(INTERACTION_HANDLE_RADIUS * 0.5);
   this->AxisTranslationGlyphSource->SetTipLength(INTERACTION_HANDLE_DIAMETER);
+  this->AxisTranslationGlyphSource->SetTipResolution(16);
+  this->AxisTranslationGlyphSource->SetShaftResolution(16);
   this->AxisTranslationGlyphSource->InvertOn();
 
   vtkNew<vtkTransform> translationGlyphTransformer;
@@ -1006,30 +1016,40 @@ vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::MarkupsInterac
   this->Append->AddInputConnection(this->AxisRotationGlypher->GetOutputPort());
   this->Append->AddInputConnection(this->AxisTranslationGlypher->GetOutputPort());
 
+  this->NormalFilter = vtkSmartPointer<vtkPolyDataNormals>::New();
+  this->NormalFilter->SetInputConnection(this->Append->GetOutputPort());
+  this->NormalFilter->ComputePointNormalsOn();
+
   this->HandleToWorldTransform = vtkSmartPointer<vtkTransform>::New();
   this->HandleToWorldTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->HandleToWorldTransformFilter->SetInputConnection(this->Append->GetOutputPort());
+  this->HandleToWorldTransformFilter->SetInputConnection(this->NormalFilter->GetOutputPort());
   this->HandleToWorldTransformFilter->SetTransform(this->HandleToWorldTransform);
 
   this->ColorTable = vtkSmartPointer<vtkLookupTable>::New();
 
-  vtkNew<vtkCoordinate> coordinate;
-  coordinate->SetCoordinateSystemToWorld();
-
-  this->Mapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+  this->Mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
   this->Mapper->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
   this->Mapper->SetColorModeToMapScalars();
   this->Mapper->ColorByArrayComponent("colorIndex", 0);
   this->Mapper->SetLookupTable(this->ColorTable);
   this->Mapper->ScalarVisibilityOn();
   this->Mapper->UseLookupTableScalarRangeOn();
-  this->Mapper->SetTransformCoordinate(coordinate);
+  this->Mapper->SetRelativeCoincidentTopologyPointOffsetParameter(-2500);
+  this->Mapper->SetRelativeCoincidentTopologyLineOffsetParameters(-1, -2500);
+  this->Mapper->SetRelativeCoincidentTopologyPolygonOffsetParameters(-1, -2500);
 
-  this->Property = vtkSmartPointer<vtkProperty2D>::New();
-  this->Property->SetPointSize(0.0);
-  this->Property->SetLineWidth(0.0);
+  this->Property = vtkSmartPointer<vtkProperty>::New();
+  this->Property->SetRepresentationToSurface();
+  this->Property->SetAmbient(0.0);
+  this->Property->SetDiffuse(1.0);
+  this->Property->SetSpecular(0.0);
+  this->Property->SetShading(true);
+  this->Property->SetSpecularPower(1.0);
+  this->Property->SetPointSize(10.);
+  this->Property->SetLineWidth(2.);
+  this->Property->SetOpacity(1.);
 
-  this->Actor = vtkSmartPointer<vtkActor2D>::New();
+  this->Actor = vtkSmartPointer<vtkActor>::New();
   this->Actor->SetProperty(this->Property);
   this->Actor->SetMapper(this->Mapper);
 

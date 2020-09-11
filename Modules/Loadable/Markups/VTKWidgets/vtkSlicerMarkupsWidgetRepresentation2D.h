@@ -178,6 +178,9 @@ protected:
     void GetViewPlaneNormal(double viewPlaneNormal[3]) override;
 
     vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
+    //vtkSmartPointer<vtkPolyDataMapper2D>        Mapper2D;
+    //vtkSmartPointer<vtkProperty2D>              Property2D;
+    //vtkSmartPointer<vtkActor2D>                 Actor2D;
   };
 
 private:

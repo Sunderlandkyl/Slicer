@@ -49,7 +49,7 @@
 
 #include "vtkSmartPointer.h"
 
-class vtkActor2D;
+class vtkActor;
 class vtkAppendPolyData;
 class vtkArcSource;
 class vtkArrayCalculator;
@@ -60,8 +60,9 @@ class vtkMarkupsGlyphSource2D;
 class vtkMRMLInteractionEventData;
 class vtkPointPlacer;
 class vtkPointSetToLabelHierarchy;
-class vtkPolyDataMapper2D;
-class vtkProperty2D;
+class vtkPolyDataMapper;
+class vtkPolyDataNormals;
+class vtkProperty;
 class vtkRegularPolygonSource;
 class vtkSphereSource;
 class vtkTextActor;
@@ -201,7 +202,7 @@ protected:
     vtkSmartPointer<vtkSphereSource>                    AxisRotationHandleSource;
     vtkSmartPointer<vtkArcSource>                       AxisRotationArcSource;
     vtkSmartPointer<vtkTubeFilter>                      AxisRotationTubeFilter;
-    vtkSmartPointer<vtkAppendPolyData>                  AxisRotationGlyphSource;
+    vtkSmartPointer<vtkAppendPolyData>                   AxisRotationGlyphSource;
 
     vtkSmartPointer<vtkArrowSource>                     AxisTranslationGlyphSource;
     vtkSmartPointer<vtkTransformPolyDataFilter>         AxisTranslationGlyphTransformer;
@@ -215,13 +216,15 @@ protected:
     vtkSmartPointer<vtkTensorGlyph>                     AxisRotationGlypher;
     vtkSmartPointer<vtkGlyph3D>                         AxisTranslationGlypher;
 
+    vtkSmartPointer<vtkPolyDataNormals>                 NormalFilter;
+
     vtkSmartPointer<vtkAppendPolyData>                  Append;
     vtkSmartPointer<vtkTransformPolyDataFilter>         HandleToWorldTransformFilter;
     vtkSmartPointer<vtkTransform>                       HandleToWorldTransform;
     vtkSmartPointer<vtkLookupTable>                     ColorTable;
-    vtkSmartPointer<vtkPolyDataMapper2D>                Mapper;
-    vtkSmartPointer<vtkActor2D>                         Actor;
-    vtkSmartPointer<vtkProperty2D>                      Property;
+    vtkSmartPointer<vtkPolyDataMapper>                  Mapper;
+    vtkSmartPointer<vtkActor>                           Actor;
+    vtkSmartPointer<vtkProperty>                        Property;
 
     double                                              StartFadeAngle;
     double                                              EndFadeAngle;

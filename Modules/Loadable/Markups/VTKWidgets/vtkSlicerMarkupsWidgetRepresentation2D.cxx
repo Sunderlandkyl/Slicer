@@ -17,6 +17,7 @@
 =========================================================================*/
 
 // VTK includes
+#include <vtkActor2D.h>
 #include "vtkCamera.h"
 #include "vtkCellLocator.h"
 #include "vtkDiscretizableColorTransferFunction.h"
@@ -31,6 +32,7 @@
 #include "vtkPlane.h"
 #include "vtkPointData.h"
 #include "vtkPointSetToLabelHierarchy.h"
+#include "vtkPolyDataMapper.h"
 #include "vtkPolyDataMapper2D.h"
 #include "vtkProperty2D.h"
 #include "vtkRenderer.h"
@@ -43,6 +45,8 @@
 #include "vtkTextProperty.h"
 #include "vtkTransform.h"
 #include "vtkTransformPolyDataFilter.h"
+
+#include <vtkLookupTable.h>
 
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
@@ -1196,12 +1200,8 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdatePlaneFromSliceNode()
 
   // Update transformation to slice
   vtkNew<vtkMatrix4x4> rasToSliceXY;
-  vtkMatrix4x4::Invert(sliceXYToRAS, rasToSliceXY.GetPointer());
-  // Project all points to the slice plane (slice Z coordinate = 0)
-  rasToSliceXY->SetElement(2, 0, 0);
-  rasToSliceXY->SetElement(2, 1, 0);
-  rasToSliceXY->SetElement(2, 2, 0);
-  this->WorldToSliceTransform->SetMatrix(rasToSliceXY.GetPointer());
+  vtkMatrix4x4::Invert(sliceXYToRAS, rasToSliceXY);
+  this->WorldToSliceTransform->SetMatrix(rasToSliceXY);
 
   // Update slice plane (for distance computation)
   double normal[3];
@@ -1287,8 +1287,32 @@ vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::MarkupsInt
   this->WorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->WorldToSliceTransformFilter->SetTransform(vtkNew<vtkTransform>());
   this->WorldToSliceTransformFilter->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
-  this->Mapper->SetInputConnection(this->WorldToSliceTransformFilter->GetOutputPort());
-  this->Mapper->SetTransformCoordinate(nullptr);
+
+  //this->Mapper2D = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+  //this->Mapper2D->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
+  //this->Mapper2D->SetColorModeToMapScalars();
+  //this->Mapper2D->ColorByArrayComponent("colorIndex", 0);
+  //this->Mapper2D->SetLookupTable(this->ColorTable);
+  //this->Mapper2D->ScalarVisibilityOn();
+  //this->Mapper2D->UseLookupTableScalarRangeOn();
+  //this->Mapper2D->SetRelativeCoincidentTopologyPointOffsetParameter(-2500);
+  //this->Mapper2D->SetRelativeCoincidentTopologyLineOffsetParameters(-1, -2500);
+  //this->Mapper2D->SetRelativeCoincidentTopologyPolygonOffsetParameters(-1, -2500);
+
+  //this->Property2D = vtkSmartPointer<vtkProperty2D>::New();
+  //this->Property2D->SetRepresentationToSurface();
+  //this->Property2D->SetAmbient(0.0);
+  //this->Property2D->SetDiffuse(1.0);
+  //this->Property2D->SetSpecular(0.0);
+  //this->Property2D->SetShading(true);
+  //this->Property2D->SetSpecularPower(1.0);
+  //this->Property2D->SetPointSize(10.);
+  //this->Property2D->SetLineWidth(2.);
+  //this->Property2D->SetOpacity(1.);
+
+  //this->Actor2D = vtkSmartPointer<vtkActor2D>::New();
+  //this->Actor2D->SetProperty(this->Property2D);
+  //this->Actor2D->SetMapper(this->Mapper2D);
 }
 
 //----------------------------------------------------------------------
