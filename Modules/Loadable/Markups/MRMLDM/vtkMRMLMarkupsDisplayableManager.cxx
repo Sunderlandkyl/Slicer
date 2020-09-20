@@ -643,9 +643,11 @@ bool vtkMRMLMarkupsDisplayableManager::CanProcessInteractionEvent(vtkMRMLInterac
   int eventid = eventData->GetType();
   if ( (eventid == vtkCommand::MouseMoveEvent && eventData->GetModifiers() == vtkEvent::NoModifier)
     || eventid == vtkCommand::Move3DEvent
-    /*|| (eventid == vtkCommand::LeftButtonPressEvent && eventData->GetModifiers() == vtkEvent::NoModifier)
-    || eventid == vtkCommand::LeftButtonReleaseEvent
-    || eventid == vtkCommand::RightButtonReleaseEvent
+    //|| (eventid == vtkCommand::LeftButtonPressEvent && eventData->GetModifiers() == vtkEvent::NoModifier)
+    //|| eventid == vtkCommand::LeftButtonReleaseEvent
+    || eventid == vtkCommand::KeyPressEvent
+    || eventid == vtkCommand::KeyReleaseEvent
+    /*|| eventid == vtkCommand::RightButtonReleaseEvent
     || eventid == vtkCommand::EnterEvent
     || eventid == vtkCommand::LeaveEvent*/)
     {
@@ -768,6 +770,13 @@ bool vtkMRMLMarkupsDisplayableManager::ProcessInteractionEvent(vtkMRMLInteractio
       this->LastActiveWidget->Leave(eventData);
       this->LastActiveWidget = nullptr;
       }
+    return false;
+    }
+
+  if (this->LastActiveWidget && eventid == vtkCommand::KeyPressEvent && this->LastActiveWidget->GetWidgetState() == vtkSlicerMarkupsWidget::WidgetStateDefine)
+    {
+    this->LastActiveWidget->Leave(eventData);
+    this->LastActiveWidget = nullptr;
     return false;
     }
 
