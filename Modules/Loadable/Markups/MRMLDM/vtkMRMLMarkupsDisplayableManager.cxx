@@ -28,6 +28,7 @@
 #include <vtkSlicerPointsWidget.h>
 #include <vtkSlicerPointsRepresentation2D.h>
 #include <vtkSlicerPointsRepresentation3D.h>
+#include <vtkSlicerROIWidget.h>
 
 // MRMLDisplayableManager includes
 #include <vtkMRMLDisplayableManagerGroup.h>
@@ -975,7 +976,7 @@ vtkSlicerMarkupsWidget * vtkMRMLMarkupsDisplayableManager::CreateWidget(vtkMRMLM
     }
   else if (vtkMRMLMarkupsROINode::SafeDownCast(markupsNode))
     {
-    widget = vtkSlicerPointsWidget::New(); // TODO
+    widget = vtkSlicerROIWidget::New();
     }
   else
     {

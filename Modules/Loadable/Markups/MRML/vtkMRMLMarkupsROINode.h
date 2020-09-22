@@ -77,13 +77,6 @@ public:
   /// \sa vtkMRMLNode::CopyContent
   vtkMRMLCopyContentMacro(vtkMRMLMarkupsROINode);
 
-  /// The origin of the ROI
-  /// Calculated as the location of the 0th markup point
-  void GetOrigin(double origin[3]);
-  void SetOrigin(const double origin[3]);
-  void GetOriginWorld(double origin[3]);
-  void SetOriginWorld(const double origin[3]);
-
   ///
   virtual void UpdateBoxROIControlPoints();
 
@@ -96,7 +89,69 @@ public:
   void SetNthControlPointPositionOrientationWorldFromArray(const int pointIndex,
     const double pos[3], const double orientationMatrix[9], const char* associatedNodeID, int positionStatus = vtkMRMLMarkupsNode::PositionDefined) override;
 
+  virtual void UpdateControlPointsFromROI();
+
+  virtual void UpdateROIFromControlPoints();
+
+  virtual void UpdateControlPointsFromBoxROI();
+
+  enum
+  {
+    Box,
+    Sphere,
+    Ellipsoid,
+    Ultrasound,
+  };
+
+  enum
+  {
+    Corner,
+    BoundingBox,
+  };
+
+  /// The origin of the ROI
+  /// Calculated as the location of the 0th markup point
+  //void GetOrigin(double origin[3]);
+  //void SetOrigin(const double origin[3]);
+  //virtual const double* GetOrigin() VTK_SIZEHINT(3);
+  //virtual void GetOrigin(double& x, double& y, double& z);
+  //virtual void GetOrigin(double origin[3]);
+
+  vtkGetVector3Macro(Origin, double);
+  vtkGetVector3Macro(XAxis, double);
+  vtkGetVector3Macro(YAxis, double);
+  vtkGetVector3Macro(ZAxis, double);
+  vtkGetVector3Macro(SideLengths, double);
+  vtkGetVector6Macro(Bounds, double);
+
+  void GetOriginWorld(double origin[3]);
+  void SetOriginWorld(const double origin[3]);
+
+  //void GetSideLengths(double lengths[3]);
+  /*void GetDirection(int axis, double direction[3]);*/
+
+  vtkGetMacro(ROIType, int);
+  vtkSetMacro(ROIType, int);
+
+  vtkGetMacro(AxisAligned, bool);
+  vtkSetMacro(AxisAligned, bool);
+  vtkBooleanMacro(AxisAligned, bool);
+
+  /// Alternative method to propagate events generated in Display nodes
+  void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;
+
 protected:
+
+  int ROIType;
+  double Origin[3];
+  double XAxis[3];
+  double YAxis[3];
+  double ZAxis[3];
+  double SideLengths[3];
+  double Bounds[6];
+  bool AxisAligned;
+  bool IsUpdatingControlPoints;
+  vtkMTimeType ROIUpdatedTime;
 
   vtkMRMLMarkupsROINode();
   ~vtkMRMLMarkupsROINode() override;
