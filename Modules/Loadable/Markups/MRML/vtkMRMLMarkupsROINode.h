@@ -77,8 +77,6 @@ public:
   /// \sa vtkMRMLNode::CopyContent
   vtkMRMLCopyContentMacro(vtkMRMLMarkupsROINode);
 
-  ///
-  virtual void UpdateBoxROIControlPoints();
 
   /// Set of the Nth control point position from coordinates
   /// \sa SetNthControlPointPositionFromPointer, SetNthControlPointPositionFromArray
@@ -89,11 +87,16 @@ public:
   void SetNthControlPointPositionOrientationWorldFromArray(const int pointIndex,
     const double pos[3], const double orientationMatrix[9], const char* associatedNodeID, int positionStatus = vtkMRMLMarkupsNode::PositionDefined) override;
 
+
+
+  ///
   virtual void UpdateControlPointsFromROI();
-
-  virtual void UpdateROIFromControlPoints();
-
   virtual void UpdateControlPointsFromBoxROI();
+
+  ///
+  virtual void UpdateROIFromControlPoints();
+  virtual void UpdateBoxROIFromControlPoints();
+  virtual void UpdateSphereROIFromControlPoints();
 
   enum
   {
@@ -143,12 +146,18 @@ public:
 protected:
 
   int ROIType;
+
+  // These variables are defined in the AxisAligned "ROI" coordinate system
   double Origin[3];
+  double SideLengths[3];
+  double Bounds[6];
+
+  // TODO: Replace with 4x4 matrix
+  // Can leave accesors to get individual axis from the matrix.
   double XAxis[3];
   double YAxis[3];
   double ZAxis[3];
-  double SideLengths[3];
-  double Bounds[6];
+
   bool AxisAligned;
   bool IsUpdatingControlPoints;
   vtkMTimeType ROIUpdatedTime;
