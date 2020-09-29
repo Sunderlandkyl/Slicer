@@ -36,18 +36,18 @@
 // std includes
 #include <vector>
 
-/// \brief MRML node to represent a curve markup
-/// Curve Markups nodes contain N control points.
-/// Visualization parameters are set in the vtkMRMLMarkupsDisplayNode class.
-///
-/// Markups is intended to be used for manual marking/editing of point positions.
+class vtkImplicitFunction;
+
+/// \brief MRML node to represent an ROI markup
 ///
 /// Coordinate systems used:
-///   - Local: Current node's coordinate system where the position of the control and curve points are defined.
-///            Local coordinates can be converted to world by concatenating all parent transforms on the current node.
-///   - Surface: Model node's coordinate system where the polydata used for ShortestDistanceOnSurface pathfinding is defined.
-///            Surface coordinates can be converted to world by concatenating all parent transforms on the surface node.
+///   - Local:
+///   - ROI:
 ///   - World: Patient coordinate system (RAS)
+///
+/// TODO: Finish coordinate system description. Control points are defined in local coordinates, but ROI is calculated in World
+/// (to account for non-linear transform?). This may present a problem as control points should not be misaligned.
+///
 /// \ingroup Slicer_QtModules_Markups
 class  VTK_SLICER_MARKUPS_MODULE_MRML_EXPORT vtkMRMLMarkupsROINode : public vtkMRMLMarkupsNode
 {
@@ -86,8 +86,6 @@ public:
   /// \sa SetNthControlPointPosition
   void SetNthControlPointPositionOrientationWorldFromArray(const int pointIndex,
     const double pos[3], const double orientationMatrix[9], const char* associatedNodeID, int positionStatus = vtkMRMLMarkupsNode::PositionDefined) override;
-
-
 
   ///
   virtual void UpdateControlPointsFromROI();
@@ -161,6 +159,8 @@ protected:
   bool AxisAligned;
   bool IsUpdatingControlPoints;
   vtkMTimeType ROIUpdatedTime;
+
+  vtkImplicitFunction* ROIFunction;
 
   vtkMRMLMarkupsROINode();
   ~vtkMRMLMarkupsROINode() override;
