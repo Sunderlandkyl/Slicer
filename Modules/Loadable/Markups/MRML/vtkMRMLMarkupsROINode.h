@@ -89,11 +89,18 @@ public:
 
   ///
   virtual void UpdateControlPointsFromROI();
+
   virtual void UpdateControlPointsFromBoxROI();
 
   ///
-  virtual void UpdateROIFromControlPoints();
-  virtual void UpdateBoxROIFromControlPoints();
+  virtual void UpdateROIFromControlPoints(int index = -1,
+    const double x = 0.0, const double y = 0.0, const double z = 0.0,
+    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+
+  virtual void UpdateBoxROIFromControlPoints(int index = -1,
+    const double x = 0.0, const double y = 0.0, const double z = 0.0,
+    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+
   virtual void UpdateSphereROIFromControlPoints();
 
   enum
@@ -112,27 +119,23 @@ public:
 
   /// The origin of the ROI
   /// Calculated as the location of the 0th markup point
-  //void GetOrigin(double origin[3]);
-  //void SetOrigin(const double origin[3]);
-  //virtual const double* GetOrigin() VTK_SIZEHINT(3);
-  //virtual void GetOrigin(double& x, double& y, double& z);
-  //virtual void GetOrigin(double origin[3]);
-
   vtkGetVector3Macro(Origin, double);
-  vtkGetVector3Macro(XAxis, double);
-  vtkGetVector3Macro(YAxis, double);
-  vtkGetVector3Macro(ZAxis, double);
   vtkGetVector3Macro(SideLengths, double);
   vtkGetVector6Macro(Bounds, double);
 
   void GetOriginWorld(double origin[3]);
   void SetOriginWorld(const double origin[3]);
 
+  void GetXAxisWorld(double axis_World[3]);
+  void GetYAxisWorld(double axis_World[3]);
+  void GetZAxisWorld(double axis_World[3]);
+  void GetAxisWorld(int axisIndex, double axis_World[3]);
+
   //void GetSideLengths(double lengths[3]);
   /*void GetDirection(int axis, double direction[3]);*/
 
   vtkGetMacro(ROIType, int);
-  vtkSetMacro(ROIType, int);
+  void SetROIType(int roiType);
 
   vtkGetMacro(AxisAligned, bool);
   vtkSetMacro(AxisAligned, bool);
@@ -140,6 +143,9 @@ public:
 
   /// Alternative method to propagate events generated in Display nodes
   void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;
+
+protected:
+  void ResetROI();
 
 protected:
 
@@ -152,13 +158,17 @@ protected:
 
   // TODO: Replace with 4x4 matrix
   // Can leave accesors to get individual axis from the matrix.
-  double XAxis[3];
-  double YAxis[3];
-  double ZAxis[3];
+  vtkNew<vtkMatrix4x4> ROIToWorldMatrix;
+  //double XAxis[3];
+  //double YAxis[3];
+  //double ZAxis[3];
 
   bool AxisAligned;
-  bool IsUpdatingControlPoints;
+  bool IsUpdatingControlPointsFromROI;
+  bool IsUpdatingROIFromControlPoints;
   vtkMTimeType ROIUpdatedTime;
+
+  int CurrentPointIndex;
 
   vtkImplicitFunction* ROIFunction;
 
