@@ -53,11 +53,14 @@
 // MRML includes
 #include "vtkMRMLInteractionEventData.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
+#include "vtkMRMLMarkupsROINode.h"
 #include "vtkMRMLProceduralColorNode.h"
 
 #include "vtkMRMLMarkupsPlaneNode.h"
 
 #include "vtkMarkupsGlyphSource2D.h"
+
+
 
 vtkStandardNewMacro(vtkSlicerROIRepresentation2D);
 
@@ -66,7 +69,15 @@ vtkStandardNewMacro(vtkSlicerROIRepresentation2D);
 //----------------------------------------------------------------------
 vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
 {
-  this->CubeMapper->SetInputConnection(this->CubeFilter->GetOutputPort());
+  this->CubeCutter->SetInputConnection(this->CubeFilter->GetOutputPort());
+  this->CubeCutter->SetPlane(this->SlicePlane);
+
+  this->CubeCutterCompositeFilter->SetInputConnection(this->CubeCutter->GetOutputPort());
+
+  this->CubeWorldToSliceTransformer->SetInputConnection(this->CubeFilter->GetOutputPort());
+  this->CubeWorldToSliceTransformer->SetTransform(this->WorldToSliceTransform);
+
+  this->CubeMapper->SetInputConnection(this->CubeWorldToSliceTransformer->GetOutputPort());
   this->CubeActor->SetMapper(this->CubeMapper);
   this->CubeActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
 }
@@ -78,6 +89,25 @@ vtkSlicerROIRepresentation2D::~vtkSlicerROIRepresentation2D() = default;
 void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void *callData /*=nullptr*/)
 {
   Superclass::UpdateFromMRML(caller, event, callData);
+
+  vtkMRMLMarkupsROINode* roi = vtkMRMLMarkupsROINode::SafeDownCast(this->MarkupsNode);
+  if (!roi)
+    {
+    return;
+    }
+
+  int controlPointType = Selected;
+  this->CubeActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
+
+  double fillOpacity = this->MarkupsDisplayNode->GetFillVisibility()
+    ? this->MarkupsDisplayNode->GetOpacity() * this->MarkupsDisplayNode->GetFillOpacity() : 0.0;
+  this->CubeActor->GetProperty()->SetOpacity(fillOpacity);
+
+  this->CubeFilter->SetCenter(roi->GetOrigin()); // TODO: GetOriginWorld
+  double* sideLengths = roi->GetSideLengths();
+  this->CubeFilter->SetXLength(sideLengths[0]);
+  this->CubeFilter->SetYLength(sideLengths[1]);
+  this->CubeFilter->SetZLength(sideLengths[2]);
 }
 
 //----------------------------------------------------------------------
@@ -104,9 +134,7 @@ void vtkSlicerROIRepresentation2D::CanInteract(
 //----------------------------------------------------------------------
 void vtkSlicerROIRepresentation2D::GetActors(vtkPropCollection *pc)
 {
-  //this->PlaneFillActor->GetActors(pc);
-  //this->PlaneOutlineActor->GetActors(pc);
-  //this->ArrowActor->GetActors(pc);
+  this->CubeActor->GetActors(pc);
   this->Superclass::GetActors(pc);
 }
 
@@ -114,9 +142,7 @@ void vtkSlicerROIRepresentation2D::GetActors(vtkPropCollection *pc)
 void vtkSlicerROIRepresentation2D::ReleaseGraphicsResources(
   vtkWindow *win)
 {
-  //this->PlaneFillActor->ReleaseGraphicsResources(win);
-  //this->PlaneOutlineActor->ReleaseGraphicsResources(win);
-  //this->ArrowActor->ReleaseGraphicsResources(win);
+  this->CubeActor->ReleaseGraphicsResources(win);
   this->Superclass::ReleaseGraphicsResources(win);
 }
 
@@ -124,18 +150,10 @@ void vtkSlicerROIRepresentation2D::ReleaseGraphicsResources(
 int vtkSlicerROIRepresentation2D::RenderOverlay(vtkViewport *viewport)
 {
   int count = Superclass::RenderOverlay(viewport);
-  //if (this->PlaneFillActor->GetVisibility())
-  //  {
-  //  count +=  this->PlaneFillActor->RenderOverlay(viewport);
-  //  }
-  //if (this->PlaneOutlineActor->GetVisibility())
-  //  {
-  //  count +=  this->PlaneOutlineActor->RenderOverlay(viewport);
-  //  }
-  //if (this->ArrowActor->GetVisibility())
-  //  {
-  //  count +=  this->ArrowActor->RenderOverlay(viewport);
-  //  }
+  if (this->CubeActor->GetVisibility())
+    {
+    count +=  this->CubeActor->RenderOverlay(viewport);
+    }
   return count;
 }
 
@@ -144,19 +162,10 @@ int vtkSlicerROIRepresentation2D::RenderOpaqueGeometry(
   vtkViewport *viewport)
 {
   int count = Superclass::RenderOpaqueGeometry(viewport);
-  //if (this->PlaneFillActor->GetVisibility())
-  //  {
-  //  count += this->PlaneFillActor->RenderOpaqueGeometry(viewport);
-  //  }
-  //if (this->PlaneOutlineActor->GetVisibility())
-  //  {
-  //  count += this->PlaneOutlineActor->RenderOpaqueGeometry(viewport);
-  //  }
-  //if (this->ArrowActor->GetVisibility())
-  //  {
-  //  count += this->ArrowActor->RenderOpaqueGeometry(viewport);
-  //  }
-
+  if (this->CubeActor->GetVisibility())
+    {
+    count += this->CubeActor->RenderOpaqueGeometry(viewport);
+    }
   return count;
 }
 
@@ -165,19 +174,10 @@ int vtkSlicerROIRepresentation2D::RenderTranslucentPolygonalGeometry(
   vtkViewport *viewport)
 {
   int count = Superclass::RenderTranslucentPolygonalGeometry(viewport);
-  /*if (this->PlaneFillActor->GetVisibility())
+  if (this->CubeActor->GetVisibility())
     {
-    count += this->PlaneFillActor->RenderTranslucentPolygonalGeometry(viewport);
+    count += this->CubeActor->RenderTranslucentPolygonalGeometry(viewport);
     }
-  if (this->PlaneOutlineActor->GetVisibility())
-    {
-    count += this->PlaneOutlineActor->RenderTranslucentPolygonalGeometry(viewport);
-    }
-  if (this->ArrowActor->GetVisibility())
-    {
-    count += this->ArrowActor->RenderTranslucentPolygonalGeometry(viewport);
-    }*/
-
   return count;
 }
 
@@ -188,18 +188,10 @@ vtkTypeBool vtkSlicerROIRepresentation2D::HasTranslucentPolygonalGeometry()
     {
     return true;
     }
-  //if (this->PlaneFillActor->GetVisibility() && this->PlaneFillActor->HasTranslucentPolygonalGeometry())
-  //  {
-  //  return true;
-  //  }
-  //if (this->PlaneOutlineActor->GetVisibility() && this->PlaneOutlineActor->HasTranslucentPolygonalGeometry())
-  //  {
-  //  return true;
-  //  }
-  //if (this->ArrowActor->GetVisibility() && this->ArrowActor->HasTranslucentPolygonalGeometry())
-  //  {
-  //  return true;
-  //  }
+  if (this->CubeActor->GetVisibility() && this->CubeActor->HasTranslucentPolygonalGeometry())
+    {
+    return true;
+    }
   return false;
 }
 
