@@ -77,7 +77,6 @@ public:
   /// \sa vtkMRMLNode::CopyContent
   vtkMRMLCopyContentMacro(vtkMRMLMarkupsROINode);
 
-
   /// Set of the Nth control point position from coordinates
   /// \sa SetNthControlPointPositionFromPointer, SetNthControlPointPositionFromArray
   void SetNthControlPointPosition(const int pointIndex,
@@ -86,36 +85,6 @@ public:
   /// \sa SetNthControlPointPosition
   void SetNthControlPointPositionOrientationWorldFromArray(const int pointIndex,
     const double pos[3], const double orientationMatrix[9], const char* associatedNodeID, int positionStatus = vtkMRMLMarkupsNode::PositionDefined) override;
-
-  ///
-  virtual void UpdateControlPointsFromROI();
-
-  virtual void UpdateControlPointsFromBoxROI();
-
-  ///
-  virtual void UpdateROIFromControlPoints(int index = -1,
-    const double x = 0.0, const double y = 0.0, const double z = 0.0,
-    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
-
-  virtual void UpdateBoxROIFromControlPoints(int index = -1,
-    const double x = 0.0, const double y = 0.0, const double z = 0.0,
-    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
-
-  virtual void UpdateSphereROIFromControlPoints();
-
-  enum
-  {
-    Box,
-    Sphere,
-    Ellipsoid,
-    Ultrasound,
-  };
-
-  enum
-  {
-    Corner,
-    BoundingBox,
-  };
 
   /// The origin of the ROI
   /// Calculated as the location of the 0th markup point
@@ -137,9 +106,31 @@ public:
   vtkGetMacro(ROIType, int);
   void SetROIType(int roiType);
 
-  vtkGetMacro(AxisAligned, bool);
-  vtkSetMacro(AxisAligned, bool);
-  vtkBooleanMacro(AxisAligned, bool);
+  ///
+  virtual void UpdateControlPointsFromROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+  virtual void UpdateControlPointsFromBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+  //virtual void UpdateControlPointsFromBoundingBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+
+  ///
+  virtual void UpdateROIFromControlPoints(int index = -1,
+    const double x = 0.0, const double y = 0.0, const double z = 0.0,
+    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+
+  virtual void UpdateBoxROIFromControlPoints(int index = -1,
+    const double x = 0.0, const double y = 0.0, const double z = 0.0,
+    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+
+  virtual void UpdateSphereROIFromControlPoints();
+
+  enum
+  {
+    Box,
+    BoundingBox,
+    Sphere,
+    Ellipsoid,
+    Ultrasound,
+  };
+
 
   /// Alternative method to propagate events generated in Display nodes
   void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;
@@ -163,12 +154,9 @@ protected:
   //double YAxis[3];
   //double ZAxis[3];
 
-  bool AxisAligned;
   bool IsUpdatingControlPointsFromROI;
   bool IsUpdatingROIFromControlPoints;
   vtkMTimeType ROIUpdatedTime;
-
-  int CurrentPointIndex;
 
   vtkImplicitFunction* ROIFunction;
 

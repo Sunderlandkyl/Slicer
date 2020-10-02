@@ -98,8 +98,6 @@ vtkMRMLMarkupsROINode::vtkMRMLMarkupsROINode()
   this->Bounds[4] = 0.0;
   this->Bounds[5] = -1.0;
 
-  this->AxisAligned = true;
-
   this->IsUpdatingControlPointsFromROI = false;
   this->IsUpdatingROIFromControlPoints = false;
   this->ROIUpdatedTime = 0;
@@ -185,6 +183,7 @@ void vtkMRMLMarkupsROINode::GetAxisWorld(int axisIndex, double axis_World[3])
   if (!axis_World)
     {
     vtkErrorMacro("Invalid axis_World");
+    return;
     }
 
   for (int i = 0; i < 3; ++i)
@@ -196,10 +195,10 @@ void vtkMRMLMarkupsROINode::GetAxisWorld(int axisIndex, double axis_World[3])
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsROINode::ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData)
 {
-  //if (caller == this->CurveInputPoly->GetPoints() && event == vtkCommand::ModifiedEvent)
-  //  {
-  //  this->UpdateROIFromControlPoints();
-  //  }
+  if (caller == this->CurveInputPoly->GetPoints() && event == vtkCommand::ModifiedEvent)
+    {
+    this->UpdateROIFromControlPoints();
+    }
   Superclass::ProcessMRMLEvents(caller, event, callData);
 }
 
@@ -279,7 +278,7 @@ void vtkMRMLMarkupsROINode::SetOriginWorld(const double origin_World[3])
 }
 
 //----------------------------------------------------------------------------
-void vtkMRMLMarkupsROINode::UpdateControlPointsFromROI()
+void vtkMRMLMarkupsROINode::UpdateControlPointsFromROI(int positionStatus/*=vtkMRMLMarkupsNode::PositionDefined*/)
 {
   if (this->IsUpdatingControlPointsFromROI)
     {
@@ -292,7 +291,7 @@ void vtkMRMLMarkupsROINode::UpdateControlPointsFromROI()
   switch (this->ROIType)
     {
     case Box:
-      this->UpdateControlPointsFromBoxROI();
+      this->UpdateControlPointsFromBoxROI(positionStatus);
       break;
     default:
       vtkErrorMacro("vtkMRMLMarkupsROINode: Unknown ROI type")
@@ -302,63 +301,61 @@ void vtkMRMLMarkupsROINode::UpdateControlPointsFromROI()
   this->IsUpdatingControlPointsFromROI = false;
 }
 
-const int ORIGIN_POINT = 0;
-//const int L_POINT = 1;
-//const int R_POINT = 2;
-//const int P_POINT = 3;
-//const int A_POINT = 4;
-//const int I_POINT = 5;
-//const int S_POINT = 6;
-
 //----------------------------------------------------------------------------
-void vtkMRMLMarkupsROINode::UpdateControlPointsFromBoxROI()
+void vtkMRMLMarkupsROINode::UpdateControlPointsFromBoxROI(int positionStatus/*=vtkMRMLMarkupsNode::PositionDefined*/)
 {
+  int numberOfPoints = this->RequiredNumberOfControlPoints;
   if (this->SideLengths[0] <= 0.0 && this->SideLengths[1] <= 0.0 && this->SideLengths[2] <= 0.0)
     {
-    return;
+    numberOfPoints = 1;
     }
 
   // TODO: Convert local to ROI?
 
   vtkNew<vtkPoints> roiPoints;
-  roiPoints->SetNumberOfPoints(this->RequiredNumberOfControlPoints);
+  roiPoints->SetNumberOfPoints(numberOfPoints);
 
   int pointIndex = 0;
 
   // Origin
   roiPoints->SetPoint(pointIndex++, this->Origin);
 
-  // Planes
-
-  double bounds[6] = { 0.0 };
-  for (int i = 0; i < 3; ++i)
+  if (numberOfPoints > 1)
     {
-    bounds[2*i]   = -this->SideLengths[i] * 0.5;
-    bounds[2*i+1] =  this->SideLengths[i] * 0.5;
-    }
-
-  for (int k = 0; k < 2; ++k)
-    {
-    for (int j= 0; j < 2; ++j)
+    double bounds[6] = { 0.0 };
+    for (int i = 0; i < 3; ++i)
       {
-      for (int i = 0; i < 2; ++i)
+      bounds[2*i]   = -this->SideLengths[i] * 0.5;
+      bounds[2*i+1] =  this->SideLengths[i] * 0.5;
+      }
+
+    for (int k = 0; k < 2; ++k)
+      {
+      for (int j= 0; j < 2; ++j)
         {
-        roiPoints->SetPoint(pointIndex++,
-          bounds[i]   + this->Origin[0],
-          bounds[2+j] + this->Origin[1],
-          bounds[4+k] + this->Origin[2]);
+        for (int i = 0; i < 2; ++i)
+          {
+          roiPoints->SetPoint(pointIndex++,
+            bounds[i]   + this->Origin[0],
+            bounds[2+j] + this->Origin[1],
+            bounds[4+k] + this->Origin[2]);
+          }
         }
       }
+
+    roiPoints->SetPoint(pointIndex++, bounds[0] + this->Origin[0], this->Origin[1], this->Origin[2]);
+    roiPoints->SetPoint(pointIndex++, bounds[1] + this->Origin[0], this->Origin[1], this->Origin[2]);
+    roiPoints->SetPoint(pointIndex++, this->Origin[0], bounds[2] + this->Origin[1], this->Origin[2]);
+    roiPoints->SetPoint(pointIndex++, this->Origin[0], bounds[3] + this->Origin[1], this->Origin[2]);
+    roiPoints->SetPoint(pointIndex++, this->Origin[0], this->Origin[1], bounds[4] + this->Origin[2]);
+    roiPoints->SetPoint(pointIndex++, this->Origin[0], this->Origin[1], bounds[5] + this->Origin[2]);
     }
 
-  roiPoints->SetPoint(pointIndex++, bounds[0] + this->Origin[0], this->Origin[1], this->Origin[2]);
-  roiPoints->SetPoint(pointIndex++, bounds[1] + this->Origin[0], this->Origin[1], this->Origin[2]);
-  roiPoints->SetPoint(pointIndex++, this->Origin[0], bounds[2] + this->Origin[1], this->Origin[2]);
-  roiPoints->SetPoint(pointIndex++, this->Origin[0], bounds[3] + this->Origin[1], this->Origin[2]);
-  roiPoints->SetPoint(pointIndex++, this->Origin[0], this->Origin[1], bounds[4] + this->Origin[2]);
-  roiPoints->SetPoint(pointIndex++, this->Origin[0], this->Origin[1], bounds[5] + this->Origin[2]);
-
   this->SetControlPointPositionsWorld(roiPoints);
+  for (int i = 0; i < this->GetNumberOfControlPoints(); ++i)
+    {
+    this->ControlPoints[i]->PositionStatus = positionStatus;
+    }
   //
 
   /*double sideLength[3] = { 0.0,0.0,0.0 }*/;
@@ -460,7 +457,7 @@ void vtkMRMLMarkupsROINode::UpdateROIFromControlPoints(int index/*=-1*/,
       break;
     }
 
-  this->UpdateControlPointsFromROI();
+  this->UpdateControlPointsFromROI(positionStatus);
   this->IsUpdatingROIFromControlPoints = false;
 }
 
@@ -485,12 +482,6 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints(int index/*=-1*/,
   vtkNew<vtkPoints> newPoints;
   newPoints->DeepCopy(points);
 
-  //if (points->GetNumberOfPoints() <= 1)
-  //  {
-  //  // ROI with 0 or 1 points is empty.
-  //  return;
-  //  }
-
   this->ResetROI();
 
   // This is "BOX"/"CORNER" ROI code.
@@ -498,7 +489,7 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints(int index/*=-1*/,
     {
     points->GetPoint(0, this->Origin);
     }
-  if (true || points->GetNumberOfPoints() < this->RequiredNumberOfControlPoints) // TODO
+  if (points->GetNumberOfPoints() < this->RequiredNumberOfControlPoints) // TODO
     {
     double bounds[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN };
     for (int index = 0; index < points->GetNumberOfPoints(); ++index)
