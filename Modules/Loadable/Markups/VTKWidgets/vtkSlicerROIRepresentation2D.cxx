@@ -60,7 +60,7 @@
 
 #include "vtkMarkupsGlyphSource2D.h"
 
-
+#include <vtkCutter.h>
 
 vtkStandardNewMacro(vtkSlicerROIRepresentation2D);
 
@@ -69,17 +69,23 @@ vtkStandardNewMacro(vtkSlicerROIRepresentation2D);
 //----------------------------------------------------------------------
 vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
 {
-  this->CubeCutter->SetInputConnection(this->CubeFilter->GetOutputPort());
-  this->CubeCutter->SetPlane(this->SlicePlane);
-
-  this->CubeCutterCompositeFilter->SetInputConnection(this->CubeCutter->GetOutputPort());
-
   this->CubeWorldToSliceTransformer->SetInputConnection(this->CubeFilter->GetOutputPort());
   this->CubeWorldToSliceTransformer->SetTransform(this->WorldToSliceTransform);
-
   this->CubeMapper->SetInputConnection(this->CubeWorldToSliceTransformer->GetOutputPort());
+  this->CubeProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
   this->CubeActor->SetMapper(this->CubeMapper);
-  this->CubeActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
+  this->CubeActor->SetProperty(this->CubeProperty);
+
+  this->CubeOutlineCutter->SetInputConnection(this->CubeFilter->GetOutputPort());
+  this->CubeOutlineCutter->SetCutFunction(this->SlicePlane);
+  //this->CubeOutlineCutterCompositeFilter->SetInputConnection(this->CubeOutlineCutter->GetOutputPort());
+  this->CubeOutlineWorldToSliceTransformer->SetInputConnection(this->CubeOutlineCutter->GetOutputPort());
+  this->CubeOutlineWorldToSliceTransformer->SetTransform(this->WorldToSliceTransform);
+
+  this->CubeOutlineMapper->SetInputConnection(this->CubeOutlineWorldToSliceTransformer->GetOutputPort());
+  this->CubeOutlineProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
+  this->CubeOutlineActor->SetMapper(this->CubeOutlineMapper);
+  this->CubeOutlineActor->SetProperty(this->CubeOutlineProperty);
 }
 
 //----------------------------------------------------------------------
@@ -97,17 +103,25 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
     }
 
   int controlPointType = Selected;
-  this->CubeActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
+
+  double opacity = this->MarkupsDisplayNode->GetOpacity();
 
   double fillOpacity = this->MarkupsDisplayNode->GetFillVisibility()
-    ? this->MarkupsDisplayNode->GetOpacity() * this->MarkupsDisplayNode->GetFillOpacity() : 0.0;
-  this->CubeActor->GetProperty()->SetOpacity(fillOpacity);
+    ? opacity * this->MarkupsDisplayNode->GetFillOpacity() : 0.0;
+  this->CubeProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
+  this->CubeProperty->SetOpacity(fillOpacity);
 
-  this->CubeFilter->SetCenter(roi->GetOrigin()); // TODO: GetOriginWorld
+  double outlineOpacity = this->MarkupsDisplayNode->GetOutlineVisibility()
+    ? opacity * this->MarkupsDisplayNode->GetOutlineOpacity() : 0.0;
+  this->CubeOutlineProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
+  this->CubeOutlineProperty->SetOpacity(outlineOpacity);
+
+
   double* sideLengths = roi->GetSideLengths();
   this->CubeFilter->SetXLength(sideLengths[0]);
   this->CubeFilter->SetYLength(sideLengths[1]);
   this->CubeFilter->SetZLength(sideLengths[2]);
+  this->CubeFilter->SetCenter(roi->GetOrigin()); // TODO: GetOriginWorld
 }
 
 //----------------------------------------------------------------------
@@ -135,6 +149,7 @@ void vtkSlicerROIRepresentation2D::CanInteract(
 void vtkSlicerROIRepresentation2D::GetActors(vtkPropCollection *pc)
 {
   this->CubeActor->GetActors(pc);
+  this->CubeOutlineActor->GetActors(pc);
   this->Superclass::GetActors(pc);
 }
 
@@ -143,6 +158,7 @@ void vtkSlicerROIRepresentation2D::ReleaseGraphicsResources(
   vtkWindow *win)
 {
   this->CubeActor->ReleaseGraphicsResources(win);
+  this->CubeOutlineActor->ReleaseGraphicsResources(win);
   this->Superclass::ReleaseGraphicsResources(win);
 }
 
@@ -153,6 +169,10 @@ int vtkSlicerROIRepresentation2D::RenderOverlay(vtkViewport *viewport)
   if (this->CubeActor->GetVisibility())
     {
     count +=  this->CubeActor->RenderOverlay(viewport);
+    }
+  if (this->CubeOutlineActor->GetVisibility())
+    {
+    count +=  this->CubeOutlineActor->RenderOverlay(viewport);
     }
   return count;
 }
@@ -166,6 +186,10 @@ int vtkSlicerROIRepresentation2D::RenderOpaqueGeometry(
     {
     count += this->CubeActor->RenderOpaqueGeometry(viewport);
     }
+  if (this->CubeOutlineActor->GetVisibility())
+    {
+    count += this->CubeOutlineActor->RenderOpaqueGeometry(viewport);
+    }
   return count;
 }
 
@@ -178,6 +202,10 @@ int vtkSlicerROIRepresentation2D::RenderTranslucentPolygonalGeometry(
     {
     count += this->CubeActor->RenderTranslucentPolygonalGeometry(viewport);
     }
+  if (this->CubeOutlineActor->GetVisibility())
+    {
+    count += this->CubeOutlineActor->RenderTranslucentPolygonalGeometry(viewport);
+    }
   return count;
 }
 
@@ -189,6 +217,10 @@ vtkTypeBool vtkSlicerROIRepresentation2D::HasTranslucentPolygonalGeometry()
     return true;
     }
   if (this->CubeActor->GetVisibility() && this->CubeActor->HasTranslucentPolygonalGeometry())
+    {
+    return true;
+    }
+  if (this->CubeOutlineActor->GetVisibility() && this->CubeOutlineActor->HasTranslucentPolygonalGeometry())
     {
     return true;
     }

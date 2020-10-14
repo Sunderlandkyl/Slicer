@@ -44,7 +44,7 @@ class vtkMRMLInteractionEventData;
 class vtkPlaneCutter;
 class vtkPlaneSource;
 class vtkSampleImplicitFunctionFilter;
-
+class vtkCutter;
 class vtkCubeSource;
 
 class VTK_SLICER_MARKUPS_MODULE_VTKWIDGETS_EXPORT vtkSlicerROIRepresentation2D : public vtkSlicerMarkupsWidgetRepresentation2D
@@ -85,11 +85,18 @@ protected:
 
   vtkNew<vtkCubeSource> CubeFilter;
   vtkNew<vtkTransformPolyDataFilter> CubeToWorldTransformer;
-  vtkNew<vtkPlaneCutter> CubeCutter;
-  vtkNew<vtkCompositeDataGeometryFilter> CubeCutterCompositeFilter;
   vtkNew<vtkTransformPolyDataFilter> CubeWorldToSliceTransformer;
   vtkNew<vtkPolyDataMapper2D> CubeMapper;
+  vtkNew<vtkProperty2D> CubeProperty;
   vtkNew<vtkActor2D> CubeActor;
+
+  vtkNew<vtkCutter> CubeOutlineCutter;
+  vtkNew<vtkCompositeDataGeometryFilter> CubeOutlineCutterCompositeFilter;
+  vtkNew<vtkTransformPolyDataFilter> CubeOutlineWorldToSliceTransformer;
+  vtkNew<vtkPolyDataMapper2D> CubeOutlineMapper;
+  vtkNew<vtkProperty2D> CubeOutlineProperty;
+  vtkNew<vtkActor2D> CubeOutlineActor;
+
 
 private:
   vtkSlicerROIRepresentation2D(const vtkSlicerROIRepresentation2D&) = delete;
