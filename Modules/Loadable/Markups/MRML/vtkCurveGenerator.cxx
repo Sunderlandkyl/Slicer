@@ -43,7 +43,7 @@
 #include <list>
 
 //------------------------------------------------------------------------------
-vtkStandardNewMacro(vtkCurveGenerator);
+vtkCurveGeneratorNewMacro(vtkCurveGenerator);
 
 //------------------------------------------------------------------------------
 vtkCurveGenerator::vtkCurveGenerator()
@@ -698,14 +698,14 @@ int vtkCurveGenerator::GeneratePointsFromSurface(
     inputPoints->GetPoint((controlPointIndex + 1) % numberOfInputPoints, controlPoint2);
     vtkIdType id2 = this->SurfacePointLocator->FindClosestPoint(controlPoint2);
 
-    // Path is traced backward, so start vertex should be point2, and end should be point1.
-    this->SurfacePathFilter->SetStartVertex(id2);
-    this->SurfacePathFilter->SetEndVertex(id1);
+    this->SurfacePathFilter->SetStartVertex(id1);
+    this->SurfacePathFilter->SetEndVertex(id2);
     this->SurfacePathFilter->Update();
 
+    // Path is traced backward, so start vertex should be point2, and end should be point1.
     vtkPolyData* outputPath = this->SurfacePathFilter->GetOutput();
     double previousPoint[3] = { 0 };
-    for (vtkIdType pointIndex = 0; pointIndex < outputPath->GetNumberOfPoints(); ++pointIndex)
+    for (vtkIdType pointIndex = outputPath->GetNumberOfPoints() - 1; pointIndex >= 0 ; --pointIndex)
       {
       double curvePoint[3] = { 0 };
       outputPath->GetPoint(pointIndex, curvePoint);

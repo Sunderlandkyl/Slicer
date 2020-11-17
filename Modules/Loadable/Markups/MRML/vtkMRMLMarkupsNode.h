@@ -568,10 +568,10 @@ public:
 
   int GetControlPointIndexFromInterpolatedPointIndex(vtkIdType interpolatedPointIndex);
 
-  /// The internal instance of the curve generator to allow
-  /// use of the curve for other computations.
+  /// The internal instance of the curve generator to allow use of the curve for other computations.
   /// Any custom overrides of the interpolation modes are not persisted in MRML.
   vtkCurveGenerator* GetCurveGenerator() { return this->CurveGenerator.GetPointer(); };
+  virtual void SetCurveGenerator(vtkCurveGenerator* curveGenerator);
 
   void GetRASBounds(double bounds[6]) override;
   void GetBounds(double bounds[6]) override;

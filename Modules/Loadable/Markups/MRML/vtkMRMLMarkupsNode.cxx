@@ -19,6 +19,7 @@
 
 // MRML includes
 #include "vtkCurveGenerator.h"
+#include "vtkCurveGeneratorFactory.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
 #include "vtkMRMLMarkupsStorageNode.h"
 #include "vtkMRMLMeasurementConstant.h"
@@ -79,16 +80,11 @@ vtkMRMLMarkupsNode::vtkMRMLMarkupsNode()
   vtkNew<vtkPoints> curveInputPoints;
   this->CurveInputPoly->SetPoints(curveInputPoints);
 
-  this->CurveGenerator = vtkSmartPointer<vtkCurveGenerator>::New();
-  this->CurveGenerator->SetInputData(this->CurveInputPoly);
-  this->CurveGenerator->SetCurveTypeToLinearSpline();
-  this->CurveGenerator->SetNumberOfPointsPerInterpolatingSegment(1);
-  this->CurveGenerator->AddObserver(vtkCommand::ModifiedEvent, this->MRMLCallbackCommand);
-
   this->CurvePolyToWorldTransform = vtkSmartPointer<vtkGeneralTransform>::New();
   this->CurvePolyToWorldTransformer = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->CurvePolyToWorldTransformer->SetInputConnection(this->CurveGenerator->GetOutputPort());
   this->CurvePolyToWorldTransformer->SetTransform(this->CurvePolyToWorldTransform);
+
+  this->SetCurveGenerator(vtkNew<vtkCurveGenerator>());
 
   this->CurveCoordinateSystemGeneratorWorld = vtkSmartPointer<vtkFrenetSerretFrame>::New();
   // Curve coordinate system is computed at the very end of the pipeline so that it is only computed
@@ -133,6 +129,11 @@ void vtkMRMLMarkupsNode::WriteXML(ostream& of, int nIndent)
     {
     of << " textList" << i << "=\"" << this->TextList->GetValue(i) << "\"";
     }
+
+  if (this->CurveGenerator)
+    {
+    of << " curveGeneratorClassName=\"" << this->CurveGenerator->GetClassName() << "\"";
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -149,6 +150,17 @@ void vtkMRMLMarkupsNode::ReadXMLAttributes(const char** atts)
   vtkMRMLReadXMLBooleanMacro(locked, Locked);
   vtkMRMLReadXMLStdStringMacro(markupLabelFormat, MarkupLabelFormat);
   vtkMRMLReadXMLOwnedMatrix4x4Macro(interactionHandleToWorldMatrix, InteractionHandleToWorldMatrix);
+  if (strcmp(xmlReadAttName, "curveGeneratorClassName") == 0)
+    {
+    const char* className = xmlReadAttValue;
+    vtkSmartPointer<vtkCurveGenerator> curveGenerator;
+    if (className)
+      {
+      curveGenerator = vtkSmartPointer<vtkCurveGenerator>::Take(
+        vtkCurveGeneratorFactory::GetInstance()->CreateCurveGeneratorByClassName(className));
+      }
+    this->SetCurveGenerator(curveGenerator);
+    }
   vtkMRMLReadXMLEndMacro();
 
   /* TODO: read measurements
@@ -188,6 +200,14 @@ void vtkMRMLMarkupsNode::CopyContent(vtkMRMLNode* anode, bool deepCopy/*=true*/)
   vtkMRMLCopyStdStringMacro(MarkupLabelFormat);
   vtkMRMLCopyOwnedMatrix4x4Macro(InteractionHandleToWorldMatrix);
   vtkMRMLCopyEndMacro();
+
+  if (node->GetCurveGenerator())
+    {
+    vtkSmartPointer<vtkCurveGenerator> curveGenerator = vtkSmartPointer<vtkCurveGenerator>::Take(
+      vtkCurveGeneratorFactory::GetInstance()->CreateCurveGeneratorByClassName(node->GetCurveGenerator()->GetClassName()));
+    // TODO: Copy add a copy method to vtkCurveGenerator.
+    this->SetCurveGenerator(curveGenerator);
+    }
 
   this->TextList->DeepCopy(node->TextList);
 
@@ -2263,4 +2283,28 @@ int vtkMRMLMarkupsNode::GetPositionStatusFromString(const char* name)
 std::string vtkMRMLMarkupsNode::GetPropertiesLabelText()
 {
   return this->PropertiesLabelText;
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::SetCurveGenerator(vtkCurveGenerator* curveGenerator)
+{
+  if (this->CurveGenerator)
+    {
+    this->CurveGenerator->RemoveObserver(this->MRMLCallbackCommand);
+    }
+
+  if (curveGenerator == nullptr)
+    {
+    this->CurveGenerator = vtkSmartPointer<vtkCurveGenerator>::New();
+    }
+  else
+    {
+    this->CurveGenerator = curveGenerator;
+    }
+
+  this->CurveGenerator->SetInputData(this->CurveInputPoly);
+  this->CurveGenerator->SetCurveTypeToLinearSpline();
+  this->CurveGenerator->SetNumberOfPointsPerInterpolatingSegment(1);
+  this->CurveGenerator->AddObserver(vtkCommand::ModifiedEvent, this->MRMLCallbackCommand);
+  this->CurvePolyToWorldTransformer->SetInputConnection(this->CurveGenerator->GetOutputPort());
 }

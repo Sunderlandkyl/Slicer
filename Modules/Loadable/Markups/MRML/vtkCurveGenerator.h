@@ -36,6 +36,15 @@ class vtkSpline;
 // export
 #include "vtkSlicerMarkupsModuleMRMLExport.h"
 
+#ifndef vtkCurveGeneratorNewMacro
+#define vtkCurveGeneratorNewMacro(newClass) \
+vtkStandardNewMacro(newClass); \
+vtkCurveGenerator* newClass::CreateInstance() \
+{ \
+return newClass::New(); \
+}
+#endif
+
 /// Filter that generates curves between points of an input polydata
 class VTK_SLICER_MARKUPS_MODULE_MRML_EXPORT vtkCurveGenerator : public vtkPolyDataAlgorithm
 {
@@ -44,6 +53,9 @@ public:
   static vtkCurveGenerator* New();
 
   void PrintSelf(ostream& os, vtkIndent indent) override;
+
+  /// Creates an instance of the curve generator
+  virtual vtkCurveGenerator* CreateInstance();
 
   /// This indicates whether the curve should loop back in on itself,
   /// connecting the last point back to the first point (disabled by default).
