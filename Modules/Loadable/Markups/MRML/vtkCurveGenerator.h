@@ -216,6 +216,10 @@ public:
   /// \param outputParameters Parameters used by vtkParametricPolynomialApproximation to approximate a polynomial from the input points.
   static void SortByMinimumSpanningTreePosition(vtkPoints* inputPoints, vtkDoubleArray* outputParameters);
 
+  ///
+  std::string GetParametersAsString();
+  void SetParametersFromString(std::string settings);
+
 protected:
   // input parameters
   int NumberOfPointsPerInterpolatingSegment;

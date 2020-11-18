@@ -131,6 +131,7 @@ void vtkMRMLMarkupsCurveNode::WriteXML(ostream& of, int nIndent)
   vtkMRMLWriteXMLIntMacro(numberOfPointsPerInterpolatingSegment, NumberOfPointsPerInterpolatingSegment);
   vtkMRMLWriteXMLEnumMacro(surfaceCostFunctionType, SurfaceCostFunctionType);
   vtkMRMLWriteXMLStringMacro(surfaceDistanceWeightingFunction, SurfaceDistanceWeightingFunction);
+  vtkMRMLWriteXMLStdStringMacro(curveGeneratorParameters, CurveGeneratorParameters);
   vtkMRMLWriteXMLEndMacro();
 }
 
@@ -146,6 +147,7 @@ void vtkMRMLMarkupsCurveNode::ReadXMLAttributes(const char** atts)
   vtkMRMLReadXMLIntMacro(numberOfPointsPerInterpolatingSegment, NumberOfPointsPerInterpolatingSegment);
   vtkMRMLReadXMLEnumMacro(surfaceCostFunctionType, SurfaceCostFunctionType);
   vtkMRMLReadXMLStringMacro(surfaceDistanceWeightingFunction, SurfaceDistanceWeightingFunction);
+  vtkMRMLReadXMLStdStringMacro(curveGeneratorParameters, CurveGeneratorParameters);
   vtkMRMLReadXMLEndMacro();
 }
 
@@ -1178,8 +1180,7 @@ void vtkMRMLMarkupsCurveNode::ProcessMRMLEvents(vtkObject* caller,
       }
     else
       {
-      this->SurfaceScalarPassThroughFilter->SetInputConnection(this->SurfaceToLocalTransformer->GetOutputPort());
-      //this->SurfaceScalarPassThroughFilter->SetInputConnection(this->SurfaceScalarCalculator->GetOutputPort());
+      this->SurfaceScalarPassThroughFilter->SetInputConnection(this->SurfaceScalarCalculator->GetOutputPort());
       }
     }
   else if (caller == this->CurveMeasurementsCalculator.GetPointer())
@@ -1464,4 +1465,24 @@ void vtkMRMLMarkupsCurveNode::UpdateAssignedAttribute()
     this->ScalarDisplayAssignAttribute->RemoveAllInputConnections(0);
     this->CurvePolyToWorldTransformer->SetInputConnection(this->CurveMeasurementsCalculator->GetOutputPort());
     }
+}
+
+//----------------------------------------------------------------------------
+std::string vtkMRMLMarkupsCurveNode::GetCurveGeneratorParameters()
+{
+  if (!this->CurveGenerator)
+    {
+    return "";
+    }
+  return this->CurveGenerator->GetParametersAsString();
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsCurveNode::SetCurveGeneratorParameters(std::string settings)
+{
+  if (!this->CurveGenerator || this->CurveGenerator->GetParametersAsString() == settings)
+    {
+    return;
+    }
+  this->CurveGenerator->SetParametersAsString(settings);
 }
