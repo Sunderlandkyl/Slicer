@@ -1012,20 +1012,20 @@ void vtkCurveGenerator::SortByMinimumSpanningTreePosition(vtkPoints* points, vtk
         break;
         }
       }
-    while (!alongPath)
+      while (!alongPath)
       {
-      currentIndex = parent[currentIndex];
-      for (unsigned int j = 0; j < pathIndices.size(); j++)
+        currentIndex = parent[currentIndex];
+        for (unsigned int j = 0; j < pathIndices.size(); j++)
         {
-        if (pathIndices[j] == currentIndex)
+          if (pathIndices[j] == currentIndex)
           {
-          alongPath = true;
-          indexAlongPath = j;
-          break;
+            alongPath = true;
+            indexAlongPath = j;
+            break;
           }
         }
       }
-    parameters->InsertNextTuple1(pathParameters[indexAlongPath]);
+      parameters->InsertNextTuple1(pathParameters[indexAlongPath]);
     }
 }
 
@@ -1048,18 +1048,18 @@ vtkIdType vtkCurveGenerator::GetControlPointIdFromInterpolatedPointId(vtkIdType 
 {
   int controlId = -1;
   if (this->CurveType == CURVE_TYPE_SHORTEST_DISTANCE_ON_SURFACE)
-    {
+  {
     std::vector<vtkIdType>::iterator it = std::lower_bound(this->InterpolatedPointIdsForControlPoints.begin(),
       this->InterpolatedPointIdsForControlPoints.end(), interpolatedPointId);
     if (it != this->InterpolatedPointIdsForControlPoints.end())
-      {
-      controlId = it - this->InterpolatedPointIdsForControlPoints.begin() - 1;
-      }
-    }
-  else if (this->IsInterpolatingCurve())
     {
-    controlId = int(floor(interpolatedPointId / this->GetNumberOfPointsPerInterpolatingSegment()));
+      controlId = it - this->InterpolatedPointIdsForControlPoints.begin() - 1;
     }
+  }
+  else if (this->IsInterpolatingCurve())
+  {
+    controlId = int(floor(interpolatedPointId / this->GetNumberOfPointsPerInterpolatingSegment()));
+  }
   return controlId;
 }
 
@@ -1073,9 +1073,9 @@ int vtkCurveGenerator::GetSurfaceCostFunctionType()
 void vtkCurveGenerator::SetSurfaceCostFunctionType(int surfaceCostFunctionType)
 {
   if (this->SurfacePathFilter->GetCostFunctionType() == surfaceCostFunctionType)
-    {
+  {
     return;
-    }
+  }
   this->SurfacePathFilter->SetCostFunctionType(surfaceCostFunctionType);
   this->Modified();
 }
@@ -1093,121 +1093,46 @@ vtkPoints* vtkCurveGenerator::GetOutputPoints()
 {
   vtkPolyData* polyData = this->GetOutput();
   if (!polyData)
-    {
+  {
     return nullptr;
-    }
+  }
   return polyData->GetPoints();
 }
 
 //------------------------------------------------------------------------------
-std::string vtkCurveGenerator::GetParametersAsString()
+void vtkCurveGenerator::ReadXMLAttributes(const char** atts)
 {
-  std::map<std::string, std::string> parameters;
-  parameters["CurveType"] = this->GetCurveTypeAsString(this->CurveType);
-  parameters["NumberOfPointsPerInterpolatingSegment"] = vtkVariant(this->NumberOfPointsPerInterpolatingSegment).ToString();
-  parameters["CurveIsClosed"] = vtkVariant(this->CurveIsClosed).ToString();
-  parameters["KochanekBias"] = vtkVariant(this->KochanekBias).ToString();
-  parameters["KochanekContinuity"] = vtkVariant(this->KochanekContinuity).ToString();
-  parameters["KochanekTension"] = vtkVariant(this->KochanekTension).ToString();
-  parameters["KochanekEndsCopyNearestDerivatives"] = vtkVariant(this->KochanekEndsCopyNearestDerivatives).ToString();
-  parameters["PolynomialOrder"] = vtkVariant(this->PolynomialOrder).ToString();
-  parameters["PolynomialPointSortingMethod"] = this->GetPolynomialPointSortingMethodAsString(this->PolynomialPointSortingMethod);
-  parameters["PolynomialFitMethod"] = this->GetPolynomialFitMethodAsString(this->PolynomialFitMethod);
-  parameters["PolynomialSampleWidth"] = vtkVariant(this->PolynomialSampleWidth).ToString();;
-  parameters["PolynomialWeightFunction"] = this->GetPolynomialWeightFunctionAsString(this->PolynomialWeightFunction);
-
-  std::stringstream parameterSS;
-  for (auto parameterIt : parameters)
-    {
-    std::string parameterName = parameterIt.first;
-
-    vtksys::SystemTools::ReplaceString(parameterName, "%", "%25");
-    vtksys::SystemTools::ReplaceString(parameterName, ";", "%3B");
-    vtksys::SystemTools::ReplaceString(parameterName, ":", "%3A");
-
-    std::string parameterValue = parameterIt.second;
-    vtksys::SystemTools::ReplaceString(parameterValue, "%", "%25");
-    vtksys::SystemTools::ReplaceString(parameterValue, ";", "%3B");
-    vtksys::SystemTools::ReplaceString(parameterValue, ":", "%3A");
-
-    parameterSS << parameterName << ':' << parameterValue << ";";
-    }
-
-  return parameterSS.str();
+  vtkMRMLReadXMLBeginMacro(atts);
+  vtkMRMLReadXMLEnumMacro(curveType, CurveType);
+  vtkMRMLReadXMLIntMacro(numberOfPointsPerInterpolatingSegment, NumberOfPointsPerInterpolatingSegment);
+  vtkMRMLReadXMLBooleanMacro(curveIsClosed, CurveIsClosed);
+  vtkMRMLReadXMLFloatMacro(kochanekBias, KochanekBias);
+  vtkMRMLReadXMLFloatMacro(kochanekContinuity, KochanekContinuity);
+  vtkMRMLReadXMLFloatMacro(kochanekTension, KochanekTension);
+  vtkMRMLReadXMLBooleanMacro(kochanekEndsCopyNearestDerivatives, KochanekEndsCopyNearestDerivatives);
+  vtkMRMLReadXMLIntMacro(polynomialOrder, PolynomialOrder);
+  vtkMRMLReadXMLEnumMacro(polynomialPointSortingMethod, PolynomialPointSortingMethod);
+  vtkMRMLReadXMLEnumMacro(polynomialFitMethod, PolynomialFitMethod);
+  vtkMRMLReadXMLFloatMacro(polynomialSampleWidth, PolynomialSampleWidth);
+  vtkMRMLReadXMLEnumMacro(polynomialWeightFunction, PolynomialWeightFunction);
+  vtkMRMLReadXMLEndMacro(atts)
 }
 
 //------------------------------------------------------------------------------
-void vtkCurveGenerator::SetParametersFromString(std::string parameterString)
+void vtkCurveGenerator::WriteXML(ostream& of, int indent)
 {
-  std::stringstream parameterSS(parameterString);
-
-  std::string parameter;
-  while (std::getline(parameterSS, parameter, ';'))
-    {
-    if (parameter.empty())
-      {
-      continue;
-      }
-
-    size_t colonIndex = parameter.find(':');
-    std::string parameterName = parameter.substr(0, colonIndex);
-    vtksys::SystemTools::ReplaceString(parameterName, "%3A", ":");
-    vtksys::SystemTools::ReplaceString(parameterName, "%3B", ";");
-    vtksys::SystemTools::ReplaceString(parameterName, "%25", "%");
-
-    std::string parameterValueString = parameter.substr(colonIndex + 1);
-    vtksys::SystemTools::ReplaceString(parameterValueString, "%3A", ":");
-    vtksys::SystemTools::ReplaceString(parameterValueString, "%3B", ";");
-    vtksys::SystemTools::ReplaceString(parameterValueString, "%25", "%");
-    vtkVariant parameterValue = parameterValueString;
-
-    // TODO: This smells bad. Need to come up with a better solution.
-    if (parameterName == "CurveType")
-      {
-      this->SetCurveType(this->GetCurveTypeFromString(parameterValue.ToString()));
-      }
-    else if (parameterName == "NumberOfPointsPerInterpolatingSegment")
-      {
-      this->SetNumberOfPointsPerInterpolatingSegment(parameterValue.ToInt());
-      }
-    else if (parameterName == "CurveIsClosed")
-      {
-      this->SetCurveIsClosed(parameterValue.ToInt());
-      }
-    else if (parameterName == "KochanekBias")
-      {
-      this->SetKochanekBias(parameterValue.ToDouble());
-      }
-    else if (parameterName == "KochanekContinuity")
-      {
-      this->SetKochanekContinuity(parameterValue.ToDouble());
-      }
-    else if (parameterName == "KochanekTension")
-      {
-      this->SetKochanekTension(parameterValue.ToDouble());
-      }
-    else if (parameterName == "KochanekEndsCopyNearestDerivatives")
-      {
-      this->SetKochanekEndsCopyNearestDerivatives(parameterValue.ToInt());
-      }
-    else if (parameterName == "PolynomialOrder")
-      {
-      this->SetPolynomialOrder(parameterValue.ToInt());
-      }
-    else if (parameterName == "PolynomialPointSortingMethod")
-      {
-      this->GetPolynomialPointSortingMethodFromString(parameterValue.ToString());
-      }
-    else if (parameterName == "PolynomialFitMethod")
-      {
-      this->SetPolynomialFitMethod(this->GetPolynomialFitMethodFromString(parameterValue.ToString()));
-      }
-    else if (parameterName == "PolynomialSampleWidth")
-      {
-      this->SetPolynomialSampleWidth(parameterValue.ToDouble());
-      }
-    else if (parameterName == "PolynomialWeightFunction")
-      {
-      this->SetPolynomialWeightFunction(parameterValue.ToDouble());
-      }
+  vtkMRMLWriteXMLBeginMacro(of, indent);
+  vtkMRMLWriteXMLEnumMacro(curveType, CurveType);
+  vtkMRMLWriteXMLIntMacro(numberOfPointsPerInterpolatingSegment, NumberOfPointsPerInterpolatingSegment);
+  vtkMRMLWriteXMLBooleanMacro(curveIsClosed, CurveIsClosed);
+  vtkMRMLWriteXMLFloatMacro(kochanekBias, KochanekBias);
+  vtkMRMLWriteXMLFloatMacro(kochanekContinuity, KochanekContinuity);
+  vtkMRMLWriteXMLFloatMacro(kochanekTension, KochanekTension);
+  vtkMRMLWriteXMLBooleanMacro(kochanekEndsCopyNearestDerivatives, KochanekEndsCopyNearestDerivatives);
+  vtkMRMLWriteXMLIntMacro(polynomialOrder, PolynomialOrder);
+  vtkMRMLWriteXMLEnumMacro(polynomialPointSortingMethod, PolynomialPointSortingMethod);
+  vtkMRMLWriteXMLEnumMacro(polynomialFitMethod, PolynomialFitMethod);
+  vtkMRMLWriteXMLFloatMacro(polynomialSampleWidth, PolynomialSampleWidth);
+  vtkMRMLWriteXMLEnumMacro(polynomialWeightFunction, PolynomialWeightFunction);
+  vtkMRMLWriteXMLEndMacro();
 }

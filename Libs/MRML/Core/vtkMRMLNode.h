@@ -607,7 +607,7 @@ public:
   /// \brief Encode an XML attribute string (replaces special characters by code sequences)
   ///
   /// \sa XMLAttributeDecodeString()
-  std::string XMLAttributeEncodeString(const std::string& inString);
+  static std::string XMLAttributeEncodeString(const std::string& inString);
 
   /// \brief Decode an XML attribute string.
   ///
@@ -616,7 +616,7 @@ public:
   /// those strings.
   ///
   /// \sa XMLAttributeEncodeString()
-  std::string XMLAttributeDecodeString(const std::string& inString);
+  static std::string XMLAttributeDecodeString(const std::string& inString);
 
   /// Get/Set for Selected
   vtkGetMacro(Selected, int);

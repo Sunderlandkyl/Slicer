@@ -280,9 +280,6 @@ protected:
   /// array is the color array that needs to be used by the VTK mappers.
   vtkSmartPointer<vtkAssignAttribute> ScalarDisplayAssignAttribute;
 
-  std::string GetCurveGeneratorParameters();
-  void SetCurveGeneratorParameters(std::string);
-
 protected:
   void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;
   void OnNodeReferenceAdded(vtkMRMLNodeReference* reference) override;

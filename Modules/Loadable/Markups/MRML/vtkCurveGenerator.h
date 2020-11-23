@@ -216,9 +216,11 @@ public:
   /// \param outputParameters Parameters used by vtkParametricPolynomialApproximation to approximate a polynomial from the input points.
   static void SortByMinimumSpanningTreePosition(vtkPoints* inputPoints, vtkDoubleArray* outputParameters);
 
-  ///
-  std::string GetParametersAsString();
-  void SetParametersFromString(std::string settings);
+  /// Read node attributes from a MRML XML file
+  virtual void ReadXMLAttributes(const char** atts);
+
+  /// Write this class's information to a MRML file in XML format.
+  virtual void WriteXML(ostream& of, int indent);
 
 protected:
   // input parameters
