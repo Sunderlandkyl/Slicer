@@ -996,21 +996,18 @@ void vtkSlicerMarkupsWidget::TranslateWidget(double eventPos[2])
   vtkNew<vtkTransform> translationTransform;
   translationTransform->Translate(translationVector_World);
 
-  MRMLNodeModifyBlocker blocker(markupsNode);
+  vtkNew<vtkPoints> transformedPoints_World;
+  transformedPoints_World->SetNumberOfPoints(markupsNode->GetNumberOfControlPoints());
   for (int i = 0; i < markupsNode->GetNumberOfControlPoints(); i++)
     {
-    if (markupsNode->GetNthControlPointLocked(i))
-      {
-      continue;
-      }
-
     double currentControlPointPosition_World[3] = { 0.0 };
     markupsNode->GetNthControlPointPositionWorld(i, currentControlPointPosition_World);
 
     double newControlPointPosition_World[3] = { 0.0 };
     translationTransform->TransformPoint(currentControlPointPosition_World, newControlPointPosition_World);
-    markupsNode->SetNthControlPointPositionWorldFromArray(i, newControlPointPosition_World);
+    transformedPoints_World->SetPoint(i, newControlPointPosition_World);
     }
+  markupsNode->SetControlPointPositionsWorld(transformedPoints_World);
 }
 
 //----------------------------------------------------------------------
@@ -1081,23 +1078,18 @@ void vtkSlicerMarkupsWidget::ScaleWidget(double eventPos[2])
 
   double ratio = sqrt(d2 / r2);
 
-  int wasModified = markupsNode->StartModify();
+  vtkNew<vtkPoints> transformedPoints_World;
+  transformedPoints_World->SetNumberOfPoints(markupsNode->GetNumberOfControlPoints());
   for (int i = 0; i < markupsNode->GetNumberOfControlPoints(); i++)
     {
-    if (markupsNode->GetNthControlPointLocked(i))
-      {
-      continue;
-      }
-
     markupsNode->GetNthControlPointPositionWorld(i, ref);
     for (int j = 0; j < 3; j++)
       {
       worldPos[j] = center[j] + ratio * (ref[j] - center[j]);
       }
-
-    markupsNode->SetNthControlPointPositionWorldFromArray(i, worldPos);
+    transformedPoints_World->SetPoint(i, worldPos);
     }
-  markupsNode->EndModify(wasModified);
+  markupsNode->SetControlPointPositionsWorld(transformedPoints_World);
 }
 
 //----------------------------------------------------------------------
@@ -1240,6 +1232,8 @@ void vtkSlicerMarkupsWidget::RotateWidget(double eventPos[2])
   handleToWorldTransform->RotateWXYZ(angle, rotationAxis_World);
   markupsNode->GetInteractionHandleToWorldMatrix()->DeepCopy(handleToWorldTransform->GetMatrix());
 
+  vtkNew<vtkPoints> transformedPoints_World;
+  transformedPoints_World->SetNumberOfPoints(markupsNode->GetNumberOfControlPoints());
   for (int i = 0; i < markupsNode->GetNumberOfControlPoints(); i++)
     {
     double currentControlPointPosition_World[3] = { 0.0 };
@@ -1247,8 +1241,9 @@ void vtkSlicerMarkupsWidget::RotateWidget(double eventPos[2])
 
     double newControlPointPosition_World[3] = { 0.0 };
     rotateTransform->TransformPoint(currentControlPointPosition_World, newControlPointPosition_World);
-    markupsNode->SetNthControlPointPositionWorldFromArray(i, newControlPointPosition_World);
+    transformedPoints_World->SetPoint(i, newControlPointPosition_World);
     }
+  markupsNode->SetControlPointPositionsWorld(transformedPoints_World);
 }
 
 //----------------------------------------------------------------------

@@ -92,10 +92,10 @@ void vtkSlicerROIRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
 
   switch (roiNode->GetROIType())
     {
-    case vtkMRMLMarkupsROINode::Box:
+    case vtkMRMLMarkupsROINode::BOX:
       this->UpdateBoxFromMRML(roiNode);
       break;
-    case vtkMRMLMarkupsROINode::Sphere:
+    case vtkMRMLMarkupsROINode::SPHERE:
       this->UpdateEllipseFromMRML(roiNode);
       break;
     default:

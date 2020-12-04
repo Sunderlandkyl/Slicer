@@ -107,6 +107,9 @@ public:
   void SetROIType(int roiType);
 
   ///
+  void SetControlPointPositionsWorld(vtkPoints* points) override;
+
+  ///
   virtual void UpdateControlPointsFromROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
   virtual void UpdateControlPointsFromBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
   //virtual void UpdateControlPointsFromBoundingBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
@@ -123,13 +126,34 @@ public:
   virtual void UpdateSphereROIFromControlPoints();
 
   enum
-  {
-    Box,
-    BoundingBox,
-    Sphere,
-    Ellipsoid,
-    Ultrasound,
-  };
+    {
+    BOX,
+    BOUNDING_BOX,
+    SPHERE,
+    ELLIPSOID,
+    ULTRASOUND,
+    };
+
+  enum
+    {
+    ORIGIN_POINT,
+
+    LR_POINT_1,
+    LR_POINT_2,
+    AP_POINT_1,
+    AP_POINT_2,
+    IS_POINT_1,
+    IS_POINT_2,
+
+    LAI_CORNER_POINT,
+    RAI_CORNER_POINT,
+    LPI_CORNER_POINT,
+    RPI_CORNER_POINT,
+    LAS_CORNER_POINT,
+    RAS_CORNER_POINT,
+    LPS_CORNER_POINT,
+    RPS_CORNER_POINT,
+    };
 
 
   /// Alternative method to propagate events generated in Display nodes
@@ -142,17 +166,14 @@ protected:
 
   int ROIType;
 
-  // These variables are defined in the AxisAligned "ROI" coordinate system
+  // These variables are defined in the axis aligned "ROI" coordinate system
   double Origin[3];
   double SideLengths[3];
   double Bounds[6];
 
   // TODO: Replace with 4x4 matrix
   // Can leave accesors to get individual axis from the matrix.
-  vtkNew<vtkMatrix4x4> ROIToWorldMatrix;
-  //double XAxis[3];
-  //double YAxis[3];
-  //double ZAxis[3];
+  vtkNew<vtkMatrix4x4> ROIToLocalMatrix;
 
   bool IsUpdatingControlPointsFromROI;
   bool IsUpdatingROIFromControlPoints;

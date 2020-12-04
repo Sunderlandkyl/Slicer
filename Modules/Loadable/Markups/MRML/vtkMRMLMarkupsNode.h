@@ -592,7 +592,7 @@ public:
   /// New control points are added if needed.
   /// Existing control points are updated with the new positions.
   /// Any extra existing control points are removed.
-  void SetControlPointPositionsWorld(vtkPoints* points);
+  virtual void SetControlPointPositionsWorld(vtkPoints* points);
 
   /// Get a copy of all control point positions in world coordinate system
   void GetControlPointPositionsWorld(vtkPoints* points);
