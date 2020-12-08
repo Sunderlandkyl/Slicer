@@ -85,6 +85,7 @@ protected:
 
   vtkNew<vtkCubeSource> CubeFilter;
   vtkNew<vtkTransformPolyDataFilter> CubeToWorldTransformer;
+  vtkNew<vtkTransform>               ROIToWorldTransform;
   vtkNew<vtkTransformPolyDataFilter> CubeWorldToSliceTransformer;
   vtkNew<vtkPolyDataMapper2D> CubeMapper;
   vtkNew<vtkProperty2D> CubeProperty;

@@ -152,28 +152,12 @@ void vtkSlicerROIRepresentation3D::UpdateBoxFromMRML(vtkMRMLMarkupsROINode* roiN
     this->SetROISource(cubeSource);
     }
 
-  double origin_World[3] = { 0.0, 0.0, 0.0 };
-  roiNode->GetOriginWorld(origin_World);
-
-  double xAxis_World[3] = { 0.0, 0.0, 0.0 };
-  roiNode->GetXAxisWorld(xAxis_World);
-
-  double yAxis_World[3] = { 0.0, 0.0, 0.0 };
-  roiNode->GetYAxisWorld(yAxis_World);
-
-  double zAxis_World[3] = { 0.0, 0.0, 0.0 };
-  roiNode->GetZAxisWorld(zAxis_World);
-
-  this->ROIToWorldTransform->Identity();
-  vtkNew<vtkMatrix4x4> axis;
-  for (int i = 0; i < 3; ++i)
-    {
-    axis->SetElement(i, 0, xAxis_World[i]);
-    axis->SetElement(i, 1, yAxis_World[i]);
-    axis->SetElement(i, 2, zAxis_World[i]);
-    axis->SetElement(i, 3, origin_World[i]);
-    }
-  this->ROIToWorldTransform->SetMatrix(axis);
+  /*roiNode->GetROIToWorldMatrix()->PrintSelf(std::cout, vtkIndent());*/
+  this->ROIToWorldTransform->SetMatrix(roiNode->GetROIToWorldMatrix());
+  /*this->ROIToWorldTransform->PrintSelf(std::cout, vtkIndent());*/
+  //this->ROIToWorldTransform->Identity();
+  //this->ROIToWorldTransform->PostMultiply();
+  //this->ROIToWorldTransform->Concatenate(roiNode->GetROIToWorldMatrix());
 
   double sideLengths[3] = { 0.0, 0.0, 0.0 };
   roiNode->GetSideLengths(sideLengths);

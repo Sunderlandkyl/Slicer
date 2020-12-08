@@ -69,16 +69,20 @@ vtkStandardNewMacro(vtkSlicerROIRepresentation2D);
 //----------------------------------------------------------------------
 vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
 {
-  this->CubeWorldToSliceTransformer->SetInputConnection(this->CubeFilter->GetOutputPort());
+  this->CubeToWorldTransformer->SetInputConnection(this->CubeFilter->GetOutputPort());
+  this->CubeToWorldTransformer->SetTransform(this->ROIToWorldTransform);
+
+  this->CubeWorldToSliceTransformer->SetInputConnection(this->CubeToWorldTransformer->GetOutputPort());
   this->CubeWorldToSliceTransformer->SetTransform(this->WorldToSliceTransform);
+
   this->CubeMapper->SetInputConnection(this->CubeWorldToSliceTransformer->GetOutputPort());
   this->CubeProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
   this->CubeActor->SetMapper(this->CubeMapper);
   this->CubeActor->SetProperty(this->CubeProperty);
 
-  this->CubeOutlineCutter->SetInputConnection(this->CubeFilter->GetOutputPort());
+  this->CubeOutlineCutter->SetInputConnection(this->CubeWorldToSliceTransformer->GetOutputPort());
   this->CubeOutlineCutter->SetCutFunction(this->SlicePlane);
-  //this->CubeOutlineCutterCompositeFilter->SetInputConnection(this->CubeOutlineCutter->GetOutputPort());
+
   this->CubeOutlineWorldToSliceTransformer->SetInputConnection(this->CubeOutlineCutter->GetOutputPort());
   this->CubeOutlineWorldToSliceTransformer->SetTransform(this->WorldToSliceTransform);
 
@@ -116,12 +120,15 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
   this->CubeOutlineProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
   this->CubeOutlineProperty->SetOpacity(outlineOpacity);
 
-
   double* sideLengths = roi->GetSideLengths();
   this->CubeFilter->SetXLength(sideLengths[0]);
   this->CubeFilter->SetYLength(sideLengths[1]);
   this->CubeFilter->SetZLength(sideLengths[2]);
-  this->CubeFilter->SetCenter(roi->GetOrigin()); // TODO: GetOriginWorld
+
+  vtkNew<vtkMatrix4x4> matrix;
+  matrix->DeepCopy(roi->GetROIToWorldMatrix());
+  /*matrix->Invert();*/
+  this->ROIToWorldTransform->SetMatrix(matrix);
 }
 
 //----------------------------------------------------------------------
@@ -136,13 +143,15 @@ void vtkSlicerROIRepresentation2D::CanInteract(
     {
     return;
     }
+
   Superclass::CanInteract(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2);
   if (foundComponentType != vtkMRMLMarkupsDisplayNode::ComponentNone)
     {
-    // if mouse is near a control point then select that (ignore the line)
+    // if mouse is near a control point then select that (ignore the ROI)
     return;
     }
 
+  // TODO: Interact with edge of box?
 }
 
 //----------------------------------------------------------------------

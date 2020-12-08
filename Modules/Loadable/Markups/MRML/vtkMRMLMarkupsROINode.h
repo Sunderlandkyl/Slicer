@@ -90,7 +90,6 @@ public:
   /// Calculated as the location of the 0th markup point
   vtkGetVector3Macro(Origin, double);
   vtkGetVector3Macro(SideLengths, double);
-  vtkGetVector6Macro(Bounds, double);
 
   void GetOriginWorld(double origin[3]);
   void SetOriginWorld(const double origin[3]);
@@ -100,8 +99,16 @@ public:
   void GetZAxisWorld(double axis_World[3]);
   void GetAxisWorld(int axisIndex, double axis_World[3]);
 
+  void GetXAxisLocal(double axis_Local[3]);
+  void GetYAxisLocal(double axis_Local[3]);
+  void GetZAxisLocal(double axis_Local[3]);
+  void GetAxisLocal(int axisIndex, double axis_Local[3]);
+
   //void GetSideLengths(double lengths[3]);
   /*void GetDirection(int axis, double direction[3]);*/
+
+  vtkGetMacro(ROIToLocalMatrix, vtkMatrix4x4*);
+  vtkGetMacro(ROIToWorldMatrix, vtkMatrix4x4*);
 
   vtkGetMacro(ROIType, int);
   void SetROIType(int roiType);
@@ -159,8 +166,12 @@ public:
   /// Alternative method to propagate events generated in Display nodes
   void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;
 
+  void UpdateInteractionHandleToWorldMatrix() override {};
+
 protected:
   void ResetROI();
+
+  void UpdateROI();
 
 protected:
 
@@ -169,11 +180,11 @@ protected:
   // These variables are defined in the axis aligned "ROI" coordinate system
   double Origin[3];
   double SideLengths[3];
-  double Bounds[6];
 
   // TODO: Replace with 4x4 matrix
   // Can leave accesors to get individual axis from the matrix.
   vtkNew<vtkMatrix4x4> ROIToLocalMatrix;
+  vtkNew<vtkMatrix4x4> ROIToWorldMatrix;
 
   bool IsUpdatingControlPointsFromROI;
   bool IsUpdatingROIFromControlPoints;
