@@ -88,7 +88,6 @@ public:
 
   /// The origin of the ROI
   /// Calculated as the location of the 0th markup point
-  vtkGetVector3Macro(Origin, double);
   vtkGetVector3Macro(SideLengths, double);
 
   void GetOriginWorld(double origin[3]);
@@ -107,7 +106,6 @@ public:
   //void GetSideLengths(double lengths[3]);
   /*void GetDirection(int axis, double direction[3]);*/
 
-  vtkGetMacro(ROIToLocalMatrix, vtkMatrix4x4*);
   vtkGetMacro(ROIToWorldMatrix, vtkMatrix4x4*);
 
   vtkGetMacro(ROIType, int);
@@ -178,12 +176,10 @@ protected:
   int ROIType;
 
   // These variables are defined in the axis aligned "ROI" coordinate system
-  double Origin[3];
   double SideLengths[3];
 
   // TODO: Replace with 4x4 matrix
   // Can leave accesors to get individual axis from the matrix.
-  vtkNew<vtkMatrix4x4> ROIToLocalMatrix;
   vtkNew<vtkMatrix4x4> ROIToWorldMatrix;
 
   bool IsUpdatingControlPointsFromROI;
