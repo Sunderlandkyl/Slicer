@@ -121,14 +121,16 @@ public:
 
   ///
   virtual void UpdateROIFromControlPoints(int index = -1,
-    const double x = 0.0, const double y = 0.0, const double z = 0.0,
+    const double position_World[3] = nullptr,
     int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
 
   virtual void UpdateBoxROIFromControlPoints(int index = -1,
-    const double x = 0.0, const double y = 0.0, const double z = 0.0,
+    const double position_World[3] = nullptr,
     int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
 
-  virtual void UpdateSphereROIFromControlPoints();
+  virtual void UpdateSphereROIFromControlPoints(int index = -1,
+    const double position_World[3] = nullptr,
+    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
 
   enum
     {
@@ -168,8 +170,6 @@ public:
 
 protected:
   void ResetROI();
-
-  void UpdateROI();
 
 protected:
 
