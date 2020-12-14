@@ -169,9 +169,6 @@ public:
   void UpdateInteractionHandleToWorldMatrix() override {};
 
 protected:
-  void ResetROI();
-
-protected:
 
   int ROIType;
 

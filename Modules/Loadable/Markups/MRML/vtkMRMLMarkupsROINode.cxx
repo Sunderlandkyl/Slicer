@@ -519,12 +519,6 @@ void vtkMRMLMarkupsROINode::UpdateROIFromControlPoints(int index/*=-1*/,
 }
 
 //----------------------------------------------------------------------------
-void vtkMRMLMarkupsROINode::ResetROI()
-{
-  this->ROIToWorldMatrix->Identity();
-}
-
-//----------------------------------------------------------------------------
 void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints(int index/*=-1*/,
   const double position_World[3]/*=nullptr*/, int positionStatus/*=vtkMRMLMarkupsNode::PositionDefined*/)
 {
@@ -657,10 +651,19 @@ void vtkMRMLMarkupsROINode::UpdateSphereROIFromControlPoints(int pointIndex, con
   for (int i = 1; i < points->GetNumberOfPoints(); ++i)
     {
     double pointToOrigin_World[3] = { 0.0, 0.0, 0.0 };
-    vtkMath::Subtract(position_World, origin_World, pointToOrigin_World);
+    double currentPoint_World[3] = { 0.0, 0.0, 0.0 };
+    points->GetPoint(i, currentPoint_World);
+    vtkMath::Subtract(currentPoint_World, origin_World, pointToOrigin_World);
     radius = std::max(radius, vtkMath::Norm(pointToOrigin_World));
     }
-  this->SideLengths[0] = radius;
-  this->SideLengths[1] = radius;
-  this->SideLengths[2] = radius;
+  this->SideLengths[0] = 2*radius;
+  this->SideLengths[1] = 2*radius;
+  this->SideLengths[2] = 2*radius;
+
+  vtkNew<vtkMatrix4x4> newROIToWorldMatrix;
+  for (int i = 0; i < 3; ++i)
+    {
+    newROIToWorldMatrix->SetElement(i, 3, origin_World[i]);
+    }
+  this->ROIToWorldMatrix->DeepCopy(newROIToWorldMatrix);
 }
