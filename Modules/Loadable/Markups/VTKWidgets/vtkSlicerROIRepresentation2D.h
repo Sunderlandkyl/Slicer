@@ -45,7 +45,8 @@ class vtkPlaneCutter;
 class vtkPlaneSource;
 class vtkSampleImplicitFunctionFilter;
 class vtkCutter;
-class vtkCubeSource;
+class vtkROISource;
+class vtkMRMLMarkupsROINode;
 
 class VTK_SLICER_MARKUPS_MODULE_VTKWIDGETS_EXPORT vtkSlicerROIRepresentation2D : public vtkSlicerMarkupsWidgetRepresentation2D
 {
@@ -80,23 +81,29 @@ public:
   void UpdateInteractionPipeline() override;
 
 protected:
+  virtual void UpdateBoxFromMRML(vtkMRMLMarkupsROINode* roiNode);
+  virtual void UpdateEllipseFromMRML(vtkMRMLMarkupsROINode* roiNode);
+
+protected:
   vtkSlicerROIRepresentation2D();
   ~vtkSlicerROIRepresentation2D() override;
 
-  vtkNew<vtkCubeSource> CubeFilter;
-  vtkNew<vtkTransformPolyDataFilter> CubeToWorldTransformer;
-  vtkNew<vtkTransform>               ROIToWorldTransform;
-  vtkNew<vtkTransformPolyDataFilter> CubeWorldToSliceTransformer;
-  vtkNew<vtkPolyDataMapper2D> CubeMapper;
-  vtkNew<vtkProperty2D> CubeProperty;
-  vtkNew<vtkActor2D> CubeActor;
+  void SetROISource(vtkPolyDataAlgorithm* roiSource);
 
-  vtkNew<vtkCutter> CubeOutlineCutter;
-  vtkNew<vtkCompositeDataGeometryFilter> CubeOutlineCutterCompositeFilter;
-  vtkNew<vtkTransformPolyDataFilter> CubeOutlineWorldToSliceTransformer;
-  vtkNew<vtkPolyDataMapper2D> CubeOutlineMapper;
-  vtkNew<vtkProperty2D> CubeOutlineProperty;
-  vtkNew<vtkActor2D> CubeOutlineActor;
+  vtkSmartPointer<vtkPolyDataAlgorithm> ROISource;
+  vtkSmartPointer<vtkTransformPolyDataFilter> ROITransformFilter;
+  vtkSmartPointer<vtkTransform>               ROIToWorldTransform;
+
+  vtkSmartPointer<vtkTransformPolyDataFilter> ROIWorldToSliceTransformFilter;
+  vtkSmartPointer<vtkPolyDataMapper2D> ROIMapper;
+  vtkSmartPointer<vtkProperty2D> ROIProperty;
+  vtkSmartPointer<vtkActor2D> ROIActor;
+
+  vtkSmartPointer<vtkCutter> ROIOutlineCutter;
+  vtkSmartPointer<vtkTransformPolyDataFilter> ROIOutlineWorldToSliceTransformFilter;
+  vtkSmartPointer<vtkPolyDataMapper2D> ROIOutlineMapper;
+  vtkSmartPointer<vtkProperty2D> ROIOutlineProperty;
+  vtkSmartPointer<vtkActor2D> ROIOutlineActor;
 
 
 private:

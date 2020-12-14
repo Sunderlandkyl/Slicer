@@ -93,15 +93,19 @@ void vtkSlicerROIRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
   switch (roiNode->GetROIType())
     {
     case vtkMRMLMarkupsROINode::BOX:
+    case vtkMRMLMarkupsROINode::BOUNDING_BOX:
       this->UpdateBoxFromMRML(roiNode);
       break;
     case vtkMRMLMarkupsROINode::SPHERE:
+    case vtkMRMLMarkupsROINode::ELLIPSOID:
       this->UpdateEllipseFromMRML(roiNode);
       break;
     default:
       this->ROIActor->SetVisibility(false);
       return;
     }
+
+  this->ROIToWorldTransform->SetMatrix(roiNode->GetROIToWorldMatrix());
 
   this->ROIActor->SetVisibility(true);
   this->VisibilityOn();
@@ -151,13 +155,6 @@ void vtkSlicerROIRepresentation3D::UpdateBoxFromMRML(vtkMRMLMarkupsROINode* roiN
     cubeSource = vtkSmartPointer<vtkCubeSource>::New();
     this->SetROISource(cubeSource);
     }
-
-  /*roiNode->GetROIToWorldMatrix()->PrintSelf(std::cout, vtkIndent());*/
-  this->ROIToWorldTransform->SetMatrix(roiNode->GetROIToWorldMatrix());
-  /*this->ROIToWorldTransform->PrintSelf(std::cout, vtkIndent());*/
-  //this->ROIToWorldTransform->Identity();
-  //this->ROIToWorldTransform->PostMultiply();
-  //this->ROIToWorldTransform->Concatenate(roiNode->GetROIToWorldMatrix());
 
   double sideLengths[3] = { 0.0, 0.0, 0.0 };
   roiNode->GetSideLengths(sideLengths);

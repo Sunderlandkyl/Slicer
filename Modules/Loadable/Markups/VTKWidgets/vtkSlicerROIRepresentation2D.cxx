@@ -33,6 +33,8 @@
 #include <vtkMath.h>
 #include <vtkMatrix4x4.h>
 #include <vtkObjectFactory.h>
+#include <vtkParametricEllipsoid.h>
+#include <vtkParametricFunctionSource.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkPlane.h>
 #include <vtkPlaneCutter.h>
@@ -69,27 +71,39 @@ vtkStandardNewMacro(vtkSlicerROIRepresentation2D);
 //----------------------------------------------------------------------
 vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
 {
-  this->CubeToWorldTransformer->SetInputConnection(this->CubeFilter->GetOutputPort());
-  this->CubeToWorldTransformer->SetTransform(this->ROIToWorldTransform);
+  this->ROISource= nullptr;
 
-  this->CubeWorldToSliceTransformer->SetInputConnection(this->CubeToWorldTransformer->GetOutputPort());
-  this->CubeWorldToSliceTransformer->SetTransform(this->WorldToSliceTransform);
+  this->ROIToWorldTransform = vtkSmartPointer<vtkTransform>::New();
+  this->ROITransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ROITransformFilter->SetTransform(this->ROIToWorldTransform);
 
-  this->CubeMapper->SetInputConnection(this->CubeWorldToSliceTransformer->GetOutputPort());
-  this->CubeProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
-  this->CubeActor->SetMapper(this->CubeMapper);
-  this->CubeActor->SetProperty(this->CubeProperty);
+  this->ROIWorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ROIWorldToSliceTransformFilter->SetInputConnection(this->ROITransformFilter->GetOutputPort());
+  this->ROIWorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
 
-  this->CubeOutlineCutter->SetInputConnection(this->CubeWorldToSliceTransformer->GetOutputPort());
-  this->CubeOutlineCutter->SetCutFunction(this->SlicePlane);
+  this->ROIMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+  this->ROIMapper->SetInputConnection(this->ROIWorldToSliceTransformFilter->GetOutputPort());
+  this->ROIProperty = vtkSmartPointer<vtkProperty2D>::New();
+  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
+  this->ROIActor = vtkSmartPointer<vtkActor2D>::New();
+  this->ROIActor->SetMapper(this->ROIMapper);
+  this->ROIActor->SetProperty(this->ROIProperty);
 
-  this->CubeOutlineWorldToSliceTransformer->SetInputConnection(this->CubeOutlineCutter->GetOutputPort());
-  this->CubeOutlineWorldToSliceTransformer->SetTransform(this->WorldToSliceTransform);
+  this->ROIOutlineCutter = vtkSmartPointer<vtkCutter>::New();
+  this->ROIOutlineCutter->SetInputConnection(this->ROIWorldToSliceTransformFilter->GetOutputPort());
+  this->ROIOutlineCutter->SetCutFunction(this->SlicePlane);
 
-  this->CubeOutlineMapper->SetInputConnection(this->CubeOutlineWorldToSliceTransformer->GetOutputPort());
-  this->CubeOutlineProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
-  this->CubeOutlineActor->SetMapper(this->CubeOutlineMapper);
-  this->CubeOutlineActor->SetProperty(this->CubeOutlineProperty);
+  this->ROIOutlineWorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ROIOutlineWorldToSliceTransformFilter->SetInputConnection(this->ROIOutlineCutter->GetOutputPort());
+  this->ROIOutlineWorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
+
+  this->ROIOutlineMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+  this->ROIOutlineMapper->SetInputConnection(this->ROIOutlineWorldToSliceTransformFilter->GetOutputPort());
+  this->ROIOutlineProperty = vtkSmartPointer<vtkProperty2D>::New();
+  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
+  this->ROIOutlineActor = vtkSmartPointer<vtkActor2D>::New();
+  this->ROIOutlineActor->SetMapper(this->ROIOutlineMapper);
+  this->ROIOutlineActor->SetProperty(this->ROIOutlineProperty);
 }
 
 //----------------------------------------------------------------------
@@ -100,11 +114,26 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
 {
   Superclass::UpdateFromMRML(caller, event, callData);
 
-  vtkMRMLMarkupsROINode* roi = vtkMRMLMarkupsROINode::SafeDownCast(this->MarkupsNode);
-  if (!roi)
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->MarkupsNode);
+  if (!roiNode)
     {
     return;
     }
+
+  switch (roiNode->GetROIType())
+    {
+    case vtkMRMLMarkupsROINode::BOX:
+      this->UpdateBoxFromMRML(roiNode);
+      break;
+    case vtkMRMLMarkupsROINode::SPHERE:
+      this->UpdateEllipseFromMRML(roiNode);
+      break;
+    default:
+      this->ROIActor->SetVisibility(false);
+      return;
+    }
+
+  this->ROIToWorldTransform->SetMatrix(roiNode->GetROIToWorldMatrix());
 
   int controlPointType = Selected;
 
@@ -112,23 +141,79 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
 
   double fillOpacity = this->MarkupsDisplayNode->GetFillVisibility()
     ? opacity * this->MarkupsDisplayNode->GetFillOpacity() : 0.0;
-  this->CubeProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->CubeProperty->SetOpacity(fillOpacity);
+  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
+  this->ROIProperty->SetOpacity(fillOpacity);
 
   double outlineOpacity = this->MarkupsDisplayNode->GetOutlineVisibility()
     ? opacity * this->MarkupsDisplayNode->GetOutlineOpacity() : 0.0;
-  this->CubeOutlineProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->CubeOutlineProperty->SetOpacity(outlineOpacity);
+  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
+  this->ROIOutlineProperty->SetOpacity(outlineOpacity);
+}
 
-  double* sideLengths = roi->GetSideLengths();
-  this->CubeFilter->SetXLength(sideLengths[0]);
-  this->CubeFilter->SetYLength(sideLengths[1]);
-  this->CubeFilter->SetZLength(sideLengths[2]);
+//----------------------------------------------------------------------
+void vtkSlicerROIRepresentation2D::SetROISource(vtkPolyDataAlgorithm* roiSource)
+{
+  this->ROISource = roiSource;
+  if (this->ROISource)
+    {
+    this->ROITransformFilter->SetInputConnection(roiSource->GetOutputPort());
+    }
+  else
+    {
+    this->ROITransformFilter->RemoveAllInputConnections(0);
+    }
+}
 
-  vtkNew<vtkMatrix4x4> matrix;
-  matrix->DeepCopy(roi->GetROIToWorldMatrix());
-  /*matrix->Invert();*/
-  this->ROIToWorldTransform->SetMatrix(matrix);
+
+//----------------------------------------------------------------------
+void vtkSlicerROIRepresentation2D::UpdateBoxFromMRML(vtkMRMLMarkupsROINode* roiNode)
+{
+  if (!roiNode)
+    {
+    return;
+    }
+
+  vtkSmartPointer<vtkCubeSource> cubeSource = vtkCubeSource::SafeDownCast(this->ROISource);
+  if (!cubeSource)
+    {
+    cubeSource = vtkSmartPointer<vtkCubeSource>::New();
+    this->SetROISource(cubeSource);
+    }
+
+  double sideLengths[3] = { 0.0, 0.0, 0.0 };
+  roiNode->GetSideLengths(sideLengths);
+  cubeSource->SetXLength(sideLengths[0]);
+  cubeSource->SetYLength(sideLengths[1]);
+  cubeSource->SetZLength(sideLengths[2]);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerROIRepresentation2D::UpdateEllipseFromMRML(vtkMRMLMarkupsROINode* roiNode)
+{
+  if (!roiNode)
+    {
+    return;
+    }
+
+  vtkSmartPointer<vtkParametricFunctionSource> parametricSource = vtkParametricFunctionSource::SafeDownCast(this->ROISource);
+  if (!parametricSource)
+    {
+    parametricSource = vtkSmartPointer<vtkParametricFunctionSource>::New();
+    this->SetROISource(parametricSource);
+    }
+
+  vtkSmartPointer<vtkParametricEllipsoid> ellipseFunction = vtkParametricEllipsoid::SafeDownCast(parametricSource->GetParametricFunction());
+  if (!ellipseFunction)
+    {
+    ellipseFunction = vtkSmartPointer<vtkParametricEllipsoid>::New();
+    parametricSource->SetParametricFunction(ellipseFunction);
+    }
+
+  double sideLengths[3] = { 0.0, 0.0, 0.0 };
+  roiNode->GetSideLengths(sideLengths);
+  ellipseFunction->SetXRadius(sideLengths[0] * 0.5);
+  ellipseFunction->SetYRadius(sideLengths[1] * 0.5);
+  ellipseFunction->SetZRadius(sideLengths[2] * 0.5);
 }
 
 //----------------------------------------------------------------------
@@ -157,8 +242,8 @@ void vtkSlicerROIRepresentation2D::CanInteract(
 //----------------------------------------------------------------------
 void vtkSlicerROIRepresentation2D::GetActors(vtkPropCollection *pc)
 {
-  this->CubeActor->GetActors(pc);
-  this->CubeOutlineActor->GetActors(pc);
+  this->ROIActor->GetActors(pc);
+  this->ROIOutlineActor->GetActors(pc);
   this->Superclass::GetActors(pc);
 }
 
@@ -166,8 +251,8 @@ void vtkSlicerROIRepresentation2D::GetActors(vtkPropCollection *pc)
 void vtkSlicerROIRepresentation2D::ReleaseGraphicsResources(
   vtkWindow *win)
 {
-  this->CubeActor->ReleaseGraphicsResources(win);
-  this->CubeOutlineActor->ReleaseGraphicsResources(win);
+  this->ROIActor->ReleaseGraphicsResources(win);
+  this->ROIOutlineActor->ReleaseGraphicsResources(win);
   this->Superclass::ReleaseGraphicsResources(win);
 }
 
@@ -175,13 +260,13 @@ void vtkSlicerROIRepresentation2D::ReleaseGraphicsResources(
 int vtkSlicerROIRepresentation2D::RenderOverlay(vtkViewport *viewport)
 {
   int count = Superclass::RenderOverlay(viewport);
-  if (this->CubeActor->GetVisibility())
+  if (this->ROIActor->GetVisibility())
     {
-    count +=  this->CubeActor->RenderOverlay(viewport);
+    count +=  this->ROIActor->RenderOverlay(viewport);
     }
-  if (this->CubeOutlineActor->GetVisibility())
+  if (this->ROIOutlineActor->GetVisibility())
     {
-    count +=  this->CubeOutlineActor->RenderOverlay(viewport);
+    count +=  this->ROIOutlineActor->RenderOverlay(viewport);
     }
   return count;
 }
@@ -191,13 +276,13 @@ int vtkSlicerROIRepresentation2D::RenderOpaqueGeometry(
   vtkViewport *viewport)
 {
   int count = Superclass::RenderOpaqueGeometry(viewport);
-  if (this->CubeActor->GetVisibility())
+  if (this->ROIActor->GetVisibility())
     {
-    count += this->CubeActor->RenderOpaqueGeometry(viewport);
+    count += this->ROIActor->RenderOpaqueGeometry(viewport);
     }
-  if (this->CubeOutlineActor->GetVisibility())
+  if (this->ROIOutlineActor->GetVisibility())
     {
-    count += this->CubeOutlineActor->RenderOpaqueGeometry(viewport);
+    count += this->ROIOutlineActor->RenderOpaqueGeometry(viewport);
     }
   return count;
 }
@@ -207,13 +292,13 @@ int vtkSlicerROIRepresentation2D::RenderTranslucentPolygonalGeometry(
   vtkViewport *viewport)
 {
   int count = Superclass::RenderTranslucentPolygonalGeometry(viewport);
-  if (this->CubeActor->GetVisibility())
+  if (this->ROIActor->GetVisibility())
     {
-    count += this->CubeActor->RenderTranslucentPolygonalGeometry(viewport);
+    count += this->ROIActor->RenderTranslucentPolygonalGeometry(viewport);
     }
-  if (this->CubeOutlineActor->GetVisibility())
+  if (this->ROIOutlineActor->GetVisibility())
     {
-    count += this->CubeOutlineActor->RenderTranslucentPolygonalGeometry(viewport);
+    count += this->ROIOutlineActor->RenderTranslucentPolygonalGeometry(viewport);
     }
   return count;
 }
@@ -225,11 +310,11 @@ vtkTypeBool vtkSlicerROIRepresentation2D::HasTranslucentPolygonalGeometry()
     {
     return true;
     }
-  if (this->CubeActor->GetVisibility() && this->CubeActor->HasTranslucentPolygonalGeometry())
+  if (this->ROIActor->GetVisibility() && this->ROIActor->HasTranslucentPolygonalGeometry())
     {
     return true;
     }
-  if (this->CubeOutlineActor->GetVisibility() && this->CubeOutlineActor->HasTranslucentPolygonalGeometry())
+  if (this->ROIOutlineActor->GetVisibility() && this->ROIOutlineActor->HasTranslucentPolygonalGeometry())
     {
     return true;
     }
