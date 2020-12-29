@@ -86,10 +86,12 @@ public:
   void SetNthControlPointPositionOrientationWorldFromArray(const int pointIndex,
     const double pos[3], const double orientationMatrix[9], const char* associatedNodeID, int positionStatus = vtkMRMLMarkupsNode::PositionDefined) override;
 
+  /// TODO
+  vtkGetVector3Macro(SideLengths, double);
+  void SetSideLengths(const double sideLengths_World[3]);
+
   /// The origin of the ROI
   /// Calculated as the location of the 0th markup point
-  vtkGetVector3Macro(SideLengths, double);
-
   void GetOriginWorld(double origin[3]);
   void SetOriginWorld(const double origin[3]);
 
@@ -145,12 +147,12 @@ public:
     {
     ORIGIN_POINT,
 
-    LR_POINT_1,
-    LR_POINT_2,
-    AP_POINT_1,
-    AP_POINT_2,
-    IS_POINT_1,
-    IS_POINT_2,
+    L_FACE_POINT,
+    R_FACE_POINT,
+    P_FACE_POINT,
+    A_FACE_POINT,
+    S_FACE_POINT,
+    I_FACE_POINT,
 
     LAI_CORNER_POINT,
     RAI_CORNER_POINT,

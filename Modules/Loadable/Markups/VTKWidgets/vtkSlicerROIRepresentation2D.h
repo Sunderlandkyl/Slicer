@@ -82,7 +82,7 @@ public:
 
 protected:
   virtual void UpdateBoxFromMRML(vtkMRMLMarkupsROINode* roiNode);
-  virtual void UpdateEllipseFromMRML(vtkMRMLMarkupsROINode* roiNode);
+  virtual void UpdateEllipsoidFromMRML(vtkMRMLMarkupsROINode* roiNode);
 
 protected:
   vtkSlicerROIRepresentation2D();

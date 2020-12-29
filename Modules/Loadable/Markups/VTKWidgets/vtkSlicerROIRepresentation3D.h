@@ -68,7 +68,7 @@ public:
   void UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void *callData=nullptr) override;
 
   virtual void UpdateBoxFromMRML(vtkMRMLMarkupsROINode* roiNode);
-  virtual void UpdateEllipseFromMRML(vtkMRMLMarkupsROINode* roiNode);
+  virtual void UpdateEllipsoidFromMRML(vtkMRMLMarkupsROINode* roiNode);
 
   /// Methods to make this class behave as a vtkProp.
   void GetActors(vtkPropCollection *) override;

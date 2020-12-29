@@ -76,6 +76,7 @@ create_test_sourcelist(Tests ${KIT}CxxTests.cxx
   vtkMRMLSceneViewStorageNodeTest1.cxx
   vtkMRMLScriptedModuleNodeTest1.cxx
   vtkMRMLSegmentationStorageNodeTest1.cxx
+  vtkMRMLSegmentationStorageNodeTest2.cxx
   vtkMRMLSelectionNodeTest1.cxx
   vtkMRMLSliceCompositeNodeTest1.cxx
   vtkMRMLSliceNodeTest1.cxx
@@ -199,6 +200,7 @@ simple_test( vtkMRMLSegmentationStorageNodeTest1
   DATA{${INPUT}/OldSlicerSegmentation.seg.nrrd}
   DATA{${INPUT}/SlicerSegmentation.seg.nrrd}
   )
+simple_test( vtkMRMLSegmentationStorageNodeTest2 )
 simple_test( vtkMRMLSelectionNodeTest1 )
 simple_test( vtkMRMLSliceCompositeNodeTest1 )
 simple_test( vtkMRMLSliceNodeTest1 )

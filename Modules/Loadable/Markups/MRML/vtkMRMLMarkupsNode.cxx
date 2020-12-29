@@ -790,6 +790,15 @@ void vtkMRMLMarkupsNode::SetNthControlPointPosition(const int pointIndex,
 
   // TODO: return if no modification
   double* controlPointPosition = controlPoint->Position;
+
+  double epsilon = 1e-6;
+  if (std::abs(controlPointPosition[0] - x) <= epsilon &&
+    std::abs(controlPointPosition[1] - y) <= epsilon &&
+    std::abs(controlPointPosition[2] - z) <= epsilon)
+    {
+    return;
+    }
+
   controlPointPosition[0] = x;
   controlPointPosition[1] = y;
   controlPointPosition[2] = z;

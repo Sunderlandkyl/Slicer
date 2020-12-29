@@ -126,7 +126,7 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
       this->UpdateBoxFromMRML(roiNode);
       break;
     case vtkMRMLMarkupsROINode::SPHERE:
-      this->UpdateEllipseFromMRML(roiNode);
+      this->UpdateEllipsoidFromMRML(roiNode);
       break;
     default:
       this->ROIActor->SetVisibility(false);
@@ -188,7 +188,7 @@ void vtkSlicerROIRepresentation2D::UpdateBoxFromMRML(vtkMRMLMarkupsROINode* roiN
 }
 
 //----------------------------------------------------------------------
-void vtkSlicerROIRepresentation2D::UpdateEllipseFromMRML(vtkMRMLMarkupsROINode* roiNode)
+void vtkSlicerROIRepresentation2D::UpdateEllipsoidFromMRML(vtkMRMLMarkupsROINode* roiNode)
 {
   if (!roiNode)
     {
