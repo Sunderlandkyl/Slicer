@@ -130,6 +130,10 @@ public:
     const double position_World[3] = nullptr,
     int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
 
+  virtual void UpdateBoundingBoxROIFromControlPoints(int index = -1,
+    const double position_World[3] = nullptr,
+    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+
   virtual void UpdateSphereROIFromControlPoints(int index = -1,
     const double position_World[3] = nullptr,
     int positionStatus = vtkMRMLMarkupsNode::PositionDefined);

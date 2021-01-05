@@ -123,6 +123,7 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
   switch (roiNode->GetROIType())
     {
     case vtkMRMLMarkupsROINode::BOX:
+    case vtkMRMLMarkupsROINode::BOUNDING_BOX:
       this->UpdateBoxFromMRML(roiNode);
       break;
     case vtkMRMLMarkupsROINode::SPHERE:

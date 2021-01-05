@@ -79,8 +79,11 @@ vtkMRMLMarkupsROINode::vtkMRMLMarkupsROINode()
   //this->ROIType = BOX;
   //this->RequiredNumberOfControlPoints = NUMBER_OF_BOX_CONTROL_POINTS;
 
-  this->ROIType = SPHERE;
-  this->RequiredNumberOfControlPoints = NUMBER_OF_SPHERE_CONTROL_POINTS;
+  this->ROIType = BOUNDING_BOX;
+  this->RequiredNumberOfControlPoints = 0;
+
+  //this->ROIType = SPHERE;
+  //this->RequiredNumberOfControlPoints = NUMBER_OF_SPHERE_CONTROL_POINTS;
 
   this->SideLengths[0] = 0.0;
   this->SideLengths[1] = 0.0;
@@ -280,9 +283,11 @@ void vtkMRMLMarkupsROINode::SetROIType(int roiType)
     case BOX:
       this->RequiredNumberOfControlPoints = NUMBER_OF_BOX_CONTROL_POINTS;
       break;
+    case BOUNDING_BOX:
+      this->RequiredNumberOfControlPoints = 0;
+      break;
     case SPHERE:
       this->RequiredNumberOfControlPoints = NUMBER_OF_SPHERE_CONTROL_POINTS;
-    // TODO: Other representations, including boounding-box
     default:
       break;
     }
@@ -357,6 +362,9 @@ void vtkMRMLMarkupsROINode::UpdateControlPointsFromROI(int positionStatus/*=vtkM
       this->UpdateControlPointsFromBoxROI(positionStatus);
       break;
     case SPHERE:
+      break;
+    case BOUNDING_BOX:
+      // No operation required?
       break;
     default:
       vtkErrorMacro("vtkMRMLMarkupsROINode: Unknown ROI type");
@@ -522,6 +530,9 @@ void vtkMRMLMarkupsROINode::UpdateROIFromControlPoints(int index/*=-1*/,
     {
     case BOX:
       this->UpdateBoxROIFromControlPoints(index, position_World, positionStatus);
+      break;
+    case BOUNDING_BOX:
+      this->UpdateBoundingBoxROIFromControlPoints(index, position_World, positionStatus);
       break;
     case SPHERE:
       this->UpdateSphereROIFromControlPoints(index, position_World, positionStatus);
@@ -696,6 +707,64 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints(int index/*=-1*/,
       }
     }
   this->ROIToWorldMatrix->DeepCopy(newROIToWorldMatrix);
+}
+
+
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::UpdateBoundingBoxROIFromControlPoints(int index/*=-1*/,
+  const double position_World[3]/*=nullptr*/, int positionStatus/*=vtkMRMLMarkupsNode::PositionDefined*/)
+{
+  double xAxis_World[3] = { 0.0, 0.0, 0.0 };
+  this->GetXAxisWorld(xAxis_World);
+
+  double yAxis_World[3] = { 0.0, 0.0, 0.0 };
+  this->GetYAxisWorld(yAxis_World);
+
+  double zAxis_World[3] = { 0.0, 0.0, 0.0 };
+  this->GetZAxisWorld(zAxis_World);
+
+  this->SideLengths[0] = 0.0;
+  this->SideLengths[1] = 0.0;
+  this->SideLengths[2] = 0.0;
+
+  vtkNew<vtkMatrix4x4> worldToROIMatrix;
+  worldToROIMatrix->DeepCopy(this->ROIToWorldMatrix);
+  worldToROIMatrix->Invert();
+
+  double bounds_ROI[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, };
+  for (int pointIndex = 0; pointIndex < this->GetNumberOfControlPoints(); ++pointIndex)
+    {
+    double position_World[4] = { 0.0, 0.0, 0.0, 1.0 };
+    this->GetNthControlPointPositionWorld(pointIndex, position_World);
+
+    double position_ROI[4] = { 0.0, 0.0, 0.0, 0.0 };
+    worldToROIMatrix->MultiplyPoint(position_World, position_ROI);
+
+    for (int i = 0; i < 3; ++i)
+      {
+      bounds_ROI[2*i] = std::min(bounds_ROI[2*i], position_ROI[i]);
+      bounds_ROI[2*i+1] = std::max(bounds_ROI[2*i+1], position_ROI[i]);
+      }
+    }
+
+  double origin_ROI[4] = { 0.0, 0.0, 0.0, 1.0 };
+  for (int i = 0; i < 3; ++i)
+    {
+    this->SideLengths[i] = bounds_ROI[2*i+1] - bounds_ROI[2*i];
+    origin_ROI[i] = (bounds_ROI[2*i+1] + bounds_ROI[2*i])/2.0;
+    }
+
+  double origin_World[4] = { 0.0, 0.0, 0.0, 0.0 };
+  this->ROIToWorldMatrix->MultiplyPoint(origin_ROI, origin_World);
+  for (int i = 0; i < 3; ++i)
+    {
+    this->ROIToWorldMatrix->SetElement(i, 3, origin_World[i]);
+    }
+
+  if (index >= 0 && position_World)
+    {
+    this->SetNthControlPointPositionWorldFromArray(index, position_World, positionStatus);
+    }
 }
 
 //----------------------------------------------------------------------------
