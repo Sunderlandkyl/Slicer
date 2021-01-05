@@ -90,7 +90,7 @@ vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
   this->ROIActor->SetProperty(this->ROIProperty);
 
   this->ROIOutlineCutter = vtkSmartPointer<vtkCutter>::New();
-  this->ROIOutlineCutter->SetInputConnection(this->ROIWorldToSliceTransformFilter->GetOutputPort());
+  this->ROIOutlineCutter->SetInputConnection(this->ROITransformFilter->GetOutputPort());
   this->ROIOutlineCutter->SetCutFunction(this->SlicePlane);
 
   this->ROIOutlineWorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();

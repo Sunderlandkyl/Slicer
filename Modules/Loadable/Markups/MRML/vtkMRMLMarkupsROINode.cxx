@@ -74,13 +74,13 @@ vtkMRMLNodeNewMacro(vtkMRMLMarkupsROINode);
 //----------------------------------------------------------------------------
 vtkMRMLMarkupsROINode::vtkMRMLMarkupsROINode()
 {
-  // Set RequiredNumberOfControlPoints to a very high number to remain
-  // in place mode after placing a curve point.
-  this->RequiredNumberOfControlPoints = NUMBER_OF_BOX_CONTROL_POINTS;
-  //this->RequiredNumberOfControlPoints = NUMBER_OF_SPHERE_CONTROL_POINTS;
   this->PropertiesLabelText = "";
-  this->ROIType = BOX;
-  //this->ROIType = SPHERE;
+
+  //this->ROIType = BOX;
+  //this->RequiredNumberOfControlPoints = NUMBER_OF_BOX_CONTROL_POINTS;
+
+  this->ROIType = SPHERE;
+  this->RequiredNumberOfControlPoints = NUMBER_OF_SPHERE_CONTROL_POINTS;
 
   this->SideLengths[0] = 0.0;
   this->SideLengths[1] = 0.0;
