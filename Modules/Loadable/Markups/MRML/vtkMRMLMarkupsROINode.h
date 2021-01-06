@@ -174,6 +174,8 @@ public:
 
   void UpdateInteractionHandleToWorldMatrix() override {};
 
+  void GetBoundsROI(double bounds[6]);
+
 protected:
 
   int ROIType;
