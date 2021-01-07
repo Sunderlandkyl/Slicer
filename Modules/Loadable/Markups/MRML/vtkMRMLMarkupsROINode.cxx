@@ -292,7 +292,7 @@ void vtkMRMLMarkupsROINode::SetROIType(int roiType)
     default:
       break;
     }
-  this->UpdateControlPointsFromROI();
+  this->UpdateROIFromControlPoints();
   this->Modified();
 }
 
@@ -656,12 +656,14 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints(int index/*=-1*/,
 
     double originalSideLengths[3] = { this->SideLengths[0], this->SideLengths[1], this->SideLengths[2] };
 
+    double origin_Point[3] = { origin_World[0], origin_World[1], origin_World[2] };
+
     switch (index)
       {
       case ORIGIN_POINT:
-        newROIToWorldMatrix->SetElement(0, 3, position_World[0]);
-        newROIToWorldMatrix->SetElement(1, 3, position_World[1]);
-        newROIToWorldMatrix->SetElement(2, 3, position_World[2]);
+        origin_World[0] = position_World[0];
+        origin_World[1] = position_World[1];
+        origin_World[2] = position_World[2];
         break;
       case L_FACE_POINT:
       case R_FACE_POINT:
@@ -688,6 +690,87 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints(int index/*=-1*/,
         this->SideLengths[2] = zAxisLength;
       default:
         break;
+      }
+
+    //double sideLengthDifference[3] = { 0.0, 0.0, 0.0 };
+    //vtkMath::Subtract(this->SideLengths, originalSideLengths, sideLengthDifference);
+    //vtkMath::MultiplyScalar(sideLengthDifference, 0.5);
+
+    //switch (index)
+    //  {
+    //  case L_FACE_POINT:
+    //  case LAI_CORNER_POINT:
+    //  case LPI_CORNER_POINT:
+    //  case LAS_CORNER_POINT:
+    //  case LPS_CORNER_POINT:
+    //    origin_World[0] -= sideLengthDifference[0] * xAxis_World[0];
+    //    origin_World[1] -= sideLengthDifference[0] * xAxis_World[1];
+    //    origin_World[2] -= sideLengthDifference[0] * xAxis_World[2];
+    //    break;
+    //  case R_FACE_POINT:
+    //  case RAI_CORNER_POINT:
+    //  case RPI_CORNER_POINT:
+    //  case RAS_CORNER_POINT:
+    //  case RPS_CORNER_POINT:
+    //    origin_World[0] += sideLengthDifference[0] * xAxis_World[0];
+    //    origin_World[1] += sideLengthDifference[0] * xAxis_World[1];
+    //    origin_World[2] += sideLengthDifference[0] * xAxis_World[2];
+    //    break;
+    //  default:
+    //    break;
+    //  }
+
+    //switch (index)
+    //  {
+    //  case P_FACE_POINT:
+    //  case LPI_CORNER_POINT:
+    //  case LPS_CORNER_POINT:
+    //  case RPI_CORNER_POINT:
+    //  case RPS_CORNER_POINT:
+    //    origin_World[0] -= sideLengthDifference[1] * yAxis_World[0];
+    //    origin_World[1] -= sideLengthDifference[1] * yAxis_World[1];
+    //    origin_World[2] -= sideLengthDifference[1] * yAxis_World[2];
+    //    break;
+    //  case A_FACE_POINT:
+    //  case LAI_CORNER_POINT:
+    //  case LAS_CORNER_POINT:
+    //  case RAI_CORNER_POINT:
+    //  case RAS_CORNER_POINT:
+    //    origin_World[0] += sideLengthDifference[1] * yAxis_World[0];
+    //    origin_World[1] += sideLengthDifference[1] * yAxis_World[1];
+    //    origin_World[2] += sideLengthDifference[1] * yAxis_World[2];
+    //    break;
+    //  default:
+    //    break;
+    //  }
+
+    //switch (index)
+    //  {
+    //  case I_FACE_POINT:
+    //  case LPI_CORNER_POINT:
+    //  case LAI_CORNER_POINT:
+    //  case RPI_CORNER_POINT:
+    //  case RAI_CORNER_POINT:
+    //    origin_World[0] -= sideLengthDifference[2] * zAxis_World[0];
+    //    origin_World[1] -= sideLengthDifference[2] * zAxis_World[1];
+    //    origin_World[2] -= sideLengthDifference[2] * zAxis_World[2];
+    //    break;
+    //  case S_FACE_POINT:
+    //  case LPS_CORNER_POINT:
+    //  case LAS_CORNER_POINT:
+    //  case RPS_CORNER_POINT:
+    //  case RAS_CORNER_POINT:
+    //    origin_World[0] += sideLengthDifference[2] * zAxis_World[0];
+    //    origin_World[1] += sideLengthDifference[2] * zAxis_World[1];
+    //    origin_World[2] += sideLengthDifference[2] * zAxis_World[2];
+    //    break;
+    //  default:
+    //    break;
+    //  }
+
+    for (int i = 0; i < 3; ++i)
+      {
+      newROIToWorldMatrix->SetElement(i, 3, origin_World[i]);
       }
     }
   else
@@ -718,9 +801,9 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints(int index/*=-1*/,
       {
       for (int i = 0; i < 3; ++i)
         {
-        newROIToWorldMatrix->SetElement(i, 0, xAxis_World[i]);
-        newROIToWorldMatrix->SetElement(i, 1, yAxis_World[i]);
-        newROIToWorldMatrix->SetElement(i, 2, zAxis_World[i]);
+        //newROIToWorldMatrix->SetElement(i, 0, xAxis_World[i]);
+        //newROIToWorldMatrix->SetElement(i, 1, yAxis_World[i]);
+        //newROIToWorldMatrix->SetElement(i, 2, zAxis_World[i]);
         newROIToWorldMatrix->SetElement(i, 3, origin_World[i]);
         }
       }
@@ -769,6 +852,7 @@ void vtkMRMLMarkupsROINode::UpdateBoundingBoxROIFromControlPoints(int index/*=-1
     }
 }
 
+#include <vtkSphere.h>
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsROINode::UpdateSphereROIFromControlPoints(int pointIndex, const double position_World[3]/* = nullptr*/,
   int positionStatus/* = vtkMRMLMarkupsNode::PositionDefined*/)
@@ -780,21 +864,16 @@ void vtkMRMLMarkupsROINode::UpdateSphereROIFromControlPoints(int pointIndex, con
 
   vtkPoints* points = this->CurveInputPoly->GetPoints();
 
-  double origin_World[3] = { 0.0, 0.0, 0.0 };
-  this->GetNthControlPointPositionWorld(ORIGIN_POINT, origin_World);
+  float sphereDimensions[4] = { 0 };
 
-  double radius = 0.0;
-  for (int i = 1; i < points->GetNumberOfPoints(); ++i)
-    {
-    double pointToOrigin_World[3] = { 0.0, 0.0, 0.0 };
-    double currentPoint_World[3] = { 0.0, 0.0, 0.0 };
-    points->GetPoint(i, currentPoint_World);
-    vtkMath::Subtract(currentPoint_World, origin_World, pointToOrigin_World);
-    radius = std::max(radius, vtkMath::Norm(pointToOrigin_World));
-    }
-  this->SideLengths[0] = 2*radius;
-  this->SideLengths[1] = 2*radius;
-  this->SideLengths[2] = 2*radius;
+  vtkSphere::ComputeBoundingSphere((float*)points->GetData()->GetVoidPointer(0), points->GetNumberOfPoints(), sphereDimensions, nullptr);
+  this->SideLengths[0] = 2*sphereDimensions[3];
+  this->SideLengths[1] = 2*sphereDimensions[3];
+  this->SideLengths[2] = 2*sphereDimensions[3];
+
+  double origin_Local[3] = { sphereDimensions[0], sphereDimensions[1], sphereDimensions[2] };
+  double origin_World[3] = {0};
+  this->TransformPointToWorld(origin_Local, origin_World);
 
   vtkNew<vtkMatrix4x4> newROIToWorldMatrix;
   for (int i = 0; i < 3; ++i)
