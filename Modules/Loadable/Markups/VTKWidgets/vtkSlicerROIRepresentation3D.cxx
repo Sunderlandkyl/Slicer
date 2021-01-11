@@ -217,13 +217,6 @@ void vtkSlicerROIRepresentation3D::UpdateEllipsoidFromMRML(vtkMRMLMarkupsROINode
 }
 
 //----------------------------------------------------------------------
-void vtkSlicerROIRepresentation3D::UpdateInteractionPipeline()
-{
-  // Final visibility handled by superclass in vtkSlicerMarkupsWidgetRepresentation
-  Superclass::UpdateInteractionPipeline();
-}
-
-//----------------------------------------------------------------------
 void vtkSlicerROIRepresentation3D::GetActors(vtkPropCollection *pc)
 {
   this->ROIActor->GetActors(pc);
@@ -317,29 +310,216 @@ double *vtkSlicerROIRepresentation3D::GetBounds()
   return this->Bounds;
 }
 
-//----------------------------------------------------------------------
-void vtkSlicerROIRepresentation3D::CanInteract(
-  vtkMRMLInteractionEventData* interactionEventData,
-  int &foundComponentType, int &foundComponentIndex, double &closestDistance2)
-{
-  foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentNone;
-  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
-  if ( !markupsNode || markupsNode->GetLocked() || markupsNode->GetNumberOfControlPoints() < 1
-    || !interactionEventData )
-    {
-    return;
-    }
-
-  Superclass::CanInteract(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2);
-  if (foundComponentType != vtkMRMLMarkupsDisplayNode::ComponentNone)
-    {
-    return;
-    }
-}
-
 //-----------------------------------------------------------------------------
 void vtkSlicerROIRepresentation3D::PrintSelf(ostream& os, vtkIndent indent)
 {
   //Superclass typedef defined in vtkTypeMacro() found in vtkSetGet.h
   this->Superclass::PrintSelf(os, indent);
+}
+
+//-----------------------------------------------------------------------------
+void vtkSlicerROIRepresentation3D::SetupInteractionPipeline()
+{
+  this->InteractionPipeline = new MarkupsInteractionPipelineROI(this);
+  this->InteractionPipeline->InitializePipeline();
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerROIRepresentation3D::UpdateInteractionPipeline()
+{
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
+  if (!roiNode || !this->MarkupsDisplayNode)
+    {
+    this->InteractionPipeline->Actor->SetVisibility(false);
+    return;
+    }
+
+  this->InteractionPipeline->Actor->SetVisibility(this->MarkupsDisplayNode->GetVisibility()
+    && this->MarkupsDisplayNode->GetVisibility3D()
+    && this->MarkupsDisplayNode->GetHandlesInteractive());
+
+  vtkNew<vtkTransform> handleToWorldTransform;
+  handleToWorldTransform->SetMatrix(roiNode->GetInteractionHandleToWorldMatrix());
+  this->InteractionPipeline->HandleToWorldTransform->DeepCopy(handleToWorldTransform);
+
+  ((MarkupsInteractionPipelineROI*)this->InteractionPipeline)->UpdateScaleHandles();
+
+  //double sideLengths[3] = { 0.0, 0.0, 0.0 };
+  //roiNode->GetSideLengths(sideLengths);
+
+  //vtkNew<vtkPoints> points;
+  //points->InsertNextPoint(-sideLengths[0], 0.0, 0.0); // L Face
+  //points->InsertNextPoint(sideLengths[0], 0.0, 0.0); // R Face
+  //points->InsertNextPoint(0.0, -sideLengths[1], 0.0); // P Face
+  //points->InsertNextPoint(0.0, sideLengths[1], 0.0); // A Face
+  //points->InsertNextPoint(0.0, 0.0, -sideLengths[2]); // I Face
+  //points->InsertNextPoint(0.0, 0.0, sideLengths[2]); // S Face
+  //this->InteractionPipeline->ScaleHandlePoints->SetPoints(points);
+}
+
+//-----------------------------------------------------------------------------
+vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::MarkupsInteractionPipelineROI(vtkSlicerMarkupsWidgetRepresentation* representation)
+  : MarkupsInteractionPipeline(representation)
+{
+
+}
+
+//-----------------------------------------------------------------------------
+void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::GetHandleColor(int type, int index, double color[4])
+{
+  if (type != vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+    {
+    MarkupsInteractionPipeline::GetHandleColor(type, index, color);
+    return;
+    }
+
+  double red[4] = { 1.00, 0.00, 0.00, 1.00 };
+  double green[4] = { 0.00, 1.00, 0.00, 1.00 };
+  double blue[4] = { 0.00, 0.00, 1.00, 1.00 };
+  double orange[4] = { 1.00, 0.50, 0.00, 1.00 };
+  double purple[4] = { 1.00, 0.00, 1.00, 1.00 };
+  double white[4] = { 1.00, 1.00, 1.00, 1.00 };
+  double yellow[4] = { 1.00, 1.00, 0.00, 1.00 };
+  double lightGrey[4] = { 0.80, 0.80, 0.80, 1.00 };
+
+  double* currentColor = red;
+  switch (index)
+    {
+    case 0:
+    case 1:
+      currentColor = red;
+      break;
+    case 2:
+    case 3:
+      currentColor = green;
+      break;
+    case 4:
+    case 5:
+      currentColor = blue;
+      break;
+    default:
+      currentColor = lightGrey;
+      break;
+    }
+  vtkSlicerMarkupsWidgetRepresentation* markupsRepresentation = vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(this->Representation);
+  vtkMRMLMarkupsDisplayNode* displayNode = nullptr;
+  if (markupsRepresentation)
+    {
+    displayNode = markupsRepresentation->GetMarkupsDisplayNode();
+    }
+
+  double opacity = this->GetOpacity(type, index);
+  if (displayNode && displayNode->GetActiveComponentType() == type && displayNode->GetActiveComponentIndex() == index)
+    {
+    currentColor = yellow;
+    opacity = 1.0;
+    }
+
+  for (int i = 0; i < 3; ++i)
+    {
+    color[i] = currentColor[i];
+    }
+  color[3] = opacity;
+}
+
+//-----------------------------------------------------------------------------
+void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::CreateScaleHandles()
+{
+  MarkupsInteractionPipeline::CreateScaleHandles();
+  this->AxisScaleGlypher->SetInputData(this->ScaleHandlePoints);
+  this->UpdateScaleHandles();
+}
+
+//-----------------------------------------------------------------------------
+vtkSlicerROIRepresentation3D::HandleInfoList vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::GetHandleInfoList()
+{
+ vtkSlicerMarkupsWidgetRepresentation::HandleInfoList handleInfoList;
+  for (int i = 0; i < this->RotationHandlePoints->GetNumberOfPoints(); ++i)
+    {
+    double handlePositionLocal[3] = { 0 };
+    double handlePositionWorld[3] = { 0 };
+    this->RotationHandlePoints->GetPoint(i, handlePositionLocal);
+    this->RotationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
+    this->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
+    double color[4] = { 0 };
+    this->GetHandleColor(vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, i, color);
+    HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, handlePositionWorld, handlePositionLocal, color);
+    handleInfoList.push_back(info);
+    }
+
+  for (int i = 0; i < this->TranslationHandlePoints->GetNumberOfPoints(); ++i)
+    {
+    double handlePositionLocal[3] = { 0 };
+    double handlePositionWorld[3] = { 0 };
+    this->TranslationHandlePoints->GetPoint(i, handlePositionLocal);
+    this->TranslationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
+    this->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
+    double color[4] = { 0 };
+    this->GetHandleColor(vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle, i, color);
+    HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle, handlePositionWorld, handlePositionLocal, color);
+    handleInfoList.push_back(info);
+    }
+
+  for (int i = 0; i < this->ScaleHandlePoints->GetNumberOfPoints(); ++i)
+    {
+    double handlePositionLocal[3] = { 0 };
+    double handlePositionWorld[3] = { 0 };
+    this->ScaleHandlePoints->GetPoint(i, handlePositionLocal);
+    this->HandleToWorldTransform->TransformPoint(handlePositionLocal, handlePositionWorld);
+    double color[4] = { 0 };
+    this->GetHandleColor(vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, i, color);
+    HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, handlePositionWorld, handlePositionLocal, color);
+    handleInfoList.push_back(info);
+    }
+
+  return handleInfoList;
+}
+
+//-----------------------------------------------------------------------------
+void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::UpdateScaleHandles()
+{
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(vtkSlicerROIRepresentation3D::SafeDownCast(this->Representation)->GetMarkupsNode());
+  if (!roiNode)
+    {
+    return;
+    }
+
+  double sideLengths[3] = { 0.0,  0.0, 0.0 };
+  roiNode->GetSideLengths(sideLengths);
+  vtkMath::MultiplyScalar(sideLengths, 0.5);
+
+  vtkNew<vtkPoints> roiPoints;
+  roiPoints->InsertNextPoint(-sideLengths[0],             0.0,             0.0); // L Face
+  roiPoints->InsertNextPoint( sideLengths[0],             0.0,             0.0); // R Face
+  roiPoints->InsertNextPoint(            0.0, -sideLengths[1],             0.0); // P Face
+  roiPoints->InsertNextPoint(            0.0,  sideLengths[1],             0.0); // A Face
+  roiPoints->InsertNextPoint(            0.0,             0.0, -sideLengths[2]); // I Face
+  roiPoints->InsertNextPoint(            0.0,             0.0,  sideLengths[2]); // S Face
+  roiPoints->InsertNextPoint(-sideLengths[0], -sideLengths[1], -sideLengths[2]); // LPI Corner
+  roiPoints->InsertNextPoint( sideLengths[0], -sideLengths[1], -sideLengths[2]); // RPI Corner
+  roiPoints->InsertNextPoint(-sideLengths[0],  sideLengths[1], -sideLengths[2]); // LAI Corner
+  roiPoints->InsertNextPoint( sideLengths[0],  sideLengths[1], -sideLengths[2]); // RAI Corner
+  roiPoints->InsertNextPoint(-sideLengths[0], -sideLengths[1],  sideLengths[2]); // LPS Corner
+  roiPoints->InsertNextPoint( sideLengths[0], -sideLengths[1],  sideLengths[2]); // RPS Corner
+  roiPoints->InsertNextPoint(-sideLengths[0],  sideLengths[1],  sideLengths[2]); // LAS Corner
+  roiPoints->InsertNextPoint( sideLengths[0],  sideLengths[1],  sideLengths[2]); // RAS Corner
+
+  vtkMatrix4x4* roiToWorldMatrix = roiNode->GetROIToWorldMatrix();
+  vtkNew<vtkTransform> worldToHandleTransform;
+  worldToHandleTransform->DeepCopy(this->HandleToWorldTransform);
+  worldToHandleTransform->Inverse();
+
+  vtkNew<vtkTransform> roiToHandleTransform;
+  roiToHandleTransform->Concatenate(roiToWorldMatrix);
+  roiToHandleTransform->Concatenate(worldToHandleTransform);
+
+  vtkNew<vtkPolyData> scaleHandlePoints;
+  scaleHandlePoints->SetPoints(roiPoints);
+
+  vtkNew<vtkTransformPolyDataFilter> transform;
+  transform->SetInputData(scaleHandlePoints);
+  transform->SetTransform(roiToHandleTransform);
+  transform->Update();
+
+  this->ScaleHandlePoints->SetPoints(transform->GetOutput()->GetPoints());
 }

@@ -81,12 +81,12 @@ public:
   /// Return the bounds of the representation
   double *GetBounds() override;
 
-  void CanInteract(vtkMRMLInteractionEventData* interactionEventData,
-    int &foundComponentType, int &foundComponentIndex, double &closestDistance2) override;
-
 protected:
   vtkSlicerROIRepresentation3D();
   ~vtkSlicerROIRepresentation3D() override;
+
+  // Initialize interaction handle pipeline
+  void SetupInteractionPipeline() override;
 
   // Update visibility of interaction handles for representation
   void UpdateInteractionPipeline() override;
@@ -105,6 +105,17 @@ protected:
 
   vtkNew<vtkProperty>                   ROIProperty;
   vtkNew<vtkProperty>                   ROIOccludedProperty;
+
+  class MarkupsInteractionPipelineROI : public MarkupsInteractionPipeline
+  {
+  public:
+    MarkupsInteractionPipelineROI(vtkSlicerMarkupsWidgetRepresentation* representation);
+    ~MarkupsInteractionPipelineROI() override = default;
+    void CreateScaleHandles() override;
+    void UpdateScaleHandles();
+    void GetHandleColor(int type, int index, double color[4]) override;
+    HandleInfoList GetHandleInfoList() override;
+  };
 
 private:
   vtkSlicerROIRepresentation3D(const vtkSlicerROIRepresentation3D&) = delete;

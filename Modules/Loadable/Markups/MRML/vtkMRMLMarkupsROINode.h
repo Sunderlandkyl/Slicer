@@ -77,15 +77,6 @@ public:
   /// \sa vtkMRMLNode::CopyContent
   vtkMRMLCopyContentMacro(vtkMRMLMarkupsROINode);
 
-  /// Set of the Nth control point position from coordinates
-  /// \sa SetNthControlPointPositionFromPointer, SetNthControlPointPositionFromArray
-  void SetNthControlPointPosition(const int pointIndex,
-    const double x, const double y, const double z, int positionStatus = vtkMRMLMarkupsNode::PositionDefined) override;
-  /// Set of the Nth control point position and orientation from an array using World coordinate system.
-  /// \sa SetNthControlPointPosition
-  void SetNthControlPointPositionOrientationWorldFromArray(const int pointIndex,
-    const double pos[3], const double orientationMatrix[9], const char* associatedNodeID, int positionStatus = vtkMRMLMarkupsNode::PositionDefined) override;
-
   /// TODO
   vtkGetVector3Macro(SideLengths, double);
   void SetSideLengths(const double sideLengths_World[3]);
@@ -114,37 +105,30 @@ public:
   void SetROIType(int roiType);
 
   ///
-  void SetControlPointPositionsWorld(vtkPoints* points) override;
 
   ///
-  virtual void UpdateControlPointsFromROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
-  virtual void UpdateControlPointsFromBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+  //virtual void UpdateControlPointsFromROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+  //virtual void UpdateControlPointsFromBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
   //virtual void UpdateControlPointsFromBoundingBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
 
   ///
-  virtual void UpdateROIFromControlPoints(int index = -1,
-    const double position_World[3] = nullptr,
-    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
-
-  virtual void UpdateBoxROIFromControlPoints(int index = -1,
-    const double position_World[3] = nullptr,
-    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
-
-  virtual void UpdateBoundingBoxROIFromControlPoints(int index = -1,
-    const double position_World[3] = nullptr,
-    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
-
-  virtual void UpdateSphereROIFromControlPoints(int index = -1,
-    const double position_World[3] = nullptr,
-    int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+  virtual void UpdateROIFromControlPoints();
+  virtual void UpdateBoxROIFromControlPoints();
+  virtual void UpdateBoundingBoxROIFromControlPoints();
+  virtual void UpdateSphereROIFromControlPoints();
 
   enum
     {
+    // Separate class
     BOX,
     BOUNDING_BOX,
+
+    // Separate class
     SPHERE,
     ELLIPSOID,
-    ULTRASOUND,
+
+    // Separate class
+    CURVED_BOX,
     };
 
   enum
@@ -176,6 +160,9 @@ public:
 
   void GetBoundsROI(double bounds[6]);
 
+  /// Create default storage node or nullptr if does not have one
+  //vtkMRMLStorageNode* CreateDefaultStorageNode() override; // TODO: Add new storage node
+
 protected:
 
   int ROIType;
@@ -185,7 +172,7 @@ protected:
 
   // TODO: Replace with 4x4 matrix
   // Can leave accesors to get individual axis from the matrix.
-  vtkNew<vtkMatrix4x4> ROIToWorldMatrix;
+  vtkSmartPointer<vtkMatrix4x4> ROIToWorldMatrix;
 
   bool IsUpdatingControlPointsFromROI;
   bool IsUpdatingROIFromControlPoints;

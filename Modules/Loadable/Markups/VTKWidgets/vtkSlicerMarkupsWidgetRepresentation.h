@@ -205,18 +205,20 @@ protected:
     vtkSmartPointer<vtkArcSource>                       AxisRotationArcSource;
     vtkSmartPointer<vtkTubeFilter>                      AxisRotationTubeFilter;
     vtkSmartPointer<vtkAppendPolyData>                  AxisRotationGlyphSource;
+    vtkSmartPointer<vtkPolyData>                        RotationHandlePoints;
+    vtkSmartPointer<vtkTransformPolyDataFilter>         RotationScaleTransform;
+    vtkSmartPointer<vtkTensorGlyph>                     AxisRotationGlypher;
 
     vtkSmartPointer<vtkArrowSource>                     AxisTranslationGlyphSource;
     vtkSmartPointer<vtkTransformPolyDataFilter>         AxisTranslationGlyphTransformer;
-
-    vtkSmartPointer<vtkPolyData>                        RotationHandlePoints;
     vtkSmartPointer<vtkPolyData>                        TranslationHandlePoints;
-
-    vtkSmartPointer<vtkTransformPolyDataFilter>         RotationScaleTransform;
     vtkSmartPointer<vtkTransformPolyDataFilter>         TranslationScaleTransform;
-
-    vtkSmartPointer<vtkTensorGlyph>                     AxisRotationGlypher;
     vtkSmartPointer<vtkGlyph3D>                         AxisTranslationGlypher;
+
+    vtkSmartPointer<vtkSphereSource>                    AxisScaleHandleSource;
+    vtkSmartPointer<vtkPolyData>                        ScaleHandlePoints;
+    vtkSmartPointer<vtkTransformPolyDataFilter>         ScaleScaleTransform;
+    vtkSmartPointer<vtkGlyph3D>                         AxisScaleGlypher;
 
     vtkSmartPointer<vtkAppendPolyData>                  Append;
     vtkSmartPointer<vtkTransformPolyDataFilter>         HandleToWorldTransformFilter;
@@ -232,6 +234,7 @@ protected:
     virtual void InitializePipeline();
     virtual void CreateRotationHandles();
     virtual void CreateTranslationHandles();
+    virtual void CreateScaleHandles();
     virtual void UpdateHandleColors();
 
     /// Set the scale of the interaction handles in world coordinates
@@ -283,7 +286,7 @@ protected:
     };
 
     /// Get the list of info for all interaction handles
-    std::vector<HandleInfo> GetHandleInfoList();
+    virtual std::vector<HandleInfo> GetHandleInfoList();
   };
   typedef std::vector<MarkupsInteractionPipeline::HandleInfo> HandleInfoList;
 

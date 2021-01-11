@@ -73,6 +73,8 @@ vtkSlicerMarkupsWidget::vtkSlicerMarkupsWidget()
     WidgetStateTranslate, WidgetEventTranslateStart, WidgetEventTranslateEnd);
   this->SetEventTranslationClickAndDrag(WidgetStateOnRotationHandle, vtkCommand::LeftButtonPressEvent, vtkEvent::NoModifier,
     WidgetStateRotate, WidgetEventRotateStart, WidgetEventRotateEnd);
+  this->SetEventTranslationClickAndDrag(WidgetStateOnScaleHandle, vtkCommand::LeftButtonPressEvent, vtkEvent::NoModifier,
+    WidgetStateScale, WidgetEventScaleStart, WidgetEventScaleEnd);
 
   this->SetEventTranslation(WidgetStateOnWidget, vtkMRMLInteractionEventData::LeftButtonClickEvent, vtkEvent::NoModifier, WidgetEventJumpCursor);
   this->SetEventTranslation(WidgetStateOnWidget, vtkCommand::LeftButtonDoubleClickEvent, vtkEvent::NoModifier, WidgetEventAction);
@@ -84,6 +86,8 @@ vtkSlicerMarkupsWidget::vtkSlicerMarkupsWidget()
   this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::NoModifier, WidgetEventMenu);
   this->SetEventTranslation(WidgetStateOnRotationHandle, vtkCommand::RightButtonPressEvent, vtkEvent::NoModifier, WidgetEventPick);
   this->SetEventTranslation(WidgetStateOnRotationHandle, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::NoModifier, WidgetEventMenu);
+  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkCommand::RightButtonPressEvent, vtkEvent::NoModifier, WidgetEventPick);
+  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::NoModifier, WidgetEventMenu);
 
   // Update active component
   this->SetEventTranslation(WidgetStateIdle, vtkCommand::MouseMoveEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
@@ -151,7 +155,8 @@ bool vtkSlicerMarkupsWidget::ProcessWidgetRotateStart(vtkMRMLInteractionEventDat
 //-------------------------------------------------------------------------
 bool vtkSlicerMarkupsWidget::ProcessWidgetScaleStart(vtkMRMLInteractionEventData* eventData)
 {
-  if (this->WidgetState != vtkSlicerMarkupsWidget::WidgetStateOnWidget || this->IsAnyControlPointLocked())
+  if ((this->WidgetState != vtkSlicerMarkupsWidget::WidgetStateOnWidget && this->WidgetState != vtkSlicerMarkupsWidget::WidgetStateOnScaleHandle)
+    || this->IsAnyControlPointLocked())
     {
     return false;
     }
@@ -192,7 +197,11 @@ bool vtkSlicerMarkupsWidget::ProcessMouseMove(vtkMRMLInteractionEventData* event
     const char* associatedNodeID = this->GetAssociatedNodeID(eventData);
     this->UpdatePreviewPoint(eventData, associatedNodeID, vtkMRMLMarkupsNode::PositionPreview);
     }
-  else if (state == WidgetStateIdle || state == WidgetStateOnWidget || state == WidgetStateOnTranslationHandle || state == WidgetStateOnRotationHandle)
+  else if (state == WidgetStateIdle
+    || state == WidgetStateOnWidget
+    || state == WidgetStateOnTranslationHandle
+    || state == WidgetStateOnRotationHandle
+    || state == WidgetStateOnScaleHandle)
     {
     // update state
     int foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentNone;
@@ -210,6 +219,10 @@ bool vtkSlicerMarkupsWidget::ProcessMouseMove(vtkMRMLInteractionEventData* event
     else if (foundComponentType == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
       {
       this->SetWidgetState(WidgetStateOnRotationHandle);
+      }
+    else if (foundComponentType == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+      {
+      this->SetWidgetState(WidgetStateOnScaleHandle);
       }
     else
       {
@@ -1008,6 +1021,13 @@ void vtkSlicerMarkupsWidget::TranslateWidget(double eventPos[2])
     transformedPoints_World->SetPoint(i, newControlPointPosition_World);
     }
   markupsNode->SetControlPointPositionsWorld(transformedPoints_World);
+
+  if (transformedPoints_World->GetNumberOfPoints() == 0)
+    {
+    //translationTransform->PostMultiply();
+    translationTransform->Concatenate(markupsNode->GetInteractionHandleToWorldMatrix());
+    markupsNode->GetInteractionHandleToWorldMatrix()->DeepCopy(translationTransform->GetMatrix());
+    }
 }
 
 //----------------------------------------------------------------------
@@ -1229,7 +1249,9 @@ void vtkSlicerMarkupsWidget::RotateWidget(double eventPos[2])
   vtkNew<vtkTransform> handleToWorldTransform;
   handleToWorldTransform->PostMultiply();
   handleToWorldTransform->Concatenate(markupsNode->GetInteractionHandleToWorldMatrix());
+  handleToWorldTransform->Translate(-origin_World[0], -origin_World[1], -origin_World[2]);
   handleToWorldTransform->RotateWXYZ(angle, rotationAxis_World);
+  handleToWorldTransform->Translate(origin_World[0], origin_World[1], origin_World[2]);
   markupsNode->GetInteractionHandleToWorldMatrix()->DeepCopy(handleToWorldTransform->GetMatrix());
 
   vtkNew<vtkPoints> transformedPoints_World;

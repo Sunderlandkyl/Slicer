@@ -67,11 +67,7 @@ protected:
   vtkSlicerROIWidget();
   ~vtkSlicerROIWidget() override;
 
-  bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& distance2) override;
-  bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
-  bool ProcessPlaneMoveStart(vtkMRMLInteractionEventData* event);
-  bool ProcessPlaneMoveEnd(vtkMRMLInteractionEventData* event);
-  bool ProcessMouseMove(vtkMRMLInteractionEventData* eventData) override;
+  void ScaleWidget(double eventPos[2]) override;
 
 private:
   vtkSlicerROIWidget(const vtkSlicerROIWidget&) = delete;
