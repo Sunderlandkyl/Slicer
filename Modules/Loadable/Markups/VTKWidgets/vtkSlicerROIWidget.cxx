@@ -173,10 +173,43 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
       default:
         break;
       }
-    markupsNode->SetSideLengths(newSideLengths);
 
     double sideLengthDifference[3] = { 0.0, 0.0, 0.0 };
     vtkMath::Subtract(newSideLengths, oldSideLengths, sideLengthDifference);
+    vtkMath::MultiplyScalar(sideLengthDifference, 0.5);
+    vtkMath::Subtract(newSideLengths, sideLengthDifference, newSideLengths);
+    markupsNode->SetSideLengths(newSideLengths);
+
+    double axis_ROI[3] = { 0.0, 0.0, 0.0 };
+    rep->GetInteractionHandleAxisWorld(vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, axis_ROI);
+    worldToROITransform->TransformVector(axis_ROI);
+    if (vtkMath::Dot(axis_ROI, eventPos_ROI) < 0.0)
+      {
+      switch (index)
+        {
+        case 0:
+          index = 1;
+          break;
+        case 1:
+          index = 0;
+            break;
+        case 2:
+          index = 3;
+          break;
+        case 3:
+          index = 2;
+          break;
+        case 4:
+          index = 5;
+          break;
+        case 5:
+          index = 4;
+          break;
+        default:
+          break;
+        }
+      displayNode->SetActiveComponent(vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index);
+      }
 
     double origin_ROI[3] = { 0.0, 0.0, 0.0 };
     switch (index)

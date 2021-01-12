@@ -342,19 +342,8 @@ void vtkSlicerROIRepresentation3D::UpdateInteractionPipeline()
   handleToWorldTransform->SetMatrix(roiNode->GetInteractionHandleToWorldMatrix());
   this->InteractionPipeline->HandleToWorldTransform->DeepCopy(handleToWorldTransform);
 
-  ((MarkupsInteractionPipelineROI*)this->InteractionPipeline)->UpdateScaleHandles();
-
-  //double sideLengths[3] = { 0.0, 0.0, 0.0 };
-  //roiNode->GetSideLengths(sideLengths);
-
-  //vtkNew<vtkPoints> points;
-  //points->InsertNextPoint(-sideLengths[0], 0.0, 0.0); // L Face
-  //points->InsertNextPoint(sideLengths[0], 0.0, 0.0); // R Face
-  //points->InsertNextPoint(0.0, -sideLengths[1], 0.0); // P Face
-  //points->InsertNextPoint(0.0, sideLengths[1], 0.0); // A Face
-  //points->InsertNextPoint(0.0, 0.0, -sideLengths[2]); // I Face
-  //points->InsertNextPoint(0.0, 0.0, sideLengths[2]); // S Face
-  //this->InteractionPipeline->ScaleHandlePoints->SetPoints(points);
+  MarkupsInteractionPipelineROI* interactionPipeline = static_cast<MarkupsInteractionPipelineROI*>(this->InteractionPipeline);
+  interactionPipeline->UpdateScaleHandles();
 }
 
 //-----------------------------------------------------------------------------
@@ -373,16 +362,16 @@ void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::GetHandleColor
     return;
     }
 
-  double red[4] = { 1.00, 0.00, 0.00, 1.00 };
-  double green[4] = { 0.00, 1.00, 0.00, 1.00 };
-  double blue[4] = { 0.00, 0.00, 1.00, 1.00 };
-  double orange[4] = { 1.00, 0.50, 0.00, 1.00 };
-  double purple[4] = { 1.00, 0.00, 1.00, 1.00 };
-  double white[4] = { 1.00, 1.00, 1.00, 1.00 };
-  double yellow[4] = { 1.00, 1.00, 0.00, 1.00 };
-  double lightGrey[4] = { 0.80, 0.80, 0.80, 1.00 };
+  double red[4]       = { 1.00, 0.00, 0.00, 1.00 };
+  double green[4]     = { 0.00, 1.00, 0.00, 1.00 };
+  double blue[4]      = { 0.00, 0.00, 1.00, 1.00 };
+  double orange[4]    = { 1.00, 0.50, 0.00, 1.00 };
+  double purple[4]    = { 1.00, 0.00, 1.00, 1.00 };
+  double white[4]     = { 1.00, 1.00, 1.00, 1.00 };
+  double yellow[4]    = { 1.00, 1.00, 0.00, 1.00 };
+  double lightGrey[4] = { 0.90, 0.90, 0.90, 1.00 };
 
-  double* currentColor = red;
+  double* currentColor = lightGrey;
   switch (index)
     {
     case 0:
@@ -398,7 +387,6 @@ void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::GetHandleColor
       currentColor = blue;
       break;
     default:
-      currentColor = lightGrey;
       break;
     }
   vtkSlicerMarkupsWidgetRepresentation* markupsRepresentation = vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(this->Representation);
@@ -436,12 +424,12 @@ vtkSlicerROIRepresentation3D::HandleInfoList vtkSlicerROIRepresentation3D::Marku
  vtkSlicerMarkupsWidgetRepresentation::HandleInfoList handleInfoList;
   for (int i = 0; i < this->RotationHandlePoints->GetNumberOfPoints(); ++i)
     {
-    double handlePositionLocal[3] = { 0 };
-    double handlePositionWorld[3] = { 0 };
+    double handlePositionLocal[3] = { 0.0, 0.0, 0.0 };
+    double handlePositionWorld[3] = { 0.0, 0.0, 0.0 };
     this->RotationHandlePoints->GetPoint(i, handlePositionLocal);
     this->RotationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
     this->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
-    double color[4] = { 0 };
+    double color[4] = { 0.0, 0.0, 0.0 };
     this->GetHandleColor(vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, i, color);
     HandleInfo info(i, vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, handlePositionWorld, handlePositionLocal, color);
     handleInfoList.push_back(info);
@@ -449,8 +437,8 @@ vtkSlicerROIRepresentation3D::HandleInfoList vtkSlicerROIRepresentation3D::Marku
 
   for (int i = 0; i < this->TranslationHandlePoints->GetNumberOfPoints(); ++i)
     {
-    double handlePositionLocal[3] = { 0 };
-    double handlePositionWorld[3] = { 0 };
+    double handlePositionLocal[3] = { 0.0, 0.0, 0.0 };
+    double handlePositionWorld[3] = { 0.0, 0.0, 0.0 };
     this->TranslationHandlePoints->GetPoint(i, handlePositionLocal);
     this->TranslationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
     this->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
@@ -462,8 +450,8 @@ vtkSlicerROIRepresentation3D::HandleInfoList vtkSlicerROIRepresentation3D::Marku
 
   for (int i = 0; i < this->ScaleHandlePoints->GetNumberOfPoints(); ++i)
     {
-    double handlePositionLocal[3] = { 0 };
-    double handlePositionWorld[3] = { 0 };
+    double handlePositionLocal[3] = { 0.0, 0.0, 0.0 };
+    double handlePositionWorld[3] = { 0.0, 0.0, 0.0 };
     this->ScaleHandlePoints->GetPoint(i, handlePositionLocal);
     this->HandleToWorldTransform->TransformPoint(handlePositionLocal, handlePositionWorld);
     double color[4] = { 0 };

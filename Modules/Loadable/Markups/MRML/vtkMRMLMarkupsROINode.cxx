@@ -58,11 +58,7 @@
 // STD includes
 #include <sstream>
 
-#include <vtkPCAStatistics.h>
-#include <vtkTable.h>
-#include <vtkOBBTree.h>
-#include <vtkTimeStamp.h>
-
+// vtkAddon includes
 #include <vtkAddonMathUtilities.h>
 
 const int NUMBER_OF_BOX_CONTROL_POINTS = 2; // 1 center; 1 corner; Used for initial ROI definition, then removed

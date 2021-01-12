@@ -870,88 +870,15 @@ vtkTypeBool vtkSlicerMarkupsWidgetRepresentation::HasTranslucentPolygonalGeometr
 }
 
 //----------------------------------------------------------------------
-void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandleAxisWorld(int index, double axis[3])
+void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandleAxisWorld(int type, int index, double axis[3])
 {
-  this->InteractionPipeline->GetInteractionHandleAxisWorld(index, axis);
+  this->InteractionPipeline->GetInteractionHandleAxisWorld(type, index, axis);
 }
 
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandleOriginWorld(double origin[3])
 {
   this->InteractionPipeline->GetInteractionHandleOriginWorld(origin);
-}
-
-//----------------------------------------------------------------------
-void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandleVector(int type, int index, double axis[3])
-{
-  vtkPolyData* handles = nullptr;
-  if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
-    {
-    handles = this->InteractionPipeline->RotationHandlePoints;
-    }
-  else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
-    {
-    handles = this->InteractionPipeline->TranslationHandlePoints;
-    }
-  else if (type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
-    {
-    handles = this->InteractionPipeline->ScaleHandlePoints;
-    }
-
-  if (!handles)
-    {
-    vtkErrorMacro("GetInteractionHandleVector: Could not find interaction handles!");
-    return;
-    }
-
-  if (index  < 0 || index >= handles->GetNumberOfPoints())
-    {
-    vtkErrorMacro("GetInteractionHandleVector: Handle index out of range!");
-    return;
-    }
-
-  handles->GetPoint(index, axis);
-}
-
-//----------------------------------------------------------------------
-void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandleVectorWorld(int type, int index, double axisWorld[3])
-{
-  if (!axisWorld)
-    {
-    vtkErrorMacro("GetInteractionHandleVectorWorld: Invalid axis argument!");
-    }
-
-  this->GetInteractionHandleVector(type, index, axisWorld);
-  double origin[3] = { 0 };
-  this->InteractionPipeline->HandleToWorldTransform->TransformVectorAtPoint(origin, axisWorld, axisWorld);
-}
-
-//----------------------------------------------------------------------
-void vtkSlicerMarkupsWidgetRepresentation::GetInteractionHandlePositionWorld(int type, int index, double positionWorld[3])
-{
-  if (!positionWorld)
-    {
-    vtkErrorMacro("GetInteractionHandlePositionWorld: Invalid position argument!");
-    }
-
-  if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
-    {
-    this->InteractionPipeline->RotationHandlePoints->GetPoint(index, positionWorld);
-    this->InteractionPipeline->RotationScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
-    this->InteractionPipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
-    }
-  else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
-    {
-    this->InteractionPipeline->TranslationHandlePoints->GetPoint(index, positionWorld);
-    this->InteractionPipeline->TranslationScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
-    this->InteractionPipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
-    }
-  else if (type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
-    {
-    this->InteractionPipeline->ScaleHandlePoints->GetPoint(index, positionWorld);
-    this->InteractionPipeline->ScaleScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
-    this->InteractionPipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
-    }
 }
 
 //----------------------------------------------------------------------
@@ -1325,7 +1252,7 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetHandle
 //----------------------------------------------------------------------
 double vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetOpacity(int type, int index)
 {
-  double viewNormal[3] = { 0 };
+  double viewNormal[3] = { 0.0, 0.0, 0.0 };
   this->GetViewPlaneNormal(viewNormal);
 
   double opacity = 1.0;
@@ -1335,8 +1262,8 @@ double vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetOpac
     return opacity;
     }
 
-  double axis[3] = { 0 };
-  this->GetInteractionHandleAxisWorld(index, axis);
+  double axis[3] = { 0.0, 0.0, 0.0 };
+  this->GetInteractionHandleAxisWorld(type, index, axis);
   if (vtkMath::Dot(viewNormal, axis) < 0)
     {
     vtkMath::MultiplyScalar(axis, -1);
@@ -1346,7 +1273,7 @@ double vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetOpac
   double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal, axis));
   if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
     {
-    // Fade for rotation handles happens when the rotation axis is approaching 90 degrees from the view normal
+    // Fade happens when the axis approaches 90 degrees from the view normal
     if (angle > 90 - this->EndFadeAngle)
       {
       opacity = 0.0;
@@ -1357,9 +1284,9 @@ double vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetOpac
       opacity = 1.0 - (difference / fadeAngleRange);
       }
     }
-  else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle || type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
     {
-    // Fade for translation handles happens when the rotation axis is approaching 0 degrees from the view normal
+    // Fade happens when the axis approaches 0 degrees from the view normal
     if (angle < this->EndFadeAngle)
       {
       opacity = 0.0;
@@ -1447,20 +1374,6 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::SetWidget
 }
 
 //----------------------------------------------------------------------
-void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetInteractionHandleAxisWorld(int index, double axisWorld[3])
-{
-  if (!axisWorld || index < 0 || index > 2)
-    {
-    return;
-    }
-
-  double handleAxis[3] = { 0 };
-  handleAxis[index] = 1;
-  double origin[3] = { 0,0,0 };
-  this->HandleToWorldTransform->TransformVectorAtPoint(origin, handleAxis, axisWorld);
-}
-
-//----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetInteractionHandleOriginWorld(double originWorld[3])
 {
   if (!originWorld)
@@ -1472,6 +1385,7 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetIntera
   this->HandleToWorldTransform->TransformPoint(handleOrigin, originWorld);
 }
 
+//----------------------------------------------------------------------
 int vtkSlicerMarkupsWidgetRepresentation::GetGlyphTypeSourceFromDisplay(int glyphTypeDisplay)
 {
   switch (glyphTypeDisplay)
@@ -1493,5 +1407,78 @@ int vtkSlicerMarkupsWidgetRepresentation::GetGlyphTypeSourceFromDisplay(int glyp
     case vtkMRMLMarkupsDisplayNode::HookedArrow2D: return vtkMarkupsGlyphSource2D::GlyphHookedArrow;
     default:
       return -1;
+    }
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetInteractionHandleAxis(int type, int index, double axis[3])
+{
+  vtkPolyData* handles = nullptr;
+  if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
+    {
+    handles = this->TranslationHandlePoints; // TODO
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+    {
+    handles = this->TranslationHandlePoints;
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+    {
+    handles = this->ScaleHandlePoints;
+    }
+
+  if (!handles)
+    {
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVector: Could not find interaction handles!");
+    return;
+    }
+
+  if (index < 0 || index >= handles->GetNumberOfPoints())
+    {
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVector: Handle index out of range!");
+    return;
+    }
+
+  handles->GetPoint(index, axis);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetInteractionHandleAxisWorld(int type, int index, double axisWorld[3])
+{
+  if (!axisWorld)
+    {
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument!");
+    }
+
+  this->GetInteractionHandleAxis(type, index, axisWorld);
+  double origin[3] = { 0.0, 0.0, 0.0 };
+  this->HandleToWorldTransform->TransformVectorAtPoint(origin, axisWorld, axisWorld);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetInteractionHandlePositionWorld(int type, int index, double positionWorld[3])
+{
+  if (!positionWorld)
+    {
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandlePositionWorld: Invalid position argument!");
+    }
+
+  if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
+    {
+    this->RotationHandlePoints->GetPoint(index, positionWorld);
+    this->RotationScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
+    this->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+    {
+    this->TranslationHandlePoints->GetPoint(index, positionWorld);
+    this->TranslationScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
+    this->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+    {
+    this->ScaleHandlePoints->GetPoint(index, positionWorld);
+    this->ScaleScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
+    this->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
     }
 }

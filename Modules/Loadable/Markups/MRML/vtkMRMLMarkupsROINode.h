@@ -31,6 +31,8 @@
 #include "vtkMRMLMarkupsNode.h"
 
 // VTK includes
+#include <vtkMatrix4x4.h>
+#include <vtkSmartPointer.h>
 #include <vtkStringArray.h>
 
 // std includes
@@ -96,20 +98,10 @@ public:
   void GetZAxisLocal(double axis_Local[3]);
   void GetAxisLocal(int axisIndex, double axis_Local[3]);
 
-  //void GetSideLengths(double lengths[3]);
-  /*void GetDirection(int axis, double direction[3]);*/
-
-  vtkGetMacro(ROIToWorldMatrix, vtkMatrix4x4*);
+  vtkGetObjectMacro(ROIToWorldMatrix, vtkMatrix4x4);
 
   vtkGetMacro(ROIType, int);
   void SetROIType(int roiType);
-
-  ///
-
-  ///
-  //virtual void UpdateControlPointsFromROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
-  //virtual void UpdateControlPointsFromBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
-  //virtual void UpdateControlPointsFromBoundingBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
 
   ///
   virtual void UpdateROIFromControlPoints();
@@ -177,8 +169,6 @@ protected:
   bool IsUpdatingControlPointsFromROI;
   bool IsUpdatingROIFromControlPoints;
   vtkMTimeType ROIUpdatedTime;
-
-  vtkImplicitFunction* ROIFunction;
 
   vtkMRMLMarkupsROINode();
   ~vtkMRMLMarkupsROINode() override;

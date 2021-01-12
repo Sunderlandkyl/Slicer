@@ -150,17 +150,9 @@ public:
   //@}
 
   /// Get the axis for the handle specified by the index
-  virtual void GetInteractionHandleAxisWorld(int index, double axis[3]);
+  virtual void GetInteractionHandleAxisWorld(int type, int index, double axis[3]);
   /// Get the origin of the interaction handle widget
   virtual void GetInteractionHandleOriginWorld(double origin[3]);
-  /// Get the position of the interaction handle in world coordinates
-  /// Type is specified using vtkMRMLMarkupsDisplayNode::ComponentType
-  virtual void GetInteractionHandlePositionWorld(int type, int index, double position[3]);
-  /// Get the direction vector of the interaction handle from the interaction origin
-  /// Type is specified using vtkMRMLMarkupsDisplayNode::ComponentType
-  virtual void GetInteractionHandleVector(int type, int index, double axis[3]);
-  /// Get the direction vector of the interaction handle from the interaction origin in world coordinates
-  virtual void GetInteractionHandleVectorWorld(int type, int index, double axis[3]);
 
 protected:
   vtkSlicerMarkupsWidgetRepresentation();
@@ -245,12 +237,19 @@ protected:
     /// Get the opacity of the specified handle
     virtual double GetOpacity(int type, int index);
 
-    /// Get the direction of the specified axis in world coordinates
-    virtual void GetInteractionHandleAxisWorld(int index, double axis[3]);
-    /// Get the origin of the interaction widget in world coordinates
-    virtual void GetInteractionHandleOriginWorld(double origin[3]);
     /// Get the view plane normal for the widget in world coordinates
     virtual void GetViewPlaneNormal(double normal[3]);
+
+    /// Get the position of the interaction handle in world coordinates
+    /// Type is specified using vtkMRMLMarkupsDisplayNode::ComponentType
+    virtual void GetInteractionHandlePositionWorld(int type, int index, double position[3]);
+    /// Get the direction vector of the interaction handle from the interaction origin
+    /// Type is specified using vtkMRMLMarkupsDisplayNode::ComponentType
+    virtual void GetInteractionHandleAxis(int type, int index, double axis[3]);
+    /// Get the direction vector of the interaction handle from the interaction origin in world coordinates
+    virtual void GetInteractionHandleAxisWorld(int type, int index, double axis[3]);
+
+    virtual void GetInteractionHandleOriginWorld(double origin[3]);
 
     struct HandleInfo
     {

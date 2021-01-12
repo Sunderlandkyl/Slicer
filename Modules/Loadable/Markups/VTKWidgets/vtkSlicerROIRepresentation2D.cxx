@@ -24,6 +24,7 @@
 #include <vtkAppendPolyData.h>
 #include <vtkCellLocator.h>
 #include <vtkClipPolyData.h>
+#include <vtkContourTriangulator.h>
 #include <vtkCompositeDataGeometryFilter.h>
 #include <vtkDiscretizableColorTransferFunction.h>
 #include <vtkDoubleArray.h>
@@ -77,18 +78,6 @@ vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
   this->ROITransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->ROITransformFilter->SetTransform(this->ROIToWorldTransform);
 
-  this->ROIWorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->ROIWorldToSliceTransformFilter->SetInputConnection(this->ROITransformFilter->GetOutputPort());
-  this->ROIWorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
-
-  this->ROIMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-  this->ROIMapper->SetInputConnection(this->ROIWorldToSliceTransformFilter->GetOutputPort());
-  this->ROIProperty = vtkSmartPointer<vtkProperty2D>::New();
-  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
-  this->ROIActor = vtkSmartPointer<vtkActor2D>::New();
-  this->ROIActor->SetMapper(this->ROIMapper);
-  this->ROIActor->SetProperty(this->ROIProperty);
-
   this->ROIOutlineCutter = vtkSmartPointer<vtkCutter>::New();
   this->ROIOutlineCutter->SetInputConnection(this->ROITransformFilter->GetOutputPort());
   this->ROIOutlineCutter->SetCutFunction(this->SlicePlane);
@@ -104,6 +93,18 @@ vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
   this->ROIOutlineActor = vtkSmartPointer<vtkActor2D>::New();
   this->ROIOutlineActor->SetMapper(this->ROIOutlineMapper);
   this->ROIOutlineActor->SetProperty(this->ROIOutlineProperty);
+
+
+  vtkNew<vtkContourTriangulator> triangulator;
+  triangulator->SetInputConnection(this->ROIOutlineWorldToSliceTransformFilter->GetOutputPort());
+
+  this->ROIMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+  this->ROIMapper->SetInputConnection(triangulator->GetOutputPort());
+  this->ROIProperty = vtkSmartPointer<vtkProperty2D>::New();
+  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
+  this->ROIActor = vtkSmartPointer<vtkActor2D>::New();
+  this->ROIActor->SetMapper(this->ROIMapper);
+  this->ROIActor->SetProperty(this->ROIProperty);
 }
 
 //----------------------------------------------------------------------
