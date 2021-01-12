@@ -123,16 +123,15 @@ public:
     CURVED_BOX,
     };
 
+  // Scale handle indexes
   enum
     {
-    ORIGIN_POINT,
-
     L_FACE_POINT,
     R_FACE_POINT,
     P_FACE_POINT,
     A_FACE_POINT,
-    S_FACE_POINT,
     I_FACE_POINT,
+    S_FACE_POINT,
 
     LAI_CORNER_POINT,
     RAI_CORNER_POINT,

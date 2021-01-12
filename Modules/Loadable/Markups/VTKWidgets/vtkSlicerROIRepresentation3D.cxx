@@ -477,20 +477,21 @@ void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::UpdateScaleHan
   vtkMath::MultiplyScalar(sideLengths, 0.5);
 
   vtkNew<vtkPoints> roiPoints;
-  roiPoints->InsertNextPoint(-sideLengths[0],             0.0,             0.0); // L Face
-  roiPoints->InsertNextPoint( sideLengths[0],             0.0,             0.0); // R Face
-  roiPoints->InsertNextPoint(            0.0, -sideLengths[1],             0.0); // P Face
-  roiPoints->InsertNextPoint(            0.0,  sideLengths[1],             0.0); // A Face
-  roiPoints->InsertNextPoint(            0.0,             0.0, -sideLengths[2]); // I Face
-  roiPoints->InsertNextPoint(            0.0,             0.0,  sideLengths[2]); // S Face
-  roiPoints->InsertNextPoint(-sideLengths[0], -sideLengths[1], -sideLengths[2]); // LPI Corner
-  roiPoints->InsertNextPoint( sideLengths[0], -sideLengths[1], -sideLengths[2]); // RPI Corner
-  roiPoints->InsertNextPoint(-sideLengths[0],  sideLengths[1], -sideLengths[2]); // LAI Corner
-  roiPoints->InsertNextPoint( sideLengths[0],  sideLengths[1], -sideLengths[2]); // RAI Corner
-  roiPoints->InsertNextPoint(-sideLengths[0], -sideLengths[1],  sideLengths[2]); // LPS Corner
-  roiPoints->InsertNextPoint( sideLengths[0], -sideLengths[1],  sideLengths[2]); // RPS Corner
-  roiPoints->InsertNextPoint(-sideLengths[0],  sideLengths[1],  sideLengths[2]); // LAS Corner
-  roiPoints->InsertNextPoint( sideLengths[0],  sideLengths[1],  sideLengths[2]); // RAS Corner
+  roiPoints->SetNumberOfPoints(14);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::L_FACE_POINT,     -sideLengths[0],             0.0,             0.0);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::R_FACE_POINT,      sideLengths[0],             0.0,             0.0);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::P_FACE_POINT,      0.0,            -sideLengths[1],             0.0);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::A_FACE_POINT,      0.0,             sideLengths[1],             0.0);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::I_FACE_POINT,      0.0,                        0.0, -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::S_FACE_POINT,      0.0,                        0.0,  sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::LPI_CORNER_POINT, -sideLengths[0], -sideLengths[1], -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::RPI_CORNER_POINT, sideLengths[0],  -sideLengths[1], -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::LAI_CORNER_POINT, -sideLengths[0],  sideLengths[1], -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::RAI_CORNER_POINT, sideLengths[0],   sideLengths[1], -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::LPS_CORNER_POINT, -sideLengths[0], -sideLengths[1],  sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::RPS_CORNER_POINT, sideLengths[0],  -sideLengths[1],  sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::LAS_CORNER_POINT, -sideLengths[0],  sideLengths[1],  sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::RAS_CORNER_POINT, sideLengths[0],   sideLengths[1],  sideLengths[2]);
 
   vtkMatrix4x4* roiToWorldMatrix = roiNode->GetROIToWorldMatrix();
   vtkNew<vtkTransform> worldToHandleTransform;

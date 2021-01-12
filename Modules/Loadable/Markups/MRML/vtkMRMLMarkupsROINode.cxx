@@ -310,25 +310,12 @@ void vtkMRMLMarkupsROINode::GetBoundsROI(double bounds_ROI[6])
   worldToROIMatrix->DeepCopy(this->ROIToWorldMatrix);
   worldToROIMatrix->Invert();
 
+  double sideLengths[3] = { 0.0, 0.0, 0.0 };
+  this->GetSideLengths(sideLengths);
   for (int i = 0; i < 3; ++i)
     {
-    bounds_ROI[2*i] = VTK_DOUBLE_MAX;
-    bounds_ROI[2*i+1] = VTK_DOUBLE_MIN;
-    }
-
-  for (int pointIndex = 0; pointIndex < this->GetNumberOfControlPoints(); ++pointIndex)
-    {
-    double position_World[4] = { 0.0, 0.0, 0.0, 1.0 };
-    this->GetNthControlPointPositionWorld(pointIndex, position_World);
-
-    double position_ROI[4] = { 0.0, 0.0, 0.0, 0.0 };
-    worldToROIMatrix->MultiplyPoint(position_World, position_ROI);
-
-    for (int i = 0; i < 3; ++i)
-      {
-      bounds_ROI[2*i] = std::min(bounds_ROI[2*i], position_ROI[i]);
-      bounds_ROI[2*i+1] = std::max(bounds_ROI[2*i+1], position_ROI[i]);
-      }
+    bounds_ROI[2 * i] = -sideLengths[i] * 0.5;
+    bounds_ROI[2*i+1] =  sideLengths[i] * 0.5;
     }
 }
 

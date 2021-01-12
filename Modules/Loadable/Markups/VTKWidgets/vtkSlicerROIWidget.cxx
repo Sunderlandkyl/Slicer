@@ -145,101 +145,126 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     double oldSideLengths[3] = { 0.0, 0.0, 0.0 };
     markupsNode->GetSideLengths(oldSideLengths);
 
-    double newSideLengths[3] = { 0.0, 0.0, 0.0 };
-    vtkMath::Add(newSideLengths, eventPos_ROI, newSideLengths);
-    vtkMath::MultiplyScalar(newSideLengths, 2.0);
-    newSideLengths[0] = std::abs(newSideLengths[0]);
-    newSideLengths[1] = std::abs(newSideLengths[1]);
-    newSideLengths[2] = std::abs(newSideLengths[2]);
-
-    switch (index)
-      {
-      case 0:
-      case 1:
-        newSideLengths[1] = oldSideLengths[1];
-        newSideLengths[2] = oldSideLengths[2];
-        break;
-        break;
-      case 2:
-      case 3:
-        newSideLengths[0] = oldSideLengths[0];
-        newSideLengths[2] = oldSideLengths[2];
-        break;
-      case 4:
-      case 5:
-        newSideLengths[0] = oldSideLengths[0];
-        newSideLengths[1] = oldSideLengths[1];
-        break;
-      default:
-        break;
-      }
-
-    double sideLengthDifference[3] = { 0.0, 0.0, 0.0 };
-    vtkMath::Subtract(newSideLengths, oldSideLengths, sideLengthDifference);
-    vtkMath::MultiplyScalar(sideLengthDifference, 0.5);
-    vtkMath::Subtract(newSideLengths, sideLengthDifference, newSideLengths);
-    markupsNode->SetSideLengths(newSideLengths);
+    double bounds_ROI[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+    markupsNode->GetBoundsROI(bounds_ROI);
 
     double axis_ROI[3] = { 0.0, 0.0, 0.0 };
     rep->GetInteractionHandleAxisWorld(vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, axis_ROI);
     worldToROITransform->TransformVector(axis_ROI);
-    if (vtkMath::Dot(axis_ROI, eventPos_ROI) < 0.0)
-      {
-      switch (index)
-        {
-        case 0:
-          index = 1;
-          break;
-        case 1:
-          index = 0;
-            break;
-        case 2:
-          index = 3;
-          break;
-        case 3:
-          index = 2;
-          break;
-        case 4:
-          index = 5;
-          break;
-        case 5:
-          index = 4;
-          break;
-        default:
-          break;
-        }
-      displayNode->SetActiveComponent(vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index);
-      }
+    vtkMath::Normalize(axis_ROI);
+    bool controlPointFlip = false;
+    int flipIndex = 0;
 
-    double origin_ROI[3] = { 0.0, 0.0, 0.0 };
     switch (index)
       {
-      case 0:
-        origin_ROI[0] = -0.5 * sideLengthDifference[0];
+      case vtkMRMLMarkupsROINode::L_FACE_POINT:
+      case vtkMRMLMarkupsROINode::R_FACE_POINT:
+        eventPos_ROI[1] = 0.0;
+        eventPos_ROI[2] = 0.0;
         break;
-      case 1:
-        origin_ROI[0] = 0.5 * sideLengthDifference[0];
+      case vtkMRMLMarkupsROINode::P_FACE_POINT:
+      case vtkMRMLMarkupsROINode::A_FACE_POINT:
+        eventPos_ROI[0] = 0.0;
+        eventPos_ROI[2] = 0.0;
         break;
-      case 2:
-        origin_ROI[1] = -0.5 * sideLengthDifference[1];
-        break;
-      case 3:
-        origin_ROI[1] = 0.5 * sideLengthDifference[1];
-        break;
-      case 4:
-        origin_ROI[2] = -0.5 * sideLengthDifference[2];
-        break;
-      case 5:
-        origin_ROI[2] = 0.5 * sideLengthDifference[2];
+      case vtkMRMLMarkupsROINode::I_FACE_POINT:
+      case vtkMRMLMarkupsROINode::S_FACE_POINT:
+        eventPos_ROI[1] = 0.0;
+        eventPos_ROI[0] = 0.0;
         break;
       default:
         break;
       }
 
-    double origin_World[3] = { 0.0, 0.0, 0.0 };
+    switch (index)
+      {
+      case vtkMRMLMarkupsROINode::L_FACE_POINT:
+        controlPointFlip = (eventPos_ROI[0] > oldSideLengths[0] * 0.5);
+        flipIndex = vtkMRMLMarkupsROINode::R_FACE_POINT;
+        break;
+      case vtkMRMLMarkupsROINode::R_FACE_POINT:
+        controlPointFlip = (eventPos_ROI[0] < oldSideLengths[0] * -0.5);
+        flipIndex = vtkMRMLMarkupsROINode::L_FACE_POINT;
+        break;
+      }
+
+    switch (index)
+      {
+      case vtkMRMLMarkupsROINode::P_FACE_POINT:
+        controlPointFlip = (eventPos_ROI[1] > oldSideLengths[1] * 0.5);
+        flipIndex = vtkMRMLMarkupsROINode::A_FACE_POINT;
+        break;
+      case vtkMRMLMarkupsROINode::A_FACE_POINT:
+        controlPointFlip = (eventPos_ROI[1] < oldSideLengths[1] * -0.5);
+        flipIndex = vtkMRMLMarkupsROINode::P_FACE_POINT;
+        break;
+      }
+
+    switch (index)
+      {
+      case vtkMRMLMarkupsROINode::I_FACE_POINT:
+        controlPointFlip = (eventPos_ROI[2] > oldSideLengths[2] * 0.5);
+        flipIndex = vtkMRMLMarkupsROINode::S_FACE_POINT;
+        break;
+      case vtkMRMLMarkupsROINode::S_FACE_POINT:
+        controlPointFlip = (eventPos_ROI[2] < oldSideLengths[2] * -0.5);
+        flipIndex = vtkMRMLMarkupsROINode::I_FACE_POINT;
+        break;
+      default:
+        break;
+      }
+
+    switch (index)
+      {
+      case vtkMRMLMarkupsROINode::L_FACE_POINT:
+        bounds_ROI[0] = bounds_ROI[1];
+        break;
+      case vtkMRMLMarkupsROINode::R_FACE_POINT:
+        bounds_ROI[1] = bounds_ROI[0];
+        break;
+      case vtkMRMLMarkupsROINode::P_FACE_POINT:
+        bounds_ROI[2] = bounds_ROI[3];
+        break;
+      case vtkMRMLMarkupsROINode::A_FACE_POINT:
+        bounds_ROI[3] = bounds_ROI[2];
+        break;
+      case vtkMRMLMarkupsROINode::I_FACE_POINT:
+        bounds_ROI[4] = bounds_ROI[5];
+        break;
+      case vtkMRMLMarkupsROINode::S_FACE_POINT:
+        bounds_ROI[5] = bounds_ROI[4];
+        break;
+      default:
+        break;
+      }
+
+    if (controlPointFlip)
+      {
+      index = flipIndex;
+      displayNode->SetActiveComponent(vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, flipIndex);
+      }
+
+
+    for (int i = 0; i < 3; ++i)
+      {
+      bounds_ROI[2 * i] = std::min(eventPos_ROI[i], bounds_ROI[2 * i]);
+      bounds_ROI[2 * i + 1] = std::max(eventPos_ROI[i], bounds_ROI[2 * i + 1]);
+      }
+
+    double newSideLengths[3] = { 0.0, 0.0, 0.0 };
+    double newOrigin_ROI[3] = { 0.0, 0.0, 0.0 };
+    for (int i = 0; i < 3; ++i)
+      {
+      newSideLengths[i] = std::abs(bounds_ROI[2 * i + 1] - bounds_ROI[2 * i]);
+      newOrigin_ROI[i] = (bounds_ROI[2 * i + 1] + bounds_ROI[2 * i]) / 2.0;
+      }
+    markupsNode->SetSideLengths(newSideLengths);
+
     vtkNew<vtkTransform> roiToWorldTransform;
-    roiToWorldTransform->SetMatrix(markupsNode->GetROIToWorldMatrix());
-    roiToWorldTransform->TransformPoint(origin_ROI, origin_World);
-    markupsNode->SetOriginWorld(origin_World);
+    worldToROITransform->SetMatrix(markupsNode->GetROIToWorldMatrix());
+
+    double newOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    worldToROITransform->TransformPoint(newOrigin_ROI, newOrigin_World);
+    markupsNode->SetOriginWorld(newOrigin_World);
     }
 }
