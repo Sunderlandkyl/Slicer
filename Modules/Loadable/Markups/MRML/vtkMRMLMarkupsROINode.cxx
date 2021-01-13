@@ -52,6 +52,7 @@
 #include <vtkPolyData.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkStringArray.h>
+#include <vtkTransform.h>
 #include <vtkTransformPolyDataFilter.h>
 #include <vtkTriangleFilter.h>
 
@@ -362,51 +363,77 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints()
     return;
     }
 
-  vtkNew<vtkMatrix4x4> newROIToWorldMatrix;
-  newROIToWorldMatrix->DeepCopy(this->ROIToWorldMatrix);
+  MRMLNodeModifyBlocker blocker(this);
 
   double bounds_ROI[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, };
-  this->GetBoundsROI(bounds_ROI);
+
+  vtkNew<vtkTransform> worldToROITransform;
+  worldToROITransform->SetMatrix(this->ROIToWorldMatrix);
+  worldToROITransform->Inverse();
+
+  for (int pointIndex = 0; pointIndex < this->GetNumberOfControlPoints(); ++pointIndex)
+    {
+    double point_World[3] = { 0.0, 0.0, 0.0 };
+    this->GetNthControlPointPositionWorld(pointIndex, point_World);
+
+    double point_ROI[3] = { 0.0, 0.0, 0.0 };
+    worldToROITransform->TransformPoint(point_World, point_ROI);
+    for (int i = 0; i < 3; ++i)
+      {
+      bounds_ROI[2 * i] = std::min(bounds_ROI[2 * i], point_ROI[i]);
+      bounds_ROI[2 * i + 1] = std::max(bounds_ROI[2 * i + 1], point_ROI[i]);
+      }
+    }
 
   double origin_ROI[4] = { 0.0, 0.0, 0.0, 1.0 };
+  double newSideLengths[3] = { 0.0, 0.0, 0.0 };
   for (int i = 0; i < 3; ++i)
     {
-    this->SideLengths[i] = bounds_ROI[2 * i + 1] - bounds_ROI[2 * i];
+    newSideLengths[i] = bounds_ROI[2 * i + 1] - bounds_ROI[2 * i];
     origin_ROI[i] = (bounds_ROI[2 * i + 1] + bounds_ROI[2 * i]) / 2.0;
     }
 
-  double origin_World[4] = { 0.0, 0.0, 0.0, 0.0 };
-  this->ROIToWorldMatrix->MultiplyPoint(origin_ROI, origin_World);
-
+  double minimumSideLength = VTK_DOUBLE_MAX;
   for (int i = 0; i < 3; ++i)
     {
-    newROIToWorldMatrix->SetElement(i, 3, origin_World[i]);
+    if (newSideLengths[i] <= 0.0)
+      {
+      continue;
+      }
+    minimumSideLength = std::min(minimumSideLength, newSideLengths[i]);
+    }
+  if (minimumSideLength == VTK_DOUBLE_MAX)
+    {
+    minimumSideLength = 0.0;
     }
 
   if (this->GetNumberOfControlPoints() == NUMBER_OF_BOX_CONTROL_POINTS)
     {
-    if (this->SideLengths[0] == 0.0)
+    if (newSideLengths[0] == 0.0)
       {
-      this->SideLengths[0] = 100.0;
+      newSideLengths[0] = minimumSideLength;
       }
-    if (this->SideLengths[1] == 0.0)
+    if (newSideLengths[1] == 0.0)
       {
-      this->SideLengths[1] = this->SideLengths[0];
+      newSideLengths[1] = minimumSideLength;
       }
-    if (this->SideLengths[2] == 0.0)
+    if (newSideLengths[2] == 0.0)
       {
-      this->SideLengths[2] = this->SideLengths[0];
+      newSideLengths[2] = minimumSideLength;
       }
     }
 
+  this->SetSideLengths(newSideLengths);
+
+  double origin_World[4] = { 0.0, 0.0, 0.0, 0.0 };
+  this->ROIToWorldMatrix->MultiplyPoint(origin_ROI, origin_World);
+  this->SetOriginWorld(origin_World);
 
   if (this->GetNumberOfDefinedControlPoints() == NUMBER_OF_BOX_CONTROL_POINTS)
     {
     this->RequiredNumberOfControlPoints = 0;
     this->RemoveAllControlPoints();
     }
-
-  this->ROIToWorldMatrix->DeepCopy(newROIToWorldMatrix);
 }
 
 
