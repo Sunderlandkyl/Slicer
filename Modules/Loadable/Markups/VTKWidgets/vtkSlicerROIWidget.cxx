@@ -133,14 +133,35 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     vtkNew<vtkTransform> worldToROITransform;
     worldToROITransform->SetMatrix(worldToROIMatrix);
 
+    int index = displayNode->GetActiveComponentIndex();
+
     double lastEventPos_ROI[3] = { 0.0, 0.0, 0.0 };
-    worldToROITransform->TransformPoint(lastEventPos_World, lastEventPos_ROI);
+    if (index < 6)
+      {
+      double lastEventPositionOnAxis_World[3] = { 0.0, 0.0, 0.0 };
+      this->GetClosestPointOnInteractionAxis(
+        vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, this->LastEventPosition, lastEventPositionOnAxis_World);
+      worldToROITransform->TransformPoint(lastEventPositionOnAxis_World, lastEventPos_ROI);
+      }
+    else
+      {
+      worldToROITransform->TransformPoint(lastEventPos_World, lastEventPos_ROI);
+      }
 
     double eventPos_ROI[3] = { 0.0, 0.0, 0.0 };
-    worldToROITransform->TransformPoint(eventPos_World, eventPos_ROI);
+    if (index < 6)
+      {
+      double eventPositionOnAxis_World[3] = { 0.0, 0.0, 0.0 };
+      this->GetClosestPointOnInteractionAxis(
+        vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, eventPos, eventPositionOnAxis_World);
+      worldToROITransform->TransformPoint(eventPositionOnAxis_World, eventPos_ROI);
+      }
+    else
+      {
+      worldToROITransform->TransformPoint(eventPos_World, eventPos_ROI);
+      }
 
     double scaleVector_ROI[3] = { 0.0, 0.0, 0.0 };
-    int index = displayNode->GetActiveComponentIndex();
 
     double oldSideLengths[3] = { 0.0, 0.0, 0.0 };
     markupsNode->GetSideLengths(oldSideLengths);
