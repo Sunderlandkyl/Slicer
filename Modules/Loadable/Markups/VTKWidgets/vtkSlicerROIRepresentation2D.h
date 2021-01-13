@@ -34,6 +34,7 @@
 
 #include "vtkSlicerMarkupsModuleVTKWidgetsExport.h"
 #include "vtkSlicerMarkupsWidgetRepresentation2D.h"
+#include "vtkSlicerROIRepresentation3D.h"
 
 class vtkAppendPolyData;
 class vtkClipPolyData;
@@ -47,6 +48,8 @@ class vtkSampleImplicitFunctionFilter;
 class vtkCutter;
 class vtkROISource;
 class vtkMRMLMarkupsROINode;
+
+#include <vtkOutlineFilter.h>
 
 class VTK_SLICER_MARKUPS_MODULE_VTKWIDGETS_EXPORT vtkSlicerROIRepresentation2D : public vtkSlicerMarkupsWidgetRepresentation2D
 {
@@ -74,15 +77,15 @@ public:
   /// Return the bounds of the representation
   double *GetBounds() override;
 
-  void CanInteract(vtkMRMLInteractionEventData* interactionEventData,
-    int &foundComponentType, int &foundComponentIndex, double &closestDistance2) override;
-
   // Update visibility of interaction handles for representation
   void UpdateInteractionPipeline() override;
 
 protected:
   virtual void UpdateBoxFromMRML(vtkMRMLMarkupsROINode* roiNode);
   virtual void UpdateEllipsoidFromMRML(vtkMRMLMarkupsROINode* roiNode);
+
+  // Initialize interaction handle pipeline
+  void SetupInteractionPipeline() override;
 
 protected:
   vtkSlicerROIRepresentation2D();
@@ -99,12 +102,27 @@ protected:
   vtkSmartPointer<vtkProperty2D> ROIProperty;
   vtkSmartPointer<vtkActor2D> ROIActor;
 
+  vtkSmartPointer<vtkTransformPolyDataFilter> ROIWorldToSliceTransformFilter2A;
+  vtkSmartPointer<vtkTransformPolyDataFilter> ROIWorldToSliceTransformFilter2B;
+  vtkSmartPointer<vtkOutlineFilter> OutlineFilter;
+  //vtkSmartPointer<vtkPolyDataMapper2D> ROIMapper2;
+  //vtkSmartPointer<vtkProperty2D> ROIProperty2;
+  //vtkSmartPointer<vtkActor2D> ROIActor2;
+
   vtkSmartPointer<vtkCutter> ROIOutlineCutter;
   vtkSmartPointer<vtkTransformPolyDataFilter> ROIOutlineWorldToSliceTransformFilter;
   vtkSmartPointer<vtkPolyDataMapper2D> ROIOutlineMapper;
   vtkSmartPointer<vtkProperty2D> ROIOutlineProperty;
   vtkSmartPointer<vtkActor2D> ROIOutlineActor;
 
+  class MarkupsInteractionPipelineROI2D : public vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI
+  {
+  public:
+    MarkupsInteractionPipelineROI2D(vtkSlicerMarkupsWidgetRepresentation* representation);
+    ~MarkupsInteractionPipelineROI2D() override = default;
+    void GetViewPlaneNormal(double viewPlaneNormal[3]) override;
+    vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
+  };
 
 private:
   vtkSlicerROIRepresentation2D(const vtkSlicerROIRepresentation2D&) = delete;

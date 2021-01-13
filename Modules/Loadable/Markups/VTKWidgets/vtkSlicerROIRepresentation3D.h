@@ -116,6 +116,7 @@ protected:
     void GetHandleColor(int type, int index, double color[4]) override;
     HandleInfoList GetHandleInfoList() override;
   };
+  friend class vtkSlicerROIRepresentation2D;
 
 private:
   vtkSlicerROIRepresentation3D(const vtkSlicerROIRepresentation3D&) = delete;

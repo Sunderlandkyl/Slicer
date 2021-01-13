@@ -466,7 +466,8 @@ vtkSlicerROIRepresentation3D::HandleInfoList vtkSlicerROIRepresentation3D::Marku
 //-----------------------------------------------------------------------------
 void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::UpdateScaleHandles()
 {
-  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(vtkSlicerROIRepresentation3D::SafeDownCast(this->Representation)->GetMarkupsNode());
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(
+    vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(this->Representation)->GetMarkupsNode());
   if (!roiNode)
     {
     return;

@@ -94,12 +94,24 @@ vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
   this->ROIOutlineActor->SetMapper(this->ROIOutlineMapper);
   this->ROIOutlineActor->SetProperty(this->ROIOutlineProperty);
 
+  this->OutlineFilter = vtkSmartPointer<vtkOutlineFilter>::New();
+  this->OutlineFilter->SetInputConnection(this->ROITransformFilter->GetOutputPort());
+
+  this->ROIWorldToSliceTransformFilter2A = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ROIWorldToSliceTransformFilter2A->SetInputConnection(this->OutlineFilter->GetOutputPort());
+  this->ROIWorldToSliceTransformFilter2A->SetTransform(this->ROIToWorldTransform);
+  this->ROIWorldToSliceTransformFilter2B = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ROIWorldToSliceTransformFilter2B->SetInputConnection(this->ROIWorldToSliceTransformFilter2A->GetOutputPort());
+  this->ROIWorldToSliceTransformFilter2B->SetTransform(this->WorldToSliceTransform);
 
   vtkNew<vtkContourTriangulator> triangulator;
   triangulator->SetInputConnection(this->ROIOutlineWorldToSliceTransformFilter->GetOutputPort());
+  vtkNew<vtkAppendPolyData> append;
+  append->AddInputConnection(triangulator->GetOutputPort());
+  append->AddInputConnection(this->ROIWorldToSliceTransformFilter2B->GetOutputPort());
 
   this->ROIMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-  this->ROIMapper->SetInputConnection(triangulator->GetOutputPort());
+  this->ROIMapper->SetInputConnection(append->GetOutputPort());
   this->ROIProperty = vtkSmartPointer<vtkProperty2D>::New();
   this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
   this->ROIActor = vtkSmartPointer<vtkActor2D>::New();
@@ -159,6 +171,7 @@ void vtkSlicerROIRepresentation2D::SetROISource(vtkPolyDataAlgorithm* roiSource)
   if (this->ROISource)
     {
     this->ROITransformFilter->SetInputConnection(roiSource->GetOutputPort());
+    this->OutlineFilter->SetInputConnection(roiSource->GetOutputPort());
     }
   else
     {
@@ -216,29 +229,6 @@ void vtkSlicerROIRepresentation2D::UpdateEllipsoidFromMRML(vtkMRMLMarkupsROINode
   ellipseFunction->SetXRadius(sideLengths[0] * 0.5);
   ellipseFunction->SetYRadius(sideLengths[1] * 0.5);
   ellipseFunction->SetZRadius(sideLengths[2] * 0.5);
-}
-
-//----------------------------------------------------------------------
-void vtkSlicerROIRepresentation2D::CanInteract(
-  vtkMRMLInteractionEventData* interactionEventData,
-  int &foundComponentType, int &foundComponentIndex, double &closestDistance2)
-{
-  foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentNone;
-  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
-  if ( !markupsNode || markupsNode->GetLocked() || markupsNode->GetNumberOfControlPoints() < 1
-    || !this->GetVisibility() || !interactionEventData )
-    {
-    return;
-    }
-
-  Superclass::CanInteract(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2);
-  if (foundComponentType != vtkMRMLMarkupsDisplayNode::ComponentNone)
-    {
-    // if mouse is near a control point then select that (ignore the ROI)
-    return;
-    }
-
-  // TODO: Interact with edge of box?
 }
 
 //----------------------------------------------------------------------
@@ -337,7 +327,65 @@ void vtkSlicerROIRepresentation2D::PrintSelf(ostream& os, vtkIndent indent)
 }
 
 //----------------------------------------------------------------------
+void vtkSlicerROIRepresentation2D::SetupInteractionPipeline()
+{
+  this->InteractionPipeline = new MarkupsInteractionPipelineROI2D(this);
+  this->InteractionPipeline->InitializePipeline();
+}
+
+//----------------------------------------------------------------------
 void vtkSlicerROIRepresentation2D::UpdateInteractionPipeline()
 {
   Superclass::UpdateInteractionPipeline();
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
+  if (!roiNode || !this->MarkupsDisplayNode)
+    {
+    this->InteractionPipeline->Actor->SetVisibility(false);
+    return;
+    }
+
+  this->InteractionPipeline->Actor->SetVisibility(this->MarkupsDisplayNode->GetVisibility()
+    && this->MarkupsDisplayNode->GetVisibility3D()
+    && this->MarkupsDisplayNode->GetHandlesInteractive());
+
+  vtkNew<vtkTransform> handleToWorldTransform;
+  handleToWorldTransform->SetMatrix(roiNode->GetInteractionHandleToWorldMatrix());
+  this->InteractionPipeline->HandleToWorldTransform->DeepCopy(handleToWorldTransform);
+
+  MarkupsInteractionPipelineROI2D* interactionPipeline = static_cast<MarkupsInteractionPipelineROI2D*>(this->InteractionPipeline);
+  interactionPipeline->UpdateScaleHandles();
+  interactionPipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
+}
+
+//-----------------------------------------------------------------------------
+vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::MarkupsInteractionPipelineROI2D(vtkSlicerMarkupsWidgetRepresentation* representation)
+  : MarkupsInteractionPipelineROI(representation)
+{
+  this->WorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->WorldToSliceTransformFilter->SetTransform(vtkNew<vtkTransform>());
+  this->WorldToSliceTransformFilter->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
+  this->Mapper->SetInputConnection(this->WorldToSliceTransformFilter->GetOutputPort());
+  this->Mapper->SetTransformCoordinate(nullptr);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::GetViewPlaneNormal(double viewPlaneNormal[3])
+{
+  if (!viewPlaneNormal)
+    {
+    return;
+    }
+
+  double viewPlaneNormal4[4] = { 0, 0, 1, 0 };
+  if (this->Representation)
+    {
+    vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->Representation->GetViewNode());
+    if (sliceNode)
+      {
+      sliceNode->GetSliceToRAS()->MultiplyPoint(viewPlaneNormal4, viewPlaneNormal4);
+      }
+    }
+  viewPlaneNormal[0] = viewPlaneNormal4[0];
+  viewPlaneNormal[1] = viewPlaneNormal4[1];
+  viewPlaneNormal[2] = viewPlaneNormal4[2];
 }
