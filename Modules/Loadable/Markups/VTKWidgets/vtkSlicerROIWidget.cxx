@@ -152,9 +152,6 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     rep->GetInteractionHandleAxisWorld(vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, axis_ROI);
     worldToROITransform->TransformVector(axis_ROI);
     vtkMath::Normalize(axis_ROI);
-    bool controlPointFlip = false;
-    int flipIndex = 0;
-
     switch (index)
       {
       case vtkMRMLMarkupsROINode::L_FACE_POINT:
@@ -179,75 +176,66 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     switch (index)
       {
       case vtkMRMLMarkupsROINode::L_FACE_POINT:
-        controlPointFlip = (eventPos_ROI[0] > oldSideLengths[0] * 0.5);
-        flipIndex = vtkMRMLMarkupsROINode::R_FACE_POINT;
-        break;
-      case vtkMRMLMarkupsROINode::R_FACE_POINT:
-        controlPointFlip = (eventPos_ROI[0] < oldSideLengths[0] * -0.5);
-        flipIndex = vtkMRMLMarkupsROINode::L_FACE_POINT;
-        break;
-      }
-
-    switch (index)
-      {
-      case vtkMRMLMarkupsROINode::P_FACE_POINT:
-        controlPointFlip = (eventPos_ROI[1] > oldSideLengths[1] * 0.5);
-        flipIndex = vtkMRMLMarkupsROINode::A_FACE_POINT;
-        break;
-      case vtkMRMLMarkupsROINode::A_FACE_POINT:
-        controlPointFlip = (eventPos_ROI[1] < oldSideLengths[1] * -0.5);
-        flipIndex = vtkMRMLMarkupsROINode::P_FACE_POINT;
-        break;
-      }
-
-    switch (index)
-      {
-      case vtkMRMLMarkupsROINode::I_FACE_POINT:
-        controlPointFlip = (eventPos_ROI[2] > oldSideLengths[2] * 0.5);
-        flipIndex = vtkMRMLMarkupsROINode::S_FACE_POINT;
-        break;
-      case vtkMRMLMarkupsROINode::S_FACE_POINT:
-        controlPointFlip = (eventPos_ROI[2] < oldSideLengths[2] * -0.5);
-        flipIndex = vtkMRMLMarkupsROINode::I_FACE_POINT;
-        break;
-      default:
-        break;
-      }
-
-    switch (index)
-      {
-      case vtkMRMLMarkupsROINode::L_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
         bounds_ROI[0] = bounds_ROI[1];
         break;
       case vtkMRMLMarkupsROINode::R_FACE_POINT:
+      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
         bounds_ROI[1] = bounds_ROI[0];
         break;
+      default:
+        break;
+      }
+
+    switch (index)
+      {
       case vtkMRMLMarkupsROINode::P_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
         bounds_ROI[2] = bounds_ROI[3];
         break;
       case vtkMRMLMarkupsROINode::A_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
         bounds_ROI[3] = bounds_ROI[2];
         break;
+      default:
+        break;
+      }
+
+    switch (index)
+      {
       case vtkMRMLMarkupsROINode::I_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
         bounds_ROI[4] = bounds_ROI[5];
         break;
       case vtkMRMLMarkupsROINode::S_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
         bounds_ROI[5] = bounds_ROI[4];
         break;
       default:
         break;
       }
 
-    if (controlPointFlip)
-      {
-      index = flipIndex;
-      displayNode->SetActiveComponent(vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, flipIndex);
-      }
-
-
     for (int i = 0; i < 3; ++i)
       {
-      bounds_ROI[2 * i] = std::min(eventPos_ROI[i], bounds_ROI[2 * i]);
+      bounds_ROI[2 * i]     = std::min(eventPos_ROI[i], bounds_ROI[2 * i]);
       bounds_ROI[2 * i + 1] = std::max(eventPos_ROI[i], bounds_ROI[2 * i + 1]);
       }
 
@@ -266,5 +254,189 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     double newOrigin_World[3] = { 0.0, 0.0, 0.0 };
     worldToROITransform->TransformPoint(newOrigin_ROI, newOrigin_World);
     markupsNode->SetOriginWorld(newOrigin_World);
+
+    bool flipLRHandle = false;
+    switch (index)
+      {
+      case vtkMRMLMarkupsROINode::L_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
+        flipLRHandle = (eventPos_ROI[0] > oldSideLengths[0] * 0.5);
+        break;
+      case vtkMRMLMarkupsROINode::R_FACE_POINT:
+      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
+        flipLRHandle = (eventPos_ROI[0] < oldSideLengths[0] * -0.5);
+        break;
+      default:
+        break;
+      }
+
+    bool flipPAHandle = false;
+    switch (index)
+      {
+      case vtkMRMLMarkupsROINode::P_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
+        flipPAHandle = (eventPos_ROI[1] > oldSideLengths[1] * 0.5);
+        break;
+      case vtkMRMLMarkupsROINode::A_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
+        flipPAHandle = (eventPos_ROI[1] < oldSideLengths[1] * -0.5);
+        break;
+      default:
+        break;
+      }
+
+    bool flipISHandle = false;
+    switch (index)
+      {
+      case vtkMRMLMarkupsROINode::I_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
+        flipISHandle = (eventPos_ROI[2] > oldSideLengths[2] * 0.5);
+        break;
+      case vtkMRMLMarkupsROINode::S_FACE_POINT:
+      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
+      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
+        flipISHandle = (eventPos_ROI[2] < oldSideLengths[2] * -0.5);
+        break;
+      default:
+        break;
+      }
+
+    if (flipLRHandle)
+      {
+      switch (index)
+        {
+        case vtkMRMLMarkupsROINode::L_FACE_POINT:
+          index = vtkMRMLMarkupsROINode::R_FACE_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::R_FACE_POINT:
+          index = vtkMRMLMarkupsROINode::L_FACE_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RAI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RPI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RAS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RPS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LAI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LPI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LAS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LPS_CORNER_POINT;
+          break;
+        default:
+          break;
+        }
+      }
+
+    if (flipPAHandle)
+      {
+      switch (index)
+        {
+        case vtkMRMLMarkupsROINode::A_FACE_POINT:
+          index = vtkMRMLMarkupsROINode::P_FACE_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::P_FACE_POINT:
+          index = vtkMRMLMarkupsROINode::A_FACE_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LPI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LAI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LPS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LAS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RPI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RAI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RPS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RAS_CORNER_POINT;
+          break;
+        default:
+          break;
+        }
+      }
+
+    if (flipISHandle)
+      {
+      switch (index)
+        {
+        case vtkMRMLMarkupsROINode::I_FACE_POINT:
+          index = vtkMRMLMarkupsROINode::S_FACE_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::S_FACE_POINT:
+          index = vtkMRMLMarkupsROINode::I_FACE_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LAS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LPS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LAI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::LPI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RAS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RPS_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RAI_CORNER_POINT;
+          break;
+        case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
+          index = vtkMRMLMarkupsROINode::RPI_CORNER_POINT;
+          break;
+        default:
+          break;
+        }
+      }
+    if (flipLRHandle || flipPAHandle || flipISHandle)
+      {
+      displayNode->SetActiveComponent(displayNode->GetActiveComponentType(), index);
+      }
     }
 }
