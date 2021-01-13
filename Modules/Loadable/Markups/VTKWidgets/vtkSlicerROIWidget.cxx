@@ -161,39 +161,14 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
       worldToROITransform->TransformPoint(eventPos_World, eventPos_ROI);
       }
 
-    double scaleVector_ROI[3] = { 0.0, 0.0, 0.0 };
-
     double oldSideLengths[3] = { 0.0, 0.0, 0.0 };
     markupsNode->GetSideLengths(oldSideLengths);
 
+    double scaleVector_ROI[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Subtract(eventPos_ROI, lastEventPos_ROI, scaleVector_ROI);
+
     double bounds_ROI[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
     markupsNode->GetBoundsROI(bounds_ROI);
-
-    double axis_ROI[3] = { 0.0, 0.0, 0.0 };
-    rep->GetInteractionHandleAxisWorld(vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, axis_ROI);
-    worldToROITransform->TransformVector(axis_ROI);
-    vtkMath::Normalize(axis_ROI);
-    switch (index)
-      {
-      case vtkMRMLMarkupsROINode::L_FACE_POINT:
-      case vtkMRMLMarkupsROINode::R_FACE_POINT:
-        eventPos_ROI[1] = 0.0;
-        eventPos_ROI[2] = 0.0;
-        break;
-      case vtkMRMLMarkupsROINode::P_FACE_POINT:
-      case vtkMRMLMarkupsROINode::A_FACE_POINT:
-        eventPos_ROI[0] = 0.0;
-        eventPos_ROI[2] = 0.0;
-        break;
-      case vtkMRMLMarkupsROINode::I_FACE_POINT:
-      case vtkMRMLMarkupsROINode::S_FACE_POINT:
-        eventPos_ROI[1] = 0.0;
-        eventPos_ROI[0] = 0.0;
-        break;
-      default:
-        break;
-      }
-
     switch (index)
       {
       case vtkMRMLMarkupsROINode::L_FACE_POINT:
@@ -201,14 +176,14 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
       case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
       case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
       case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
-        bounds_ROI[0] = bounds_ROI[1];
+        bounds_ROI[0] += scaleVector_ROI[0];
         break;
       case vtkMRMLMarkupsROINode::R_FACE_POINT:
       case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
       case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
       case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
       case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
-        bounds_ROI[1] = bounds_ROI[0];
+        bounds_ROI[1] += scaleVector_ROI[0];
         break;
       default:
         break;
@@ -221,14 +196,14 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
       case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
       case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
       case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
-        bounds_ROI[2] = bounds_ROI[3];
+        bounds_ROI[2] += scaleVector_ROI[1];
         break;
       case vtkMRMLMarkupsROINode::A_FACE_POINT:
       case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
       case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
       case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
       case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
-        bounds_ROI[3] = bounds_ROI[2];
+        bounds_ROI[3] += scaleVector_ROI[1];
         break;
       default:
         break;
@@ -241,23 +216,17 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
       case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
       case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
       case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
-        bounds_ROI[4] = bounds_ROI[5];
+        bounds_ROI[4] += scaleVector_ROI[2];
         break;
       case vtkMRMLMarkupsROINode::S_FACE_POINT:
       case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
       case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
       case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
       case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
-        bounds_ROI[5] = bounds_ROI[4];
+        bounds_ROI[5] += scaleVector_ROI[2];
         break;
       default:
         break;
-      }
-
-    for (int i = 0; i < 3; ++i)
-      {
-      bounds_ROI[2 * i]     = std::min(eventPos_ROI[i], bounds_ROI[2 * i]);
-      bounds_ROI[2 * i + 1] = std::max(eventPos_ROI[i], bounds_ROI[2 * i + 1]);
       }
 
     double newSideLengths[3] = { 0.0, 0.0, 0.0 };
@@ -276,68 +245,9 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     worldToROITransform->TransformPoint(newOrigin_ROI, newOrigin_World);
     markupsNode->SetOriginWorld(newOrigin_World);
 
-    bool flipLRHandle = false;
-    switch (index)
-      {
-      case vtkMRMLMarkupsROINode::L_FACE_POINT:
-      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
-        flipLRHandle = (eventPos_ROI[0] > oldSideLengths[0] * 0.5);
-        break;
-      case vtkMRMLMarkupsROINode::R_FACE_POINT:
-      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
-        flipLRHandle = (eventPos_ROI[0] < oldSideLengths[0] * -0.5);
-        break;
-      default:
-        break;
-      }
-
-    bool flipPAHandle = false;
-    switch (index)
-      {
-      case vtkMRMLMarkupsROINode::P_FACE_POINT:
-      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
-        flipPAHandle = (eventPos_ROI[1] > oldSideLengths[1] * 0.5);
-        break;
-      case vtkMRMLMarkupsROINode::A_FACE_POINT:
-      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
-        flipPAHandle = (eventPos_ROI[1] < oldSideLengths[1] * -0.5);
-        break;
-      default:
-        break;
-      }
-
-    bool flipISHandle = false;
-    switch (index)
-      {
-      case vtkMRMLMarkupsROINode::I_FACE_POINT:
-      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
-        flipISHandle = (eventPos_ROI[2] > oldSideLengths[2] * 0.5);
-        break;
-      case vtkMRMLMarkupsROINode::S_FACE_POINT:
-      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
-      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
-        flipISHandle = (eventPos_ROI[2] < oldSideLengths[2] * -0.5);
-        break;
-      default:
-        break;
-      }
+    bool flipLRHandle = bounds_ROI[1] < bounds_ROI[0];
+    bool flipPAHandle = bounds_ROI[3] < bounds_ROI[2];
+    bool flipISHandle = bounds_ROI[5] < bounds_ROI[4];
 
     if (flipLRHandle)
       {
