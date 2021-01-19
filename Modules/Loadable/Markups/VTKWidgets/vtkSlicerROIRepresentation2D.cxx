@@ -86,37 +86,79 @@ vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
   this->ROIOutlineWorldToSliceTransformFilter->SetInputConnection(this->ROIOutlineCutter->GetOutputPort());
   this->ROIOutlineWorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
 
+  this->OutlineFilter = vtkSmartPointer<vtkOutlineFilter>::New();
+
+  this->ROIWorldToSliceTransformFilter2A = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ROIWorldToSliceTransformFilter2A->SetInputConnection(OutlineFilter->GetOutputPort());
+  this->ROIWorldToSliceTransformFilter2A->SetTransform(this->ROIToWorldTransform);
+
+  PlaneClipperSlicePlane->SetInputConnection(this->ROIWorldToSliceTransformFilter2A->GetOutputPort());
+  PlaneClipperSlicePlane->SetClipFunction(this->SlicePlane);
+  PlaneClipperSlicePlane->GenerateClippedOutputOn();
+
+  PlaneClipperStartFadeNear->SetInputConnection(PlaneClipperSlicePlane->GetOutputPort(0));
+  PlaneClipperStartFadeNear->SetClipFunction(this->SlicePlane);
+  PlaneClipperStartFadeNear->GenerateClippedOutputOn();
+
+  PlaneClipperEndFadeNear->SetInputConnection(PlaneClipperStartFadeNear->GetOutputPort(0));
+  PlaneClipperEndFadeNear->SetClipFunction(this->SlicePlane);
+  PlaneClipperEndFadeNear->GenerateClippedOutputOn();
+
+  PlaneClipperStartFadeFar->SetInputConnection(PlaneClipperSlicePlane->GetOutputPort(1));
+  PlaneClipperStartFadeFar->SetClipFunction(this->SlicePlane);
+  PlaneClipperStartFadeFar->GenerateClippedOutputOn();
+
+  PlaneClipperEndFadeFar->SetInputConnection(PlaneClipperStartFadeFar->GetOutputPort(1));
+  PlaneClipperEndFadeFar->SetClipFunction(this->SlicePlane);
+  PlaneClipperEndFadeFar->GenerateClippedOutputOn();
+
+  vtkNew<vtkAppendPolyData> PlaneAppend;
+  PlaneAppend->AddInputConnection(PlaneClipperStartFadeNear->GetOutputPort(1));
+  PlaneAppend->AddInputConnection(PlaneClipperEndFadeNear->GetOutputPort(0));
+  PlaneAppend->AddInputConnection(PlaneClipperEndFadeNear->GetOutputPort(1));
+  PlaneAppend->AddInputConnection(PlaneClipperStartFadeFar->GetOutputPort(0));
+  PlaneAppend->AddInputConnection(PlaneClipperEndFadeFar->GetOutputPort(0));
+  PlaneAppend->AddInputConnection(PlaneClipperEndFadeFar->GetOutputPort(1));
+  PlaneAppend->AddInputConnection(this->ROIOutlineCutter->GetOutputPort());
+
+  this->ROIWorldToSliceTransformFilter2A = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ROIWorldToSliceTransformFilter2A->SetInputConnection(PlaneAppend->GetOutputPort());
+  this->ROIWorldToSliceTransformFilter2A->SetTransform(this->ROIToWorldTransform);
+
+  vtkNew<vtkAppendPolyData> append;
+  append->AddInputConnection(PlaneAppend->GetOutputPort());
+  append->AddInputConnection(this->ROIOutlineCutter->GetOutputPort());
+
+  vtkNew<vtkSampleImplicitFunctionFilter> distance2;
+  distance2->SetImplicitFunction(this->SlicePlane);
+  distance2->SetInputConnection(append->GetOutputPort());
+
+  this->ROIWorldToSliceTransformFilter2B = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ROIWorldToSliceTransformFilter2B->SetInputConnection(distance2->GetOutputPort());
+  this->ROIWorldToSliceTransformFilter2B->SetTransform(this->WorldToSliceTransform);
+
+  this->OutlineColorMap = vtkSmartPointer<vtkDiscretizableColorTransferFunction>::New();
+
   this->ROIOutlineMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-  this->ROIOutlineMapper->SetInputConnection(this->ROIOutlineWorldToSliceTransformFilter->GetOutputPort());
+  this->ROIOutlineMapper->SetInputConnection(this->ROIWorldToSliceTransformFilter2B->GetOutputPort());
+  this->ROIOutlineMapper->SetLookupTable(this->OutlineColorMap);
   this->ROIOutlineProperty = vtkSmartPointer<vtkProperty2D>::New();
   this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
   this->ROIOutlineActor = vtkSmartPointer<vtkActor2D>::New();
   this->ROIOutlineActor->SetMapper(this->ROIOutlineMapper);
   this->ROIOutlineActor->SetProperty(this->ROIOutlineProperty);
 
-  this->OutlineFilter = vtkSmartPointer<vtkOutlineFilter>::New();
-  this->OutlineFilter->SetInputConnection(this->ROITransformFilter->GetOutputPort());
-
-  this->ROIWorldToSliceTransformFilter2A = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->ROIWorldToSliceTransformFilter2A->SetInputConnection(this->OutlineFilter->GetOutputPort());
-  this->ROIWorldToSliceTransformFilter2A->SetTransform(this->ROIToWorldTransform);
-  this->ROIWorldToSliceTransformFilter2B = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->ROIWorldToSliceTransformFilter2B->SetInputConnection(this->ROIWorldToSliceTransformFilter2A->GetOutputPort());
-  this->ROIWorldToSliceTransformFilter2B->SetTransform(this->WorldToSliceTransform);
-
   vtkNew<vtkContourTriangulator> triangulator;
   triangulator->SetInputConnection(this->ROIOutlineWorldToSliceTransformFilter->GetOutputPort());
-  vtkNew<vtkAppendPolyData> append;
-  append->AddInputConnection(triangulator->GetOutputPort());
-  append->AddInputConnection(this->ROIWorldToSliceTransformFilter2B->GetOutputPort());
 
   this->ROIMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-  this->ROIMapper->SetInputConnection(append->GetOutputPort());
+  this->ROIMapper->SetInputConnection(triangulator->GetOutputPort());
   this->ROIProperty = vtkSmartPointer<vtkProperty2D>::New();
   this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
   this->ROIActor = vtkSmartPointer<vtkActor2D>::New();
   this->ROIActor->SetMapper(this->ROIMapper);
   this->ROIActor->SetProperty(this->ROIProperty);
+
 }
 
 //----------------------------------------------------------------------
@@ -149,6 +191,24 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
 
   this->ROIToWorldTransform->SetMatrix(roiNode->GetROIToWorldMatrix());
 
+  this->ROIWorldToSliceTransformFilter2B->Update();
+  if (this->ROIWorldToSliceTransformFilter2B->GetOutput())
+    {
+    double sliceNormal_XY[4] = { 0.0, 0.0, 1.0, 0.0 };
+    double sliceNormal_World[4] = { 0, 0, 1, 0 };
+    vtkMatrix4x4* xyToRAS = this->GetSliceNode()->GetXYToRAS();
+    xyToRAS->MultiplyPoint(sliceNormal_XY, sliceNormal_World);
+    double sliceThicknessMm = vtkMath::Norm(sliceNormal_World);
+    double* scalarRange = ROIWorldToSliceTransformFilter2B->GetOutput()->GetScalarRange();
+    // If the closest point on the plane is further than a half-slice thickness, then hide the plane
+    if (scalarRange[0] > 0.5 * sliceThicknessMm || scalarRange[1] < -0.5 * sliceThicknessMm)
+      {
+      this->VisibilityOff();
+      return;
+      }
+    }
+  this->VisibilityOn();
+
   int controlPointType = Selected;
 
   double opacity = this->MarkupsDisplayNode->GetOpacity();
@@ -162,6 +222,45 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
     ? opacity * this->MarkupsDisplayNode->GetOutlineOpacity() : 0.0;
   this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
   this->ROIOutlineProperty->SetOpacity(outlineOpacity);
+
+  if (this->MarkupsDisplayNode->GetLineColorNode() && this->MarkupsDisplayNode->GetLineColorNode()->GetColorTransferFunction())
+    {
+    // Update the line color mapping from the colorNode stored in the markups display node
+    this->ROIOutlineMapper->SetLookupTable(this->MarkupsDisplayNode->GetLineColorNode()->GetColorTransferFunction());
+    }
+  else
+    {
+    // if there is no line color node, build the color mapping from few varibales
+    // (color, opacity, distance fading, saturation and hue offset) stored in the display node
+    this->UpdateDistanceColorMap(this->OutlineColorMap, this->ROIOutlineActor->GetProperty()->GetColor());
+    this->ROIOutlineMapper->SetLookupTable(this->OutlineColorMap);
+    }
+
+  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+
+  vtkNew<vtkPlane> planeStartFadeNear;
+  planeStartFadeNear->SetOrigin(this->SlicePlane->GetOrigin());
+  planeStartFadeNear->SetNormal(this->SlicePlane->GetNormal());
+  planeStartFadeNear->Push(displayNode->GetLineColorFadingStart());
+  this->PlaneClipperStartFadeNear->SetClipFunction(planeStartFadeNear);
+
+  vtkNew<vtkPlane> planeEndFadeNear;
+  planeEndFadeNear->SetOrigin(this->SlicePlane->GetOrigin());
+  planeEndFadeNear->SetNormal(this->SlicePlane->GetNormal());
+  planeEndFadeNear->Push(displayNode->GetLineColorFadingEnd());
+  this->PlaneClipperEndFadeNear->SetClipFunction(planeEndFadeNear);
+
+  vtkNew<vtkPlane> planeStartFadeFar;
+  planeStartFadeFar->SetOrigin(this->SlicePlane->GetOrigin());
+  planeStartFadeFar->SetNormal(this->SlicePlane->GetNormal());
+  planeStartFadeFar->Push(-1.0 * displayNode->GetLineColorFadingStart());
+  this->PlaneClipperStartFadeFar->SetClipFunction(planeStartFadeFar);
+
+  vtkNew<vtkPlane> planeEndFadeFar;
+  planeEndFadeFar->SetOrigin(this->SlicePlane->GetOrigin());
+  planeEndFadeFar->SetNormal(this->SlicePlane->GetNormal());
+  planeEndFadeFar->Push(-1.0 * displayNode->GetLineColorFadingEnd());
+  this->PlaneClipperEndFadeFar->SetClipFunction(planeEndFadeFar);
 }
 
 //----------------------------------------------------------------------

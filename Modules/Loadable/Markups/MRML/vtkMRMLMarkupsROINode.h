@@ -164,6 +164,7 @@ protected:
   // TODO: Replace with 4x4 matrix
   // Can leave accesors to get individual axis from the matrix.
   vtkSmartPointer<vtkMatrix4x4> ROIToWorldMatrix;
+  vtkSmartPointer<vtkMatrix4x4> ROIToLocalMatrix;
 
   bool IsUpdatingControlPointsFromROI;
   bool IsUpdatingROIFromControlPoints;

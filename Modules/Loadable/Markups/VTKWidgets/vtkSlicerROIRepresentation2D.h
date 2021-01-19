@@ -102,12 +102,20 @@ protected:
   vtkSmartPointer<vtkProperty2D> ROIProperty;
   vtkSmartPointer<vtkActor2D> ROIActor;
 
+  vtkNew<vtkClipPolyData> PlaneClipperSlicePlane;
+  vtkNew<vtkClipPolyData> PlaneClipperStartFadeNear;
+  vtkNew<vtkClipPolyData> PlaneClipperEndFadeNear;
+  vtkNew<vtkClipPolyData> PlaneClipperStartFadeFar;
+  vtkNew<vtkClipPolyData> PlaneClipperEndFadeFar;
+
   vtkSmartPointer<vtkTransformPolyDataFilter> ROIWorldToSliceTransformFilter2A;
   vtkSmartPointer<vtkTransformPolyDataFilter> ROIWorldToSliceTransformFilter2B;
   vtkSmartPointer<vtkOutlineFilter> OutlineFilter;
   //vtkSmartPointer<vtkPolyDataMapper2D> ROIMapper2;
   //vtkSmartPointer<vtkProperty2D> ROIProperty2;
   //vtkSmartPointer<vtkActor2D> ROIActor2;
+
+  vtkSmartPointer<vtkDiscretizableColorTransferFunction> OutlineColorMap;
 
   vtkSmartPointer<vtkCutter> ROIOutlineCutter;
   vtkSmartPointer<vtkTransformPolyDataFilter> ROIOutlineWorldToSliceTransformFilter;

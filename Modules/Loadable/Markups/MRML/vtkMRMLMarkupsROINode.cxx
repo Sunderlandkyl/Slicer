@@ -219,6 +219,7 @@ void vtkMRMLMarkupsROINode::ProcessMRMLEvents(vtkObject* caller, unsigned long e
   Superclass::ProcessMRMLEvents(caller, event, callData);
   if (caller == this->CurveInputPoly->GetPoints() || caller == this->GetParentTransformNode())
     {
+    // TODO: Update handles from parent transform
     this->UpdateROIFromControlPoints();
     }
   else if (caller == this->ROIToWorldMatrix.GetPointer() && event == vtkCommand::ModifiedEvent)
