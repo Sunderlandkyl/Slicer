@@ -410,6 +410,13 @@ void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::GetHandleColor
     {
     color[i] = currentColor[i];
     }
+
+  vtkIdTypeArray* visibilityArray = vtkIdTypeArray::SafeDownCast(this->ScaleHandlePoints->GetPointData()->GetArray("visibility"));
+  if (visibilityArray)
+    {
+    vtkIdType visibility = visibilityArray->GetValue(index);
+    opacity = visibility ? opacity : 0.0;
+    }
   color[3] = opacity;
 }
 

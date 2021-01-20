@@ -1106,6 +1106,13 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::CreateSca
   points->InsertNextPoint(0.0, 0.0, 1.5); // Z-axis
   this->ScaleHandlePoints->SetPoints(points);
 
+  vtkNew<vtkIdTypeArray> visibilityArray;
+  visibilityArray->SetName("visibility");
+  visibilityArray->SetNumberOfComponents(1);
+  visibilityArray->SetNumberOfValues(this->ScaleHandlePoints->GetNumberOfPoints());
+  visibilityArray->Fill(true);
+  this->ScaleHandlePoints->GetPointData()->AddArray(visibilityArray);
+
   this->Append->AddInputConnection(this->AxisScaleGlypher->GetOutputPort());
 }
 
@@ -1246,7 +1253,32 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetHandle
     {
     color[i] = currentColor[i];
     }
-  color[3] = this->GetOpacity(type, index);
+
+  vtkPolyData* handlePoints = nullptr;
+  if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+    {
+    handlePoints = this->TranslationHandlePoints;
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
+    {
+    handlePoints = this->RotationHandlePoints;
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+    {
+    handlePoints = this->ScaleHandlePoints;
+    }
+
+  vtkIdTypeArray* visibilityArray = nullptr;
+  if (handlePoints)
+    {
+    visibilityArray = vtkIdTypeArray::SafeDownCast(handlePoints->GetPointData()->GetArray("visibility"));
+    }
+
+  if (visibilityArray)
+    {
+    opacity = visibilityArray->GetValue(index) ? opacity : 0.0;
+    }
+  color[3] = opacity;
 }
 
 //----------------------------------------------------------------------

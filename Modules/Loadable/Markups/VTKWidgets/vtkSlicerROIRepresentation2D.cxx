@@ -604,6 +604,10 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleH
   //roiPoints->SetNumberOfPoints(14);
   roiPoints->SetNumberOfPoints(6);
 
+  vtkIdTypeArray* visibilityArray = vtkIdTypeArray::SafeDownCast(this->ScaleHandlePoints->GetPointData()->GetArray("visibility"));
+  visibilityArray->SetNumberOfValues(roiPoints->GetNumberOfPoints());
+  visibilityArray->Fill(true);
+
   vtkNew<vtkPlane> plane;
   plane->SetNormal(viewPlaneNormal_ROI);
   plane->SetOrigin(viewPlaneOrigin_ROI);
@@ -619,6 +623,10 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleH
     vtkMath::Add(lFaceIntersection0_ROI, lFaceIntersection1_ROI, lFacePoint_ROI);
     vtkMath::MultiplyScalar(lFacePoint_ROI, 0.5);
     }
+  else
+    {
+    visibilityArray->SetValue(vtkMRMLMarkupsROINode::L_FACE_POINT, false);
+    }
   roiPoints->SetPoint(vtkMRMLMarkupsROINode::L_FACE_POINT, lFacePoint_ROI);
 
   double rFacePoint_ROI[3] =  { sideLengths[0], -sideLengths[1], -sideLengths[2] };
@@ -631,6 +639,10 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleH
     {
     vtkMath::Add(rFaceIntersection0_ROI, rFaceIntersection1_ROI, rFacePoint_ROI);
     vtkMath::MultiplyScalar(rFacePoint_ROI, 0.5);
+    }
+  else
+    {
+    visibilityArray->SetValue(vtkMRMLMarkupsROINode::R_FACE_POINT, false);
     }
   roiPoints->SetPoint(vtkMRMLMarkupsROINode::R_FACE_POINT, rFacePoint_ROI);
 
@@ -645,6 +657,10 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleH
     vtkMath::Add(pFaceIntersection0_ROI, pFaceIntersection1_ROI, pFacePoint_ROI);
     vtkMath::MultiplyScalar(pFacePoint_ROI, 0.5);
     }
+  else
+    {
+    visibilityArray->SetValue(vtkMRMLMarkupsROINode::P_FACE_POINT, false);
+    }
   roiPoints->SetPoint(vtkMRMLMarkupsROINode::P_FACE_POINT, pFacePoint_ROI);
 
   double aFacePoint_ROI[3] =  { -sideLengths[0],  sideLengths[1], -sideLengths[2] };
@@ -657,6 +673,10 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleH
     {
     vtkMath::Add(aFaceIntersection0_ROI, aFaceIntersection1_ROI, aFacePoint_ROI);
     vtkMath::MultiplyScalar(aFacePoint_ROI, 0.5);
+    }
+  else
+    {
+    visibilityArray->SetValue(vtkMRMLMarkupsROINode::A_FACE_POINT, false);
     }
   roiPoints->SetPoint(vtkMRMLMarkupsROINode::A_FACE_POINT, aFacePoint_ROI);
 
@@ -671,6 +691,10 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleH
     vtkMath::Add(iFaceIntersection0_ROI, iFaceIntersection1_ROI, iFacePoint_ROI);
     vtkMath::MultiplyScalar(iFacePoint_ROI, 0.5);
     }
+  else
+    {
+    visibilityArray->SetValue(vtkMRMLMarkupsROINode::I_FACE_POINT, false);
+    }
   roiPoints->SetPoint(vtkMRMLMarkupsROINode::I_FACE_POINT, iFacePoint_ROI);
 
   double sFacePoint_ROI[3] =  { -sideLengths[0], -sideLengths[1], sideLengths[2] };
@@ -683,6 +707,10 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleH
     {
     vtkMath::Add(sFaceIntersection0_ROI, sFaceIntersection1_ROI, sFacePoint_ROI);
     vtkMath::MultiplyScalar(sFacePoint_ROI, 0.5);
+    }
+  else
+    {
+    visibilityArray->SetValue(vtkMRMLMarkupsROINode::S_FACE_POINT, false);
     }
   roiPoints->SetPoint(vtkMRMLMarkupsROINode::S_FACE_POINT, sFacePoint_ROI);
 
