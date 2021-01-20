@@ -112,9 +112,10 @@ protected:
     MarkupsInteractionPipelineROI(vtkSlicerMarkupsWidgetRepresentation* representation);
     ~MarkupsInteractionPipelineROI() override = default;
     void CreateScaleHandles() override;
-    void UpdateScaleHandles();
+    virtual void UpdateScaleHandles();
     void GetHandleColor(int type, int index, double color[4]) override;
     HandleInfoList GetHandleInfoList() override;
+    void GetInteractionHandleAxisWorld(int type, int index, double axis[3]) override;
   };
   friend class vtkSlicerROIRepresentation2D;
 

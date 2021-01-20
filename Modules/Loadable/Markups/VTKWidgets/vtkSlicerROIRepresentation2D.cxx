@@ -191,9 +191,10 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
 
   this->ROIToWorldTransform->SetMatrix(roiNode->GetROIToWorldMatrix());
 
-  this->ROIWorldToSliceTransformFilter2B->Update();
-  if (this->ROIWorldToSliceTransformFilter2B->GetOutput())
+  vtkPolyData* outline_World = vtkPolyData::SafeDownCast(this->ROIWorldToSliceTransformFilter2B->GetInput());
+  if (outline_World && outline_World->GetNumberOfPoints() > 0)
     {
+    this->ROIWorldToSliceTransformFilter2B->Update();
     double sliceNormal_XY[4] = { 0.0, 0.0, 1.0, 0.0 };
     double sliceNormal_World[4] = { 0, 0, 1, 0 };
     vtkMatrix4x4* xyToRAS = this->GetSliceNode()->GetXYToRAS();
@@ -350,7 +351,7 @@ void vtkSlicerROIRepresentation2D::ReleaseGraphicsResources(
 //----------------------------------------------------------------------
 int vtkSlicerROIRepresentation2D::RenderOverlay(vtkViewport *viewport)
 {
-  int count = Superclass::RenderOverlay(viewport);
+  int count = 0;
   if (this->ROIActor->GetVisibility())
     {
     count +=  this->ROIActor->RenderOverlay(viewport);
@@ -359,6 +360,7 @@ int vtkSlicerROIRepresentation2D::RenderOverlay(vtkViewport *viewport)
     {
     count +=  this->ROIOutlineActor->RenderOverlay(viewport);
     }
+  count += Superclass::RenderOverlay(viewport);
   return count;
 }
 
@@ -366,7 +368,7 @@ int vtkSlicerROIRepresentation2D::RenderOverlay(vtkViewport *viewport)
 int vtkSlicerROIRepresentation2D::RenderOpaqueGeometry(
   vtkViewport *viewport)
 {
-  int count = Superclass::RenderOpaqueGeometry(viewport);
+  int count = 0;
   if (this->ROIActor->GetVisibility())
     {
     count += this->ROIActor->RenderOpaqueGeometry(viewport);
@@ -375,6 +377,7 @@ int vtkSlicerROIRepresentation2D::RenderOpaqueGeometry(
     {
     count += this->ROIOutlineActor->RenderOpaqueGeometry(viewport);
     }
+  count += Superclass::RenderOpaqueGeometry(viewport);
   return count;
 }
 
@@ -382,7 +385,7 @@ int vtkSlicerROIRepresentation2D::RenderOpaqueGeometry(
 int vtkSlicerROIRepresentation2D::RenderTranslucentPolygonalGeometry(
   vtkViewport *viewport)
 {
-  int count = Superclass::RenderTranslucentPolygonalGeometry(viewport);
+  int count = 0;
   if (this->ROIActor->GetVisibility())
     {
     count += this->ROIActor->RenderTranslucentPolygonalGeometry(viewport);
@@ -391,6 +394,7 @@ int vtkSlicerROIRepresentation2D::RenderTranslucentPolygonalGeometry(
     {
     count += this->ROIOutlineActor->RenderTranslucentPolygonalGeometry(viewport);
     }
+  count += Superclass::RenderTranslucentPolygonalGeometry(viewport);
   return count;
 }
 
@@ -475,7 +479,7 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::GetViewPlane
     return;
     }
 
-  double viewPlaneNormal4[4] = { 0, 0, 1, 0 };
+  double viewPlaneNormal4[4] = { 0.0, 0.0, 1.0, 0.0 };
   if (this->Representation)
     {
     vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->Representation->GetViewNode());
@@ -487,4 +491,216 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::GetViewPlane
   viewPlaneNormal[0] = viewPlaneNormal4[0];
   viewPlaneNormal[1] = viewPlaneNormal4[1];
   viewPlaneNormal[2] = viewPlaneNormal4[2];
+}
+
+//---------------------------------------------------------------------------
+int IntersectWithFinitePlane(double n[3], double o[3],  double pOrigin[3], double px[3], double py[3],
+  double x0[3], double x1[3])
+{
+  // Since we are dealing with convex shapes, if there is an intersection a
+  // single line is produced as output. So all this is necessary is to
+  // intersect the four bounding lines of the finite line and find the two
+  // intersection points.
+  int numInts = 0;
+  double t, * x = x0;
+  double xr0[3], xr1[3];
+
+  // First line
+  xr0[0] = pOrigin[0];
+  xr0[1] = pOrigin[1];
+  xr0[2] = pOrigin[2];
+  xr1[0] = px[0];
+  xr1[1] = px[1];
+  xr1[2] = px[2];
+  if (vtkPlane::IntersectWithLine(xr0, xr1, n, o, t, x))
+  {
+    numInts++;
+    x = x1;
+  }
+
+  // Second line
+  xr1[0] = py[0];
+  xr1[1] = py[1];
+  xr1[2] = py[2];
+  if (vtkPlane::IntersectWithLine(xr0, xr1, n, o, t, x))
+  {
+    numInts++;
+    x = x1;
+  }
+  if (numInts == 2)
+  {
+    return 1;
+  }
+
+  // Third line
+  xr0[0] = -pOrigin[0] + px[0] + py[0];
+  xr0[1] = -pOrigin[1] + px[1] + py[1];
+  xr0[2] = -pOrigin[2] + px[2] + py[2];
+  if (vtkPlane::IntersectWithLine(xr0, xr1, n, o, t, x))
+  {
+    numInts++;
+    x = x1;
+  }
+  if (numInts == 2)
+  {
+    return 1;
+  }
+
+  // Fourth and last line
+  xr1[0] = px[0];
+  xr1[1] = px[1];
+  xr1[2] = px[2];
+  if (vtkPlane::IntersectWithLine(xr0, xr1, n, o, t, x))
+  {
+    numInts++;
+  }
+  if (numInts == 2)
+  {
+    return 1;
+  }
+
+  // No intersection has occurred, or a single degenerate point
+  return 0;
+}
+
+
+//-----------------------------------------------------------------------------
+void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleHandles()
+{
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(
+    vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(this->Representation)->GetMarkupsNode());
+  if (!roiNode)
+  {
+    return;
+  }
+
+  double viewPlaneOrigin4[4] = { 0.0, 0.0, 0.0, 1.0 };
+  double viewPlaneNormal4[4] = { 0.0, 0.0, 1.0, 0.0 };
+  if (this->Representation)
+    {
+    vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->Representation->GetViewNode());
+    if (sliceNode)
+      {
+      sliceNode->GetSliceToRAS()->MultiplyPoint(viewPlaneNormal4, viewPlaneNormal4);
+      sliceNode->GetSliceToRAS()->MultiplyPoint(viewPlaneOrigin4, viewPlaneOrigin4);
+      }
+    }
+
+  vtkMatrix4x4* roiToWorldMatrix = roiNode->GetROIToWorldMatrix();
+  vtkNew<vtkTransform> worldToROITransform;
+  worldToROITransform->Concatenate(roiToWorldMatrix);
+  worldToROITransform->Inverse();
+
+  double viewPlaneOrigin_ROI[3] = { 0.0, 0.0, 0.0 };
+  double viewPlaneNormal_ROI[3] = { 0.0, 0.0, 0.0 };
+  worldToROITransform->TransformPoint(viewPlaneOrigin4, viewPlaneOrigin_ROI);
+  worldToROITransform->TransformVector(viewPlaneNormal4, viewPlaneNormal_ROI);
+
+  double sideLengths[3] = { 0.0,  0.0, 0.0 };
+  roiNode->GetSideLengths(sideLengths);
+  vtkMath::MultiplyScalar(sideLengths, 0.5);
+
+  vtkNew<vtkPoints> roiPoints;
+  //roiPoints->SetNumberOfPoints(14);
+  roiPoints->SetNumberOfPoints(6);
+
+  vtkNew<vtkPlane> plane;
+  plane->SetNormal(viewPlaneNormal_ROI);
+  plane->SetOrigin(viewPlaneOrigin_ROI);
+
+  double lFacePoint_ROI[3] =  { -sideLengths[0], -sideLengths[1], -sideLengths[2] };
+  double lFacePointX_ROI[3] = { -sideLengths[0],  sideLengths[1], -sideLengths[2] };
+  double lFacePointY_ROI[3] = { -sideLengths[0], -sideLengths[1],  sideLengths[2] };
+  double lFaceIntersection0_ROI[3] = { 0.0, 0.0, 0.0 };
+  double lFaceIntersection1_ROI[3] = { 0.0, 0.0, 0.0 };
+  if (IntersectWithFinitePlane(viewPlaneNormal_ROI, viewPlaneOrigin_ROI,
+    lFacePoint_ROI, lFacePointX_ROI, lFacePointY_ROI, lFaceIntersection0_ROI, lFaceIntersection1_ROI))
+    {
+    vtkMath::Add(lFaceIntersection0_ROI, lFaceIntersection1_ROI, lFacePoint_ROI);
+    vtkMath::MultiplyScalar(lFacePoint_ROI, 0.5);
+    }
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::L_FACE_POINT, lFacePoint_ROI);
+
+  double rFacePoint_ROI[3] =  { sideLengths[0], -sideLengths[1], -sideLengths[2] };
+  double rFacePointX_ROI[3] = { sideLengths[0],  sideLengths[1], -sideLengths[2] };
+  double rFacePointY_ROI[3] = { sideLengths[0], -sideLengths[1],  sideLengths[2] };
+  double rFaceIntersection0_ROI[3] = { 0.0, 0.0, 0.0 };
+  double rFaceIntersection1_ROI[3] = { 0.0, 0.0, 0.0 };
+  if (IntersectWithFinitePlane(viewPlaneNormal_ROI, viewPlaneOrigin_ROI,
+    rFacePoint_ROI, rFacePointX_ROI, rFacePointY_ROI, rFaceIntersection0_ROI, rFaceIntersection1_ROI))
+    {
+    vtkMath::Add(rFaceIntersection0_ROI, rFaceIntersection1_ROI, rFacePoint_ROI);
+    vtkMath::MultiplyScalar(rFacePoint_ROI, 0.5);
+    }
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::R_FACE_POINT, rFacePoint_ROI);
+
+  double pFacePoint_ROI[3] =  { -sideLengths[0], -sideLengths[1], -sideLengths[2] };
+  double pFacePointX_ROI[3] = {  sideLengths[0], -sideLengths[1], -sideLengths[2] };
+  double pFacePointY_ROI[3] = { -sideLengths[0], -sideLengths[1],  sideLengths[2] };
+  double pFaceIntersection0_ROI[3] = { 0.0, 0.0, 0.0 };
+  double pFaceIntersection1_ROI[3] = { 0.0, 0.0, 0.0 };
+  if (IntersectWithFinitePlane(viewPlaneNormal_ROI, viewPlaneOrigin_ROI,
+    pFacePoint_ROI, pFacePointX_ROI, pFacePointY_ROI, pFaceIntersection0_ROI, pFaceIntersection1_ROI))
+    {
+    vtkMath::Add(pFaceIntersection0_ROI, pFaceIntersection1_ROI, pFacePoint_ROI);
+    vtkMath::MultiplyScalar(pFacePoint_ROI, 0.5);
+    }
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::P_FACE_POINT, pFacePoint_ROI);
+
+  double aFacePoint_ROI[3] =  { -sideLengths[0],  sideLengths[1], -sideLengths[2] };
+  double aFacePointX_ROI[3] = {  sideLengths[0],  sideLengths[1], -sideLengths[2] };
+  double aFacePointY_ROI[3] = { -sideLengths[0],  sideLengths[1],  sideLengths[2] };
+  double aFaceIntersection0_ROI[3] = { 0.0, 0.0, 0.0 };
+  double aFaceIntersection1_ROI[3] = { 0.0, 0.0, 0.0 };
+  if (IntersectWithFinitePlane(viewPlaneNormal_ROI, viewPlaneOrigin_ROI,
+    aFacePoint_ROI, aFacePointX_ROI, aFacePointY_ROI, aFaceIntersection0_ROI, aFaceIntersection1_ROI))
+    {
+    vtkMath::Add(aFaceIntersection0_ROI, aFaceIntersection1_ROI, aFacePoint_ROI);
+    vtkMath::MultiplyScalar(aFacePoint_ROI, 0.5);
+    }
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::A_FACE_POINT, aFacePoint_ROI);
+
+  double iFacePoint_ROI[3] =  { -sideLengths[0], -sideLengths[1], -sideLengths[2] };
+  double iFacePointX_ROI[3] = {  sideLengths[0], -sideLengths[1], -sideLengths[2] };
+  double iFacePointY_ROI[3] = { -sideLengths[0],  sideLengths[1], -sideLengths[2] };
+  double iFaceIntersection0_ROI[3] = { 0.0, 0.0, 0.0 };
+  double iFaceIntersection1_ROI[3] = { 0.0, 0.0, 0.0 };
+  if (IntersectWithFinitePlane(viewPlaneNormal_ROI, viewPlaneOrigin_ROI,
+    iFacePoint_ROI, iFacePointX_ROI, iFacePointY_ROI, iFaceIntersection0_ROI, iFaceIntersection1_ROI))
+    {
+    vtkMath::Add(iFaceIntersection0_ROI, iFaceIntersection1_ROI, iFacePoint_ROI);
+    vtkMath::MultiplyScalar(iFacePoint_ROI, 0.5);
+    }
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::I_FACE_POINT, iFacePoint_ROI);
+
+  double sFacePoint_ROI[3] =  { -sideLengths[0], -sideLengths[1], sideLengths[2] };
+  double sFacePointX_ROI[3] = {  sideLengths[0], -sideLengths[1], sideLengths[2] };
+  double sFacePointY_ROI[3] = { -sideLengths[0],  sideLengths[1], sideLengths[2] };
+  double sFaceIntersection0_ROI[3] = { 0.0, 0.0, 0.0 };
+  double sFaceIntersection1_ROI[3] = { 0.0, 0.0, 0.0 };
+  if (IntersectWithFinitePlane(viewPlaneNormal_ROI, viewPlaneOrigin_ROI,
+    sFacePoint_ROI, sFacePointX_ROI, sFacePointY_ROI, sFaceIntersection0_ROI, sFaceIntersection1_ROI))
+    {
+    vtkMath::Add(sFaceIntersection0_ROI, sFaceIntersection1_ROI, sFacePoint_ROI);
+    vtkMath::MultiplyScalar(sFacePoint_ROI, 0.5);
+    }
+  roiPoints->SetPoint(vtkMRMLMarkupsROINode::S_FACE_POINT, sFacePoint_ROI);
+
+  vtkNew<vtkTransform> worldToHandleTransform;
+  worldToHandleTransform->DeepCopy(this->HandleToWorldTransform);
+  worldToHandleTransform->Inverse();
+
+  vtkNew<vtkTransform> roiToHandleTransform;
+  roiToHandleTransform->Concatenate(roiToWorldMatrix);
+  roiToHandleTransform->Concatenate(worldToHandleTransform);
+
+  vtkNew<vtkPolyData> scaleHandlePoints;
+  scaleHandlePoints->SetPoints(roiPoints);
+
+  vtkNew<vtkTransformPolyDataFilter> transform;
+  transform->SetInputData(scaleHandlePoints);
+  transform->SetTransform(roiToHandleTransform);
+  transform->Update();
+
+  this->ScaleHandlePoints->SetPoints(transform->GetOutput()->GetPoints());
 }

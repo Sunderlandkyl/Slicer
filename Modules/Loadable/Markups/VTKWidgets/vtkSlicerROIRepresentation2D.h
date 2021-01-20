@@ -129,6 +129,7 @@ protected:
     MarkupsInteractionPipelineROI2D(vtkSlicerMarkupsWidgetRepresentation* representation);
     ~MarkupsInteractionPipelineROI2D() override = default;
     void GetViewPlaneNormal(double viewPlaneNormal[3]) override;
+    void UpdateScaleHandles() override;
     vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
   };
 

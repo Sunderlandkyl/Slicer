@@ -1448,9 +1448,64 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetIntera
   if (!axisWorld)
     {
     vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument!");
+    return;
     }
 
-  this->GetInteractionHandleAxis(type, index, axisWorld);
+  axisWorld[0] = 0.0;
+  axisWorld[1] = 0.0;
+  axisWorld[2] = 0.0;
+
+  if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+    {
+    switch (index)
+      {
+      case 0:
+        axisWorld[0] = 1.0;
+        break;
+      case 1:
+        axisWorld[1] = 1.0;
+        break;
+      case 2:
+        axisWorld[2] = 1.0;
+        break;
+      default:
+        break;
+      }
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
+    {
+    switch (index)
+      {
+    case 0:
+      axisWorld[0] = 1.0;
+      break;
+    case 1:
+      axisWorld[1] = 1.0;
+      break;
+    case 2:
+      axisWorld[2] = 1.0;
+        break;
+      default:
+        break;
+      }
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+    {
+    switch (index)
+      {
+      case 0:
+        axisWorld[0] = 1.0;
+        break;
+      case 1:
+        axisWorld[1] = 1.0;
+        break;
+      case 2:
+        axisWorld[2] = 1.0;
+        break;
+      default:
+        break;
+      }
+    }
   double origin[3] = { 0.0, 0.0, 0.0 };
   this->HandleToWorldTransform->TransformVectorAtPoint(origin, axisWorld, axisWorld);
 }

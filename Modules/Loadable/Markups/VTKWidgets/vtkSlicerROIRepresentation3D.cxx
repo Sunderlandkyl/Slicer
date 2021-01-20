@@ -236,7 +236,7 @@ void vtkSlicerROIRepresentation3D::ReleaseGraphicsResources(
 //----------------------------------------------------------------------
 int vtkSlicerROIRepresentation3D::RenderOverlay(vtkViewport *viewport)
 {
-  int count = this->Superclass::RenderOverlay(viewport);
+  int count = 0;
   if (this->ROIActor->GetVisibility())
     {
     count += this->ROIActor->RenderOverlay(viewport);
@@ -245,6 +245,7 @@ int vtkSlicerROIRepresentation3D::RenderOverlay(vtkViewport *viewport)
     {
     count += this->ROIOccludedActor->RenderOverlay(viewport);
     }
+  count += this->Superclass::RenderOverlay(viewport);
   return count;
 }
 
@@ -252,7 +253,7 @@ int vtkSlicerROIRepresentation3D::RenderOverlay(vtkViewport *viewport)
 int vtkSlicerROIRepresentation3D::RenderOpaqueGeometry(
   vtkViewport *viewport)
 {
-  int count = this->Superclass::RenderOpaqueGeometry(viewport);
+  int count = 0;
   if (this->ROIActor->GetVisibility())
     {
     count += this->ROIActor->RenderOpaqueGeometry(viewport);
@@ -261,6 +262,7 @@ int vtkSlicerROIRepresentation3D::RenderOpaqueGeometry(
     {
     count += this->ROIOccludedActor->RenderOpaqueGeometry(viewport);
     }
+  count += this->Superclass::RenderOpaqueGeometry(viewport);
   return count;
 }
 
@@ -279,6 +281,7 @@ int vtkSlicerROIRepresentation3D::RenderTranslucentPolygonalGeometry(
     this->ROIOccludedActor->SetPropertyKeys(this->GetPropertyKeys());
     count += this->ROIOccludedActor->RenderTranslucentPolygonalGeometry(viewport);
     }
+  count += this->Superclass::RenderTranslucentPolygonalGeometry(viewport);
   return count;
 }
 
@@ -512,4 +515,121 @@ void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::UpdateScaleHan
   transform->Update();
 
   this->ScaleHandlePoints->SetPoints(transform->GetOutput()->GetPoints());
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::GetInteractionHandleAxisWorld(int type, int index, double axisWorld[3])
+{
+  if (!axisWorld)
+    {
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument!");
+    return;
+    }
+
+  axisWorld[0] = 0.0;
+  axisWorld[1] = 0.0;
+  axisWorld[2] = 0.0;
+
+  if (type == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+    {
+    switch (index)
+      {
+      case 0:
+        axisWorld[0] = 1.0;
+        break;
+      case 1:
+        axisWorld[1] = 1.0;
+        break;
+      case 2:
+        axisWorld[2] = 1.0;
+        break;
+      default:
+        break;
+      }
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
+    {
+    switch (index)
+      {
+    case 0:
+      axisWorld[0] = 1.0;
+      break;
+    case 1:
+      axisWorld[1] = 1.0;
+      break;
+    case 2:
+      axisWorld[2] = 1.0;
+        break;
+      default:
+        break;
+      }
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+    {
+    switch (index)
+      {
+      case vtkMRMLMarkupsROINode::L_FACE_POINT:
+        axisWorld[0] = -1.0;
+        break;
+      case  vtkMRMLMarkupsROINode::R_FACE_POINT:
+        axisWorld[0] = 1.0;
+        break;
+      case vtkMRMLMarkupsROINode::P_FACE_POINT:
+        axisWorld[1] = -1.0;
+        break;
+      case  vtkMRMLMarkupsROINode::A_FACE_POINT:
+        axisWorld[1] = 1.0;
+        break;
+      case vtkMRMLMarkupsROINode::I_FACE_POINT:
+        axisWorld[2] = -1.0;
+        break;
+      case  vtkMRMLMarkupsROINode::S_FACE_POINT:
+        axisWorld[2] = 1.0;
+        break;
+      case vtkMRMLMarkupsROINode::LPI_CORNER_POINT:
+        axisWorld[0] = -1.0;
+        axisWorld[1] = -1.0;
+        axisWorld[2] = -1.0;
+        break;
+      case vtkMRMLMarkupsROINode::RPI_CORNER_POINT:
+          axisWorld[0] = 1.0;
+          axisWorld[1] = -1.0;
+          axisWorld[2] = -1.0;
+        break;
+      case vtkMRMLMarkupsROINode::LAI_CORNER_POINT:
+        axisWorld[0] = -1.0;
+        axisWorld[1] = 1.0;
+        axisWorld[2] = -1.0;
+        break;
+      case vtkMRMLMarkupsROINode::RAI_CORNER_POINT:
+        axisWorld[0] = 1.0;
+        axisWorld[1] = 1.0;
+        axisWorld[2] = -1.0;
+        break;
+      case vtkMRMLMarkupsROINode::LPS_CORNER_POINT:
+        axisWorld[0] = -1.0;
+        axisWorld[1] = -1.0;
+        axisWorld[2] = 1.0;
+        break;
+      case vtkMRMLMarkupsROINode::RPS_CORNER_POINT:
+        axisWorld[0] = 1.0;
+        axisWorld[1] = -1.0;
+        axisWorld[2] = 1.0;
+        break;
+      case vtkMRMLMarkupsROINode::LAS_CORNER_POINT:
+        axisWorld[0] = -1.0;
+        axisWorld[1] = 1.0;
+        axisWorld[2] = 1.0;
+        break;
+      case vtkMRMLMarkupsROINode::RAS_CORNER_POINT:
+        axisWorld[0] = 1.0;
+        axisWorld[1] = 1.0;
+        axisWorld[2] = 1.0;
+        break;
+      default:
+        break;
+      }
+    }
+  double origin[3] = { 0.0, 0.0, 0.0 };
+  this->HandleToWorldTransform->TransformVectorAtPoint(origin, axisWorld, axisWorld);
 }
