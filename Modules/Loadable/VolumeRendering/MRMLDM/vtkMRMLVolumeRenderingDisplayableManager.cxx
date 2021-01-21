@@ -28,7 +28,7 @@
 #include "vtkMRMLMultiVolumeRenderingDisplayNode.h"
 
 // MRML includes
-#include "vtkMRMLAnnotationROINode.h"
+#include "vtkMRMLMarkupsROINode.h"
 #include "vtkMRMLFolderDisplayNode.h"
 #include "vtkMRMLScene.h"
 #include "vtkMRMLScalarVolumeNode.h"

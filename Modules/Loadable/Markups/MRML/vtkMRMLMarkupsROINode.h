@@ -39,6 +39,7 @@
 #include <vector>
 
 class vtkImplicitFunction;
+class vtkPlanes;
 
 /// \brief MRML node to represent an ROI markup
 ///
@@ -81,7 +82,26 @@ public:
 
   /// TODO
   vtkGetVector3Macro(SideLengths, double);
-  void SetSideLengths(const double sideLengths_World[3]);
+  vtkSetVector3Macro(SideLengths, double);
+  //void SetSideLengths(const double sideLengths_World[3]);
+  //void SetSideLengths(double x, double y, double z);
+
+  void SetXYZ(double center[3]) { this->SetOriginWorld(center); };
+  void SetXYZ(double x, double y, double z) { double tempXYZ[3] = { x, y, z }; this->SetXYZ(tempXYZ); };
+  void SetRadiusXYZ(double radiusXYZ[3]) { this->SetSideLengths(radiusXYZ[0] * 2, radiusXYZ[1] * 2, radiusXYZ[2] * 2); };
+  void SetRadiusXYZ(double x, double y, double z) { double tempXYZ[3] = { x, y, z }; this->SetRadiusXYZ(tempXYZ); };
+
+  void GetXYZ(double center[3]) { this->GetOriginWorld(center); };
+  void GetRadiusXYZ(double radiusXYZ[3])
+  {
+    double tempSideLengths[3] = { 0.0, 0.0, 0.0 };
+    this->GetSideLengths(tempSideLengths);
+    radiusXYZ[0] = 2 * tempSideLengths[0];
+    radiusXYZ[1] = 2 * tempSideLengths[1];
+    radiusXYZ[2] = 2 * tempSideLengths[2];
+  };
+
+  void GetTransformedPlanes(vtkPlanes* planes);
 
   /// The origin of the ROI
   /// Calculated as the location of the 0th markup point
@@ -154,7 +174,13 @@ public:
   /// Create default storage node or nullptr if does not have one
   //vtkMRMLStorageNode* CreateDefaultStorageNode() override; // TODO: Add new storage node
 
+  vtkSetMacro(InsideOut, bool);
+  vtkGetMacro(InsideOut, bool);
+  vtkBooleanMacro(InsideOut, bool);
+
 protected:
+
+  bool InsideOut;
 
   int ROIType;
 

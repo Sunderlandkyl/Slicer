@@ -177,5 +177,5 @@ QStringList qSlicerVolumeRenderingModule::associatedNodeTypes() const
     << "vtkMRMLVolumePropertyNode"
     << "vtkMRMLShaderPropertyNode"
     << "vtkMRMLVolumeRenderingDisplayNode"
-    << "vtkMRMLAnnotationROINode"; // volume rendering clipping box
+    << "vtkMRMLMarkupsROINode"; // volume rendering clipping box
 }

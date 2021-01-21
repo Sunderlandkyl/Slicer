@@ -20,7 +20,7 @@
 
 // MRML includes
 #include "vtkMRMLDisplayNode.h"
-class vtkMRMLAnnotationROINode;
+class vtkMRMLMarkupsROINode;
 class vtkMRMLVolumeNode;
 class vtkMRMLVolumePropertyNode;
 class vtkMRMLShaderPropertyNode;
@@ -61,7 +61,7 @@ public:
 
   const char* GetROINodeID();
   void SetAndObserveROINodeID(const char *roiNodeID);
-  vtkMRMLAnnotationROINode* GetROINode();
+  vtkMRMLMarkupsROINode* GetROINode();
 
   vtkMRMLViewNode* GetFirstViewNode();
 

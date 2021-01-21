@@ -23,7 +23,7 @@ class vtkMRMLVolumeRenderingDisplayNode;
 #include "vtkSlicerModuleLogic.h"
 
 // MRML includes
-class vtkMRMLAnnotationROINode;
+class vtkMRMLMarkupsROINode;
 class vtkMRMLLabelMapVolumeDisplayNode;
 class vtkMRMLNode;
 class vtkMRMLScalarVolumeDisplayNode;
@@ -236,7 +236,7 @@ public:
   void UpdateDisplayNodeFromVolumeNode(vtkMRMLVolumeRenderingDisplayNode *displayNode,
                                        vtkMRMLVolumeNode *volumeNode,
                                        vtkMRMLVolumePropertyNode *propNode = nullptr,
-                                       vtkMRMLAnnotationROINode *roiNode = nullptr);
+                                       vtkMRMLMarkupsROINode *roiNode = nullptr);
 
   /// Remove ViewNode from VolumeRenderingDisplayNode for a VolumeNode,
   void RemoveViewFromVolumeDisplayNodes(vtkMRMLVolumeNode *volumeNode,
@@ -259,7 +259,7 @@ public:
   vtkMRMLVolumeRenderingDisplayNode* GetFirstVolumeRenderingDisplayNode(vtkMRMLVolumeNode *volumeNode);
 
   /// Find the first volume rendering display node that uses the ROI
-  vtkMRMLVolumeRenderingDisplayNode* GetFirstVolumeRenderingDisplayNodeByROINode(vtkMRMLAnnotationROINode* roiNode);
+  vtkMRMLVolumeRenderingDisplayNode* GetFirstVolumeRenderingDisplayNodeByROINode(vtkMRMLMarkupsROINode* roiNode);
 
   void UpdateTranferFunctionRangeFromImage(vtkMRMLVolumeRenderingDisplayNode* vspNode);
 

@@ -120,7 +120,7 @@
        <widget class="qMRMLNodeComboBox" name="ROINodeComboBox">
         <property name="nodeTypes">
          <stringlist>
-          <string>vtkMRMLAnnotationROINode</string>
+          <string>vtkMRMLMarkupsROINode</string>
          </stringlist>
         </property>
         <property name="noneEnabled">
@@ -491,7 +491,7 @@
            <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
           </property>
           <item row="0" column="0" colspan="2">
-           <widget class="qMRMLAnnotationROIWidget" name="ROIWidget"/>
+           <widget class="qMRMLMarkupsROIWidget" name="ROIWidget"/>
           </item>
          </layout>
         </widget>
@@ -556,9 +556,9 @@
    <header>qMRMLNodeComboBox.h</header>
   </customwidget>
   <customwidget>
-   <class>qMRMLAnnotationROIWidget</class>
+   <class>qMRMLMarkupsROIWidget</class>
    <extends>QWidget</extends>
-   <header>qMRMLAnnotationROIWidget.h</header>
+   <header>qMRMLMarkupsROIWidget.h</header>
   </customwidget>
   <customwidget>
    <class>qSlicerWidget</class>
@@ -584,7 +584,7 @@
   </customwidget>
  </customwidgets>
  <resources>
-  <include location="../../../Annotations/Resources/qSlicerAnnotationModule.qrc"/>
+  <include location="../../../Markups/Resources/qSlicerMarkupsModule.qrc"/>
   <include location="../../../../../Libs/MRML/Widgets/Resources/qMRMLWidgets.qrc"/>
  </resources>
  <connections>
@@ -608,7 +608,7 @@
    <sender>ROINodeComboBox</sender>
    <signal>currentNodeChanged(vtkMRMLNode*)</signal>
    <receiver>ROIWidget</receiver>
-   <slot>setMRMLAnnotationROINode(vtkMRMLNode*)</slot>
+   <slot>setMRMLMarkupsROINode(vtkMRMLNode*)</slot>
    <hints>
     <hint type="sourcelabel">
      <x>446</x>

@@ -13,7 +13,7 @@ Version:   $Revision: 1.2 $
 =========================================================================auto=*/
 
 // Annotations includes
-#include "vtkMRMLAnnotationROINode.h"
+#include "vtkMRMLMarkupsROINode.h"
 
 // MRML includes
 #include "vtkMRMLScene.h"
@@ -226,9 +226,9 @@ const char* vtkMRMLVolumeRenderingDisplayNode::GetROINodeID()
 }
 
 //----------------------------------------------------------------------------
-vtkMRMLAnnotationROINode* vtkMRMLVolumeRenderingDisplayNode::GetROINode()
+vtkMRMLMarkupsROINode* vtkMRMLVolumeRenderingDisplayNode::GetROINode()
 {
-  return vtkMRMLAnnotationROINode::SafeDownCast(this->GetNodeReference(ROINodeReferenceRole));
+  return vtkMRMLMarkupsROINode::SafeDownCast(this->GetNodeReference(ROINodeReferenceRole));
 }
 
 //-----------------------------------------------------------------------------
@@ -299,9 +299,9 @@ void vtkMRMLVolumeRenderingDisplayNode::ProcessMRMLEvents(vtkObject *caller,
     {
     this->InvokeEvent(vtkCommand::ModifiedEvent, nullptr);
     }
-  vtkMRMLAnnotationROINode* roiNode = this->GetROINode();
+  vtkMRMLMarkupsROINode* roiNode = this->GetROINode();
   if (roiNode != nullptr &&
-      roiNode == vtkMRMLAnnotationROINode::SafeDownCast(caller) &&
+      roiNode == vtkMRMLMarkupsROINode::SafeDownCast(caller) &&
       event == vtkCommand::ModifiedEvent)
     {
     this->InvokeEvent(vtkCommand::ModifiedEvent, nullptr);

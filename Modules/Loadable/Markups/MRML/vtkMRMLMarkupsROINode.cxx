@@ -94,6 +94,8 @@ vtkMRMLMarkupsROINode::vtkMRMLMarkupsROINode()
   this->CurveInputPoly->GetPoints()->AddObserver(vtkCommand::ModifiedEvent, this->MRMLCallbackCommand);
   this->ROIToWorldMatrix = this->InteractionHandleToWorldMatrix;
   this->ROIToWorldMatrix->AddObserver(vtkCommand::ModifiedEvent, this->MRMLCallbackCommand);
+
+  this->InsideOut = false;
 }
 
 //----------------------------------------------------------------------------
@@ -291,21 +293,6 @@ void vtkMRMLMarkupsROINode::SetOriginWorld(const double origin_World[3])
 }
 
 //----------------------------------------------------------------------------
-void vtkMRMLMarkupsROINode::SetSideLengths(const double sideLengths_World[3])
-{
-  if (!sideLengths_World)
-    {
-    vtkErrorMacro("SetSideLengths: Invalid side lengths argument");
-    return;
-    }
-  for (int i = 0; i < 3; ++i)
-    {
-    this->SideLengths[i] = sideLengths_World[i];
-    }
-  this->Modified();
-}
-
-//----------------------------------------------------------------------------
 void vtkMRMLMarkupsROINode::GetBoundsROI(double bounds_ROI[6])
 {
   vtkNew<vtkMatrix4x4> worldToROIMatrix;
@@ -435,6 +422,10 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints()
     this->RequiredNumberOfControlPoints = 0;
     this->RemoveAllControlPoints();
     }
+  else
+    {
+    this->RequiredNumberOfControlPoints = 2;
+    }
 }
 
 
@@ -505,4 +496,108 @@ void vtkMRMLMarkupsROINode::UpdateSphereROIFromControlPoints()
     newROIToWorldMatrix->SetElement(i, 3, origin_World[i]);
     }
   this->ROIToWorldMatrix->DeepCopy(newROIToWorldMatrix);*/
+}
+
+#include <vtkPlanes.h>
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
+{
+  if (!planes)
+    {
+    vtkErrorMacro("Invalid planes");
+    return;
+    }
+
+  vtkNew<vtkTransform> roiToWorldTransform;
+  roiToWorldTransform->SetMatrix(this->ROIToWorldMatrix);
+
+  double origin_World[3] = { 0.0, 0.0, 0.0 };
+  roiToWorldTransform->TransformPoint(origin_World, origin_World);
+
+  vtkNew<vtkDoubleArray> normals;
+  normals->SetNumberOfComponents(3);
+
+  vtkNew<vtkPoints> points;
+
+  {
+    vtkNew<vtkPlane> lPlane;
+    double lNormal_World[3] = { -1.0, 0.0, 0.0 };
+    roiToWorldTransform->TransformVector(lNormal_World, lNormal_World);
+    vtkMath::MultiplyScalar(lNormal_World, 0.5 * this->SideLengths[0]);
+    double lOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(origin_World, lNormal_World, lOrigin_World);
+    points->InsertNextPoint(lOrigin_World[0], lOrigin_World[1], lOrigin_World[2]);
+    normals->InsertNextTuple3(lNormal_World[0], lNormal_World[1], lNormal_World[2]);
+  }
+
+  {
+    vtkNew<vtkPlane> rPlane;
+    double rNormal_World[3] = { 1.0, 0.0, 0.0 };
+    roiToWorldTransform->TransformVector(rNormal_World, rNormal_World);
+    vtkMath::MultiplyScalar(rNormal_World, 0.5 * this->SideLengths[0]);
+    double rOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(origin_World, rNormal_World, rOrigin_World);
+    points->InsertNextPoint(rOrigin_World[0], rOrigin_World[1], rOrigin_World[2]);
+    normals->InsertNextTuple3(rNormal_World[0], rNormal_World[1], rNormal_World[2]);
+  }
+
+  {
+    vtkNew<vtkPlane> pPlane;
+    double pNormal_World[3] = { 0.0, -1.0, 0.0 };
+    roiToWorldTransform->TransformVector(pNormal_World, pNormal_World);
+    vtkMath::MultiplyScalar(pNormal_World, 0.5 * this->SideLengths[1]);
+    double pOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(origin_World, pNormal_World, pOrigin_World);
+    points->InsertNextPoint(pOrigin_World[0], pOrigin_World[1], pOrigin_World[2]);
+    normals->InsertNextTuple3(pNormal_World[0], pNormal_World[1], pNormal_World[2]);
+  }
+
+  {
+    vtkNew<vtkPlane> aPlane;
+    double aNormal_World[3] = { 0.0, 1.0, 0.0 };
+    roiToWorldTransform->TransformVector(aNormal_World, aNormal_World);
+    vtkMath::MultiplyScalar(aNormal_World, 0.5 * this->SideLengths[1]);
+    double aOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(origin_World, aNormal_World, aOrigin_World);
+    points->InsertNextPoint(aOrigin_World[0], aOrigin_World[1], aOrigin_World[2]);
+    normals->InsertNextTuple3(aNormal_World[0], aNormal_World[1], aNormal_World[2]);
+  }
+
+  {
+    vtkNew<vtkPlane> iPlane;
+    double iNormal_World[3] = { 0.0, 0.0, -1.0 };
+    roiToWorldTransform->TransformVector(iNormal_World, iNormal_World);
+    vtkMath::MultiplyScalar(iNormal_World, 0.5 * this->SideLengths[2]);
+    double iOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(origin_World, iNormal_World, iOrigin_World);
+    points->InsertNextPoint(iOrigin_World[0], iOrigin_World[1], iOrigin_World[2]);
+    normals->InsertNextTuple3(iNormal_World[0], iNormal_World[1], iNormal_World[2]);
+  }
+
+  {
+    vtkNew<vtkPlane> sPlane;
+    double sNormal_World[3] = { 0.0, 0.0, 1.0 };
+    roiToWorldTransform->TransformVector(sNormal_World, sNormal_World);
+    vtkMath::MultiplyScalar(sNormal_World, 0.5 * this->SideLengths[2]);
+    double sOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(origin_World, sNormal_World, sOrigin_World);
+    points->InsertNextPoint(sOrigin_World[0], sOrigin_World[1], sOrigin_World[2]);
+    normals->InsertNextTuple3(sNormal_World[0], sNormal_World[1], sNormal_World[2]);
+  }
+
+  if (this->InsideOut)
+    {
+    for (int i = 0; i < normals->GetNumberOfTuples(); ++i)
+      {
+      double* normal = normals->GetTuple3(i);
+      vtkMath::MultiplyScalar(normal, -1.0);
+      normals->SetTuple3(i, normal[0], normal[1], normal[2]);
+      }
+    }
+  planes->SetNormals(normals);
+  planes->SetPoints(points);
+
+  vtkNew<vtkGeneralTransform> localToWorldTransform;
+  vtkMRMLTransformNode::GetTransformBetweenNodes(this->GetParentTransformNode(), nullptr, localToWorldTransform);
+  planes->SetTransform(localToWorldTransform);
 }
