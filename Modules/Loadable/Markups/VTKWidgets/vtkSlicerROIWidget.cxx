@@ -128,7 +128,7 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
   if (this->GetActiveComponentType() == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
     {
     vtkNew<vtkMatrix4x4> worldToROIMatrix;
-    worldToROIMatrix->DeepCopy(markupsNode->GetROIToWorldMatrix());
+    worldToROIMatrix->DeepCopy(markupsNode->GetInteractionHandleToWorldMatrix());
     worldToROIMatrix->Invert();
     vtkNew<vtkTransform> worldToROITransform;
     worldToROITransform->SetMatrix(worldToROIMatrix);
@@ -239,10 +239,11 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     markupsNode->SetSideLengths(newSideLengths);
 
     vtkNew<vtkTransform> roiToWorldTransform;
-    worldToROITransform->SetMatrix(markupsNode->GetROIToWorldMatrix());
+    roiToWorldTransform->SetMatrix(worldToROIMatrix);
+    roiToWorldTransform->Inverse();
 
     double newOrigin_World[3] = { 0.0, 0.0, 0.0 };
-    worldToROITransform->TransformPoint(newOrigin_ROI, newOrigin_World);
+    roiToWorldTransform->TransformPoint(newOrigin_ROI, newOrigin_World);
     markupsNode->SetOriginWorld(newOrigin_World);
 
     bool flipLRHandle = bounds_ROI[1] < bounds_ROI[0];

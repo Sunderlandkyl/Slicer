@@ -181,15 +181,12 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
     case vtkMRMLMarkupsROINode::BOUNDING_BOX:
       this->UpdateBoxFromMRML(roiNode);
       break;
-    case vtkMRMLMarkupsROINode::SPHERE:
-      this->UpdateEllipsoidFromMRML(roiNode);
-      break;
     default:
       this->ROIActor->SetVisibility(false);
       return;
     }
 
-  this->ROIToWorldTransform->SetMatrix(roiNode->GetROIToWorldMatrix());
+  this->ROIToWorldTransform->SetMatrix(roiNode->GetInteractionHandleToWorldMatrix());
 
   vtkPolyData* outline_World = vtkPolyData::SafeDownCast(this->ROIWorldToSliceTransformFilter2B->GetInput());
   if (outline_World && outline_World->GetNumberOfPoints() > 0)
@@ -586,7 +583,7 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleH
       }
     }
 
-  vtkMatrix4x4* roiToWorldMatrix = roiNode->GetROIToWorldMatrix();
+  vtkMatrix4x4* roiToWorldMatrix = roiNode->GetInteractionHandleToWorldMatrix();
   vtkNew<vtkTransform> worldToROITransform;
   worldToROITransform->Concatenate(roiToWorldMatrix);
   worldToROITransform->Inverse();

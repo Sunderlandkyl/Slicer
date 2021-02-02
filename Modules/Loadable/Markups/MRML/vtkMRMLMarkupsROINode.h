@@ -34,6 +34,7 @@
 #include <vtkMatrix4x4.h>
 #include <vtkSmartPointer.h>
 #include <vtkStringArray.h>
+#include <vtkTransform.h>
 
 // std includes
 #include <vector>
@@ -83,8 +84,6 @@ public:
   /// TODO
   vtkGetVector3Macro(SideLengths, double);
   vtkSetVector3Macro(SideLengths, double);
-  //void SetSideLengths(const double sideLengths_World[3]);
-  //void SetSideLengths(double x, double y, double z);
 
   void SetXYZ(double center[3]) { this->SetOriginWorld(center); };
   void SetXYZ(double x, double y, double z) { double tempXYZ[3] = { x, y, z }; this->SetXYZ(tempXYZ); };
@@ -104,9 +103,10 @@ public:
   void GetTransformedPlanes(vtkPlanes* planes);
 
   /// The origin of the ROI
-  /// Calculated as the location of the 0th markup point
+  void GetOrigin(double origin[3]);
   void GetOriginWorld(double origin[3]);
   void SetOriginWorld(const double origin[3]);
+  void SetOrigin(const double origin[3]);
 
   void GetXAxisWorld(double axis_World[3]);
   void GetYAxisWorld(double axis_World[3]);
@@ -118,7 +118,7 @@ public:
   void GetZAxisLocal(double axis_Local[3]);
   void GetAxisLocal(int axisIndex, double axis_Local[3]);
 
-  vtkGetObjectMacro(ROIToWorldMatrix, vtkMatrix4x4);
+  vtkGetObjectMacro(ROIToLocalMatrix, vtkMatrix4x4);
 
   vtkGetMacro(ROIType, int);
   void SetROIType(int roiType);
@@ -127,7 +127,6 @@ public:
   virtual void UpdateROIFromControlPoints();
   virtual void UpdateBoxROIFromControlPoints();
   virtual void UpdateBoundingBoxROIFromControlPoints();
-  virtual void UpdateSphereROIFromControlPoints();
 
   enum
     {
@@ -136,11 +135,11 @@ public:
     BOUNDING_BOX,
 
     // Separate class
-    SPHERE,
-    ELLIPSOID,
+    //SPHERE,
+    //ELLIPSOID,
 
     // Separate class
-    CURVED_BOX,
+    /*CURVED_BOX,*/
     };
 
   // Scale handle indexes
@@ -167,7 +166,7 @@ public:
   /// Alternative method to propagate events generated in Display nodes
   void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;
 
-  void UpdateInteractionHandleToWorldMatrix() override {};
+  void UpdateInteractionHandleToWorldMatrix() override;
 
   void GetBoundsROI(double bounds[6]);
 
@@ -189,7 +188,6 @@ protected:
 
   // TODO: Replace with 4x4 matrix
   // Can leave accesors to get individual axis from the matrix.
-  vtkSmartPointer<vtkMatrix4x4> ROIToWorldMatrix;
   vtkSmartPointer<vtkMatrix4x4> ROIToLocalMatrix;
 
   bool IsUpdatingControlPointsFromROI;

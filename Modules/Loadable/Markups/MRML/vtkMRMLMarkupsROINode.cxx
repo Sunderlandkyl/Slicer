@@ -47,6 +47,7 @@
 #include <vtkObjectFactory.h>
 #include <vtkPassThroughFilter.h>
 #include <vtkPlane.h>
+#include <vtkPlanes.h>
 #include <vtkPointData.h>
 #include <vtkPointLocator.h>
 #include <vtkPolyData.h>
@@ -63,7 +64,6 @@
 #include <vtkAddonMathUtilities.h>
 
 const int NUMBER_OF_BOX_CONTROL_POINTS = 2; // 1 center; 1 corner; Used for initial ROI definition, then removed
-const int NUMBER_OF_SPHERE_CONTROL_POINTS = 2; // 1 center; 1 radius
 const int NUMBER_OF_BOUNDING_BOX_CONTROL_POINTS = 1e6; // Any number of points
 
 //----------------------------------------------------------------------------
@@ -92,8 +92,10 @@ vtkMRMLMarkupsROINode::vtkMRMLMarkupsROINode()
   this->ROIUpdatedTime = 0;
 
   this->CurveInputPoly->GetPoints()->AddObserver(vtkCommand::ModifiedEvent, this->MRMLCallbackCommand);
-  this->ROIToWorldMatrix = this->InteractionHandleToWorldMatrix;
-  this->ROIToWorldMatrix->AddObserver(vtkCommand::ModifiedEvent, this->MRMLCallbackCommand);
+  this->ROIToLocalMatrix = vtkSmartPointer<vtkMatrix4x4>::New();
+  this->ROIToLocalMatrix->AddObserver(vtkCommand::ModifiedEvent, this->MRMLCallbackCommand);
+
+  this->InteractionHandleToWorldMatrix->AddObserver(vtkCommand::ModifiedEvent, this->MRMLCallbackCommand);
 
   this->InsideOut = false;
 }
@@ -167,14 +169,14 @@ void vtkMRMLMarkupsROINode::GetAxisWorld(int axisIndex, double axis_World[3])
     return;
     }
 
-  double axis4_World[4] = { 0.0, 0.0, 0.0, 0.0 };
-  axis4_World[axisIndex] = 1.0;
-  this->ROIToWorldMatrix->MultiplyPoint(axis4_World, axis4_World);
+  double axis_Local[3] = { 0.0, 0.0, 0.0 };
+  this->GetAxisLocal(axisIndex, axis_Local);
 
-  for (int i = 0; i < 3; ++i)
-    {
-    axis_World[i] = axis4_World[i];
-    }
+  vtkNew<vtkGeneralTransform> localToWorldTransform;
+  vtkMRMLTransformNode::GetTransformBetweenNodes(this->GetParentTransformNode(), nullptr, localToWorldTransform);
+  double origin_Local[3] = { 0.0, 0.0, 0.0 };
+  this->GetOrigin(origin_Local);
+  localToWorldTransform->TransformVectorAtPoint(origin_Local, axis_Local, axis_World);
 }
 
 //----------------------------------------------------------------------------
@@ -204,30 +206,41 @@ void vtkMRMLMarkupsROINode::GetAxisLocal(int axisIndex, double axis_Local[3])
     return;
     }
 
-  // TODO
-  //double axis4_Local[4] = { 0.0, 0.0, 0.0, 0.0 };
-  //axis4_Local[axisIndex] = 1.0;
-  //
-
-  //for (int i = 0; i < 3; ++i)
-  //  {
-  //  axis_Local[i] = axis4_Local[i];
-  //  }
+  double axis4_Local[4] = { 0.0, 0.0, 0.0, 0.0 };
+  axis4_Local[axisIndex] = 1.0;
+  this->ROIToLocalMatrix->MultiplyPoint(axis4_Local, axis_Local);
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsROINode::ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData)
 {
-  Superclass::ProcessMRMLEvents(caller, event, callData);
   if (caller == this->CurveInputPoly->GetPoints() || caller == this->GetParentTransformNode())
     {
     // TODO: Update handles from parent transform
     this->UpdateROIFromControlPoints();
     }
-  else if (caller == this->ROIToWorldMatrix.GetPointer() && event == vtkCommand::ModifiedEvent)
+  else if (caller == this->ROIToLocalMatrix.GetPointer() && event == vtkCommand::ModifiedEvent)
     {
+    this->UpdateInteractionHandleToWorldMatrix();
     this->Modified();
     }
+  else if (caller = this->InteractionHandleToWorldMatrix)
+    {
+    vtkNew<vtkMatrix4x4> worldToLocalTransform;
+    if (this->GetParentTransformNode())
+      {
+      this->GetParentTransformNode()->GetMatrixTransformFromWorld(worldToLocalTransform);
+      }
+
+    vtkNew<vtkTransform> roiToLocalTransform;
+    //roiToLocalTransform->PreMultiply();
+    roiToLocalTransform->PostMultiply();
+    roiToLocalTransform->SetMatrix(this->InteractionHandleToWorldMatrix);
+    roiToLocalTransform->Concatenate(worldToLocalTransform);
+    this->ROIToLocalMatrix->DeepCopy(roiToLocalTransform->GetMatrix());
+    this->Modified();
+    }
+  Superclass::ProcessMRMLEvents(caller, event, callData);
 }
 
 //----------------------------------------------------------------------------
@@ -247,13 +260,28 @@ void vtkMRMLMarkupsROINode::SetROIType(int roiType)
     case BOUNDING_BOX:
       this->RequiredNumberOfControlPoints = NUMBER_OF_BOUNDING_BOX_CONTROL_POINTS;
       break;
-    case SPHERE:
-      this->RequiredNumberOfControlPoints = NUMBER_OF_SPHERE_CONTROL_POINTS;
     default:
       break;
     }
   this->UpdateROIFromControlPoints();
   this->Modified();
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::GetOrigin(double origin_Local[3])
+{
+  if (!origin_Local)
+    {
+    vtkErrorMacro("GetOriginWorld: Invalid origin argument");
+    return;
+    }
+
+  double origin_Local4[4] = { 0.0, 0.0, 0.0, 1.0 };
+  this->ROIToLocalMatrix->MultiplyPoint(origin_Local4, origin_Local4);
+
+  origin_Local[0] = origin_Local4[0];
+  origin_Local[1] = origin_Local4[1];
+  origin_Local[2] = origin_Local4[2];
 }
 
 //----------------------------------------------------------------------------
@@ -265,12 +293,9 @@ void vtkMRMLMarkupsROINode::GetOriginWorld(double origin_World[3])
     return;
     }
 
-  double origin_World4[4] = { 0.0, 0.0, 0.0, 1.0 };
-  this->ROIToWorldMatrix->MultiplyPoint(origin_World4, origin_World4);
-
-  origin_World[0] = origin_World4[0];
-  origin_World[1] = origin_World4[1];
-  origin_World[2] = origin_World4[2];
+  double origin_Local[3] = { 0.0, 0.0, 0.0 };
+  this->GetOrigin(origin_Local);
+  this->TransformPointToWorld(origin_Local, origin_World);
 }
 
 //----------------------------------------------------------------------------
@@ -282,23 +307,32 @@ void vtkMRMLMarkupsROINode::SetOriginWorld(const double origin_World[3])
     return;
     }
 
-  vtkNew<vtkMatrix4x4> newROIToWorldMatrix;
-  newROIToWorldMatrix->DeepCopy(this->ROIToWorldMatrix);
+  double origin_Local[3] = { 0.0, 0.0, 0.0 };
+  this->TransformPointFromWorld(origin_World, origin_Local);
+  this->SetOrigin(origin_Local);
+}
 
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::SetOrigin(const double origin_Local[3])
+{
+  if (!origin_Local)
+    {
+    vtkErrorMacro("SetOrigin: Invalid origin argument");
+    return;
+    }
+
+  vtkNew<vtkMatrix4x4> newROIToWorldMatrix;
+  newROIToWorldMatrix->DeepCopy(this->ROIToLocalMatrix);
   for (int i = 0; i < 3; ++i)
     {
-    newROIToWorldMatrix->SetElement(i, 3, origin_World[i]);
+    newROIToWorldMatrix->SetElement(i, 3, origin_Local[i]);
     }
-  this->ROIToWorldMatrix->DeepCopy(newROIToWorldMatrix);
+  this->ROIToLocalMatrix->DeepCopy(newROIToWorldMatrix);
 }
 
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsROINode::GetBoundsROI(double bounds_ROI[6])
 {
-  vtkNew<vtkMatrix4x4> worldToROIMatrix;
-  worldToROIMatrix->DeepCopy(this->ROIToWorldMatrix);
-  worldToROIMatrix->Invert();
-
   double sideLengths[3] = { 0.0, 0.0, 0.0 };
   this->GetSideLengths(sideLengths);
   for (int i = 0; i < 3; ++i)
@@ -332,9 +366,6 @@ void vtkMRMLMarkupsROINode::UpdateROIFromControlPoints()
     case BOUNDING_BOX:
       this->UpdateBoundingBoxROIFromControlPoints();
       break;
-    case SPHERE:
-      this->UpdateSphereROIFromControlPoints();
-      break;
     default:
       break;
     }
@@ -356,7 +387,7 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints()
   double bounds_ROI[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, };
 
   vtkNew<vtkTransform> worldToROITransform;
-  worldToROITransform->SetMatrix(this->ROIToWorldMatrix);
+  worldToROITransform->SetMatrix(this->ROIToLocalMatrix);
   worldToROITransform->Inverse();
 
   for (int pointIndex = 0; pointIndex < this->GetNumberOfControlPoints(); ++pointIndex)
@@ -414,7 +445,7 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints()
   this->SetSideLengths(newSideLengths);
 
   double origin_World[4] = { 0.0, 0.0, 0.0, 0.0 };
-  this->ROIToWorldMatrix->MultiplyPoint(origin_ROI, origin_World);
+  this->ROIToLocalMatrix->MultiplyPoint(origin_ROI, origin_World);
   this->SetOriginWorld(origin_World);
 
   if (this->GetNumberOfDefinedControlPoints() == NUMBER_OF_BOX_CONTROL_POINTS)
@@ -432,73 +463,8 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints()
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsROINode::UpdateBoundingBoxROIFromControlPoints()
 {
-  //double xAxis_World[3] = { 0.0, 0.0, 0.0 };
-  //this->GetXAxisWorld(xAxis_World);
-
-  //double yAxis_World[3] = { 0.0, 0.0, 0.0 };
-  //this->GetYAxisWorld(yAxis_World);
-
-  //double zAxis_World[3] = { 0.0, 0.0, 0.0 };
-  //this->GetZAxisWorld(zAxis_World);
-
-  //this->SideLengths[0] = 0.0;
-  //this->SideLengths[1] = 0.0;
-  //this->SideLengths[2] = 0.0;
-
-  //double bounds_ROI[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, };
-  //this->GetBoundsROI(bounds_ROI);
-
-  //double origin_ROI[4] = { 0.0, 0.0, 0.0, 1.0 };
-  //for (int i = 0; i < 3; ++i)
-  //  {
-  //  this->SideLengths[i] = bounds_ROI[2*i+1] - bounds_ROI[2*i];
-  //  origin_ROI[i] = (bounds_ROI[2*i+1] + bounds_ROI[2*i])/2.0;
-  //  }
-
-  //double origin_World[4] = { 0.0, 0.0, 0.0, 0.0 };
-  //this->ROIToWorldMatrix->MultiplyPoint(origin_ROI, origin_World);
-  //for (int i = 0; i < 3; ++i)
-  //  {
-  //  this->ROIToWorldMatrix->SetElement(i, 3, origin_World[i]);
-  //  }
-
-  //if (index >= 0 && position_World)
-  //  {
-  //  this->SetNthControlPointPositionWorldFromArray(index, position_World, positionStatus);
-  //  }
 }
 
-#include <vtkSphere.h>
-//----------------------------------------------------------------------------
-void vtkMRMLMarkupsROINode::UpdateSphereROIFromControlPoints()
-{
-  /*if (pointIndex >= 0 && position_World)
-    {
-    Superclass::SetNthControlPointPositionWorldFromArray(pointIndex, position_World, positionStatus);
-    }
-
-  vtkPoints* points = this->CurveInputPoly->GetPoints();
-
-  float sphereDimensions[4] = { 0 };
-
-  vtkSphere::ComputeBoundingSphere((float*)points->GetData()->GetVoidPointer(0), points->GetNumberOfPoints(), sphereDimensions, nullptr);
-  this->SideLengths[0] = 2*sphereDimensions[3];
-  this->SideLengths[1] = 2*sphereDimensions[3];
-  this->SideLengths[2] = 2*sphereDimensions[3];
-
-  double origin_Local[3] = { sphereDimensions[0], sphereDimensions[1], sphereDimensions[2] };
-  double origin_World[3] = {0};
-  this->TransformPointToWorld(origin_Local, origin_World);
-
-  vtkNew<vtkMatrix4x4> newROIToWorldMatrix;
-  for (int i = 0; i < 3; ++i)
-    {
-    newROIToWorldMatrix->SetElement(i, 3, origin_World[i]);
-    }
-  this->ROIToWorldMatrix->DeepCopy(newROIToWorldMatrix);*/
-}
-
-#include <vtkPlanes.h>
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
 {
@@ -509,7 +475,7 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
     }
 
   vtkNew<vtkTransform> roiToWorldTransform;
-  roiToWorldTransform->SetMatrix(this->ROIToWorldMatrix);
+  roiToWorldTransform->SetMatrix(this->ROIToLocalMatrix);
 
   double origin_World[3] = { 0.0, 0.0, 0.0 };
   roiToWorldTransform->TransformPoint(origin_World, origin_World);
@@ -600,4 +566,16 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
   vtkNew<vtkGeneralTransform> localToWorldTransform;
   vtkMRMLTransformNode::GetTransformBetweenNodes(this->GetParentTransformNode(), nullptr, localToWorldTransform);
   planes->SetTransform(localToWorldTransform);
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::UpdateInteractionHandleToWorldMatrix()
+{
+  vtkNew<vtkMatrix4x4> localToWorldMatrix;
+  this->GetParentTransformNode()->GetMatrixTransformBetweenNodes(this->GetParentTransformNode(), nullptr, localToWorldMatrix);
+
+  vtkNew<vtkTransform> handleToWorldMatrix;
+  handleToWorldMatrix->Concatenate(localToWorldMatrix);
+  handleToWorldMatrix->Concatenate(this->ROIToLocalMatrix);
+  this->InteractionHandleToWorldMatrix->DeepCopy(handleToWorldMatrix->GetMatrix());
 }

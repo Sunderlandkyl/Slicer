@@ -96,16 +96,13 @@ void vtkSlicerROIRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
     case vtkMRMLMarkupsROINode::BOUNDING_BOX:
       this->UpdateBoxFromMRML(roiNode);
       break;
-    case vtkMRMLMarkupsROINode::SPHERE:
-    case vtkMRMLMarkupsROINode::ELLIPSOID:
-      this->UpdateEllipsoidFromMRML(roiNode);
       break;
     default:
       this->ROIActor->SetVisibility(false);
       return;
     }
 
-  this->ROIToWorldTransform->SetMatrix(roiNode->GetROIToWorldMatrix());
+  this->ROIToWorldTransform->SetMatrix(roiNode->GetInteractionHandleToWorldMatrix());
 
   this->ROIActor->SetVisibility(true);
   this->VisibilityOn();
@@ -504,7 +501,7 @@ void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::UpdateScaleHan
   roiPoints->SetPoint(vtkMRMLMarkupsROINode::LAS_CORNER_POINT, -sideLengths[0],  sideLengths[1],  sideLengths[2]);
   roiPoints->SetPoint(vtkMRMLMarkupsROINode::RAS_CORNER_POINT, sideLengths[0],   sideLengths[1],  sideLengths[2]);
 
-  vtkMatrix4x4* roiToWorldMatrix = roiNode->GetROIToWorldMatrix();
+  vtkMatrix4x4* roiToWorldMatrix = roiNode->GetInteractionHandleToWorldMatrix();
   vtkNew<vtkTransform> worldToHandleTransform;
   worldToHandleTransform->DeepCopy(this->HandleToWorldTransform);
   worldToHandleTransform->Inverse();
