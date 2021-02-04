@@ -74,11 +74,11 @@ vtkMRMLMarkupsROINode::vtkMRMLMarkupsROINode()
 {
   this->PropertiesLabelText = "";
 
-  this->ROIType = BOX;
-  this->RequiredNumberOfControlPoints = NUMBER_OF_BOX_CONTROL_POINTS;
+  //this->ROIType = BOX;
+  //this->RequiredNumberOfControlPoints = NUMBER_OF_BOX_CONTROL_POINTS;
 
-  //this->ROIType = BOUNDING_BOX;
-  //this->RequiredNumberOfControlPoints = NUMBER_OF_BOUNDING_BOX_CONTROL_POINTS;
+  this->ROIType = BOUNDING_BOX;
+  this->RequiredNumberOfControlPoints = NUMBER_OF_BOUNDING_BOX_CONTROL_POINTS;
 
   //this->ROIType = SPHERE;
   //this->RequiredNumberOfControlPoints = NUMBER_OF_SPHERE_CONTROL_POINTS;
@@ -233,10 +233,8 @@ void vtkMRMLMarkupsROINode::ProcessMRMLEvents(vtkObject* caller, unsigned long e
       }
 
     vtkNew<vtkTransform> roiToLocalTransform;
-    //roiToLocalTransform->PreMultiply();
-    roiToLocalTransform->PostMultiply();
-    roiToLocalTransform->SetMatrix(this->InteractionHandleToWorldMatrix);
     roiToLocalTransform->Concatenate(worldToLocalTransform);
+    roiToLocalTransform->Concatenate(this->InteractionHandleToWorldMatrix);
     this->ROIToLocalMatrix->DeepCopy(roiToLocalTransform->GetMatrix());
     this->Modified();
     }
@@ -272,7 +270,7 @@ void vtkMRMLMarkupsROINode::GetOrigin(double origin_Local[3])
 {
   if (!origin_Local)
     {
-    vtkErrorMacro("GetOriginWorld: Invalid origin argument");
+    vtkErrorMacro("GetOrigin: Invalid origin argument");
     return;
     }
 
@@ -321,13 +319,13 @@ void vtkMRMLMarkupsROINode::SetOrigin(const double origin_Local[3])
     return;
     }
 
-  vtkNew<vtkMatrix4x4> newROIToWorldMatrix;
-  newROIToWorldMatrix->DeepCopy(this->ROIToLocalMatrix);
+  vtkNew<vtkMatrix4x4> newROIToLocalMatrix;
+  newROIToLocalMatrix->DeepCopy(this->ROIToLocalMatrix);
   for (int i = 0; i < 3; ++i)
     {
-    newROIToWorldMatrix->SetElement(i, 3, origin_Local[i]);
+    newROIToLocalMatrix->SetElement(i, 3, origin_Local[i]);
     }
-  this->ROIToLocalMatrix->DeepCopy(newROIToWorldMatrix);
+  this->ROIToLocalMatrix->DeepCopy(newROIToLocalMatrix);
 }
 
 //----------------------------------------------------------------------------
@@ -382,21 +380,46 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints()
     return;
     }
 
+  this->UpdateBoundingBoxROIFromControlPoints();
+
+  if (this->GetNumberOfDefinedControlPoints() == NUMBER_OF_BOX_CONTROL_POINTS)
+    {
+    this->RequiredNumberOfControlPoints = 0;
+    this->RemoveAllControlPoints();
+    }
+  else
+    {
+    this->RequiredNumberOfControlPoints = 2;
+    }
+}
+
+
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::UpdateBoundingBoxROIFromControlPoints()
+{
   MRMLNodeModifyBlocker blocker(this);
 
   double bounds_ROI[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, };
+  int numberOfControlPoints = this->GetNumberOfControlPoints();
+  if (numberOfControlPoints == 0)
+    {
+    for (int i = 0; i < 6; ++i)
+      {
+      bounds_ROI[i] = 0.0;
+      }
+    }
 
-  vtkNew<vtkTransform> worldToROITransform;
-  worldToROITransform->SetMatrix(this->ROIToLocalMatrix);
-  worldToROITransform->Inverse();
+  vtkNew<vtkTransform> localToROITransform;
+  localToROITransform->SetMatrix(this->ROIToLocalMatrix);
+  localToROITransform->Inverse();
 
   for (int pointIndex = 0; pointIndex < this->GetNumberOfControlPoints(); ++pointIndex)
     {
-    double point_World[3] = { 0.0, 0.0, 0.0 };
-    this->GetNthControlPointPositionWorld(pointIndex, point_World);
+    double point_Local[3] = { 0.0, 0.0, 0.0 };
+    this->GetNthControlPointPosition(pointIndex, point_Local);
 
     double point_ROI[3] = { 0.0, 0.0, 0.0 };
-    worldToROITransform->TransformPoint(point_World, point_ROI);
+    localToROITransform->TransformPoint(point_Local, point_ROI);
     for (int i = 0; i < 3; ++i)
       {
       bounds_ROI[2 * i] = std::min(bounds_ROI[2 * i], point_ROI[i]);
@@ -447,22 +470,6 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints()
   double origin_World[4] = { 0.0, 0.0, 0.0, 0.0 };
   this->ROIToLocalMatrix->MultiplyPoint(origin_ROI, origin_World);
   this->SetOriginWorld(origin_World);
-
-  if (this->GetNumberOfDefinedControlPoints() == NUMBER_OF_BOX_CONTROL_POINTS)
-    {
-    this->RequiredNumberOfControlPoints = 0;
-    this->RemoveAllControlPoints();
-    }
-  else
-    {
-    this->RequiredNumberOfControlPoints = 2;
-    }
-}
-
-
-//----------------------------------------------------------------------------
-void vtkMRMLMarkupsROINode::UpdateBoundingBoxROIFromControlPoints()
-{
 }
 
 //----------------------------------------------------------------------------

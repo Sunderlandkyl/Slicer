@@ -353,6 +353,16 @@ vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::MarkupsInteractionP
 
 }
 
+//----------------------------------------------------------------------
+double vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::GetOpacity(int type, int index)
+{
+  if (type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle && index > 5)
+    {
+    return 1.0;
+    }
+  return MarkupsInteractionPipeline::GetOpacity(type, index);
+}
+
 //-----------------------------------------------------------------------------
 void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::GetHandleColor(int type, int index, double color[4])
 {

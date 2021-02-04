@@ -113,6 +113,7 @@ protected:
     ~MarkupsInteractionPipelineROI() override = default;
     void CreateScaleHandles() override;
     virtual void UpdateScaleHandles();
+    double GetOpacity(int type, int index) override;
     void GetHandleColor(int type, int index, double color[4]) override;
     HandleInfoList GetHandleInfoList() override;
     void GetInteractionHandleAxisWorld(int type, int index, double axis[3]) override;

@@ -1110,7 +1110,7 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::CreateSca
   visibilityArray->SetName("visibility");
   visibilityArray->SetNumberOfComponents(1);
   visibilityArray->SetNumberOfValues(this->ScaleHandlePoints->GetNumberOfPoints());
-  visibilityArray->Fill(true);
+  visibilityArray->Fill(1);
   this->ScaleHandlePoints->GetPointData()->AddArray(visibilityArray);
 
   this->Append->AddInputConnection(this->AxisScaleGlypher->GetOutputPort());
@@ -1268,16 +1268,16 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::GetHandle
     handlePoints = this->ScaleHandlePoints;
     }
 
-  vtkIdTypeArray* visibilityArray = nullptr;
-  if (handlePoints)
-    {
-    visibilityArray = vtkIdTypeArray::SafeDownCast(handlePoints->GetPointData()->GetArray("visibility"));
-    }
+  //vtkIdTypeArray* visibilityArray = nullptr;
+  //if (handlePoints)
+  //  {
+  //  visibilityArray = vtkIdTypeArray::SafeDownCast(handlePoints->GetPointData()->GetArray("visibility"));
+  //  }
 
-  if (visibilityArray)
-    {
-    opacity = visibilityArray->GetValue(index) ? opacity : 0.0;
-    }
+  //if (visibilityArray)
+  //  {
+  //  opacity = visibilityArray->GetValue(index) ? opacity : 0.0;
+  //  }
   color[3] = opacity;
 }
 
