@@ -604,12 +604,11 @@ void vtkSlicerROIRepresentation2D::MarkupsInteractionPipelineROI2D::UpdateScaleH
   vtkMath::MultiplyScalar(sideLengths, 0.5);
 
   vtkNew<vtkPoints> roiPoints;
-  //roiPoints->SetNumberOfPoints(14);
   roiPoints->SetNumberOfPoints(6);
 
   vtkIdTypeArray* visibilityArray = vtkIdTypeArray::SafeDownCast(this->ScaleHandlePoints->GetPointData()->GetArray("visibility"));
   visibilityArray->SetNumberOfValues(roiPoints->GetNumberOfPoints());
-  visibilityArray->Fill(true);
+  visibilityArray->Fill(1);
 
   vtkNew<vtkPlane> plane;
   plane->SetNormal(viewPlaneNormal_ROI);

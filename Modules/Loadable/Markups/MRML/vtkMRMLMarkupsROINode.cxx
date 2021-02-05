@@ -504,9 +504,9 @@ void vtkMRMLMarkupsROINode::UpdateBoundingBoxROIFromControlPoints()
 
   this->SetSideLengths(newSideLengths);
 
-  double origin_World[4] = { 0.0, 0.0, 0.0, 0.0 };
-  this->ROIToLocalMatrix->MultiplyPoint(origin_ROI, origin_World);
-  this->SetOriginWorld(origin_World);
+  double origin_Local[4] = { 0.0, 0.0, 0.0, 0.0 };
+  this->ROIToLocalMatrix->MultiplyPoint(origin_ROI, origin_Local);
+  this->SetOrigin(origin_Local);
 }
 
 //----------------------------------------------------------------------------
@@ -603,7 +603,7 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
 {
   if (!planes)
     {
-    vtkErrorMacro("Invalid planes");
+    vtkErrorMacro("GetTransformedPlanes: Invalid planes");
     return;
     }
 
@@ -619,7 +619,6 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
   vtkNew<vtkPoints> points;
 
   {
-    vtkNew<vtkPlane> lPlane;
     double lNormal_World[3] = { -1.0, 0.0, 0.0 };
     roiToWorldTransform->TransformVector(lNormal_World, lNormal_World);
     vtkMath::MultiplyScalar(lNormal_World, 0.5 * this->SideLengths[0]);
@@ -630,7 +629,6 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
   }
 
   {
-    vtkNew<vtkPlane> rPlane;
     double rNormal_World[3] = { 1.0, 0.0, 0.0 };
     roiToWorldTransform->TransformVector(rNormal_World, rNormal_World);
     vtkMath::MultiplyScalar(rNormal_World, 0.5 * this->SideLengths[0]);
@@ -641,7 +639,6 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
   }
 
   {
-    vtkNew<vtkPlane> pPlane;
     double pNormal_World[3] = { 0.0, -1.0, 0.0 };
     roiToWorldTransform->TransformVector(pNormal_World, pNormal_World);
     vtkMath::MultiplyScalar(pNormal_World, 0.5 * this->SideLengths[1]);
@@ -652,7 +649,6 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
   }
 
   {
-    vtkNew<vtkPlane> aPlane;
     double aNormal_World[3] = { 0.0, 1.0, 0.0 };
     roiToWorldTransform->TransformVector(aNormal_World, aNormal_World);
     vtkMath::MultiplyScalar(aNormal_World, 0.5 * this->SideLengths[1]);
@@ -663,7 +659,6 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
   }
 
   {
-    vtkNew<vtkPlane> iPlane;
     double iNormal_World[3] = { 0.0, 0.0, -1.0 };
     roiToWorldTransform->TransformVector(iNormal_World, iNormal_World);
     vtkMath::MultiplyScalar(iNormal_World, 0.5 * this->SideLengths[2]);
@@ -674,7 +669,6 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
   }
 
   {
-    vtkNew<vtkPlane> sPlane;
     double sNormal_World[3] = { 0.0, 0.0, 1.0 };
     roiToWorldTransform->TransformVector(sNormal_World, sNormal_World);
     vtkMath::MultiplyScalar(sNormal_World, 0.5 * this->SideLengths[2]);
@@ -689,8 +683,7 @@ void vtkMRMLMarkupsROINode::GetTransformedPlanes(vtkPlanes* planes)
     for (int i = 0; i < normals->GetNumberOfTuples(); ++i)
       {
       double* normal = normals->GetTuple3(i);
-      vtkMath::MultiplyScalar(normal, -1.0);
-      normals->SetTuple3(i, normal[0], normal[1], normal[2]);
+      normals->SetTuple3(i, -normal[0], -normal[1], -normal[2]);
       }
     }
   planes->SetNormals(normals);

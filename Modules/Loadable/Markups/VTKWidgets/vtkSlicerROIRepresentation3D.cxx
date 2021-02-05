@@ -529,6 +529,10 @@ void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::UpdateScaleHan
   transform->Update();
 
   this->ScaleHandlePoints->SetPoints(transform->GetOutput()->GetPoints());
+
+  vtkIdTypeArray* visibilityArray = vtkIdTypeArray::SafeDownCast(this->ScaleHandlePoints->GetPointData()->GetArray("visibility"));
+  visibilityArray->SetNumberOfValues(roiPoints->GetNumberOfPoints());
+  visibilityArray->Fill(1);
 }
 
 //----------------------------------------------------------------------
