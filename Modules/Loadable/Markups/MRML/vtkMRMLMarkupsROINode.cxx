@@ -319,13 +319,46 @@ void vtkMRMLMarkupsROINode::SetOrigin(const double origin_Local[3])
     return;
     }
 
+  if (this->ROIToLocalMatrix->GetElement(0, 3) == origin_Local[0] &&
+    this->ROIToLocalMatrix->GetElement(1, 3) == origin_Local[1] &&
+    this->ROIToLocalMatrix->GetElement(2, 3) == origin_Local[2])
+    {
+    return;
+    }
+
   vtkNew<vtkMatrix4x4> newROIToLocalMatrix;
   newROIToLocalMatrix->DeepCopy(this->ROIToLocalMatrix);
   for (int i = 0; i < 3; ++i)
     {
     newROIToLocalMatrix->SetElement(i, 3, origin_Local[i]);
     }
+
+  MRMLNodeModifyBlocker blocker(this);
   this->ROIToLocalMatrix->DeepCopy(newROIToLocalMatrix);
+  this->UpdateControlPointsFromROI();
+  this->Modified();
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::SetSideLengths(const double sideLengths[3])
+{
+  this->SetSideLengths(sideLengths[0], sideLengths[1], sideLengths[2]);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::SetSideLengths(double x, double y, double z)
+{
+  if (this->SideLengths[0] == x && this->SideLengths[1] == y && this->SideLengths[2] == z)
+    {
+    return;
+    }
+
+  MRMLNodeModifyBlocker blocker(this);
+  this->SideLengths[0] = x;
+  this->SideLengths[1] = y;
+  this->SideLengths[2] = z;
+  this->UpdateControlPointsFromROI();
+  this->Modified();
 }
 
 //----------------------------------------------------------------------------
@@ -343,7 +376,7 @@ void vtkMRMLMarkupsROINode::GetBoundsROI(double bounds_ROI[6])
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsROINode::UpdateROIFromControlPoints()
 {
-  if (this->IsUpdatingROIFromControlPoints)
+  if (this->IsUpdatingControlPointsFromROI || this->IsUpdatingROIFromControlPoints)
     {
     return;
     }
@@ -381,6 +414,40 @@ void vtkMRMLMarkupsROINode::UpdateBoxROIFromControlPoints()
     }
 
   this->UpdateBoundingBoxROIFromControlPoints();
+
+  double newSideLengths[3] = { 0.0, 0.0, 0.0 };
+  this->GetSideLengths(newSideLengths);
+
+  double minimumSideLength = VTK_DOUBLE_MAX;
+  for (int i = 0; i < 3; ++i)
+    {
+    if (newSideLengths[i] <= 0.0)
+      {
+      continue;
+      }
+    minimumSideLength = std::min(minimumSideLength, newSideLengths[i]);
+    }
+  if (minimumSideLength == VTK_DOUBLE_MAX)
+    {
+    minimumSideLength = 0.0;
+    }
+
+  if (this->GetNumberOfControlPoints() == NUMBER_OF_BOX_CONTROL_POINTS)
+    {
+    if (newSideLengths[0] == 0.0)
+      {
+      newSideLengths[0] = minimumSideLength;
+      }
+    if (newSideLengths[1] == 0.0)
+      {
+      newSideLengths[1] = minimumSideLength;
+      }
+    if (newSideLengths[2] == 0.0)
+      {
+      newSideLengths[2] = minimumSideLength;
+      }
+    }
+  this->SetSideLengths(newSideLengths);
 
   if (this->GetNumberOfDefinedControlPoints() == NUMBER_OF_BOX_CONTROL_POINTS)
     {
@@ -435,41 +502,100 @@ void vtkMRMLMarkupsROINode::UpdateBoundingBoxROIFromControlPoints()
     origin_ROI[i] = (bounds_ROI[2 * i + 1] + bounds_ROI[2 * i]) / 2.0;
     }
 
-  double minimumSideLength = VTK_DOUBLE_MAX;
-  for (int i = 0; i < 3; ++i)
-    {
-    if (newSideLengths[i] <= 0.0)
-      {
-      continue;
-      }
-    minimumSideLength = std::min(minimumSideLength, newSideLengths[i]);
-    }
-  if (minimumSideLength == VTK_DOUBLE_MAX)
-    {
-    minimumSideLength = 0.0;
-    }
-
-  if (this->GetNumberOfControlPoints() == NUMBER_OF_BOX_CONTROL_POINTS)
-    {
-    if (newSideLengths[0] == 0.0)
-      {
-      newSideLengths[0] = minimumSideLength;
-      }
-    if (newSideLengths[1] == 0.0)
-      {
-      newSideLengths[1] = minimumSideLength;
-      }
-    if (newSideLengths[2] == 0.0)
-      {
-      newSideLengths[2] = minimumSideLength;
-      }
-    }
-
   this->SetSideLengths(newSideLengths);
 
   double origin_World[4] = { 0.0, 0.0, 0.0, 0.0 };
   this->ROIToLocalMatrix->MultiplyPoint(origin_ROI, origin_World);
   this->SetOriginWorld(origin_World);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::UpdateControlPointsFromROI(int positionStatus/*=vtkMRMLMarkupsNode::PositionDefined*/)
+{
+  if (this->IsUpdatingControlPointsFromROI || this->IsUpdatingROIFromControlPoints)
+    {
+    return;
+    }
+
+  this->IsUpdatingControlPointsFromROI = true;
+    {
+      MRMLNodeModifyBlocker blocker(this);
+
+      switch (this->ROIType)
+        {
+        case BOUNDING_BOX:
+          this->UpdateControlPointsFromBoundingBoxROI(positionStatus);
+          break;
+        default:
+          break;
+        }
+    }
+  this->IsUpdatingControlPointsFromROI = false;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::UpdateControlPointsFromBoundingBoxROI(int positionStatus/*=vtkMRMLMarkupsNode::PositionDefined*/)
+{
+  vtkNew<vtkPoints> newROIPoints_World;
+
+  vtkNew<vtkTransform> localToROITransform;
+  localToROITransform->SetMatrix(this->ROIToLocalMatrix);
+  localToROITransform->Inverse();
+
+  double bounds_ROI[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN };
+  for (int pointIndex = 0; pointIndex < this->GetNumberOfControlPoints(); ++pointIndex)
+    {
+    double point_Local[3] = { 0.0, 0.0, 0.0 };
+    this->GetNthControlPointPosition(pointIndex, point_Local);
+
+    double point_ROI[3] = { 0.0, 0.0, 0.0 };
+    localToROITransform->TransformPoint(point_Local, point_ROI);
+    for (int i = 0; i < 3; ++i)
+      {
+      bounds_ROI[2 * i] = std::min(bounds_ROI[2 * i], point_ROI[i]);
+      bounds_ROI[2 * i + 1] = std::max(bounds_ROI[2 * i + 1], point_ROI[i]);
+      }
+    }
+  if (this->GetNumberOfControlPoints() == 0)
+    {
+    for (int i = 0; i < 6; ++i)
+      {
+      bounds_ROI[i] = 0.0;
+      }
+    }
+
+  double scale_ROI[3] = { 1.0, 1.0, 1.0 };
+  double translation_ROI[3] = { 0.0, 0.0, 0.0 };
+  for (int i = 0; i < 3; ++i)
+    {
+    double oldSideLength = bounds_ROI[2 * i + 1] - bounds_ROI[2 * i];
+    scale_ROI[i] = this->SideLengths[i] / oldSideLength;
+    translation_ROI[i] = -(bounds_ROI[2 * i + 1] + bounds_ROI[2 * i]) / 2.0;
+    }
+
+  vtkNew<vtkTransform> localToScaledLocalTransform;
+  localToScaledLocalTransform->PostMultiply();
+  localToScaledLocalTransform->Concatenate(localToROITransform);
+  localToScaledLocalTransform->Translate(translation_ROI);
+  localToScaledLocalTransform->Scale(scale_ROI);
+  localToScaledLocalTransform->Concatenate(this->ROIToLocalMatrix);
+
+  vtkNew<vtkTransformPolyDataFilter> localToScaledLocalTransformFilter;
+  localToScaledLocalTransformFilter->SetTransform(localToScaledLocalTransform);
+  localToScaledLocalTransformFilter->SetInputData(this->CurveInputPoly);
+
+  vtkNew<vtkGeneralTransform> localToWorldTransform;
+  if (this->GetParentTransformNode())
+    {
+    this->GetParentTransformNode()->GetTransformToWorld(localToWorldTransform);
+    }
+
+  vtkNew<vtkTransformPolyDataFilter> localToWorldTransformFilter;
+  localToWorldTransformFilter->SetTransform(localToWorldTransform);
+  localToWorldTransformFilter->SetInputConnection(localToScaledLocalTransformFilter->GetOutputPort());
+  localToWorldTransformFilter->Update();
+
+  this->SetControlPointPositionsWorld(localToWorldTransformFilter->GetOutput()->GetPoints());
 }
 
 //----------------------------------------------------------------------------

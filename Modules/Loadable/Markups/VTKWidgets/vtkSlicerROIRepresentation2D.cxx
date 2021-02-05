@@ -175,6 +175,12 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
     return;
     }
 
+  if (!roiNode || !this->MarkupsDisplayNode || !this->IsDisplayable())
+    {
+    this->VisibilityOff();
+    return;
+    }
+
   switch (roiNode->GetROIType())
     {
     case vtkMRMLMarkupsROINode::BOX:
@@ -182,7 +188,7 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
       this->UpdateBoxFromMRML(roiNode);
       break;
     default:
-      this->ROIActor->SetVisibility(false);
+      this->VisibilityOff();
       return;
     }
 

@@ -220,7 +220,6 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
       newSideLengths[i] = std::abs(bounds_ROI[2 * i + 1] - bounds_ROI[2 * i]);
       newOrigin_ROI[i] = (bounds_ROI[2 * i + 1] + bounds_ROI[2 * i]) / 2.0;
       }
-    markupsNode->SetSideLengths(newSideLengths);
 
     vtkNew<vtkTransform> roiToWorldTransform;
     roiToWorldTransform->SetMatrix(worldToROIMatrix);
@@ -229,6 +228,7 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     double newOrigin_World[3] = { 0.0, 0.0, 0.0 };
     roiToWorldTransform->TransformPoint(newOrigin_ROI, newOrigin_World);
     markupsNode->SetOriginWorld(newOrigin_World);
+    markupsNode->SetSideLengths(newSideLengths);
 
     bool flipLRHandle = bounds_ROI[1] < bounds_ROI[0];
     bool flipPAHandle = bounds_ROI[3] < bounds_ROI[2];

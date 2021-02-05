@@ -83,7 +83,8 @@ public:
 
   /// TODO
   vtkGetVector3Macro(SideLengths, double);
-  vtkSetVector3Macro(SideLengths, double);
+  void SetSideLengths(const double sideLengths[3]);
+  void SetSideLengths(double x, double y, double z);
 
   void SetXYZ(double center[3]) { this->SetOriginWorld(center); };
   void SetXYZ(double x, double y, double z) { double tempXYZ[3] = { x, y, z }; this->SetXYZ(tempXYZ); };
@@ -127,6 +128,10 @@ public:
   virtual void UpdateROIFromControlPoints();
   virtual void UpdateBoxROIFromControlPoints();
   virtual void UpdateBoundingBoxROIFromControlPoints();
+
+  ///
+  virtual void UpdateControlPointsFromROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
+  virtual void UpdateControlPointsFromBoundingBoxROI(int positionStatus = vtkMRMLMarkupsNode::PositionDefined);
 
   enum
     {
