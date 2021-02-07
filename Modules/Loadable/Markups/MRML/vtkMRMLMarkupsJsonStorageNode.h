@@ -57,6 +57,8 @@ public:
 
   bool CanReadInReferenceNode(vtkMRMLNode *refNode) override;
 
+  void GetMarkupTypesInFile(const char* filePath, std::vector<std::string>& outputMarkupTypes);
+
 protected:
   vtkMRMLMarkupsJsonStorageNode();
   ~vtkMRMLMarkupsJsonStorageNode() override;

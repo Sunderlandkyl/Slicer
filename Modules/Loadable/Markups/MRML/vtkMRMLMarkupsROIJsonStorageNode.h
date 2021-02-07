@@ -79,9 +79,9 @@ protected:
   /// Write data from a  referenced node.
   int WriteDataInternal(vtkMRMLNode *refNode) override;
 
-  class vtkInternal;
-  vtkInternal* Internal;
-  friend class vtkInternal;
+  class vtkInternal2;
+  friend class vtkInternal2;
+  vtkInternal2* Internal;
 };
 
 #endif

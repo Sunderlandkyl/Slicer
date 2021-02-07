@@ -52,34 +52,7 @@ namespace
     "https://raw.githubusercontent.com/slicer/slicer/master/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.0.json#";
 }
 
-//---------------------------------------------------------------------------
-class vtkMRMLMarkupsJsonStorageNode::vtkInternal
-{
-public:
-  vtkInternal(vtkMRMLMarkupsJsonStorageNode* external);
-  ~vtkInternal();
-
-  // Reader
-  rapidjson::Document* CreateJsonDocumentFromFile(const char* filePath);
-  std::string GetMarkupsClassNameFromMarkupsType(std::string markupsType);
-  std::string GetMarkupsClassNameFromJsonValue(rapidjson::Value& markupObject);
-  bool UpdateMarkupsNodeFromJsonValue (vtkMRMLMarkupsNode* markupsNode, rapidjson::Value& markupObject);
-  bool UpdateMarkupsDisplayNodeFromJsonValue(vtkMRMLMarkupsDisplayNode* displayNode, rapidjson::Value& markupObject);
-  bool ReadVector(rapidjson::Value& item, double* v, int numberOfComponents=3);
-  bool ReadControlPoints(rapidjson::Value& item, int coordinateSystem, vtkMRMLMarkupsNode* markupsNode);
-  bool ReadMeasurements(rapidjson::Value& item, vtkMRMLMarkupsNode* markupsNode);
-
-
-  // Writer
-  bool WriteBasicProperties(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsNode* markupsNode);
-  bool WriteControlPoints(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsNode* markupsNode);
-  bool WriteMeasurements(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsNode* markupsNode);
-  bool WriteDisplayProperties(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsDisplayNode* markupsDisplayNode);
-  void WriteVector(rapidjson::PrettyWriter<rapidjson::FileWriteStream>& writer, double* v, int numberOfComponents = 3);
-
-private:
-  vtkMRMLMarkupsJsonStorageNode* External;
-};
+#include <vtkMRMLMarkupsJsonStorageNode_Private.h>
 
 //---------------------------------------------------------------------------
 // vtkInternal methods
@@ -930,6 +903,22 @@ bool vtkMRMLMarkupsJsonStorageNode::CanReadInReferenceNode(vtkMRMLNode *refNode)
   return refNode->IsA("vtkMRMLMarkupsNode");
 }
 
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsJsonStorageNode::GetMarkupTypesInFile(const char* filePath, std::vector<std::string>& outputMarkupTypes)
+{
+  rapidjson::Document* jsonRoot = this->Internal->CreateJsonDocumentFromFile(filePath);
+  rapidjson::Value& markups = (*jsonRoot)["markups"];
+  if (markups.IsArray())
+    {
+    int numberOfMarkups = markups.GetArray().Size();
+    for (int markupIndex = 0; markupIndex < numberOfMarkups; ++markupIndex)
+      {
+      rapidjson::Value& markup = markups.GetArray()[markupIndex];
+      std::string markupsType = markup["type"].GetString();
+      outputMarkupTypes.push_back(markupsType);
+      }
+    }
+}
 
 //----------------------------------------------------------------------------
 vtkMRMLMarkupsNode* vtkMRMLMarkupsJsonStorageNode::AddNewMarkupsNodeFromFile(const char* filePath, const char* nodeName/*=nullptr*/, int markupIndex/*=0*/)

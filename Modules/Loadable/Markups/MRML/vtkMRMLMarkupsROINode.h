@@ -124,6 +124,9 @@ public:
   vtkGetMacro(ROIType, int);
   void SetROIType(int roiType);
 
+  const char* GetROITypeAsString(int roiType);
+  int GetROITypeFromString(const char* roiType);
+
   ///
   virtual void UpdateROIFromControlPoints();
   virtual void UpdateBoxROIFromControlPoints();
@@ -145,6 +148,7 @@ public:
 
     // Separate class
     /*CURVED_BOX,*/
+    ROI_TYPE_LAST
     };
 
   // Scale handle indexes
@@ -167,6 +171,7 @@ public:
     RPS_CORNER_POINT,
     };
 
+  //std::string Get
 
   /// Alternative method to propagate events generated in Display nodes
   void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;
@@ -176,7 +181,7 @@ public:
   void GetBoundsROI(double bounds[6]);
 
   /// Create default storage node or nullptr if does not have one
-  //vtkMRMLStorageNode* CreateDefaultStorageNode() override; // TODO: Add new storage node
+  vtkMRMLStorageNode* CreateDefaultStorageNode() override;
 
   vtkSetMacro(InsideOut, bool);
   vtkGetMacro(InsideOut, bool);

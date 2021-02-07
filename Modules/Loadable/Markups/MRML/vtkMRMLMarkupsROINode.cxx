@@ -23,6 +23,7 @@
 // MRML includes
 #include "vtkCurveGenerator.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
+#include <vtkMRMLMarkupsROIJsonStorageNode.h>
 #include "vtkMRMLScene.h"
 #include "vtkMRMLTransformNode.h"
 #include "vtkMRMLUnitNode.h"
@@ -109,6 +110,7 @@ void vtkMRMLMarkupsROINode::WriteXML(ostream& of, int nIndent)
   Superclass::WriteXML(of,nIndent);
 
   vtkMRMLWriteXMLBeginMacro(of);
+  vtkMRMLWriteXMLEnumMacro(roiType, ROIType);
   vtkMRMLWriteXMLEndMacro();
 }
 
@@ -120,6 +122,7 @@ void vtkMRMLMarkupsROINode::ReadXMLAttributes(const char** atts)
   this->Superclass::ReadXMLAttributes(atts);
 
   vtkMRMLReadXMLBeginMacro(atts);
+  vtkMRMLReadXMLEnumMacro(roiType, ROIType);
   vtkMRMLReadXMLEndMacro();
 }
 
@@ -140,6 +143,54 @@ void vtkMRMLMarkupsROINode::PrintSelf(ostream& os, vtkIndent indent)
 
   vtkMRMLPrintBeginMacro(os, indent);
   vtkMRMLPrintEndMacro();
+}
+
+//----------------------------------------------------------------------------
+vtkMRMLStorageNode* vtkMRMLMarkupsROINode::CreateDefaultStorageNode()
+{
+  vtkMRMLScene* scene = this->GetScene();
+  if (scene == nullptr)
+    {
+    vtkErrorMacro("CreateDefaultStorageNode failed: scene is invalid");
+    return nullptr;
+    }
+  return vtkMRMLStorageNode::SafeDownCast(
+    scene->CreateNodeByClass("vtkMRMLMarkupsROIJsonStorageNode"));
+}
+
+//----------------------------------------------------------------------------
+const char* vtkMRMLMarkupsROINode::GetROITypeAsString(int roiType)
+{
+  switch (roiType)
+    {
+    case BOX:
+      return "Box";
+    case BOUNDING_BOX:
+      return "BoundingBox";
+    default:
+      break;
+    }
+  return "";
+}
+
+//-----------------------------------------------------------
+int vtkMRMLMarkupsROINode::GetROITypeFromString(const char* name)
+{
+  if (name == nullptr)
+    {
+    // invalid name
+    return -1;
+    }
+  for (int i = 0; i < ROI_TYPE_LAST; i++)
+    {
+    if (strcmp(name, this->GetROITypeAsString(i)) == 0)
+      {
+      // found a matching name
+      return i;
+      }
+    }
+  // unknown name
+  return -1;
 }
 
 //----------------------------------------------------------------------------
@@ -208,7 +259,11 @@ void vtkMRMLMarkupsROINode::GetAxisLocal(int axisIndex, double axis_Local[3])
 
   double axis4_Local[4] = { 0.0, 0.0, 0.0, 0.0 };
   axis4_Local[axisIndex] = 1.0;
-  this->ROIToLocalMatrix->MultiplyPoint(axis4_Local, axis_Local);
+  this->ROIToLocalMatrix->MultiplyPoint(axis4_Local, axis4_Local);
+
+  axis_Local[0] = axis4_Local[0];
+  axis_Local[1] = axis4_Local[1];
+  axis_Local[2] = axis4_Local[2];
 }
 
 //---------------------------------------------------------------------------
