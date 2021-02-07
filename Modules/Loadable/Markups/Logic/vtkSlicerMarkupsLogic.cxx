@@ -28,6 +28,7 @@
 #include "vtkMRMLMarkupsFiducialNode.h"
 #include "vtkMRMLMarkupsFiducialStorageNode.h"
 #include "vtkMRMLMarkupsJsonStorageNode.h"
+#include "vtkMRMLMarkupsROIJsonStorageNode.h"
 #include "vtkMRMLMarkupsLineNode.h"
 #include "vtkMRMLMarkupsNode.h"
 #include "vtkMRMLMarkupsPlaneNode.h"
@@ -98,6 +99,7 @@ public:
 vtkSlicerMarkupsLogic::vtkSlicerMarkupsLogic()
 {
   this->AutoCreateDisplayNodes = true;
+  this->MarkupTypeStorageNodes["ROI"] = "vtkMRMLMarkupsROIJsonStorageNode";
 }
 
 //----------------------------------------------------------------------------
@@ -227,6 +229,7 @@ void vtkSlicerMarkupsLogic::RegisterNodes()
   scene->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsStorageNode>::New());
   scene->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsFiducialStorageNode>::New());
   scene->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsJsonStorageNode>::New());
+  scene->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsROIJsonStorageNode>::New());
 }
 
 //---------------------------------------------------------------------------
@@ -719,21 +722,46 @@ char* vtkSlicerMarkupsLogic::LoadMarkupsFromJson(const char* fileName, const cha
   vtkDebugMacro("LoadMarkups, file name = " << fileName << ", nodeName = " << (nodeName ? nodeName : "null"));
 
   // make a storage node and fiducial node and set the file name
-  vtkMRMLMarkupsJsonStorageNode* storageNode = vtkMRMLMarkupsJsonStorageNode::SafeDownCast(
+  vtkMRMLMarkupsJsonStorageNode* tempStorageNode = vtkMRMLMarkupsJsonStorageNode::SafeDownCast(
     this->GetMRMLScene()->AddNewNodeByClass("vtkMRMLMarkupsJsonStorageNode"));
-  if (!storageNode)
+  if (!tempStorageNode)
     {
     vtkErrorMacro("LoadMarkups: failed to instantiate markups storage node by class vtkMRMLMarkupsJsonStorageNode");
     return nullptr;
     }
 
-  vtkMRMLMarkupsNode* markupsNode = storageNode->AddNewMarkupsNodeFromFile(fileName, nodeName);
-  if (!markupsNode)
+  std::vector<std::string> markupTypes;
+  tempStorageNode->GetMarkupTypesInFile(fileName, markupTypes);
+  this->GetMRMLScene()->RemoveNode(tempStorageNode);
+
+  vtkMRMLMarkupsNode* importedMarkupsNode = nullptr;
+  for(int markupIndex = 0; markupIndex < markupTypes.size(); ++markupIndex)
+    {
+    std::string markupType = markupTypes[markupIndex];
+    vtkMRMLMarkupsJsonStorageNode* storageNode = this->AddNewStorageNodeForMarkupType(markupType);
+    if (!storageNode)
+      {
+      vtkErrorMacro("LoadMarkupsFromJson: Could not create storage node for markup type: " << markupType);
+      continue;
+      }
+
+    vtkMRMLMarkupsNode* markupsNode = storageNode->AddNewMarkupsNodeFromFile(fileName, nodeName, markupIndex);
+    if (!importedMarkupsNode)
+      {
+      importedMarkupsNode = markupsNode;
+      }
+    if (!markupsNode)
+      {
+      this->GetMRMLScene()->RemoveNode(storageNode);
+      }
+    }
+
+  if (!importedMarkupsNode)
     {
     return nullptr;
     }
 
-  return markupsNode->GetID();
+  return importedMarkupsNode->GetID();
 }
 
 //---------------------------------------------------------------------------
@@ -1473,4 +1501,28 @@ bool vtkSlicerMarkupsLogic::GetBestFitPlane(vtkMRMLMarkupsNode* curveNode, vtkPl
     return false;
     }
   return vtkAddonMathUtilities::FitPlaneToPoints(curvePointsWorld, plane);
+}
+
+//---------------------------------------------------------------------------
+void vtkSlicerMarkupsLogic::RegisterMarkupTypeStorageNode(std::string markupType, std::string storageNodeClassName)
+{
+  this->MarkupTypeStorageNodes[markupType] = storageNodeClassName;
+}
+
+//---------------------------------------------------------------------------
+std::string vtkSlicerMarkupsLogic::GetClassNameForMarkupType(std::string markupType)
+{
+  auto markupStorageNodeIt = this->MarkupTypeStorageNodes.find(markupType);
+  if (markupStorageNodeIt == this->MarkupTypeStorageNodes.end())
+    {
+    return "";
+    }
+  return markupStorageNodeIt->second;
+}
+
+
+//---------------------------------------------------------------------------
+vtkMRMLMarkupsJsonStorageNode* vtkSlicerMarkupsLogic::AddNewStorageNodeForMarkupType(std::string markupType)
+{
+  return vtkMRMLMarkupsJsonStorageNode::SafeDownCast(this->GetMRMLScene()->AddNewNodeByClass(this->GetClassNameForMarkupType(markupType)));
 }
