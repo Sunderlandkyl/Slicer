@@ -23,7 +23,6 @@
 #include "vtkMRMLMarkupsROIJsonStorageNode.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
 #include "vtkMRMLMarkupsROINode.h"
-#include "vtkMRMLMeasurementConstant.h"
 
 #include "vtkMRMLScene.h"
 #include "vtkSlicerVersionConfigure.h"
@@ -270,8 +269,6 @@ bool vtkMRMLMarkupsROIJsonStorageNode::vtkInternal2::UpdateMarkupsNodeFromJsonVa
 
   MRMLNodeModifyBlocker blocker(markupsNode);
 
-  vtkInternal::UpdateMarkupsNodeFromJsonValue(markupsNode, markupObject);
-
   vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(markupsNode);
 
   bool success = true;
@@ -283,12 +280,11 @@ bool vtkMRMLMarkupsROIJsonStorageNode::vtkInternal2::UpdateMarkupsNodeFromJsonVa
     roiNode->SetROIType(roiNode->GetROITypeFromString(roiType.c_str()));
     }
 
+  double origin_Local[3] = { 0.0, 0.0, 0.0 };
   if (markupObject.HasMember("origin"))
     {
     rapidjson::Value& originItem = markupObject["origin"];
-    double origin_Local[3] = { 0.0, 0.0, 0.0 };
     success &= this->ReadVector(originItem, origin_Local);
-    roiNode->SetOrigin(origin_Local);
     }
 
   if (markupObject.HasMember("sideLengths"))
@@ -323,13 +319,14 @@ bool vtkMRMLMarkupsROIJsonStorageNode::vtkInternal2::UpdateMarkupsNodeFromJsonVa
   vtkNew<vtkMatrix4x4> roiToLocalMatrix;
   for (int i = 0; i < 3; ++i)
     {
-    roiToLocalMatrix->SetElement(0, i, xAxis_Local[i]);
-    roiToLocalMatrix->SetElement(1, i, yAxis_Local[i]);
-    roiToLocalMatrix->SetElement(2, i, zAxis_Local[i]);
+    roiToLocalMatrix->SetElement(i, 0, xAxis_Local[i]);
+    roiToLocalMatrix->SetElement(i, 1, yAxis_Local[i]);
+    roiToLocalMatrix->SetElement(i, 2, zAxis_Local[i]);
+    roiToLocalMatrix->SetElement(i, 3, origin_Local[i]);
     }
   roiNode->GetROIToLocalMatrix()->DeepCopy(roiToLocalMatrix);
 
-  return success;
+  return vtkInternal::UpdateMarkupsNodeFromJsonValue(markupsNode, markupObject);;
 }
 
 //----------------------------------------------------------------------------
@@ -373,7 +370,7 @@ int vtkMRMLMarkupsROIJsonStorageNode::ReadDataInternal(vtkMRMLNode *refNode)
     }
 
   vtkMRMLMarkupsNode* markupsNode = vtkMRMLMarkupsNode::SafeDownCast(refNode);
-  bool success = this->Internal->UpdateMarkupsNodeFromJsonValue(markupsNode, markup);
+  bool success = ((vtkInternal2*)this->Internal)->UpdateMarkupsNodeFromJsonValue(markupsNode, markup);
 
   this->Modified();
   delete jsonRoot;

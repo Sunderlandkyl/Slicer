@@ -44,7 +44,7 @@ public:
 
   vtkMRMLNode* CreateNodeInstance() override;
 
-  vtkMRMLMarkupsNode* AddNewMarkupsNodeFromFile(const char* filePath, const char* nodeName = nullptr, int markupIndex = 0);
+  vtkMRMLMarkupsNode* AddNewMarkupsNodeFromFile(const char* filePath, const char* nodeName = nullptr, int markupIndex = 0) override;
 
   ///
   /// Get node XML tag name (like Storage, Model)
