@@ -100,7 +100,6 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     {
     // 3D view
     double eventPos_Display[2] = { 0. };
-
     eventPos_Display[0] = this->LastEventPosition[0];
     eventPos_Display[1] = this->LastEventPosition[1];
 
@@ -134,7 +133,7 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
     worldToROITransform->SetMatrix(worldToROIMatrix);
 
     int index = displayNode->GetActiveComponentIndex();
-    if (index < 6)
+    if (index < 6 && rep3d)
       {
       this->GetClosestPointOnInteractionAxis(
         vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, this->LastEventPosition, lastEventPos_World);
@@ -147,12 +146,19 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
 
     double scaleVector_World[3] = { 0.0, 0.0, 0.0 };
     vtkMath::Subtract(eventPos_World, lastEventPos_World, scaleVector_World);
+    if (index < 6 && rep2d)
+      {
+      double axis_World[3] = { 0.0, 0.0, 0.0 };
+      markupsNode->GetAxisWorld(index/2, axis_World);
+      vtkMath::ProjectVector(scaleVector_World, axis_World, axis_World);
+      }
 
     double scaleVector_ROI[3] = { 0.0, 0.0, 0.0 };
     worldToROITransform->TransformVector(scaleVector_World, scaleVector_ROI);
 
     double bounds_ROI[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
     markupsNode->GetBoundsROI(bounds_ROI);
+
     switch (index)
       {
       case vtkMRMLMarkupsROINode::L_FACE_POINT:
