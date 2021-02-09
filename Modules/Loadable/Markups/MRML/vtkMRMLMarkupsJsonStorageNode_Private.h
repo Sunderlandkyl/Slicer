@@ -15,21 +15,8 @@
 
 ==============================================================================*/
 
-//#include <vtkCodedEntry.h>
+// MRML includes
 #include "vtkMRMLMarkupsJsonStorageNode.h"
-//#include "vtkMRMLMarkupsDisplayNode.h"
-//#include "vtkMRMLMarkupsNode.h"
-//#include "vtkMRMLMeasurementConstant.h"
-
-//#include "vtkMRMLScene.h"
-//#include "vtkSlicerVersionConfigure.h"
-
-//#include "vtkDoubleArray.h"
-//#include "vtkObjectFactory.h"
-//#include "vtkStringArray.h"
-//#include <vtksys/SystemTools.hxx>
-
-//#include "itkNumberToString.h"
 
 // Relax JSON standard and allow reading/writing of nan and inf
 // values. Such values should not normally occur, but if they do then
@@ -63,10 +50,11 @@ public:
   bool ReadMeasurements(rapidjson::Value& item, vtkMRMLMarkupsNode* markupsNode);
 
   // Writer
-  bool WriteBasicProperties(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsNode* markupsNode);
-  bool WriteControlPoints(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsNode* markupsNode);
-  bool WriteMeasurements(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsNode* markupsNode);
-  bool WriteDisplayProperties(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsDisplayNode* markupsDisplayNode);
+  virtual bool WriteMarkup(rapidjson::PrettyWriter<rapidjson::FileWriteStream>& writer, vtkMRMLMarkupsNode* markupsNode);
+  virtual bool WriteBasicProperties(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsNode* markupsNode);
+  virtual bool WriteControlPoints(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsNode* markupsNode);
+  virtual bool WriteMeasurements(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsNode* markupsNode);
+  virtual bool WriteDisplayProperties(rapidjson::PrettyWriter<rapidjson::FileWriteStream> &writer, vtkMRMLMarkupsDisplayNode* markupsDisplayNode);
   void WriteVector(rapidjson::PrettyWriter<rapidjson::FileWriteStream>& writer, double* v, int numberOfComponents = 3);
 
 protected:

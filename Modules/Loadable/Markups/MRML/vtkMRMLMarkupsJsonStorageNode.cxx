@@ -596,6 +596,25 @@ bool vtkMRMLMarkupsJsonStorageNode::vtkInternal::UpdateMarkupsDisplayNodeFromJso
 }
 
 //----------------------------------------------------------------------------
+bool vtkMRMLMarkupsJsonStorageNode::vtkInternal::WriteMarkup(
+  rapidjson::PrettyWriter<rapidjson::FileWriteStream>& writer, vtkMRMLMarkupsNode* markupsNode)
+{
+  bool success = true;
+  success = success && this->WriteBasicProperties(writer, markupsNode);
+  success = success && this->WriteControlPoints(writer, markupsNode);
+  success = success && this->WriteMeasurements(writer, markupsNode);
+  if (success)
+    {
+    vtkMRMLMarkupsDisplayNode* displayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(markupsNode->GetDisplayNode());
+    if (displayNode)
+      {
+      success = success && this->WriteDisplayProperties(writer, displayNode);
+      }
+    }
+  return success;
+}
+
+//----------------------------------------------------------------------------
 bool vtkMRMLMarkupsJsonStorageNode::vtkInternal::WriteBasicProperties(
   rapidjson::PrettyWriter<rapidjson::FileWriteStream>& writer, vtkMRMLMarkupsNode* markupsNode)
 {
@@ -1102,7 +1121,6 @@ int vtkMRMLMarkupsJsonStorageNode::WriteDataInternal(vtkMRMLNode *refNode)
   rapidjson::FileWriteStream os(fp, writeBuffer, sizeof(writeBuffer));
   rapidjson::PrettyWriter<rapidjson::FileWriteStream> writer(os);
 
-  bool success = true;
   writer.StartObject();
   writer.Key("@schema"); writer.String(MARKUPS_SCHEMA.c_str());
 
@@ -1110,17 +1128,7 @@ int vtkMRMLMarkupsJsonStorageNode::WriteDataInternal(vtkMRMLNode *refNode)
   writer.StartArray();
 
   writer.StartObject();
-  success = success && this->Internal->WriteBasicProperties(writer, markupsNode);
-  success = success && this->Internal->WriteControlPoints(writer, markupsNode);
-  success = success && this->Internal->WriteMeasurements(writer, markupsNode);
-  if (success)
-    {
-    vtkMRMLMarkupsDisplayNode* displayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(markupsNode->GetDisplayNode());
-    if (displayNode)
-      {
-      success = success && this->Internal->WriteDisplayProperties(writer, displayNode);
-      }
-    }
+  bool success = this->Internal->WriteMarkup(writer, markupsNode);
   writer.EndObject();
 
   writer.EndArray();

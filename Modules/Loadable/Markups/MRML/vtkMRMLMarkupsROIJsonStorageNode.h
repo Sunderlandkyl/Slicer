@@ -40,24 +40,12 @@ class VTK_SLICER_MARKUPS_MODULE_MRML_EXPORT vtkMRMLMarkupsROIJsonStorageNode : p
 public:
   static vtkMRMLMarkupsROIJsonStorageNode* New();
   vtkTypeMacro(vtkMRMLMarkupsROIJsonStorageNode, vtkMRMLMarkupsJsonStorageNode);
-  void PrintSelf(ostream& os, vtkIndent indent) override;
 
   vtkMRMLNode* CreateNodeInstance() override;
-
-  vtkMRMLMarkupsNode* AddNewMarkupsNodeFromFile(const char* filePath, const char* nodeName = nullptr, int markupIndex = 0) override;
 
   ///
   /// Get node XML tag name (like Storage, Model)
   const char* GetNodeTagName() override { return "MarkupsROIJsonStorage"; };
-
-  /// Read node attributes from XML file
-  void ReadXMLAttributes(const char** atts) override;
-
-  /// Write this node's information to a MRML file in XML format.
-  void WriteXML(ostream& of, int indent) override;
-
-  /// Copy the node's attributes to this object
-  void Copy(vtkMRMLNode* node) override;
 
   bool CanReadInReferenceNode(vtkMRMLNode* refNode) override;
 
@@ -67,21 +55,8 @@ protected:
   vtkMRMLMarkupsROIJsonStorageNode(const vtkMRMLMarkupsROIJsonStorageNode&);
   void operator=(const vtkMRMLMarkupsROIJsonStorageNode&);
 
-  /// Initialize all the supported write file types
-  void InitializeSupportedReadFileTypes() override;
-
-  /// Initialize all the supported write file types
-  void InitializeSupportedWriteFileTypes() override;
-
-  /// Read data and set it in the referenced node
-  int ReadDataInternal(vtkMRMLNode *refNode) override;
-
-  /// Write data from a  referenced node.
-  int WriteDataInternal(vtkMRMLNode *refNode) override;
-
-  class vtkInternal2;
-  friend class vtkInternal2;
-  vtkInternal2* Internal;
+  class vtkInternalROI;
+  friend class vtkInternalROI;
 };
 
 #endif

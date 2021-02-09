@@ -75,14 +75,8 @@ vtkMRMLMarkupsROINode::vtkMRMLMarkupsROINode()
 {
   this->PropertiesLabelText = "";
 
-  //this->ROIType = BOX;
-  //this->RequiredNumberOfControlPoints = NUMBER_OF_BOX_CONTROL_POINTS;
-
-  this->ROIType = BOUNDING_BOX;
-  this->RequiredNumberOfControlPoints = NUMBER_OF_BOUNDING_BOX_CONTROL_POINTS;
-
-  //this->ROIType = SPHERE;
-  //this->RequiredNumberOfControlPoints = NUMBER_OF_SPHERE_CONTROL_POINTS;
+  this->ROIType = BOX;
+  this->RequiredNumberOfControlPoints = NUMBER_OF_BOX_CONTROL_POINTS;
 
   this->SideLengths[0] = 0.0;
   this->SideLengths[1] = 0.0;
