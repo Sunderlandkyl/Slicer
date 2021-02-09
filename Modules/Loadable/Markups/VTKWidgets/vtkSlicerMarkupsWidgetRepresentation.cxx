@@ -1100,10 +1100,10 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::CreateSca
   this->AxisScaleGlypher->SetIndexModeToScalar();
   this->AxisScaleGlypher->SetColorModeToColorByScalar();
 
-  vtkNew<vtkPoints> points;
-  points->InsertNextPoint(1.5, 0.0, 0.0); // X-axis
-  points->InsertNextPoint(0.0, 1.5, 0.0); // Y-axis
-  points->InsertNextPoint(0.0, 0.0, 1.5); // Z-axis
+  vtkNew<vtkPoints> points; // Currently not enabled
+  //points->InsertNextPoint(1.5, 0.0, 0.0); // X-axis
+  //points->InsertNextPoint(0.0, 1.5, 0.0); // Y-axis
+  //points->InsertNextPoint(0.0, 0.0, 1.5); // Z-axis
   this->ScaleHandlePoints->SetPoints(points);
 
   vtkNew<vtkIdTypeArray> visibilityArray;
