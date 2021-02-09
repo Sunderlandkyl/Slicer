@@ -768,7 +768,7 @@ void vtkSlicerVolumeRenderingLogic::FitROIToVolume(vtkMRMLVolumeRenderingDisplay
   vtkMRMLScalarVolumeNode *volumeNode = vtkMRMLScalarVolumeNode::SafeDownCast(vspNode->GetVolumeNode());
 
   if (volumeNode && roiNode)
-  {
+    {
     int disabledModify = roiNode->StartModify();
 
     double xyz[3] = {0.0};
@@ -776,15 +776,16 @@ void vtkSlicerVolumeRenderingLogic::FitROIToVolume(vtkMRMLVolumeRenderingDisplay
 
     vtkMRMLSliceLogic::GetVolumeRASBox(volumeNode, xyz, center);
     for (int i = 0; i < 3; i++)
-    {
+      {
       xyz[i] *= 0.5;
-    }
+      }
 
+    roiNode->GetROIToLocalMatrix()->Identity();
     roiNode->SetXYZ(center);
     roiNode->SetRadiusXYZ(xyz);
 
     roiNode->EndModify(disabledModify);
-  }
+    }
 }
 
 //----------------------------------------------------------------------------
