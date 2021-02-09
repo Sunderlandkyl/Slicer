@@ -171,7 +171,7 @@ public:
     RPS_CORNER_POINT,
     };
 
-  //std::string Get
+  void OnTransformNodeReferenceChanged(vtkMRMLTransformNode* transformNode) override;
 
   /// Alternative method to propagate events generated in Display nodes
   void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;

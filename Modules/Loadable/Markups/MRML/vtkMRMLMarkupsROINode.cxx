@@ -21,45 +21,23 @@
 #include "vtkMRMLMarkupsROINode.h"
 
 // MRML includes
-#include "vtkCurveGenerator.h"
-#include "vtkMRMLMarkupsDisplayNode.h"
 #include <vtkMRMLMarkupsROIJsonStorageNode.h>
 #include "vtkMRMLScene.h"
 #include "vtkMRMLTransformNode.h"
-#include "vtkMRMLUnitNode.h"
-#include "vtkSlicerDijkstraGraphGeodesicPath.h"
 
 // VTK includes
-#include <vtkArrayCalculator.h>
-#include <vtkBoundingBox.h>
 #include <vtkCallbackCommand.h>
-#include <vtkCellLocator.h>
-#include <vtkCleanPolyData.h>
 #include <vtkCommand.h>
-#include <vtkCutter.h>
 #include <vtkDoubleArray.h>
-#include <vtkFrenetSerretFrame.h>
 #include <vtkGeneralTransform.h>
-#include <vtkGenericCell.h>
-#include <vtkLine.h>
 #include <vtkMatrix4x4.h>
 #include <vtkNew.h>
-#include <vtkOBBTree.h>
-#include <vtkObjectFactory.h>
-#include <vtkPassThroughFilter.h>
 #include <vtkPlane.h>
 #include <vtkPlanes.h>
 #include <vtkPointData.h>
-#include <vtkPointLocator.h>
 #include <vtkPolyData.h>
-#include <vtkPolyDataNormals.h>
-#include <vtkStringArray.h>
 #include <vtkTransform.h>
 #include <vtkTransformPolyDataFilter.h>
-#include <vtkTriangleFilter.h>
-
-// STD includes
-#include <sstream>
 
 // vtkAddon includes
 #include <vtkAddonMathUtilities.h>
@@ -258,6 +236,13 @@ void vtkMRMLMarkupsROINode::GetAxisLocal(int axisIndex, double axis_Local[3])
   axis_Local[0] = axis4_Local[0];
   axis_Local[1] = axis4_Local[1];
   axis_Local[2] = axis4_Local[2];
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsROINode::OnTransformNodeReferenceChanged(vtkMRMLTransformNode* transformNode)
+{
+  Superclass::OnTransformNodeReferenceChanged(transformNode);
+  this->UpdateInteractionHandleToWorldMatrix();
 }
 
 //---------------------------------------------------------------------------
