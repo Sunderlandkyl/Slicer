@@ -134,6 +134,8 @@ vtkMRMLMarkupsCurveNode::vtkMRMLMarkupsCurveNode()
   this->CurvatureMeasurementModifiedCallbackCommand->SetCallback( vtkMRMLMarkupsCurveNode::OnCurvatureMeasurementModified );
   curvatureMeanMeasurement->AddObserver(vtkCommand::ModifiedEvent, this->CurvatureMeasurementModifiedCallbackCommand);
   curvatureMaxMeasurement->AddObserver(vtkCommand::ModifiedEvent, this->CurvatureMeasurementModifiedCallbackCommand);
+
+  this->AddObserver(vtkMRMLTransformableNode::TransformModifiedEvent, this->MRMLCallbackCommand);
 }
 
 //----------------------------------------------------------------------------
@@ -1259,7 +1261,7 @@ void vtkMRMLMarkupsCurveNode::OnNodeReferenceRemoved(vtkMRMLNodeReference* refer
 {
   if (strcmp(reference->GetReferenceRole(), this->GetShortestDistanceSurfaceNodeReferenceRole()) == 0)
     {
-    this->OnSurfaceModelNodeChanged();
+    this->OnSurfaceModelTransformChanged();
     }
   Superclass::OnNodeReferenceRemoved(reference);
 }
