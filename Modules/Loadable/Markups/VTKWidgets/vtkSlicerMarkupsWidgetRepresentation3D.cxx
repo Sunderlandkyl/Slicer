@@ -32,7 +32,7 @@
 #include "vtkProperty.h"
 #include "vtkRenderer.h"
 #include "vtkRenderWindow.h"
-#include "vtkSelectVisiblePoints.h"
+#include "vtkFastSelectVisiblePoints.h"
 #include "vtkSlicerMarkupsWidgetRepresentation3D.h"
 #include "vtkSphereSource.h"
 #include "vtkStringArray.h"
@@ -45,6 +45,9 @@
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
 #include <vtkMRMLViewNode.h>
+
+std::map<vtkRenderer*, vtkSmartPointer<vtkFastSelectVisiblePoints>>
+vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::SelectVisiblePointsMap;
 
 vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::ControlPointsPipeline3D()
 {
@@ -98,17 +101,12 @@ vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::ControlPointsPi
   this->ControlPointIndices->SetValue(0, 0);
   this->LabelControlPointsPolyData->GetPointData()->AddArray(this->ControlPointIndices);
 
-  this->SelectVisiblePoints = vtkSmartPointer<vtkSelectVisiblePoints>::New();
-  this->SelectVisiblePoints->SetInputData(this->LabelControlPointsPolyData);
-  // Set tiny tolerance to account for updated the z-buffer computation and coincident topology
-  // resolution strategy integrated in VTK9. World tolerance based on control point size is set
-  // later.
-  this->SelectVisiblePoints->SetTolerance(1e-4);
-  this->SelectVisiblePoints->SetOutput(vtkNew<vtkPolyData>());
+
+  this->VisiblePointsPolyData = vtkSmartPointer<vtkPolyData>::New();
 
   // The SelectVisiblePoints filter should not be added to any pipeline with SetInputConnection.
   // Updates to SelectVisiblePoints must only happen at the start of the RenderOverlay function.
-  this->PointSetToLabelHierarchyFilter->SetInputData(this->SelectVisiblePoints->GetOutput());
+  this->PointSetToLabelHierarchyFilter->SetInputData(this->VisiblePointsPolyData);
 
   this->OccludedPointSetToLabelHierarchyFilter = vtkSmartPointer<vtkPointSetToLabelHierarchy>::New();
   this->OccludedPointSetToLabelHierarchyFilter->SetTextProperty(this->OccludedTextProperty);
@@ -164,6 +162,8 @@ vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::ControlPointsPi
 
 vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::~ControlPointsPipeline3D() = default;
 
+#include <vtkCallbackCommand.h>
+
 //----------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation3D::vtkSlicerMarkupsWidgetRepresentation3D()
 {
@@ -200,6 +200,10 @@ vtkSlicerMarkupsWidgetRepresentation3D::vtkSlicerMarkupsWidgetRepresentation3D()
   // while still providing enough leeway to ensure that occluded actors are rendered correctly relative to themselves
   // and to other occluded actors.
   this->OccludedRelativeOffset = -25000;
+
+  this->RenderCallback = vtkSmartPointer<vtkCallbackCommand>::New();
+  this->RenderCallback->SetClientData(this);
+  this->RenderCallback->SetCallback(vtkSlicerMarkupsWidgetRepresentation3D::OnRender);
 }
 
 //----------------------------------------------------------------------
@@ -436,12 +440,12 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteract(
         continue;
         }
       ControlPointsPipeline3D* controlPoints = this->GetControlPointsPipeline(controlPointType);
-      vtkPolyData* visiblePointsPoly = controlPoints->SelectVisiblePoints->GetOutput();
-      if (!visiblePointsPoly || !visiblePointsPoly->GetPointData())
+      if (!controlPoints->VisiblePointsPolyData->GetPointData())
         {
         continue;
         }
-      vtkIdTypeArray* visiblePointIndices = vtkIdTypeArray::SafeDownCast(visiblePointsPoly->GetPointData()->GetAbstractArray("controlPointIndices"));
+      vtkIdTypeArray* visiblePointIndices = vtkIdTypeArray::SafeDownCast(
+        controlPoints->VisiblePointsPolyData->GetPointData()->GetAbstractArray("controlPointIndices"));
       if (!visiblePointIndices)
         {
         continue;
@@ -805,7 +809,15 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOverlay(vtkViewport *viewport)
   for (int i = 0; i < NumberOfControlPointTypes; i++)
     {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
-    controlPoints->SelectVisiblePoints->Update();
+
+    if (!this->MarkupsDisplayNode->GetOccludedVisibility())
+      {
+      controlPoints->UpdateVisiblePoints(this->Renderer, this->ControlPointSize);
+      }
+    else
+      {
+      controlPoints->VisiblePointsPolyData->DeepCopy(controlPoints->LabelControlPointsPolyData);
+      }
 
     if (controlPoints->Actor->GetVisibility())
       {
@@ -980,7 +992,6 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOpaqueGeometry(
         {
         controlPoints->GlyphMapper->SetScaleFactor(this->ControlPointSize);
         controlPoints->OccludedGlyphMapper->SetScaleFactor(this->ControlPointSize);
-        controlPoints->SelectVisiblePoints->SetToleranceWorld(this->ControlPointSize * 0.7);
         }
       count += controlPoints->Actor->RenderOpaqueGeometry(viewport);
       }
@@ -1133,6 +1144,49 @@ void vtkSlicerMarkupsWidgetRepresentation3D::PrintSelf(ostream& os,
     }
 }
 
+//---------------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation3D::OnRender(vtkObject* caller, unsigned long event, void* clientData, void* callData)
+{
+  vtkRenderer* renderer = vtkRenderer::SafeDownCast(caller);
+  if (renderer)
+    {
+    vtkFastSelectVisiblePoints* fastVisiblePoints = vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::SelectVisiblePointsMap[renderer];
+    if (fastVisiblePoints)
+      {
+      fastVisiblePoints->ResetZBuffer();
+      }
+    }
+}
+
+//-----------------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::UpdateVisiblePoints(
+  vtkRenderer* renderer, double controlPointSize)
+{
+  vtkFastSelectVisiblePoints* visiblePoints = nullptr;
+  auto selectPointsIt = this->SelectVisiblePointsMap.find(renderer);
+  if (selectPointsIt != this->SelectVisiblePointsMap.end())
+    {
+    visiblePoints = selectPointsIt->second;
+    }
+
+  if (!visiblePoints)
+    {
+    this->SelectVisiblePointsMap[renderer] = vtkSmartPointer<vtkFastSelectVisiblePoints>::New();;
+    visiblePoints = this->SelectVisiblePointsMap[renderer];
+    visiblePoints->SetRenderer(renderer);
+    }
+
+  if (!visiblePoints->ZBufferSet())
+    {
+    visiblePoints->UpdateZBuffer();
+    }
+
+  visiblePoints->SetInputData(this->LabelControlPointsPolyData);
+  visiblePoints->SetToleranceWorld(controlPointSize * 0.7);
+  visiblePoints->SetOutput(this->VisiblePointsPolyData);
+  visiblePoints->Update();
+}
+
 //-----------------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D* vtkSlicerMarkupsWidgetRepresentation3D::GetControlPointsPipeline(int controlPointType)
 {
@@ -1147,11 +1201,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::SetRenderer(vtkRenderer *ren)
     return;
     }
   Superclass::SetRenderer(ren);
-  for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
-    {
-    ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[controlPointType]);
-    controlPoints->SelectVisiblePoints->SetRenderer(ren);
-    }
+  this->Renderer->AddObserver(vtkCommand::EndEvent, this->RenderCallback);
 }
 
 //---------------------------------------------------------------------------
@@ -1280,11 +1330,6 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateControlPointSize()
     {
     this->ControlPointSize = this->MarkupsDisplayNode->GetGlyphSize();
     }
-  for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
-    {
-    ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[controlPointType]);
-    controlPoints->SelectVisiblePoints->SetToleranceWorld(this->ControlPointSize * 0.7);
-    }
 }
 
 //----------------------------------------------------------------------
@@ -1308,12 +1353,12 @@ bool vtkSlicerMarkupsWidgetRepresentation3D::GetNthControlPointViewVisibility(in
       continue;
       }
     ControlPointsPipeline3D* controlPoints = this->GetControlPointsPipeline(controlPointType);
-    vtkPolyData* visiblePointsPoly = controlPoints->SelectVisiblePoints->GetOutput();
-    if (!visiblePointsPoly || !visiblePointsPoly->GetPointData())
+    if (!controlPoints->VisiblePointsPolyData->GetPointData())
       {
       continue;
       }
-    vtkIdTypeArray* visiblePointIndices = vtkIdTypeArray::SafeDownCast(visiblePointsPoly->GetPointData()->GetAbstractArray("controlPointIndices"));
+    vtkIdTypeArray* visiblePointIndices = vtkIdTypeArray::SafeDownCast(
+      controlPoints->VisiblePointsPolyData->GetPointData()->GetAbstractArray("controlPointIndices"));
     if (!visiblePointIndices)
       {
       continue;

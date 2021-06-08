@@ -30,14 +30,17 @@
 #include "vtkSlicerMarkupsModuleVTKWidgetsExport.h"
 #include "vtkSlicerMarkupsWidgetRepresentation.h"
 
+#include <map>
+
 class vtkActor;
 class vtkActor2D;
 class vtkCellPicker;
 class vtkGlyph3DMapper;
 class vtkLabelPlacementMapper;
+class vtkPassThroughFilter;
 class vtkPolyDataMapper;
 class vtkProperty;
-class vtkSelectVisiblePoints;
+class vtkFastSelectVisiblePoints;
 
 class vtkMRMLInteractionEventData;
 
@@ -118,11 +121,15 @@ protected:
     vtkSmartPointer<vtkProperty>     OccludedProperty;
     vtkSmartPointer<vtkTextProperty> OccludedTextProperty;
 
-    vtkSmartPointer<vtkSelectVisiblePoints>      SelectVisiblePoints;
+    vtkSmartPointer<vtkPolyData> VisiblePointsPolyData;
+    static std::map<vtkRenderer*, vtkSmartPointer<vtkFastSelectVisiblePoints>> SelectVisiblePointsMap;
+    void UpdateVisiblePoints(vtkRenderer* renderer, double controlPointSize);
 
     vtkSmartPointer<vtkDoubleArray>              CameraDirectionArray;
     vtkSmartPointer<vtkIdTypeArray>              ControlPointIndices;  // store original ID to determine which control point is actually visible
     vtkSmartPointer<vtkPointSetToLabelHierarchy> OccludedPointSetToLabelHierarchyFilter;
+
+    vtkSmartPointer<vtkPassThroughFilter> LabelPassThrough;
 
     vtkSmartPointer<vtkGlyph3DMapper>        OccludedGlyphMapper;
     vtkSmartPointer<vtkLabelPlacementMapper> LabelsMapper;
@@ -157,6 +164,9 @@ protected:
   bool TextActorOccluded;
   bool HideTextActorIfAllPointsOccluded;
   double OccludedRelativeOffset;
+
+  vtkSmartPointer<vtkCallbackCommand> RenderCallback;
+  static void OnRender(vtkObject* caller, unsigned long event, void* clientData, void* callData);
 
 private:
   vtkSlicerMarkupsWidgetRepresentation3D(const vtkSlicerMarkupsWidgetRepresentation3D&) = delete;
