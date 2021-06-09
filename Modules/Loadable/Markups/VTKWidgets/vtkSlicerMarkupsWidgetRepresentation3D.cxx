@@ -41,6 +41,8 @@
 #include "vtkTransform.h"
 #include "vtkTransformPolyDataFilter.h"
 
+#include <vtkThresholdPoints.h>
+
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
@@ -51,11 +53,18 @@
 bool vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::VisiblePointCalculated = false;
 vtkSmartPointer<vtkAppendPolyData> vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::VisiblePointAppend =
   vtkSmartPointer<vtkAppendPolyData>::New();
+
+vtkSmartPointer<vtkThresholdPoints> vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::PipelineThreshold =
+  vtkSmartPointer<vtkThresholdPoints>::New();
 std::map<vtkRenderer*, vtkSmartPointer<vtkSelectVisiblePoints>>
 vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::SelectVisiblePointsMap;
+static std::set<int> PipelineIndex;
 
 vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::ControlPointsPipeline3D()
 {
+  this->Index = PipelineIndex.size();
+  PipelineIndex.insert(this->Index);
+
   this->CameraDirectionArray = vtkSmartPointer<vtkDoubleArray>::New();
   this->CameraDirectionArray->SetName("direction");
   this->CameraDirectionArray->SetNumberOfComponents(4);
@@ -106,11 +115,9 @@ vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::ControlPointsPi
   this->ControlPointIndices->SetValue(0, 0);
   this->LabelControlPointsPolyData->GetPointData()->AddArray(this->ControlPointIndices);
 
-  this->NodeIDArray = vtkSmartPointer<vtkStringArray>::New();
+  this->NodeIDArray = vtkSmartPointer<vtkIdTypeArray>::New();
   this->NodeIDArray->SetName("nodeId");
-  this->NodeIDArray->Allocate(100);
   this->NodeIDArray->SetNumberOfValues(1);
-  this->NodeIDArray->SetValue(0, 0);
   this->LabelControlPointsPolyData->GetPointData()->AddArray(this->NodeIDArray);
 
   this->VisiblePointsPolyData = vtkSmartPointer<vtkPolyData>::New();
@@ -184,6 +191,7 @@ vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::ControlPointsPi
 vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::~ControlPointsPipeline3D()
 {
   this->VisiblePointAppend->RemoveInputData(this->LabelControlPointsPolyData);
+  PipelineIndex.erase(this->Index);
 }
 
 #include <vtkCallbackCommand.h>
@@ -329,7 +337,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
       controlPoints->Labels->InsertNextValue(markupsNode->GetNthControlPointLabel(pointIndex));
       controlPoints->LabelsPriority->InsertNextValue(std::to_string(pointIndex));
       controlPoints->ControlPointIndices->InsertNextValue(pointIndex);
-      controlPoints->NodeIDArray->InsertNextValue(markupsNode->GetID());
+      controlPoints->NodeIDArray->InsertNextValue(controlPoints->Index);
       }
 
     if (controlPoints->ControlPointIndices->GetNumberOfValues() > 0)
@@ -836,15 +844,14 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOverlay(vtkViewport *viewport)
     {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
 
-    if (!this->MarkupsDisplayNode->GetOccludedVisibility() && false)
-    {
+    if (!this->MarkupsDisplayNode->GetOccludedVisibility())
+      {
       controlPoints->UpdateVisiblePoints(this->Renderer, this->ControlPointSize, this->MarkupsNode);
-    }
+      }
     else
-    {
+      {
       controlPoints->VisiblePointsPolyData->DeepCopy(controlPoints->LabelControlPointsPolyData);
-    }
-
+      }
 
     if (controlPoints->Actor->GetVisibility())
       {
@@ -1182,6 +1189,8 @@ void vtkSlicerMarkupsWidgetRepresentation3D::OnRender(vtkObject* caller, unsigne
 #include <vtkSelectionNode.h>
 #include <vtkSelection.h>
 #include <vtkSelectionSource.h>
+#include <vtkExtractSelectedPolyDataIds.h>
+#include <vtkExtractSelectedThresholds.h>
 
 //-----------------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::UpdateVisiblePoints(
@@ -1199,6 +1208,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::UpdateVisi
     this->SelectVisiblePointsMap[renderer] = vtkSmartPointer<vtkSelectVisiblePoints>::New();;
     visiblePoints = this->SelectVisiblePointsMap[renderer];
     visiblePoints->SetRenderer(renderer);
+    this->VisiblePointCalculated = false;
     }
 
   if (!this->VisiblePointCalculated)
@@ -1209,38 +1219,16 @@ void vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::UpdateVisi
     this->VisiblePointCalculated = true;
     }
 
-  //vtkNew<vtkPoints> newPoints;
-  //std::vector<vtkSmartPointer<vtkAbstractArray>> arrays;
-  //for (int i = 0; i < visiblePoints->GetOutput()->GetPointData()->GetNumberOfArrays(); ++i)
-  //  {
-  //  vtkAbstractArray* oldArray = visiblePoints->GetOutput()->GetPointData()->GetArray(i);
-  //  vtkSmartPointer<vtkAbstractArray> newArray = vtkSmartPointer<vtkAbstractArray>::Take(oldArray->NewInstance());
-  //  newArray->SetName(oldArray->GetName());
-  //  arrays.push_back(newArray);
-  //  }
-
-  vtkNew<vtkSelectionSource> selectionSource;
-  selectionSource->SetContentType(vtkSelectionNode::VALUES);
-  selectionSource->SetFieldType(vtkSelectionNode::POINT);
-  selectionSource->SetArrayName("nodeId");
-  selectionSource->AddStringID(0, markupsNode->GetID());
-
-  vtkNew<vtkExtractSelection> extract;
-  extract->SetSelectionConnection(selectionSource->GetOutputPort());
-  extract->SetInputConnection(visiblePoints->GetOutputPort());
-  extract->Update();
-  this->VisiblePointsPolyData->DeepCopy(extract->GetOutput());
-
-
-  //for (int i = 0; i < visiblePoints->GetOutput()->GetNumberOfPoints(); ++i)
-  //  {
-  //  vtkStringArray* nodeIds = vtkStringArray::SafeDownCast(VisiblePointAppend->GetOutput()->GetPointData()->GetAbstractArray("nodeId"));
-  //  if (nodeIds && nodeIds->GetValue(i).compare(markupsNode->GetID()) == 0)
-  //    {
-  //    newPoints->InsertNextPoint(visiblePoints->GetOutput()->GetPoint(i));
-  //    }
-  //  }
-  /*this->VisiblePointsPolyData->SetPoints(newPoints);*/
+  this->PipelineThreshold->SetInputData(visiblePoints->GetOutput());
+  this->PipelineThreshold->ThresholdBetween(this->Index, this->Index);
+  this->PipelineThreshold->SetInputArrayToProcess(
+    0,
+    0,
+    vtkDataObject::FIELD_ASSOCIATION_POINTS,
+    vtkDataSetAttributes::SCALARS,
+    "nodeId");
+  this->PipelineThreshold->SetOutput(this->VisiblePointsPolyData);
+  this->PipelineThreshold->Update();
 }
 
 //-----------------------------------------------------------------------------

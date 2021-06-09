@@ -42,6 +42,7 @@ class vtkProperty;
 class vtkSelectVisiblePoints;
 
 class vtkGlyph3DMapper;
+class vtkThresholdPoints;
 
 class vtkMRMLInteractionEventData;
 
@@ -118,6 +119,8 @@ protected:
     ControlPointsPipeline3D();
     ~ControlPointsPipeline3D() override;
 
+    int Index;
+
     vtkSmartPointer<vtkGlyph3DMapper> GlyphMapper;
 
     // Properties used to control the appearance of selected objects and
@@ -126,7 +129,7 @@ protected:
     vtkSmartPointer<vtkProperty>     OccludedProperty;
     vtkSmartPointer<vtkTextProperty> OccludedTextProperty;
 
-    vtkSmartPointer<vtkStringArray> NodeIDArray;
+    vtkSmartPointer<vtkIdTypeArray> NodeIDArray;
     vtkSmartPointer<vtkPolyData> VisiblePointsPolyData;
     static bool VisiblePointCalculated;
     static vtkSmartPointer<vtkAppendPolyData> VisiblePointAppend;
@@ -135,13 +138,14 @@ protected:
 
     vtkSmartPointer<vtkDoubleArray>              CameraDirectionArray;
 
-    vtkSmartPointer<vtkDoubleArray>              CameraDirectionArray;
     vtkSmartPointer<vtkIdTypeArray>              ControlPointIndices;  // store original ID to determine which control point is actually visible
     vtkSmartPointer<vtkPointSetToLabelHierarchy> OccludedPointSetToLabelHierarchyFilter;
 
     vtkSmartPointer<vtkGlyph3DMapper>        OccludedGlyphMapper;
     vtkSmartPointer<vtkLabelPlacementMapper> LabelsMapper;
     vtkSmartPointer<vtkLabelPlacementMapper> LabelsOccludedMapper;
+
+    static vtkSmartPointer<vtkThresholdPoints> PipelineThreshold;
 
     vtkSmartPointer<vtkActor>   Actor;
     vtkSmartPointer<vtkActor>   OccludedActor;
