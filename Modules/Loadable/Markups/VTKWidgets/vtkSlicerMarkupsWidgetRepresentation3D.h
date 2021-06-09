@@ -39,7 +39,7 @@ class vtkGlyph3DMapper;
 class vtkLabelPlacementMapper;
 class vtkPolyDataMapper;
 class vtkProperty;
-class vtkSelectVisiblePoints;
+class vtkFastSelectVisiblePoints;
 
 class vtkGlyph3DMapper;
 class vtkThresholdPoints;
@@ -131,9 +131,7 @@ protected:
 
     vtkSmartPointer<vtkIdTypeArray> NodeIDArray;
     vtkSmartPointer<vtkPolyData> VisiblePointsPolyData;
-    static bool VisiblePointCalculated;
-    static vtkSmartPointer<vtkAppendPolyData> VisiblePointAppend;
-    static std::map<vtkRenderer*, vtkSmartPointer<vtkSelectVisiblePoints>> SelectVisiblePointsMap;
+    static std::map<vtkRenderer*, vtkSmartPointer<vtkFastSelectVisiblePoints>> SelectVisiblePointsMap;
     void UpdateVisiblePoints(vtkRenderer* renderer, double controlPointSize, vtkMRMLMarkupsNode* markupsNode);
 
     vtkSmartPointer<vtkDoubleArray>              CameraDirectionArray;
@@ -144,8 +142,6 @@ protected:
     vtkSmartPointer<vtkGlyph3DMapper>        OccludedGlyphMapper;
     vtkSmartPointer<vtkLabelPlacementMapper> LabelsMapper;
     vtkSmartPointer<vtkLabelPlacementMapper> LabelsOccludedMapper;
-
-    static vtkSmartPointer<vtkThresholdPoints> PipelineThreshold;
 
     vtkSmartPointer<vtkActor>   Actor;
     vtkSmartPointer<vtkActor>   OccludedActor;
