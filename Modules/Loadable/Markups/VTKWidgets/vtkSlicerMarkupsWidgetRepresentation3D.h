@@ -37,7 +37,6 @@ class vtkActor2D;
 class vtkCellPicker;
 class vtkGlyph3DMapper;
 class vtkLabelPlacementMapper;
-class vtkPassThroughFilter;
 class vtkPolyDataMapper;
 class vtkProperty;
 class vtkFastSelectVisiblePoints;
@@ -122,14 +121,12 @@ protected:
     vtkSmartPointer<vtkTextProperty> OccludedTextProperty;
 
     vtkSmartPointer<vtkPolyData> VisiblePointsPolyData;
-    static std::map<vtkRenderer*, vtkSmartPointer<vtkFastSelectVisiblePoints>> SelectVisiblePointsMap;
-    void UpdateVisiblePoints(vtkRenderer* renderer, double controlPointSize);
+
+    vtkSmartPointer<vtkFastSelectVisiblePoints>      SelectVisiblePoints;
 
     vtkSmartPointer<vtkDoubleArray>              CameraDirectionArray;
     vtkSmartPointer<vtkIdTypeArray>              ControlPointIndices;  // store original ID to determine which control point is actually visible
     vtkSmartPointer<vtkPointSetToLabelHierarchy> OccludedPointSetToLabelHierarchyFilter;
-
-    vtkSmartPointer<vtkPassThroughFilter> LabelPassThrough;
 
     vtkSmartPointer<vtkGlyph3DMapper>        OccludedGlyphMapper;
     vtkSmartPointer<vtkLabelPlacementMapper> LabelsMapper;
@@ -165,8 +162,11 @@ protected:
   bool HideTextActorIfAllPointsOccluded;
   double OccludedRelativeOffset;
 
+  static std::map<vtkRenderer*, vtkSmartPointer<vtkFloatArray> > SelectVisiblePointsZBuffers;
+
   vtkSmartPointer<vtkCallbackCommand> RenderCallback;
   static void OnRender(vtkObject* caller, unsigned long event, void* clientData, void* callData);
+  static vtkFloatArray* GetZBuffer(vtkRenderer* renderer);
 
 private:
   vtkSlicerMarkupsWidgetRepresentation3D(const vtkSlicerMarkupsWidgetRepresentation3D&) = delete;

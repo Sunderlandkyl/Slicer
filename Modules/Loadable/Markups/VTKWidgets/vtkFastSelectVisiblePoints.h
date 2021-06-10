@@ -53,6 +53,8 @@
 #include "vtkSelectVisiblePoints.h"
 #include "vtkSlicerMarkupsModuleVTKWidgetsExport.h"
 
+#include <vtkFloatArray.h>
+
 class VTK_SLICER_MARKUPS_MODULE_VTKWIDGETS_EXPORT vtkFastSelectVisiblePoints : public vtkSelectVisiblePoints
 {
 public:
@@ -65,9 +67,11 @@ public:
    */
   static vtkFastSelectVisiblePoints* New();
 
-  bool ZBufferSet() { return this->ZPtr != nullptr; };
   void UpdateZBuffer();
   void ResetZBuffer();
+
+  vtkFloatArray* GetZBuffer() { return this->ZBuffer; };
+  void SetZBuffer(vtkFloatArray* zBuffer) { this->ZBuffer = zBuffer; };
 
 protected:
   vtkFastSelectVisiblePoints();
@@ -75,7 +79,7 @@ protected:
 
   int RequestData(vtkInformation*, vtkInformationVector**, vtkInformationVector*) override;
 
-  float* ZPtr;
+  vtkSmartPointer<vtkFloatArray> ZBuffer;
 
 private:
   vtkFastSelectVisiblePoints(const vtkFastSelectVisiblePoints&) = delete;

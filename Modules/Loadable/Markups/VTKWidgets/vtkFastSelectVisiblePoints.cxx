@@ -23,6 +23,7 @@
 #include "vtkCamera.h"
 #include "vtkCellArray.h"
 #include "vtkDataSet.h"
+#include <vtkFloatArray.h>
 #include "vtkInformation.h"
 #include "vtkInformationVector.h"
 #include "vtkMatrix4x4.h"
@@ -38,34 +39,27 @@ vtkStandardNewMacro(vtkFastSelectVisiblePoints);
 //----------------------------------------------------------------------------
 vtkFastSelectVisiblePoints::vtkFastSelectVisiblePoints()
 {
-  this->ZPtr = nullptr;
+  this->ZBuffer = nullptr;
 }
 
 //----------------------------------------------------------------------------
-vtkFastSelectVisiblePoints::~vtkFastSelectVisiblePoints()
-{
-  if (this->ZPtr)
-    {
-    delete[] this->ZPtr;
-    }
-  this->ZPtr = nullptr;
-}
+vtkFastSelectVisiblePoints::~vtkFastSelectVisiblePoints() = default;
 
 //----------------------------------------------------------------------------
 void vtkFastSelectVisiblePoints::ResetZBuffer()
 {
-  if (this->ZPtr)
-    {
-    delete[] this->ZPtr;
-    }
-  this->ZPtr = nullptr;
+  this->ZBuffer = nullptr;
 }
 
 //----------------------------------------------------------------------------
 void vtkFastSelectVisiblePoints::UpdateZBuffer()
 {
   this->ResetZBuffer();
-  this->ZPtr = this->Initialize(true);
+  float* zPtr = this->Initialize(true);
+
+  this->ZBuffer = vtkSmartPointer<vtkFloatArray>::New();
+  vtkIdType size = (this->InternalSelection[1] - this->InternalSelection[0] + 1) * (this->InternalSelection[3] - this->InternalSelection[2] + 1);
+  this->ZBuffer->SetArray(zPtr, size, 0);
 }
 
 //----------------------------------------------------------------------------
@@ -129,14 +123,13 @@ int vtkFastSelectVisiblePoints::RequestData(vtkInformation* vtkNotUsed(request),
   output->SetVerts(outputVertices);
   outputVertices->Delete();
 
-  if (!this->ZPtr)
+  if (!this->ZBuffer)
     {
-    this->ResetZBuffer();
-
-    const int SimpleQueryLimit = 25;
-    bool getZbuff = numPts > SimpleQueryLimit ? true : false;
-
-    this->ZPtr = this->Initialize(true);
+    this->UpdateZBuffer();
+    }
+  else
+    {
+    this->Initialize(false);
     }
 
   int abort = 0;
@@ -153,7 +146,7 @@ int vtkFastSelectVisiblePoints::RequestData(vtkInformation* vtkNotUsed(request),
       abort = this->GetAbortExecute();
       }
 
-    visible = IsPointOccluded(x, this->ZPtr);
+    visible = IsPointOccluded(x, this->ZBuffer->GetPointer(0));
 
     if ((visible && !this->SelectInvisible) || (!visible && this->SelectInvisible))
       {
