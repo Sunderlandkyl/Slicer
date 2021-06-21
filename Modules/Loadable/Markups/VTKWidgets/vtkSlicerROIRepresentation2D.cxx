@@ -74,7 +74,7 @@ vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
   this->ROIOutlineMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
   this->ROIOutlineMapper->SetInputConnection(this->ROIOutlineWorldToSliceTransformFilter->GetOutputPort());
   this->ROIOutlineProperty = vtkSmartPointer<vtkProperty2D>::New();
-  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
+  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline()->Property);
   this->ROIOutlineActor = vtkSmartPointer<vtkActor2D>::New();
   this->ROIOutlineActor->SetMapper(this->ROIOutlineMapper);
   this->ROIOutlineActor->SetProperty(this->ROIOutlineProperty);
@@ -85,7 +85,7 @@ vtkSlicerROIRepresentation2D::vtkSlicerROIRepresentation2D()
   this->ROIMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
   this->ROIMapper->SetInputConnection(this->ROIIntersectionTriangulator->GetOutputPort());
   this->ROIProperty = vtkSmartPointer<vtkProperty2D>::New();
-  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
+  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline()->Property);
   this->ROIActor = vtkSmartPointer<vtkActor2D>::New();
   this->ROIActor->SetMapper(this->ROIMapper);
   this->ROIActor->SetProperty(this->ROIProperty);
@@ -134,16 +134,16 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
 
   double fillOpacity = this->MarkupsDisplayNode->GetFillVisibility()
     ? opacity * this->MarkupsDisplayNode->GetFillOpacity() : 0.0;
-  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
+  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline()->Property);
   this->ROIProperty->SetOpacity(fillOpacity);
 
   double outlineOpacity = this->MarkupsDisplayNode->GetOutlineVisibility()
     ? opacity * this->MarkupsDisplayNode->GetOutlineOpacity() : 0.0;
-  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
+  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline()->Property);
   this->ROIOutlineProperty->SetOpacity(outlineOpacity);
 
   // Properties label display
-  this->TextActor->SetTextProperty(this->GetControlPointsPipeline(controlPointType)->TextProperty);
+  this->TextActor->SetTextProperty(this->GetControlPointsPipeline()->TextProperty);
   if (this->MarkupsDisplayNode->GetPropertiesLabelVisibility()
     && this->AnyPointVisibilityOnSlice
     && roiNode->GetNumberOfDefinedControlPoints(true) > 0) // including preview

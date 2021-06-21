@@ -159,7 +159,7 @@ protected:
     vtkSmartPointer<vtkProperty2D> Property;
   };
 
-  ControlPointsPipeline2D* GetControlPointsPipeline(int controlPointType);
+  ControlPointsPipeline2D* GetControlPointsPipeline();
 
   vtkSmartPointer<vtkIntArray> PointsVisibilityOnSlice;
   bool                         CenterVisibilityOnSlice = { false };

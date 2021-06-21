@@ -161,7 +161,7 @@ protected:
   // Convert glyph types from display node enums to 2D glyph source enums
   static int GetGlyphTypeSourceFromDisplay(int glyphTypeDisplay);
 
-  class ControlPointsPipeline
+  class VTK_SLICER_MARKUPS_MODULE_VTKWIDGETS_EXPORT ControlPointsPipeline
   {
   public:
     ControlPointsPipeline();
@@ -331,7 +331,7 @@ protected:
 
   double* GetWidgetColor(int controlPointType);
 
-  ControlPointsPipeline* ControlPoints[NumberOfControlPointTypes]; // Unselected, Selected, Active, Project, ProjectBehind
+  ControlPointsPipeline* ControlPoints;
 
   virtual void SetupInteractionPipeline();
   MarkupsInteractionPipeline* InteractionPipeline;

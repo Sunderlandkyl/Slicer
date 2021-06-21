@@ -63,7 +63,7 @@ vtkSlicerROIRepresentation3D::vtkSlicerROIRepresentation3D()
   this->ROIMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
   this->ROIMapper->SetInputConnection(this->ROITransformFilter->GetOutputPort());
   this->ROIProperty = vtkSmartPointer<vtkProperty>::New();
-  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(Selected)->Property);
+  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline()->Property);
   this->ROIActor = vtkSmartPointer<vtkActor>::New();
   this->ROIActor->SetMapper(this->ROIMapper);
   this->ROIActor->SetProperty(this->ROIProperty);
@@ -86,7 +86,7 @@ vtkSlicerROIRepresentation3D::vtkSlicerROIRepresentation3D()
   this->ROIOutlineMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
   this->ROIOutlineMapper->SetInputConnection(this->ROIOutlineTransformFilter->GetOutputPort());
   this->ROIOutlineProperty = vtkSmartPointer<vtkProperty>::New();
-  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline(Selected)->Property);
+  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline()->Property);
   this->ROIOutlineActor = vtkSmartPointer<vtkActor>::New();
   this->ROIOutlineActor->SetMapper(this->ROIOutlineMapper);
   this->ROIOutlineActor->SetProperty(this->ROIOutlineProperty);
@@ -143,7 +143,7 @@ void vtkSlicerROIRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
     }
 
   // Properties label display
-  this->TextActor->SetTextProperty(this->GetControlPointsPipeline(controlPointType)->TextProperty);
+  this->TextActor->SetTextProperty(this->GetControlPointsPipeline()->TextProperty);
   if (this->MarkupsDisplayNode->GetPropertiesLabelVisibility()
     && roiNode->GetNumberOfDefinedControlPoints(true) > 0) // including preview
     {
@@ -157,7 +157,7 @@ void vtkSlicerROIRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
 
   double opacity = displayNode->GetOpacity();
   double fillOpacity = this->MarkupsDisplayNode->GetFillVisibility() ? displayNode->GetFillOpacity() : 0.0;
-  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
+  this->ROIProperty->DeepCopy(this->GetControlPointsPipeline()->Property);
   this->ROIProperty->SetOpacity(opacity * fillOpacity);
 
   double occludedOpacity = displayNode->GetOccludedVisibility() ? fillOpacity * displayNode->GetOccludedOpacity() : 0.0;
@@ -168,7 +168,7 @@ void vtkSlicerROIRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigned 
 
   double outlineOpacity = this->MarkupsDisplayNode->GetOutlineVisibility()
     ? opacity * this->MarkupsDisplayNode->GetOutlineOpacity() : 0.0;
-  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline(controlPointType)->Property);
+  this->ROIOutlineProperty->DeepCopy(this->GetControlPointsPipeline()->Property);
   this->ROIOutlineProperty->SetOpacity(outlineOpacity);
 
   this->ROIOutlineOccludedProperty->DeepCopy(this->ROIOutlineProperty);

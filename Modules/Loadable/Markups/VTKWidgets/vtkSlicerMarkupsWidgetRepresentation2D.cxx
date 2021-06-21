@@ -105,18 +105,15 @@ vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D::~ControlPointsP
 //----------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation2D::vtkSlicerMarkupsWidgetRepresentation2D()
 {
-  for (int i = 0; i<NumberOfControlPointTypes; i++)
-    {
-    this->ControlPoints[i] = new ControlPointsPipeline2D;
-    }
+  this->ControlPoints = new ControlPointsPipeline2D;
 
-  this->ControlPoints[Selected]->TextProperty->SetColor(1.0, 0.5, 0.5);
-  reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[Selected])->Property->SetColor(1.0, 0.5, 0.5);
+  //this->ControlPoints[Selected]->TextProperty->SetColor(1.0, 0.5, 0.5);
+  //reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[Selected])->Property->SetColor(1.0, 0.5, 0.5);
 
-  this->ControlPoints[Active]->TextProperty->SetColor(0.4, 1.0, 0.); // bright green
-  reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[Active])->Property->SetColor(0.4, 1.0, 0.);
+  //this->ControlPoints[Active]->TextProperty->SetColor(0.4, 1.0, 0.); // bright green
+  //reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[Active])->Property->SetColor(0.4, 1.0, 0.);
 
-  this->TextActor->SetTextProperty(this->GetControlPointsPipeline(Unselected)->TextProperty);
+  this->TextActor->SetTextProperty(this->GetControlPointsPipeline()->TextProperty);
 
   this->PointsVisibilityOnSlice = vtkSmartPointer<vtkIntArray>::New();
   this->PointsVisibilityOnSlice->SetName("pointsVisibilityOnSlice");
@@ -204,7 +201,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
 
   for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
     {
-    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[controlPointType]);
+    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
 
     controlPoints->ControlPoints->Reset();
     controlPoints->ControlPointsPolyData->GetPointData()->GetNormals()->Reset();
@@ -429,7 +426,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller,
     double* color = this->GetWidgetColor(controlPointType);
     double opacity = this->GetWidgetOpacity(controlPointType);
 
-    ControlPointsPipeline2D* controlPoints = this->GetControlPointsPipeline(controlPointType);
+    ControlPointsPipeline2D* controlPoints = this->GetControlPointsPipeline();
     controlPoints->Property->SetColor(color);
     controlPoints->Property->SetOpacity(opacity);
 
@@ -440,7 +437,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller,
       * this->MarkupsDisplayNode->GetTextScale()));
     controlPoints->TextProperty->SetBackgroundOpacity(opacity * this->MarkupsDisplayNode->GetTextProperty()->GetBackgroundOpacity());
 
-    vtkMarkupsGlyphSource2D* glyphSource = this->GetControlPointsPipeline(controlPointType)->GlyphSource2D;
+    vtkMarkupsGlyphSource2D* glyphSource = this->GetControlPointsPipeline()->GlyphSource2D;
     if (this->MarkupsDisplayNode->GlyphTypeIs3D())
       {
       // Sphere is the only 3D glyph, use 2D circle in default
@@ -459,7 +456,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller,
       {
       glyphSource->FilledOn();
       }
-      this->GetControlPointsPipeline(controlPointType)->Glypher->SetSourceConnection(glyphSource->GetOutputPort());
+      this->GetControlPointsPipeline()->Glypher->SetSourceConnection(glyphSource->GetOutputPort());
     }
 
   this->UpdateControlPointSize();
@@ -482,14 +479,11 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller,
     this->SetCenterSliceVisibility(visibility);
     }
 
-  for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
-    {
-    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[controlPointType]);
-    // For backward compatibility, we hide labels if text scale is set to 0.
-    controlPoints->LabelsActor->SetVisibility(this->MarkupsDisplayNode->GetPointLabelsVisibility()
-      && this->MarkupsDisplayNode->GetTextScale() > 0.0);
-    controlPoints->Glypher->SetScaleFactor(this->ControlPointSize);
-    }
+  ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
+  // For backward compatibility, we hide labels if text scale is set to 0.
+  controlPoints->LabelsActor->SetVisibility(this->MarkupsDisplayNode->GetPointLabelsVisibility()
+    && this->MarkupsDisplayNode->GetTextScale() > 0.0);
+  controlPoints->Glypher->SetScaleFactor(this->ControlPointSize);
 
   // put the labels near the boundary of the glyph, slightly away from it (by half picking tolarance)
   double labelsOffset = this->ControlPointSize * 0.5 + this->PickingTolerance * 0.5 * this->ScreenScaleFactor;
@@ -707,12 +701,11 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteractWithLine(
 void vtkSlicerMarkupsWidgetRepresentation2D::GetActors(vtkPropCollection *pc)
 {
   Superclass::GetActors(pc);
-  for (int i = 0; i < NumberOfControlPointTypes; i++)
-    {
-    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
-    controlPoints->Actor->GetActors(pc);
-    controlPoints->LabelsActor->GetActors(pc);
-    }
+
+  ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
+  controlPoints->Actor->GetActors(pc);
+  controlPoints->LabelsActor->GetActors(pc);
+
   this->TextActor->GetActors(pc);
 }
 
@@ -721,12 +714,11 @@ void vtkSlicerMarkupsWidgetRepresentation2D::ReleaseGraphicsResources(
   vtkWindow *win)
 {
   Superclass::ReleaseGraphicsResources(win);
-  for (int i = 0; i < NumberOfControlPointTypes; i++)
-    {
-    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
-    controlPoints->Actor->ReleaseGraphicsResources(win);
-    controlPoints->LabelsActor->ReleaseGraphicsResources(win);
-    }
+
+  ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
+  controlPoints->Actor->ReleaseGraphicsResources(win);
+  controlPoints->LabelsActor->ReleaseGraphicsResources(win);
+
   this->TextActor->ReleaseGraphicsResources(win);
 }
 
@@ -734,18 +726,17 @@ void vtkSlicerMarkupsWidgetRepresentation2D::ReleaseGraphicsResources(
 int vtkSlicerMarkupsWidgetRepresentation2D::RenderOverlay(vtkViewport *viewport)
 {
   int count = Superclass::RenderOverlay(viewport);
-  for (int i = 0; i < NumberOfControlPointTypes; i++)
+
+  ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
+  if (controlPoints->Actor->GetVisibility())
     {
-    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
-    if (controlPoints->Actor->GetVisibility())
-      {
-      count += controlPoints->Actor->RenderOverlay(viewport);
-      }
-    if (controlPoints->LabelsActor->GetVisibility())
-      {
-      count += controlPoints->LabelsActor->RenderOverlay(viewport);
-      }
+    count += controlPoints->Actor->RenderOverlay(viewport);
     }
+  if (controlPoints->LabelsActor->GetVisibility())
+    {
+    count += controlPoints->LabelsActor->RenderOverlay(viewport);
+    }
+
   if (this->TextActor->GetVisibility())
     {
     count += this->TextActor->RenderOverlay(viewport);
@@ -770,18 +761,17 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderOpaqueGeometry(
     {
     count += this->TextActor->RenderOpaqueGeometry(viewport);
     }
-  for (int i = 0; i < NumberOfControlPointTypes; i++)
+
+  ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
+  if (controlPoints->Actor->GetVisibility())
     {
-    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
-    if (controlPoints->Actor->GetVisibility())
-      {
-      count += controlPoints->Actor->RenderOpaqueGeometry(viewport);
-      }
-    if (controlPoints->LabelsActor->GetVisibility())
-      {
-      count += controlPoints->LabelsActor->RenderOpaqueGeometry(viewport);
-      }
+    count += controlPoints->Actor->RenderOpaqueGeometry(viewport);
     }
+  if (controlPoints->LabelsActor->GetVisibility())
+    {
+    count += controlPoints->LabelsActor->RenderOpaqueGeometry(viewport);
+    }
+
   return count;
 }
 
@@ -794,9 +784,8 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderTranslucentPolygonalGeometry(
     {
     count += this->TextActor->RenderTranslucentPolygonalGeometry(viewport);
     }
-  for (int i = 0; i < NumberOfControlPointTypes; i++)
-    {
-    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
+
+    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
     if (controlPoints->Actor->GetVisibility())
       {
       count += controlPoints->Actor->RenderTranslucentPolygonalGeometry(viewport);
@@ -805,7 +794,7 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderTranslucentPolygonalGeometry(
       {
       count += controlPoints->LabelsActor->RenderTranslucentPolygonalGeometry(viewport);
       }
-    }
+
   return count;
 }
 
@@ -820,18 +809,17 @@ vtkTypeBool vtkSlicerMarkupsWidgetRepresentation2D::HasTranslucentPolygonalGeome
     {
     return true;
     }
-  for (int i = 0; i < NumberOfControlPointTypes; i++)
+
+  ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
+  if (controlPoints->Actor->GetVisibility() && controlPoints->Actor->HasTranslucentPolygonalGeometry())
     {
-    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
-    if (controlPoints->Actor->GetVisibility() && controlPoints->Actor->HasTranslucentPolygonalGeometry())
-      {
-      return true;
-      }
-    if (controlPoints->LabelsActor->GetVisibility() && controlPoints->LabelsActor->HasTranslucentPolygonalGeometry())
-      {
-      return true;
-      }
+    return true;
     }
+  if (controlPoints->LabelsActor->GetVisibility() && controlPoints->LabelsActor->HasTranslucentPolygonalGeometry())
+    {
+    return true;
+    }
+
   return false;
 }
 
@@ -850,41 +838,39 @@ void vtkSlicerMarkupsWidgetRepresentation2D::PrintSelf(ostream& os, vtkIndent in
     os << indent << "Text Visibility: (none)\n";
     }
 
-  for (int i = 0; i < NumberOfControlPointTypes; i++)
+  ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
+  os << indent << "Pipeline " << "\n";
+  if (controlPoints->Actor)
     {
-    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
-    os << indent << "Pipeline " << i << "\n";
-    if (controlPoints->Actor)
-      {
-      os << indent << "Points Visibility: " << controlPoints->Actor->GetVisibility() << "\n";
-      }
-    else
-      {
-      os << indent << "Points: (none)\n";
-      }
-    if (controlPoints->LabelsActor)
-      {
-      os << indent << "Labels Visibility: " << controlPoints->LabelsActor->GetVisibility() << "\n";
-      }
-    else
-      {
-      os << indent << "Labels Points: (none)\n";
-      }
-    if (controlPoints->Property)
-      {
-      os << indent << "Property: " << controlPoints->Property << "\n";
-      }
-    else
-      {
-      os << indent << "Property: (none)\n";
-      }
+    os << indent << "Points Visibility: " << controlPoints->Actor->GetVisibility() << "\n";
     }
+  else
+    {
+    os << indent << "Points: (none)\n";
+    }
+  if (controlPoints->LabelsActor)
+    {
+    os << indent << "Labels Visibility: " << controlPoints->LabelsActor->GetVisibility() << "\n";
+    }
+  else
+    {
+    os << indent << "Labels Points: (none)\n";
+    }
+  if (controlPoints->Property)
+    {
+    os << indent << "Property: " << controlPoints->Property << "\n";
+    }
+  else
+    {
+    os << indent << "Property: (none)\n";
+    }
+
 }
 
 //-----------------------------------------------------------------------------
-vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D* vtkSlicerMarkupsWidgetRepresentation2D::GetControlPointsPipeline(int controlPointType)
+vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D* vtkSlicerMarkupsWidgetRepresentation2D::GetControlPointsPipeline()
 {
-  return reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[controlPointType]);
+  return reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints);
 }
 
 //---------------------------------------------------------------------------

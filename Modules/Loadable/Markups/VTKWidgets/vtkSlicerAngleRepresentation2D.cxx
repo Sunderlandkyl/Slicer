@@ -92,11 +92,11 @@ vtkSlicerAngleRepresentation2D::vtkSlicerAngleRepresentation2D()
 
   this->LineActor = vtkSmartPointer<vtkActor2D>::New();
   this->LineActor->SetMapper(this->LineMapper);
-  this->LineActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
+  this->LineActor->SetProperty(this->GetControlPointsPipeline()->Property);
 
   this->ArcActor = vtkSmartPointer<vtkActor2D>::New();
   this->ArcActor->SetMapper(this->ArcMapper);
-  this->ArcActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
+  this->ArcActor->SetProperty(this->GetControlPointsPipeline()->Property);
 }
 
 //----------------------------------------------------------------------
@@ -253,9 +253,9 @@ void vtkSlicerAngleRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
     {
     controlPointType = Selected;
     }
-  this->LineActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->ArcActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->TextActor->SetTextProperty(this->GetControlPointsPipeline(controlPointType)->TextProperty);
+  this->LineActor->SetProperty(this->GetControlPointsPipeline()->Property);
+  this->ArcActor->SetProperty(this->GetControlPointsPipeline()->Property);
+  this->TextActor->SetTextProperty(this->GetControlPointsPipeline()->TextProperty);
 
   if (this->MarkupsDisplayNode->GetLineColorNode() && this->MarkupsDisplayNode->GetLineColorNode()->GetColorTransferFunction())
     {

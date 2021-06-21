@@ -128,10 +128,10 @@ vtkSlicerPlaneRepresentation3D::vtkSlicerPlaneRepresentation3D()
 
   // Actors
   this->PlaneActor->SetMapper(this->PlaneMapper);
-  this->PlaneActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
+  this->PlaneActor->SetProperty(this->GetControlPointsPipeline()->Property);
 
   this->PlaneOccludedActor->SetMapper(this->PlaneOccludedMapper);
-  this->PlaneOccludedActor->SetProperty(this->GetControlPointsPipeline(Unselected)->OccludedProperty);
+  this->PlaneOccludedActor->SetProperty(this->GetControlPointsPipeline()->OccludedProperty);
 }
 
 //----------------------------------------------------------------------
@@ -285,11 +285,11 @@ void vtkSlicerPlaneRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
     {
     controlPointType = this->GetAllControlPointsSelected() ? vtkSlicerMarkupsWidgetRepresentation::Selected : vtkSlicerMarkupsWidgetRepresentation::Unselected;
     }
-  this->PlaneActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->PlaneOccludedActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->OccludedProperty);
+  this->PlaneActor->SetProperty(this->GetControlPointsPipeline()->Property);
+  this->PlaneOccludedActor->SetProperty(this->GetControlPointsPipeline()->OccludedProperty);
 
   // Properties label display
-  this->TextActor->SetTextProperty(this->GetControlPointsPipeline(controlPointType)->TextProperty);
+  this->TextActor->SetTextProperty(this->GetControlPointsPipeline()->TextProperty);
   if (this->MarkupsDisplayNode->GetPropertiesLabelVisibility()
     && markupsNode->GetNumberOfDefinedControlPoints(true) > 0) // including preview
     {
@@ -302,8 +302,8 @@ void vtkSlicerPlaneRepresentation3D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
     }
 
   double color[3] = { 0.0 };
-  this->GetControlPointsPipeline(controlPointType)->Property->GetColor(color);
-  double opacity = this->GetControlPointsPipeline(controlPointType)->Property->GetOpacity();
+  this->GetControlPointsPipeline()->Property->GetColor(color);
+  double opacity = this->GetControlPointsPipeline()->Property->GetOpacity();
   this->PlaneColorLUT->SetNumberOfTableValues(3);
   this->PlaneColorLUT->SetTableRange(0.0, 2.0);
   this->PlaneColorLUT->Build();

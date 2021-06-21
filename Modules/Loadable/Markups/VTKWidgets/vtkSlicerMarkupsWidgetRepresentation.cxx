@@ -143,10 +143,7 @@ vtkSlicerMarkupsWidgetRepresentation::vtkSlicerMarkupsWidgetRepresentation()
 
   this->PointPlacer = vtkSmartPointer<vtkFocalPlanePointPlacer>::New();
 
-  for (int i = 0; i<NumberOfControlPointTypes; i++)
-    {
-    this->ControlPoints[i] = nullptr;
-    }
+  this->ControlPoints = nullptr;
 
   this->AlwaysOnTop = false;
 
@@ -163,11 +160,12 @@ void vtkSlicerMarkupsWidgetRepresentation::SetupInteractionPipeline()
 //----------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation::~vtkSlicerMarkupsWidgetRepresentation()
 {
-  for (int i=0; i<NumberOfControlPointTypes; i++)
+  if (this->ControlPoints)
     {
-    delete this->ControlPoints[i];
-    this->ControlPoints[i] = nullptr;
+    delete this->ControlPoints;
+    this->ControlPoints = nullptr;
     }
+
   // Force deleting variables to prevent circular dependency keeping objects alive
   this->PointPlacer = nullptr;
 
@@ -740,7 +738,7 @@ vtkPolyData* vtkSlicerMarkupsWidgetRepresentation::GetControlPointsPolyData(int 
     vtkErrorMacro("vtkSlicerMarkupsWidgetRepresentation::GetControlPointsPolyData failed: invalid controlPointType: " << controlPointType);
     return nullptr;
     }
-  return this->ControlPoints[controlPointType]->ControlPointsPolyData;
+  return this->ControlPoints->ControlPointsPolyData;
 }
 
 //----------------------------------------------------------------------
@@ -751,7 +749,7 @@ vtkPolyData* vtkSlicerMarkupsWidgetRepresentation::GetLabelControlPointsPolyData
     vtkErrorMacro("vtkSlicerMarkupsWidgetRepresentation::GetLabelControlPointsPolyData failed: invalid controlPointType: " << controlPointType);
     return nullptr;
     }
-  return this->ControlPoints[controlPointType]->LabelControlPointsPolyData;
+  return this->ControlPoints->LabelControlPointsPolyData;
 }
 
 //----------------------------------------------------------------------
@@ -762,7 +760,7 @@ vtkStringArray* vtkSlicerMarkupsWidgetRepresentation::GetLabels(int controlPoint
     vtkErrorMacro("vtkSlicerMarkupsWidgetRepresentation::GetControlPointsPolyData failed: invalid controlPointType: " << controlPointType);
     return nullptr;
     }
-  return this->ControlPoints[controlPointType]->Labels;
+  return this->ControlPoints->Labels;
 }
 
 //-----------------------------------------------------------------------------

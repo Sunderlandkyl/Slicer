@@ -106,7 +106,7 @@ vtkSlicerPlaneRepresentation2D::vtkSlicerPlaneRepresentation2D()
   this->PlaneFillMapper->SetScalarVisibility(true);
 
   this->PlaneFillActor->SetMapper(this->PlaneFillMapper);
-  this->PlaneFillActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
+  this->PlaneFillActor->SetProperty(this->GetControlPointsPipeline()->Property);
 
   this->PlaneOutlineFilter->SetInputConnection(this->PlaneFilter->GetOutputPort());
 
@@ -120,7 +120,7 @@ vtkSlicerPlaneRepresentation2D::vtkSlicerPlaneRepresentation2D()
   this->PlaneOutlineMapper->SetScalarVisibility(true);
 
   this->PlaneOutlineActor->SetMapper(this->PlaneOutlineMapper);
-  this->PlaneOutlineActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
+  this->PlaneOutlineActor->SetProperty(this->GetControlPointsPipeline()->Property);
 
   this->ArrowFilter->SetGlyphTypeToThickArrow();
   this->ArrowFilter->FilledOn();
@@ -131,7 +131,7 @@ vtkSlicerPlaneRepresentation2D::vtkSlicerPlaneRepresentation2D()
   this->ArrowMapper->ScalarVisibilityOff();
 
   this->ArrowActor->SetMapper(this->ArrowMapper);
-  this->ArrowActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
+  this->ArrowActor->SetProperty(this->GetControlPointsPipeline()->Property);
 
   this->LabelFormat = "%s: %-#6.3g";
 }
@@ -226,12 +226,12 @@ void vtkSlicerPlaneRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
     controlPointType = Selected;
     }
   vtkNew<vtkProperty2D> borderProperty;
-  borderProperty->DeepCopy(this->GetControlPointsPipeline(Unselected)->Property);
+  borderProperty->DeepCopy(this->GetControlPointsPipeline()->Property);
 
-  this->PlaneFillActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->PlaneOutlineActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->ArrowActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->TextActor->SetTextProperty(this->GetControlPointsPipeline(controlPointType)->TextProperty);
+  this->PlaneFillActor->SetProperty(this->GetControlPointsPipeline()->Property);
+  this->PlaneOutlineActor->SetProperty(this->GetControlPointsPipeline()->Property);
+  this->ArrowActor->SetProperty(this->GetControlPointsPipeline()->Property);
+  this->TextActor->SetTextProperty(this->GetControlPointsPipeline()->TextProperty);
 
   if (this->MarkupsDisplayNode->GetLineColorNode() && this->MarkupsDisplayNode->GetLineColorNode()->GetColorTransferFunction())
     {

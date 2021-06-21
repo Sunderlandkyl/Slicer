@@ -140,7 +140,7 @@ protected:
     vtkSmartPointer<vtkActor2D> LabelsOccludedActor;
   };
 
-  ControlPointsPipeline3D* GetControlPointsPipeline(int controlPointType);
+  ControlPointsPipeline3D* GetControlPointsPipeline();
 
   virtual void UpdateControlPointGlyphOrientation();
 

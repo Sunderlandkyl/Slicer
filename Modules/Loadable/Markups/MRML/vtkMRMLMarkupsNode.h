@@ -29,6 +29,7 @@
 // VTK includes
 #include <vtkPointLocator.h>
 #include <vtkSmartPointer.h>
+#include <vtkStringArray.h>
 #include <vtkVector.h>
 
 class vtkParallelTransportFrame;

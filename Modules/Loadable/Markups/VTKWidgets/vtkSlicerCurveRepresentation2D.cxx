@@ -75,7 +75,7 @@ vtkSlicerCurveRepresentation2D::vtkSlicerCurveRepresentation2D()
 
   this->LineActor = vtkSmartPointer<vtkActor2D>::New();
   this->LineActor->SetMapper(this->LineMapper);
-  this->LineActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
+  this->LineActor->SetProperty(this->GetControlPointsPipeline()->Property);
 
   this->SliceCurvePointLocator = vtkSmartPointer<vtkCellLocator>::New();
 }
@@ -119,8 +119,8 @@ void vtkSlicerCurveRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
     {
     controlPointType = allControlPointsSelected ? Selected : Unselected;
     }
-  this->LineActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->TextActor->SetTextProperty(this->GetControlPointsPipeline(controlPointType)->TextProperty);
+  this->LineActor->SetProperty(this->GetControlPointsPipeline()->Property);
+  this->TextActor->SetTextProperty(this->GetControlPointsPipeline()->TextProperty);
 
   if (this->MarkupsDisplayNode->GetLineColorNode() && this->MarkupsDisplayNode->GetLineColorNode()->GetColorTransferFunction())
     {
@@ -157,19 +157,19 @@ void vtkSlicerCurveRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
     if (this->MarkupsDisplayNode->GetActiveComponentType() == vtkMRMLMarkupsDisplayNode::ComponentCenterPoint)
       {
       centerControlPointType = Active;
-      this->GetControlPointsPipeline(centerControlPointType)->ControlPoints->SetNumberOfPoints(0);
-      this->GetControlPointsPipeline(centerControlPointType)->ControlPointsPolyData->GetPointData()->GetNormals()->SetNumberOfTuples(0);
+      this->GetControlPointsPipeline()->ControlPoints->SetNumberOfPoints(0);
+      this->GetControlPointsPipeline()->ControlPointsPolyData->GetPointData()->GetNormals()->SetNumberOfTuples(0);
       }
-    this->GetControlPointsPipeline(centerControlPointType)->ControlPoints->InsertNextPoint(centerPosDisplay);
-    this->GetControlPointsPipeline(centerControlPointType)->ControlPointsPolyData->GetPointData()->GetNormals()->InsertNextTuple(orient);
+    this->GetControlPointsPipeline()->ControlPoints->InsertNextPoint(centerPosDisplay);
+    this->GetControlPointsPipeline()->ControlPointsPolyData->GetPointData()->GetNormals()->InsertNextTuple(orient);
 
-    this->GetControlPointsPipeline(centerControlPointType)->ControlPoints->Modified();
-    this->GetControlPointsPipeline(centerControlPointType)->ControlPointsPolyData->GetPointData()->GetNormals()->Modified();
-    this->GetControlPointsPipeline(centerControlPointType)->ControlPointsPolyData->Modified();
+    this->GetControlPointsPipeline()->ControlPoints->Modified();
+    this->GetControlPointsPipeline()->ControlPointsPolyData->GetPointData()->GetNormals()->Modified();
+    this->GetControlPointsPipeline()->ControlPointsPolyData->Modified();
     if (centerControlPointType == Active)
       {
-      this->GetControlPointsPipeline(centerControlPointType)->Actor->VisibilityOn();
-      this->GetControlPointsPipeline(centerControlPointType)->LabelsActor->VisibilityOff();
+      this->GetControlPointsPipeline()->Actor->VisibilityOn();
+      this->GetControlPointsPipeline()->LabelsActor->VisibilityOff();
       }
     }
 

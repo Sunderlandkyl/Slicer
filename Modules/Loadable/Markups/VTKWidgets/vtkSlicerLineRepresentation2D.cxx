@@ -71,7 +71,7 @@ vtkSlicerLineRepresentation2D::vtkSlicerLineRepresentation2D()
 
   this->LineActor = vtkSmartPointer<vtkActor2D>::New();
   this->LineActor->SetMapper(this->LineMapper);
-  this->LineActor->SetProperty(this->GetControlPointsPipeline(Unselected)->Property);
+  this->LineActor->SetProperty(this->GetControlPointsPipeline()->Property);
 }
 
 //----------------------------------------------------------------------
@@ -145,8 +145,8 @@ void vtkSlicerLineRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigned
     {
     controlPointType = this->GetAllControlPointsSelected() ? Selected : Unselected;
     }
-  this->LineActor->SetProperty(this->GetControlPointsPipeline(controlPointType)->Property);
-  this->TextActor->SetTextProperty(this->GetControlPointsPipeline(controlPointType)->TextProperty);
+  this->LineActor->SetProperty(this->GetControlPointsPipeline()->Property);
+  this->TextActor->SetTextProperty(this->GetControlPointsPipeline()->TextProperty);
 
   if (this->MarkupsDisplayNode->GetLineColorNode() && this->MarkupsDisplayNode->GetLineColorNode()->GetColorTransferFunction())
     {

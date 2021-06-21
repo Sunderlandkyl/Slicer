@@ -92,7 +92,7 @@ void vtkSlicerTestLineRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsi
     this->MiddlePointActor->SetVisibility(false);
     }
 
-  this->MiddlePointActor->SetProperty(this->GetControlPointsPipeline(Active)->Property);
+  this->MiddlePointActor->SetProperty(this->GetControlPointsPipeline()->Property);
 }
 
 //----------------------------------------------------------------------
