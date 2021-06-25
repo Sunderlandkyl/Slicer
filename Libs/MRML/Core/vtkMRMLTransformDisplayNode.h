@@ -198,6 +198,32 @@ class VTK_MRML_EXPORT vtkMRMLTransformDisplayNode : public vtkMRMLDisplayNode
   vtkColorTransferFunction* GetColorMap();
   void SetColorMap(vtkColorTransferFunction* newColorMap);
 
+  /// TODO
+  vtkSetMacro(InteractionVisibility, bool);
+  /// TODO
+  vtkGetMacro(InteractionVisibility, bool);
+  /// TODO
+  vtkBooleanMacro(InteractionVisibility, bool);
+
+  // TODO
+  vtkSetMacro(InteractionSize, double);
+  vtkGetMacro(InteractionSize, double);
+
+  // TODO
+  vtkSetMacro(InteractionScale, double);
+  vtkGetMacro(InteractionScale, double);
+
+  // TODO
+  vtkSetMacro(InteractionSizeAbsolute, bool);
+  vtkGetMacro(InteractionSizeAbsolute, bool);
+  vtkBooleanMacro(InteractionSizeAbsolute, bool);
+
+  vtkSetMacro(ActiveInteractionType, int);
+  vtkGetMacro(ActiveInteractionType, int);
+
+  vtkSetMacro(ActiveInteractionIndex, int);
+  vtkGetMacro(ActiveInteractionIndex, int);
+
 protected:
 
   static std::vector<double> StringToDoubleVector(const char* sourceStr);
@@ -240,6 +266,14 @@ protected:
   bool EditorTranslationEnabled;
   bool EditorRotationEnabled;
   bool EditorScalingEnabled;
+
+  /// TODO
+  bool InteractionVisibility{ false };
+  int ActiveInteractionType{ -1 };
+  int ActiveInteractionIndex{ -1 };
+  bool InteractionSizeAbsolute{ false };
+  double InteractionSize{ 5.0 };
+  double InteractionScale{ 15.0 };
 
  protected:
   vtkMRMLTransformDisplayNode ( );

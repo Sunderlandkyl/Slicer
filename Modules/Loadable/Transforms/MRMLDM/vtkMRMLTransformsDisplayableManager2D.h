@@ -64,6 +64,9 @@ protected:
   /// vtkMRMLSliceNode
   void Create() override;
 
+  bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2) override;
+  bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
+
 private:
 
   vtkMRMLTransformsDisplayableManager2D(const vtkMRMLTransformsDisplayableManager2D&) = delete;
