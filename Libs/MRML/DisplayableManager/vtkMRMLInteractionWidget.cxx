@@ -400,6 +400,8 @@ bool vtkMRMLInteractionWidget::ProcessInteractionEvent(vtkMRMLInteractionEventDa
 void vtkMRMLInteractionWidget::Leave(vtkMRMLInteractionEventData* eventData)
 {
   Superclass::Leave(eventData);
+  this->SetActiveComponentType(InteractionNone);
+  this->SetActiveComponentType(-1);
 }
 
 //----------------------------------------------------------------------
