@@ -90,6 +90,7 @@ void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
   if (this->GetSliceNode())
     {
     this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
+    this->Pipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
     this->Pipeline->Mapper->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
     this->Pipeline->Mapper->SetTransformCoordinate(nullptr);
     }
