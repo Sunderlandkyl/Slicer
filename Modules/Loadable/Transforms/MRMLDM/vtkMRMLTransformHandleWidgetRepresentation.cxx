@@ -125,7 +125,6 @@ void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
   Superclass::UpdateInteractionPipeline();
 
   this->Pipeline->HandleToWorldTransform->Identity();
-  this->Pipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
 
   vtkMRMLDisplayableNode* displayableNode = this->DisplayNode->GetDisplayableNode();
 

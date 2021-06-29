@@ -568,41 +568,6 @@ public:
   /// Gets attribute location (point or cell data) from string
   static int GetAttributeLocationFromString(const char* name);
 
-  /// TODO
-  vtkSetMacro(InteractionVisibility, bool);
-  /// TODO
-  vtkGetMacro(InteractionVisibility, bool);
-  /// TODO
-  vtkBooleanMacro(InteractionVisibility, bool);
-
-  // TODO
-  vtkSetMacro(InteractionSize, double);
-  vtkGetMacro(InteractionSize, double);
-
-  // TODO
-  vtkSetMacro(InteractionScale, double);
-  vtkGetMacro(InteractionScale, double);
-
-  // TODO
-  vtkSetMacro(InteractionSizeAbsolute, bool);
-  vtkGetMacro(InteractionSizeAbsolute, bool);
-  vtkBooleanMacro(InteractionSizeAbsolute, bool);
-
-  enum InteractionType
-    {
-    InteractionNone = 0,
-    InteractionRotationHandle,
-    InteractionTranslationHandle,
-    InteractionScaleHandle,
-    Interaction_Last
-    };
-
-  vtkSetMacro(ActiveInteractionType, int);
-  vtkGetMacro(ActiveInteractionType, int);
-
-  vtkSetMacro(ActiveInteractionIndex, int);
-  vtkGetMacro(ActiveInteractionIndex, int);
-
 protected:
   vtkMRMLDisplayNode();
   ~vtkMRMLDisplayNode() override;
@@ -847,13 +812,6 @@ protected:
   /// \sa GetFolderDisplayOverrideAllowed(), SetFolderDisplayOverrideAllowed()
   bool FolderDisplayOverrideAllowed;
 
-  /// TODO
-  bool InteractionVisibility{false};
-  int ActiveInteractionType{InteractionNone};
-  int ActiveInteractionIndex{-1};
-  bool InteractionSizeAbsolute{ false };
-  double InteractionSize{ 5.0 };
-  double InteractionScale{ 1.0 };
 
   /// Cached value of last found displayable node (it is expensive to determine it)
   vtkWeakPointer<vtkMRMLDisplayableNode> LastFoundDisplayableNode;

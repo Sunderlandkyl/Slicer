@@ -159,10 +159,9 @@ void vtkMRMLTransformHandleWidgetRepresentation2D::CanInteract(
   vtkMRMLInteractionEventData* interactionEventData,
   int &foundComponentType, int &foundComponentIndex, double &closestDistance2)
 {
-  foundComponentType = vtkMRMLDisplayNode::InteractionNone;
+  foundComponentType = InteractionNone;
   vtkMRMLSliceNode *sliceNode = this->GetSliceNode();
-  vtkMRMLDisplayNode* displayNode = this->GetDisplayNode();
-  if (!sliceNode || !displayNode || !this->GetVisibility() || !interactionEventData)
+  if (!sliceNode || !this->GetVisibility() || !interactionEventData)
     {
     return;
     }
@@ -178,7 +177,7 @@ void vtkMRMLTransformHandleWidgetRepresentation2D::CanInteract(
 
   // We can interact with the handle if the mouse is hovering over one of the handles (translation or rotation), in display coordinates.
   this->CanInteractWithHandles(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2);
-  if (foundComponentType != vtkMRMLDisplayNode::InteractionNone)
+  if (foundComponentType != InteractionNone)
     {
     // if mouse is near a handle then select that (ignore the line + control points)
     return;
@@ -232,7 +231,7 @@ void vtkMRMLTransformHandleWidgetRepresentation2D::CanInteractWithHandles(
     // Detect translation handle shaft
     for (HandleInfo handleInfo : handleInfoList)
       {
-      if (!handleInfo.IsVisible() || handleInfo.ComponentType != vtkMRMLDisplayNode::InteractionTranslationHandle)
+      if (!handleInfo.IsVisible() || handleInfo.ComponentType != InteractionTranslationHandle)
         {
         continue;
         }

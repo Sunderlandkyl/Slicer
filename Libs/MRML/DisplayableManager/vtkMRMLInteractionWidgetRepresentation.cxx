@@ -132,7 +132,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
   vtkMRMLInteractionEventData* interactionEventData,
   int &foundComponentType, int &foundComponentIndex, double &closestDistance2)
 {
-  foundComponentType = vtkMRMLDisplayNode::InteractionNone;
+  foundComponentType = InteractionNone;
   vtkMRMLAbstractViewNode* viewNode = this->GetViewNode();
   if (!viewNode || !this->GetVisibility() || !interactionEventData)
     {
@@ -193,7 +193,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
       // Detect translation handle shaft
       for (HandleInfo handleInfo : handleInfoList)
         {
-        if (!handleInfo.IsVisible() || handleInfo.ComponentType != vtkMRMLDisplayNode::InteractionTranslationHandle)
+        if (!handleInfo.IsVisible() || handleInfo.ComponentType != InteractionTranslationHandle)
           {
           continue;
           }
@@ -272,7 +272,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
       // Detect translation handle shaft
       for (HandleInfo handleInfo : handleInfoList)
         {
-        if (!handleInfo.IsVisible() || handleInfo.ComponentType != vtkMRMLDisplayNode::InteractionTranslationHandle)
+        if (!handleInfo.IsVisible() || handleInfo.ComponentType != InteractionTranslationHandle)
           {
           continue;
           }

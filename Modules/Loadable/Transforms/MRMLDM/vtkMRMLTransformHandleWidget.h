@@ -38,7 +38,6 @@
 
 class vtkMRMLAbstractViewNode;
 class vtkMRMLApplicationLogic;
-class vtkMRMLDisplayNode;
 class vtkMRMLDisplayableNode;
 class vtkMRMLInteractionEventData;
 class vtkMRMLInteractionNode;
@@ -67,7 +66,7 @@ public:
   /// Create the default widget representation and initializes the widget and representation.
   virtual void CreateDefaultRepresentation(vtkMRMLTransformDisplayNode* displayNode, vtkMRMLAbstractViewNode* viewNode, vtkRenderer* renderer);
 
-  virtual vtkMRMLDisplayNode* GetDisplayNode();
+  virtual vtkMRMLTransformDisplayNode* GetDisplayNode();
   virtual vtkMRMLTransformNode* GetTransformNode();
 
   int GetActiveComponentType() override;

@@ -131,7 +131,7 @@ void vtkMRMLTransformHandleWidget::CreateDefaultRepresentation(vtkMRMLTransformD
 }
 
 //----------------------------------------------------------------------
-vtkMRMLDisplayNode* vtkMRMLTransformHandleWidget::GetDisplayNode()
+vtkMRMLTransformDisplayNode* vtkMRMLTransformHandleWidget::GetDisplayNode()
 {
   vtkMRMLTransformHandleWidgetRepresentation* widgetRep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->GetRepresentation());
   if (!widgetRep)

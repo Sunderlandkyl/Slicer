@@ -683,7 +683,7 @@ bool vtkMRMLTransformsDisplayableManager2D::CanProcessInteractionEvent(vtkMRMLIn
   if (eventid == vtkCommand::LeaveEvent && this->Internal->LastActiveWidget != nullptr)
     {
     if (this->Internal->LastActiveWidget->GetDisplayNode()
-      && this->Internal->LastActiveWidget->GetDisplayNode()->GetActiveInteractionType() > vtkMRMLDisplayNode::InteractionNone)
+      && this->Internal->LastActiveWidget->GetDisplayNode()->GetActiveInteractionType() > vtkMRMLTransformHandleWidget::InteractionNone)
       {
       // this widget has active component, therefore leave event is relevant
       closestDistance2 = 0.0;
