@@ -65,7 +65,7 @@
 #include "vtkTransform.h"
 #include "vtkTransformPolyDataFilter.h"
 #include "vtkTubeFilter.h"
-
+#include <vtkMRMLSliceNode.h>
 class vtkMRMLInteractionEventData;
 class vtkMRMLDisplayNode;
 class vtkMRMLDisplayableNode;
@@ -109,18 +109,34 @@ public:
   * Returns true if the representation is displayable in the current view.
   * It takes into account current view node's display node and parent folder's visibility.
   */
-  bool IsDisplayable();
+  virtual bool IsDisplayable() = 0;
   //@}
+
+  virtual vtkMRMLSliceNode* GetSliceNode();
+  virtual void GetSliceToWorldCoordinates(const double slicePos[2], double worldPos[3]);
+
+  virtual void UpdatePlaneFromSliceNode();
 
   /// Get the axis for the handle specified by the index
   virtual void GetInteractionHandleAxisWorld(int type, int index, double axis[3]);
   /// Get the origin of the interaction handle widget
   virtual void GetInteractionHandleOriginWorld(double origin[3]);
 
-  /// Set/Get the vtkMRMLMarkipsNode connected with this representation
-  virtual void SetDisplayNode(vtkMRMLDisplayNode* displayNode);
-  virtual vtkMRMLDisplayNode* GetDisplayNode();
-  virtual vtkMRMLDisplayableNode* GetDisplayableNode();
+  enum
+  {
+    InteractionNone,
+    InteractionTranslationHandle,
+    InteractionRotationHandle,
+    InteractionScaleHandle,
+  };
+
+  virtual int GetActiveComponentType() = 0;
+  virtual void SetActiveComponentType(int type) = 0;
+
+  virtual int GetActiveComponentIndex() = 0;
+  virtual void SetActiveComponentIndex(int index) = 0;
+
+  virtual double GetMaximumHandlePickingDistance2();
 
 protected:
   vtkMRMLInteractionWidgetRepresentation();
@@ -132,32 +148,34 @@ protected:
     InteractionPipeline();
     virtual ~InteractionPipeline();
 
-    vtkSmartPointer<vtkSphereSource>                    AxisRotationHandleSource;
-    vtkSmartPointer<vtkArcSource>                       AxisRotationArcSource;
-    vtkSmartPointer<vtkTubeFilter>                      AxisRotationTubeFilter;
-    vtkSmartPointer<vtkAppendPolyData>                  AxisRotationGlyphSource;
-    vtkSmartPointer<vtkPolyData>                        RotationHandlePoints;
-    vtkSmartPointer<vtkTransformPolyDataFilter>         RotationScaleTransform;
-    vtkSmartPointer<vtkTensorGlyph>                     AxisRotationGlypher;
+    vtkSmartPointer<vtkSphereSource>            AxisRotationHandleSource;
+    vtkSmartPointer<vtkArcSource>               AxisRotationArcSource;
+    vtkSmartPointer<vtkTubeFilter>              AxisRotationTubeFilter;
+    vtkSmartPointer<vtkAppendPolyData>          AxisRotationGlyphSource;
+    vtkSmartPointer<vtkPolyData>                RotationHandlePoints;
+    vtkSmartPointer<vtkTransformPolyDataFilter> RotationScaleTransform;
+    vtkSmartPointer<vtkTensorGlyph>             AxisRotationGlypher;
 
-    vtkSmartPointer<vtkArrowSource>                     AxisTranslationGlyphSource;
-    vtkSmartPointer<vtkTransformPolyDataFilter>         AxisTranslationGlyphTransformer;
-    vtkSmartPointer<vtkPolyData>                        TranslationHandlePoints;
-    vtkSmartPointer<vtkTransformPolyDataFilter>         TranslationScaleTransform;
-    vtkSmartPointer<vtkGlyph3D>                         AxisTranslationGlypher;
+    vtkSmartPointer<vtkArrowSource>             AxisTranslationGlyphSource;
+    vtkSmartPointer<vtkTransformPolyDataFilter> AxisTranslationGlyphTransformer;
+    vtkSmartPointer<vtkPolyData>                TranslationHandlePoints;
+    vtkSmartPointer<vtkTransformPolyDataFilter> TranslationScaleTransform;
+    vtkSmartPointer<vtkGlyph3D>                 AxisTranslationGlypher;
 
-    vtkSmartPointer<vtkSphereSource>                    AxisScaleHandleSource;
-    vtkSmartPointer<vtkPolyData>                        ScaleHandlePoints;
-    vtkSmartPointer<vtkTransformPolyDataFilter>         ScaleScaleTransform;
-    vtkSmartPointer<vtkGlyph3D>                         AxisScaleGlypher;
+    vtkSmartPointer<vtkSphereSource>            AxisScaleHandleSource;
+    vtkSmartPointer<vtkPolyData>                ScaleHandlePoints;
+    vtkSmartPointer<vtkTransformPolyDataFilter> ScaleScaleTransform;
+    vtkSmartPointer<vtkGlyph3D>                 AxisScaleGlypher;
 
-    vtkSmartPointer<vtkAppendPolyData>                  Append;
-    vtkSmartPointer<vtkTransformPolyDataFilter>         HandleToWorldTransformFilter;
-    vtkSmartPointer<vtkTransform>                       HandleToWorldTransform;
-    vtkSmartPointer<vtkLookupTable>                     ColorTable;
-    vtkSmartPointer<vtkPolyDataMapper2D>                Mapper;
-    vtkSmartPointer<vtkActor2D>                         Actor;
-    vtkSmartPointer<vtkProperty2D>                      Property;
+    vtkSmartPointer<vtkAppendPolyData>          Append;
+    vtkSmartPointer<vtkTransformPolyDataFilter> HandleToWorldTransformFilter;
+    vtkSmartPointer<vtkTransform>               HandleToWorldTransform;
+    vtkSmartPointer<vtkLookupTable>             ColorTable;
+    vtkSmartPointer<vtkPolyDataMapper2D>        Mapper;
+    vtkSmartPointer<vtkActor2D>                 Actor;
+    vtkSmartPointer<vtkProperty2D>              Property;
+
+    vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
   };
 
   struct HandleInfo
@@ -206,7 +224,7 @@ protected:
   /// Set the scale of the interaction handles in world coordinates
   virtual void SetWidgetScale(double scale);
   /// Get the color of the specified handle
-  /// Type is specified using vtkMRMLDisplayNode::InteractionType
+  /// Type is specified using InteractionType enum
   virtual void GetHandleColor(int type, int index, double color[4]);
   /// Get the opacity of the specified handle
   virtual double GetHandleOpacity(int type, int index);
@@ -230,6 +248,9 @@ protected:
   double ViewScaleFactorMmPerPixel;
   double ScreenSizePixel; // diagonal size of the screen
 
+  vtkSmartPointer<vtkTransform> WorldToSliceTransform{ nullptr };
+  vtkSmartPointer<vtkPlane> SlicePlane{ nullptr };
+
   // Control point size, specified in renderer world coordinate system.
   // For slice views, renderer world coordinate system is the display coordinate system, so it is measured in pixels.
   // For 3D views, renderer world coordinate system is the Slicer world coordinate system, so it is measured in the
@@ -244,7 +265,7 @@ protected:
   /// Update the interaction pipeline
   virtual void UpdateInteractionPipeline();
 
-  vtkWeakPointer<vtkMRMLDisplayNode> DisplayNode{nullptr};
+  double GetViewScaleFactorAtPosition(double positionWorld[3]);
 
 private:
   vtkMRMLInteractionWidgetRepresentation(const vtkMRMLInteractionWidgetRepresentation&) = delete;

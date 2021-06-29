@@ -38,7 +38,6 @@
 
 class vtkMRMLAbstractViewNode;
 class vtkMRMLApplicationLogic;
-class vtkMRMLDisplayNode;
 class vtkMRMLDisplayableNode;
 class vtkMRMLInteractionEventData;
 class vtkMRMLInteractionNode;
@@ -50,11 +49,6 @@ class vtkTransform;
 class VTK_MRML_DISPLAYABLEMANAGER_EXPORT vtkMRMLInteractionWidget : public vtkMRMLAbstractWidget
 {
 public:
-  /**
-   * Instantiate this class.
-   */
-  static vtkMRMLInteractionWidget* New();
-
   //@{
   /**
    * Standard VTK class macros.
@@ -63,8 +57,13 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent) override;
   //@}
 
-  /// Create the default widget representation and initializes the widget and representation.
-  virtual void CreateDefaultRepresentation(vtkMRMLDisplayNode* displayNode, vtkMRMLAbstractViewNode* viewNode, vtkRenderer* renderer);
+  enum
+  {
+    InteractionNone,
+    InteractionTranslationHandle,
+    InteractionRotationHandle,
+    InteractionScaleHandle,
+  };
 
   /// Widget states
   enum
@@ -78,15 +77,14 @@ public:
   /// Widget events
   enum
     {
-    /*WidgetEventControlPointSnapToSlice,*/
     WidgetEvent_Last
     };
 
-  virtual vtkMRMLDisplayNode* GetDisplayNode();
-  virtual vtkMRMLDisplayableNode* GetDisplayableNode();
+  virtual int GetActiveComponentType() = 0;
+  virtual void SetActiveComponentType(int type) = 0;
 
-  int GetActiveComponentType();
-  int GetActiveComponentIndex();
+  virtual int GetActiveComponentIndex() = 0;
+  virtual void SetActiveComponentIndex(int index) = 0;
 
   /// Return true if the widget can process the event.
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double &distance2) override;
@@ -112,7 +110,7 @@ protected:
   virtual void TranslateWidget(double eventPos[2]);
   virtual void ScaleWidget(double eventPos[2]);
   virtual void RotateWidget(double eventPos[2]);
-  virtual void ApplyTransform(vtkTransform* transform);
+  virtual void ApplyTransform(vtkTransform* transform) = 0;
 
   // Get accurate world position.
   // World position that comes in the event data may be inaccurate, this method computes a more reliable position.
@@ -131,7 +129,6 @@ protected:
   // Return true if the event is processed.
   virtual bool ProcessMouseMove(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetMenu(vtkMRMLInteractionEventData* eventData);
-  virtual bool ProcessWidgetAction(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetTranslateStart(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetRotateStart(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetScaleStart(vtkMRMLInteractionEventData* eventData);

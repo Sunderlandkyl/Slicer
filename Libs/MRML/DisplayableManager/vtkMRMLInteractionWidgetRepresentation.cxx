@@ -32,6 +32,7 @@
 #include "vtkLookupTable.h"
 #include "vtkMRMLSliceNode.h"
 #include "vtkMRMLViewNode.h"
+#include <vtkPlane.h>
 #include "vtkPointData.h"
 #include "vtkPointSetToLabelHierarchy.h"
 #include "vtkPolyDataMapper2D.h"
@@ -76,12 +77,23 @@ vtkMRMLInteractionWidgetRepresentation::vtkMRMLInteractionWidgetRepresentation()
   this->AlwaysOnTop = false;
 
   this->Pipeline = nullptr;
+
+  this->SlicePlane = vtkSmartPointer<vtkPlane>::New();
+  this->WorldToSliceTransform = vtkSmartPointer<vtkTransform>::New();
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
 {
   this->Pipeline = new InteractionPipeline();
+
+  if (this->GetSliceNode())
+    {
+    this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
+    this->Pipeline->Mapper->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
+    this->Pipeline->Mapper->SetTransformCoordinate(nullptr);
+    }
+
   this->InitializePipeline();
 }
 
@@ -107,13 +119,271 @@ void vtkMRMLInteractionWidgetRepresentation::PrintSelf(ostream& os,
   os << indent << "Point Placer: " << this->PointPlacer << "\n";
 }
 
+//----------------------------------------------------------------------
+double vtkMRMLInteractionWidgetRepresentation::GetMaximumHandlePickingDistance2()
+{
+  double maximumHandlePickingDistance = this->InteractionSize / 2.0 + this->PickingTolerance * this->ScreenScaleFactor;
+  return maximumHandlePickingDistance * maximumHandlePickingDistance;
+}
+
 //-----------------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::CanInteract(
-  vtkMRMLInteractionEventData* vtkNotUsed(interactionEventData),
-  int &foundComponentType, int &vtkNotUsed(foundComponentIndex), double &vtkNotUsed(closestDistance2))
+  vtkMRMLInteractionEventData* interactionEventData,
+  int &foundComponentType, int &foundComponentIndex, double &closestDistance2)
 {
   foundComponentType = vtkMRMLDisplayNode::InteractionNone;
+  vtkMRMLAbstractViewNode* viewNode = this->GetViewNode();
+  if (!viewNode || !this->GetVisibility() || !interactionEventData)
+    {
+    return;
+    }
+
+  this->UpdateHandleSize();
+
+  closestDistance2 = VTK_DOUBLE_MAX; // in display coordinate system
+  foundComponentIndex = -1;
+
+  double maxPickingDistanceFromControlPoint2 = this->GetMaximumHandlePickingDistance2();
+  double displayPosition3[3] = { 0.0, 0.0, 0.0 };
+  // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
+  // virtual reality, and then we expect a valid world position in the absence of display position.
+  if (interactionEventData->IsDisplayPositionValid())
+    {
+    const int* displayPosition = interactionEventData->GetDisplayPosition();
+    displayPosition3[0] = static_cast<double>(displayPosition[0]);
+    displayPosition3[1] = static_cast<double>(displayPosition[1]);
+    }
+  else if (!interactionEventData->IsWorldPositionValid())
+    {
+    return;
+    }
+
+  vtkMRMLSliceNode* sliceNode = this->GetSliceNode();
+  if (sliceNode)
+    {
+    double handleDisplayPos[4] = { 0.0, 0.0, 0.0, 1.0 };
+
+    vtkNew<vtkMatrix4x4> rasToxyMatrix;
+    vtkMatrix4x4::Invert(sliceNode->GetXYToRAS(), rasToxyMatrix);
+
+    bool handlePicked = false;
+    HandleInfoList handleInfoList = this->GetHandleInfoList();
+    for (HandleInfo handleInfo : handleInfoList)
+      {
+      if (!handleInfo.IsVisible())
+        {
+        continue;
+        }
+      double* handleWorldPos = handleInfo.PositionWorld;
+      rasToxyMatrix->MultiplyPoint(handleWorldPos, handleDisplayPos);
+      handleDisplayPos[2] = displayPosition3[2]; // Handles are always projected
+      double dist2 = vtkMath::Distance2BetweenPoints(handleDisplayPos, displayPosition3);
+      if (dist2 < maxPickingDistanceFromControlPoint2 && dist2 < closestDistance2)
+        {
+        closestDistance2 = dist2;
+        foundComponentType = handleInfo.ComponentType;
+        foundComponentIndex = handleInfo.Index;
+        handlePicked = true;
+        }
+      }
+
+    if (!handlePicked)
+      {
+      // Detect translation handle shaft
+      for (HandleInfo handleInfo : handleInfoList)
+        {
+        if (!handleInfo.IsVisible() || handleInfo.ComponentType != vtkMRMLDisplayNode::InteractionTranslationHandle)
+          {
+          continue;
+          }
+
+        double* handleWorldPos = handleInfo.PositionWorld;
+        rasToxyMatrix->MultiplyPoint(handleWorldPos, handleDisplayPos);
+        handleDisplayPos[2] = displayPosition3[2]; // Handles are always projected
+
+        double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
+        this->GetInteractionHandleOriginWorld(originWorldPos);
+        double originDisplayPos[4] = { 0.0 };
+        rasToxyMatrix->MultiplyPoint(originWorldPos, originDisplayPos);
+        originDisplayPos[2] = displayPosition3[2]; // Handles are always projected
+
+        double t = 0;
+        double lineDistance = vtkLine::DistanceToLine(displayPosition3, originDisplayPos, handleDisplayPos, t);
+        double lineDistance2 = lineDistance * lineDistance;
+        if (lineDistance2 < maxPickingDistanceFromControlPoint2 / 2.0 && lineDistance2 < closestDistance2)
+          {
+          closestDistance2 = lineDistance2;
+          foundComponentType = handleInfo.ComponentType;
+          foundComponentIndex = handleInfo.Index;
+          }
+        }
+      }
+    }
+  else
+    {
+
+    bool handlePicked = false;
+    HandleInfoList handleInfoList = this->GetHandleInfoList();
+    for (HandleInfo handleInfo : handleInfoList)
+      {
+      if (!handleInfo.IsVisible())
+        {
+        continue;
+        }
+
+      double* handleWorldPos = handleInfo.PositionWorld;
+      double handleDisplayPos[3] = { 0 };
+
+      if (interactionEventData->IsDisplayPositionValid())
+        {
+        double pixelTolerance = this->InteractionSize / 2.0 / this->GetViewScaleFactorAtPosition(handleWorldPos)
+          + this->PickingTolerance * this->ScreenScaleFactor;
+        this->Renderer->SetWorldPoint(handleWorldPos);
+        this->Renderer->WorldToDisplay();
+        this->Renderer->GetDisplayPoint(handleDisplayPos);
+        handleDisplayPos[2] = 0.0;
+        double dist2 = vtkMath::Distance2BetweenPoints(handleDisplayPos, displayPosition3);
+        if (dist2 < pixelTolerance * pixelTolerance && dist2 < closestDistance2)
+          {
+          closestDistance2 = dist2;
+          foundComponentType = handleInfo.ComponentType;
+          foundComponentIndex = handleInfo.Index;
+          handlePicked = true;
+          }
+        }
+      else
+        {
+        const double* worldPosition = interactionEventData->GetWorldPosition();
+        double worldTolerance = this->InteractionSize / 2.0 +
+          this->PickingTolerance / interactionEventData->GetWorldToPhysicalScale();
+        double dist2 = vtkMath::Distance2BetweenPoints(handleWorldPos, worldPosition);
+        if (dist2 < worldTolerance * worldTolerance && dist2 < closestDistance2)
+          {
+          closestDistance2 = dist2;
+          foundComponentType = handleInfo.ComponentType;
+          foundComponentIndex = handleInfo.Index;
+          }
+        }
+      }
+
+    if (!handlePicked)
+      {
+      // Detect translation handle shaft
+      for (HandleInfo handleInfo : handleInfoList)
+        {
+        if (!handleInfo.IsVisible() || handleInfo.ComponentType != vtkMRMLDisplayNode::InteractionTranslationHandle)
+          {
+          continue;
+          }
+        double* handleWorldPos = handleInfo.PositionWorld;
+        double handleDisplayPos[3] = { 0 };
+
+        if (interactionEventData->IsDisplayPositionValid())
+          {
+          double pixelTolerance = this->InteractionSize / 2.0 / this->GetViewScaleFactorAtPosition(handleWorldPos)
+            + this->PickingTolerance * this->ScreenScaleFactor;
+          this->Renderer->SetWorldPoint(handleWorldPos);
+          this->Renderer->WorldToDisplay();
+          this->Renderer->GetDisplayPoint(handleDisplayPos);
+          handleDisplayPos[2] = 0.0;
+
+          double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
+          this->GetInteractionHandleOriginWorld(originWorldPos);
+          double originDisplayPos[4] = { 0.0 };
+          this->Renderer->SetWorldPoint(originWorldPos);
+          this->Renderer->WorldToDisplay();
+          this->Renderer->GetDisplayPoint(originDisplayPos);
+          originDisplayPos[2] = displayPosition3[2]; // Handles are always projected
+          double t = 0;
+          double lineDistance = vtkLine::DistanceToLine(displayPosition3, originDisplayPos, handleDisplayPos, t);
+          double lineDistance2 = lineDistance * lineDistance;
+          if (lineDistance < pixelTolerance && lineDistance2 < closestDistance2)
+            {
+            closestDistance2 = lineDistance2;
+            foundComponentType = handleInfo.ComponentType;
+            foundComponentIndex = handleInfo.Index;
+            }
+          }
+        else
+          {
+          const double* worldPosition = interactionEventData->GetWorldPosition();
+          double worldTolerance = this->InteractionSize / 2.0 +
+            this->PickingTolerance / interactionEventData->GetWorldToPhysicalScale();
+          double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
+          this->GetInteractionHandleOriginWorld(originWorldPos);
+          double t;
+          double lineDistance = vtkLine::DistanceToLine(worldPosition, originWorldPos, handleWorldPos, t);
+          if (lineDistance < worldTolerance && lineDistance < closestDistance2)
+            {
+            closestDistance2 = lineDistance;
+            foundComponentType = handleInfo.ComponentType;
+            foundComponentIndex = handleInfo.Index;
+            }
+          }
+        }
+      }
+    }
+
 }
+
+
+//----------------------------------------------------------------------
+double vtkMRMLInteractionWidgetRepresentation::GetViewScaleFactorAtPosition(double positionWorld[3])
+{
+  double viewScaleFactorMmPerPixel = 1.0;
+  if (!this->Renderer || !this->Renderer->GetActiveCamera())
+    {
+    return viewScaleFactorMmPerPixel;
+    }
+
+  vtkCamera * cam = this->Renderer->GetActiveCamera();
+  if (cam->GetParallelProjection())
+    {
+    // Viewport: xmin, ymin, xmax, ymax; range: 0.0-1.0; origin is bottom left
+    // Determine the available renderer size in pixels
+    double minX = 0;
+    double minY = 0;
+    this->Renderer->NormalizedDisplayToDisplay(minX, minY);
+    double maxX = 1;
+    double maxY = 1;
+    this->Renderer->NormalizedDisplayToDisplay(maxX, maxY);
+    int rendererSizeInPixels[2] = { static_cast<int>(maxX - minX), static_cast<int>(maxY - minY) };
+    // Parallel scale: height of the viewport in world-coordinate distances.
+    // Larger numbers produce smaller images.
+    viewScaleFactorMmPerPixel = (cam->GetParallelScale() * 2.0) / double(rendererSizeInPixels[1]);
+    }
+  else
+    {
+    double cameraFP[4] = { positionWorld[0], positionWorld[1], positionWorld[2], 1.0 };
+
+    double cameraViewUp[3] = { 0 };
+    cam->GetViewUp(cameraViewUp);
+    vtkMath::Normalize(cameraViewUp);
+
+    // Get distance in pixels between two points at unit distance above and below the focal point
+    this->Renderer->SetWorldPoint(cameraFP[0] + cameraViewUp[0], cameraFP[1] + cameraViewUp[1], cameraFP[2] + cameraViewUp[2], cameraFP[3]);
+    this->Renderer->WorldToDisplay();
+    double topCenter[3] = { 0 };
+    this->Renderer->GetDisplayPoint(topCenter);
+    topCenter[2] = 0.0;
+    this->Renderer->SetWorldPoint(cameraFP[0] - cameraViewUp[0], cameraFP[1] - cameraViewUp[1], cameraFP[2] - cameraViewUp[2], cameraFP[3]);
+    this->Renderer->WorldToDisplay();
+    double bottomCenter[3] = { 0 };
+    this->Renderer->GetDisplayPoint(bottomCenter);
+    bottomCenter[2] = 0.0;
+    double distInPixels = sqrt(vtkMath::Distance2BetweenPoints(topCenter, bottomCenter));
+
+    // if render window is not initialized yet then distInPixels == 0.0,
+    // in that case just leave the default viewScaleFactorMmPerPixel
+    if (distInPixels > 1e-3)
+      {
+      // 2.0 = 2x length of viewUp vector in mm (because viewUp is unit vector)
+      viewScaleFactorMmPerPixel = 2.0 / distInPixels;
+      }
+    }
+  return viewScaleFactorMmPerPixel;
+}
+
 
 //----------------------------------------------------------------------
 bool vtkMRMLInteractionWidgetRepresentation::GetTransformationReferencePoint(double referencePointWorld[3])
@@ -131,6 +401,11 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateFromMRML(
     }
 
   this->NeedToRenderOn(); // TODO: to improve performance, call this only if it is actually needed
+
+  if (this->GetSliceNode())
+    {
+    this->UpdatePlaneFromSliceNode();
+    }
 
   if (this->Pipeline)
     {
@@ -152,75 +427,12 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateInteractionPipeline()
   this->UpdateHandleColors();
 
   this->Pipeline->Actor->SetVisibility(true);
-
-  //TODO: Need to store/get the handle to world matrix from the node.
-  /*handleToWorldTransform->SetMatrix(this->DisplayNode->GetInteractionHandleToWorldMatrix());*/
-
-  this->Pipeline->HandleToWorldTransform->Identity();
-
-  vtkMRMLDisplayableNode* displayableNode = this->DisplayNode->GetDisplayableNode();
-
-  if (displayableNode)
-    {
-    vtkMRMLTransformNode* transformNode = vtkMRMLTransformNode::SafeDownCast(displayableNode);
-    if (!transformNode)
-      {
-      transformNode = displayableNode->GetParentTransformNode();
-      }
-
-    vtkNew<vtkMatrix4x4> nodeToWorld;
-    vtkMRMLTransformNode::GetMatrixTransformBetweenNodes(transformNode, nullptr, nodeToWorld);
-    this->Pipeline->HandleToWorldTransform->Concatenate(nodeToWorld);
-    }
 }
 
 //----------------------------------------------------------------------
 vtkPointPlacer* vtkMRMLInteractionWidgetRepresentation::GetPointPlacer()
 {
   return this->PointPlacer;
-}
-
-//-----------------------------------------------------------------------------
-bool vtkMRMLInteractionWidgetRepresentation::IsDisplayable()
-{
-  if (!this->DisplayNode
-    || !this->ViewNode
-    || !this->DisplayNode->GetVisibility()
-    || !this->DisplayNode->GetInteractionVisibility()
-    || !this->DisplayNode->IsDisplayableInView(this->ViewNode->GetID()))
-    {
-    return false;
-    }
-
-  // If parent folder visibility is set to false then it is not visible
-  if (this->DisplayNode->GetFolderDisplayOverrideAllowed())
-    {
-    vtkMRMLDisplayableNode* displayableNode = this->DisplayNode->GetDisplayableNode();
-    // Visibility is applied regardless the fact whether there is override or not.
-    // Visibility of items defined by hierarchy is off if any of the ancestors is explicitly hidden.
-    // However, this does not apply on display nodes that do not allow overrides (FolderDisplayOverrideAllowed)
-    if (!vtkMRMLFolderDisplayNode::GetHierarchyVisibility(displayableNode))
-      {
-      return false;
-      }
-    }
-
-  if (vtkMRMLSliceNode::SafeDownCast(this->ViewNode))
-    {
-    if (!this->DisplayNode->GetVisibility2D())
-      {
-      return false;
-      }
-    }
-  if (vtkMRMLViewNode::SafeDownCast(this->ViewNode))
-    {
-    if (!this->DisplayNode->GetVisibility3D())
-      {
-      return false;
-      }
-    }
-
-  return true;
 }
 
 //----------------------------------------------------------------------
@@ -258,36 +470,6 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
   int count = 0;
   if (this->Pipeline && this->Pipeline->Actor->GetVisibility())
     {
-    // Recompute glyph size if it is relative to the screen size
-    // (it gets smaller/larger as the camera is moved or zoomed)
-    bool updateInteractionSize = false;
-    if (!this->DisplayNode->GetInteractionSizeAbsolute())
-      {
-      double newInteractionSize = 1.0;
-      double oldScreenSizePixel = this->ScreenSizePixel;
-      this->UpdateViewScaleFactor();
-      if (this->ScreenSizePixel != oldScreenSizePixel)
-        {
-        updateInteractionSize = true;
-        }
-      newInteractionSize = this->ScreenSizePixel * this->ScreenScaleFactor
-        * this->DisplayNode->GetInteractionScale() / 100.0 * this->ViewScaleFactorMmPerPixel;
-      // Only update the size if there is noticeable difference to avoid slight flickering
-      // when the camera is moved
-      if (this->InteractionSize <= 0.0 || fabs(newInteractionSize - this->InteractionSize) / this->InteractionSize > 0.05)
-        {
-        this->InteractionSize = newInteractionSize;
-        updateInteractionSize = true;
-        }
-      }
-
-    if (updateInteractionSize)
-      {
-      this->UpdateHandleSize();
-      double interactionWidgetScale = this->InteractionHandleScaleFactor * this->InteractionSize;
-      this->SetWidgetScale(interactionWidgetScale);
-      }
-
     this->UpdateHandleColors();
     count += this->Pipeline->Actor->RenderOpaqueGeometry(viewport);
     }
@@ -315,34 +497,6 @@ vtkTypeBool vtkMRMLInteractionWidgetRepresentation::HasTranslucentPolygonalGeome
     return true;
     }
   return false;
-}
-
-//----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::SetDisplayNode(vtkMRMLDisplayNode* displayNode)
-{
-  if (this->DisplayNode == displayNode)
-    {
-    return;
-    }
-
-  this->DisplayNode = displayNode;
-}
-
-//----------------------------------------------------------------------
-vtkMRMLDisplayNode* vtkMRMLInteractionWidgetRepresentation::GetDisplayNode()
-{
-  return this->DisplayNode;
-}
-
-//----------------------------------------------------------------------
-vtkMRMLDisplayableNode* vtkMRMLInteractionWidgetRepresentation::GetDisplayableNode()
-{
-  vtkMRMLDisplayNode* displayNode = this->GetDisplayNode();
-  if (!displayNode)
-    {
-    return nullptr;
-    }
-  return displayNode->GetDisplayableNode();
 }
 
 //----------------------------------------------------------------------
@@ -473,6 +627,9 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   this->Actor = vtkSmartPointer<vtkActor2D>::New();
   this->Actor->SetProperty(this->Property);
   this->Actor->SetMapper(this->Mapper);
+
+  this->WorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->WorldToSliceTransformFilter->SetTransform(vtkNew<vtkTransform>());
 }
 
 //----------------------------------------------------------------------
@@ -604,7 +761,7 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateHandleColors()
   rotationColorArray->SetNumberOfTuples(this->Pipeline->RotationHandlePoints->GetNumberOfPoints());
   for (int i = 0; i < this->Pipeline->RotationHandlePoints->GetNumberOfPoints(); ++i)
     {
-    this->GetHandleColor(vtkMRMLDisplayNode::InteractionRotationHandle, i, color);
+    this->GetHandleColor(InteractionRotationHandle, i, color);
     this->Pipeline->ColorTable->SetTableValue(colorIndex, color);
     rotationColorArray->SetTuple1(i, colorIndex);
     ++colorIndex;
@@ -625,7 +782,7 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateHandleColors()
   translationColorArray->SetNumberOfTuples(this->Pipeline->TranslationHandlePoints->GetNumberOfPoints());
   for (int i = 0; i < this->Pipeline->TranslationHandlePoints->GetNumberOfPoints(); ++i)
     {
-    this->GetHandleColor(vtkMRMLDisplayNode::InteractionTranslationHandle, i, color);
+    this->GetHandleColor(InteractionTranslationHandle, i, color);
     this->Pipeline->ColorTable->SetTableValue(colorIndex, color);
     translationColorArray->SetTuple1(i, colorIndex);
     ++colorIndex;
@@ -646,7 +803,7 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateHandleColors()
   scaleColorArray->SetNumberOfTuples(this->Pipeline->ScaleHandlePoints->GetNumberOfPoints());
   for (int i = 0; i < this->Pipeline->ScaleHandlePoints->GetNumberOfPoints(); ++i)
     {
-    this->GetHandleColor(vtkMRMLDisplayNode::InteractionScaleHandle, i, color);
+    this->GetHandleColor(InteractionScaleHandle, i, color);
     this->Pipeline->ColorTable->SetTableValue(colorIndex, color);
     scaleColorArray->SetTuple1(i, colorIndex);
     ++colorIndex;
@@ -690,15 +847,8 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
       break;
     }
 
-  vtkMRMLInteractionWidgetRepresentation* interactionRepresentation = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this);
-  vtkMRMLDisplayNode* displayNode = nullptr;
-  if (interactionRepresentation)
-    {
-    displayNode = interactionRepresentation->GetDisplayNode();
-    }
-
   double opacity = this->GetHandleOpacity(type, index);
-  if (displayNode && displayNode->GetActiveInteractionType() == type && displayNode->GetActiveInteractionIndex() == index)
+  if (this->GetActiveComponentType() == type && this->GetActiveComponentIndex() == index)
     {
     currentColor = yellow;
     opacity = 1.0;
@@ -710,15 +860,15 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
     }
 
   vtkPolyData* handlePoints = nullptr;
-  if (type == vtkMRMLDisplayNode::InteractionTranslationHandle)
+  if (type == InteractionTranslationHandle)
     {
     handlePoints = this->Pipeline->TranslationHandlePoints;
     }
-  else if (type == vtkMRMLDisplayNode::InteractionRotationHandle)
+  else if (type == InteractionRotationHandle)
     {
     handlePoints = this->Pipeline->RotationHandlePoints;
     }
-  else if (type == vtkMRMLDisplayNode::InteractionScaleHandle)
+  else if (type == InteractionScaleHandle)
     {
     handlePoints = this->Pipeline->ScaleHandlePoints;
     }
@@ -741,8 +891,8 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
 {
   // Determine if the handle should be displayed
   bool handleVisible = true;
-  vtkMRMLDisplayNode* displayNode = this->GetDisplayNode();
-  if (displayNode)
+
+  if (false/*TODO. Add function to toggle handle display visibility*/)
     {
     //TODO: Add handle visiblity toggle
     /*handleVisible = displayNode->GetHandleVisibility(type);*/
@@ -753,7 +903,7 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
     }
 
   double opacity = 1.0;
-  if (type == vtkMRMLDisplayNode::InteractionTranslationHandle && index == 3)
+  if (type == InteractionTranslationHandle && index == 3)
     {
     // Free transform handle is always visible regardless of angle
     return opacity;
@@ -771,7 +921,7 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
 
   double fadeAngleRange = this->StartFadeAngle - this->EndFadeAngle;
   double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal, axis));
-  if (type == vtkMRMLDisplayNode::InteractionRotationHandle)
+  if (type == InteractionRotationHandle)
     {
     // Fade happens when the axis approaches 90 degrees from the view normal
     if (angle > 90 - this->EndFadeAngle)
@@ -784,7 +934,7 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
       opacity = 1.0 - (difference / fadeAngleRange);
       }
     }
-  else if (type == vtkMRMLDisplayNode::InteractionTranslationHandle || type == vtkMRMLDisplayNode::InteractionScaleHandle)
+  else if (type == InteractionTranslationHandle || type == InteractionScaleHandle)
     {
     // Fade happens when the axis approaches 0 degrees from the view normal
     if (angle < this->EndFadeAngle)
@@ -807,7 +957,20 @@ void vtkMRMLInteractionWidgetRepresentation::GetViewPlaneNormal(double normal[3]
     {
     return;
     }
-  if (this->GetRenderer() && this->GetRenderer()->GetActiveCamera())
+
+  if (this->GetSliceNode())
+    {
+    double viewPlaneNormal4[4] = { 0, 0, 1, 0 };
+    vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->GetViewNode());
+    if (sliceNode)
+      {
+      sliceNode->GetSliceToRAS()->MultiplyPoint(viewPlaneNormal4, viewPlaneNormal4);
+      }
+    normal[0] = viewPlaneNormal4[0];
+    normal[1] = viewPlaneNormal4[1];
+    normal[2] = viewPlaneNormal4[2];
+    }
+  else if (this->GetRenderer() && this->GetRenderer()->GetActiveCamera())
     {
     vtkCamera* camera = this->GetRenderer()->GetActiveCamera();
     camera->GetViewPlaneNormal(normal);
@@ -852,7 +1015,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int t
   axisWorld[1] = 0.0;
   axisWorld[2] = 0.0;
 
-  if (type == vtkMRMLDisplayNode::InteractionTranslationHandle)
+  if (type == InteractionTranslationHandle)
     {
     switch (index)
       {
@@ -869,7 +1032,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int t
         break;
       }
     }
-  else if (type == vtkMRMLDisplayNode::InteractionRotationHandle)
+  else if (type == InteractionRotationHandle)
     {
     switch (index)
       {
@@ -886,7 +1049,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int t
         break;
       }
     }
-  else if (type == vtkMRMLDisplayNode::InteractionScaleHandle)
+  else if (type == InteractionScaleHandle)
     {
     switch (index)
       {
@@ -915,19 +1078,19 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandlePositionWorld(i
     vtkErrorWithObjectMacro(nullptr, "GetInteractionHandlePositionWorld: Invalid position argument!");
     }
 
-  if (type == vtkMRMLDisplayNode::InteractionRotationHandle)
+  if (type == InteractionRotationHandle)
     {
     this->Pipeline->RotationHandlePoints->GetPoint(index, positionWorld);
     this->Pipeline->RotationScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
     this->Pipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
     }
-  else if (type == vtkMRMLDisplayNode::InteractionTranslationHandle)
+  else if (type == InteractionTranslationHandle)
     {
     this->Pipeline->TranslationHandlePoints->GetPoint(index, positionWorld);
     this->Pipeline->TranslationScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
     this->Pipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
     }
-  else if (type == vtkMRMLDisplayNode::InteractionScaleHandle)
+  else if (type == InteractionScaleHandle)
     {
     this->Pipeline->ScaleHandlePoints->GetPoint(index, positionWorld);
     this->Pipeline->ScaleScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
@@ -947,8 +1110,8 @@ vtkMRMLInteractionWidgetRepresentation::HandleInfoList vtkMRMLInteractionWidgetR
     this->Pipeline->RotationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
     this->Pipeline->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
     double color[4] = { 0 };
-    this->GetHandleColor(vtkMRMLDisplayNode::InteractionRotationHandle, i, color);
-    HandleInfo info(i, vtkMRMLDisplayNode::InteractionRotationHandle, handlePositionWorld, handlePositionLocal, color);
+    this->GetHandleColor(InteractionRotationHandle, i, color);
+    HandleInfo info(i, InteractionRotationHandle, handlePositionWorld, handlePositionLocal, color);
     handleInfoList.push_back(info);
     }
 
@@ -960,8 +1123,8 @@ vtkMRMLInteractionWidgetRepresentation::HandleInfoList vtkMRMLInteractionWidgetR
     this->Pipeline->TranslationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
     this->Pipeline->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
     double color[4] = { 0 };
-    this->GetHandleColor(vtkMRMLDisplayNode::InteractionTranslationHandle, i, color);
-    HandleInfo info(i, vtkMRMLDisplayNode::InteractionTranslationHandle, handlePositionWorld, handlePositionLocal, color);
+    this->GetHandleColor(InteractionTranslationHandle, i, color);
+    HandleInfo info(i, InteractionTranslationHandle, handlePositionWorld, handlePositionLocal, color);
     handleInfoList.push_back(info);
     }
 
@@ -973,10 +1136,76 @@ vtkMRMLInteractionWidgetRepresentation::HandleInfoList vtkMRMLInteractionWidgetR
     this->Pipeline->ScaleScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
     this->Pipeline->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
     double color[4] = { 0 };
-    this->GetHandleColor(vtkMRMLDisplayNode::InteractionScaleHandle, i, color);
-    HandleInfo info(i, vtkMRMLDisplayNode::InteractionScaleHandle, handlePositionWorld, handlePositionLocal, color);
+    this->GetHandleColor(InteractionScaleHandle, i, color);
+    HandleInfo info(i, InteractionScaleHandle, handlePositionWorld, handlePositionLocal, color);
     handleInfoList.push_back(info);
     }
 
   return handleInfoList;
+}
+
+//----------------------------------------------------------------------
+vtkMRMLSliceNode* vtkMRMLInteractionWidgetRepresentation::GetSliceNode()
+{
+  return vtkMRMLSliceNode::SafeDownCast(this->ViewNode);
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::GetSliceToWorldCoordinates(const double slicePos[2],
+  double worldPos[3])
+{
+  vtkMRMLSliceNode* sliceNode = this->GetSliceNode();
+  if (!this->Renderer || !sliceNode)
+    {
+    return;
+    }
+
+  double xyzw[4] =
+    {
+    slicePos[0] - this->Renderer->GetOrigin()[0],
+    slicePos[1] - this->Renderer->GetOrigin()[1],
+    0.0,
+    1.0
+    };
+  double rasw[4] = { 0.0, 0.0, 0.0, 1.0 };
+
+  this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(xyzw, rasw);
+
+  worldPos[0] = rasw[0] / rasw[3];
+  worldPos[1] = rasw[1] / rasw[3];
+  worldPos[2] = rasw[2] / rasw[3];
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::UpdatePlaneFromSliceNode()
+{
+  if (!this->GetSliceNode())
+    {
+    return;
+    }
+
+  vtkMatrix4x4* sliceXYToRAS = this->GetSliceNode()->GetXYToRAS();
+
+  // Update transformation to slice
+  vtkNew<vtkMatrix4x4> rasToSliceXY;
+  vtkMatrix4x4::Invert(sliceXYToRAS, rasToSliceXY.GetPointer());
+  // Project all points to the slice plane (slice Z coordinate = 0)
+  rasToSliceXY->SetElement(2, 0, 0);
+  rasToSliceXY->SetElement(2, 1, 0);
+  rasToSliceXY->SetElement(2, 2, 0);
+  this->WorldToSliceTransform->SetMatrix(rasToSliceXY.GetPointer());
+
+  // Update slice plane (for distance computation)
+  double normal[3];
+  double origin[3];
+  const double planeOrientation = 1.0; // +/-1: orientation of the normal
+  for (int i = 0; i < 3; i++)
+  {
+    normal[i] = planeOrientation * sliceXYToRAS->GetElement(i, 2);
+    origin[i] = sliceXYToRAS->GetElement(i, 3);
+  }
+  vtkMath::Normalize(normal);
+  this->SlicePlane->SetNormal(normal);
+  this->SlicePlane->SetOrigin(origin);
+  this->SlicePlane->Modified();
 }
