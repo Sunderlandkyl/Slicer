@@ -16,6 +16,10 @@ set(displayable_manager_SRCS
   vtkMRML${MODULE_NAME}DisplayableManager2D.cxx
   vtkMRML${MODULE_NAME}DisplayableManager3D.cxx
   vtkMRMLLinear${MODULE_NAME}DisplayableManager3D.cxx
+  vtkMRMLTransformHandleWidget.cxx
+  vtkMRMLTransformHandleWidgetRepresentation.cxx
+  vtkMRMLTransformHandleWidgetRepresentation2D.cxx
+  vtkMRMLTransformHandleWidgetRepresentation3D.cxx
   )
 
 SlicerConfigureDisplayableManagerObjectFactory(

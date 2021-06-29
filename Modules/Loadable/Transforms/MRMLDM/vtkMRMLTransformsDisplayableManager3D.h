@@ -52,6 +52,9 @@ protected:
   void OnMRMLSceneNodeRemoved(vtkMRMLNode* node) override;
   void ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData) override;
 
+  bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2) override;
+  bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
+
   /// Update Actors based on transforms in the scene
   void UpdateFromMRML() override;
 
