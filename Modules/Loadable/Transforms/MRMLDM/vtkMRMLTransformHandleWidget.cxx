@@ -67,28 +67,28 @@ void vtkMRMLTransformHandleWidget::PrintSelf(ostream& os, vtkIndent indent)
 //----------------------------------------------------------------------
 int vtkMRMLTransformHandleWidget::GetActiveComponentType()
 {
-  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation3D> rep = vtkMRMLTransformHandleWidgetRepresentation3D::SafeDownCast(this->WidgetRep);
+  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->WidgetRep);
   return rep->GetActiveComponentType();
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLTransformHandleWidget::SetActiveComponentType(int type)
 {
-  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation3D> rep = vtkMRMLTransformHandleWidgetRepresentation3D::SafeDownCast(this->WidgetRep);
+  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->WidgetRep);
   rep->SetActiveComponentType(type);
 }
 
 //----------------------------------------------------------------------
 int vtkMRMLTransformHandleWidget::GetActiveComponentIndex()
 {
-  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation3D> rep = vtkMRMLTransformHandleWidgetRepresentation3D::SafeDownCast(this->WidgetRep);
+  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->WidgetRep);
   return rep->GetActiveComponentIndex();
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLTransformHandleWidget::SetActiveComponentIndex(int index)
 {
-  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation3D> rep = vtkMRMLTransformHandleWidgetRepresentation3D::SafeDownCast(this->WidgetRep);
+  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->WidgetRep);
   rep->SetActiveComponentIndex(index);
 }
 

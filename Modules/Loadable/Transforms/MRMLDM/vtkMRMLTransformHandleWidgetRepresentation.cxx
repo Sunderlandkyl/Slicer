@@ -114,23 +114,22 @@ void vtkMRMLTransformHandleWidgetRepresentation::SetActiveComponentIndex(int ind
 //----------------------------------------------------------------------
 void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
 {
-  vtkMRMLViewNode* viewNode = vtkMRMLViewNode::SafeDownCast(this->ViewNode);
-  if (!viewNode)
-  {
+  vtkMRMLAbstractViewNode* viewNode = vtkMRMLAbstractViewNode::SafeDownCast(this->ViewNode);
+  if (!viewNode || !this->GetTransformNode())
+    {
     this->Pipeline->Actor->SetVisibility(false);
     return;
-  }
+    }
+
   // Final visibility handled by superclass in vtkMRMLInteractionWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
 
   this->Pipeline->HandleToWorldTransform->Identity();
+  this->Pipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
 
   vtkMRMLDisplayableNode* displayableNode = this->DisplayNode->GetDisplayableNode();
 
-  if (this->GetTransformNode())
-  {
-    vtkNew<vtkMatrix4x4> nodeToWorld;
-    vtkMRMLTransformNode::GetMatrixTransformBetweenNodes(this->GetTransformNode(), nullptr, nodeToWorld);
-    this->Pipeline->HandleToWorldTransform->Concatenate(nodeToWorld);
-  }
+  vtkNew<vtkMatrix4x4> nodeToWorld;
+  vtkMRMLTransformNode::GetMatrixTransformBetweenNodes(this->GetTransformNode(), nullptr, nodeToWorld);
+  this->Pipeline->HandleToWorldTransform->Concatenate(nodeToWorld);
 }
