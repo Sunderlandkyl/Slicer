@@ -38,6 +38,7 @@
 #include "vtkPolyDataMapper2D.h"
 #include "vtkProperty2D.h"
 #include "vtkRenderer.h"
+#include <vtkRenderWindow.h>
 #include "vtkSphereSource.h"
 #include "vtkStringArray.h"
 #include "vtkTextActor.h"
@@ -69,7 +70,6 @@ vtkMRMLInteractionWidgetRepresentation::vtkMRMLInteractionWidgetRepresentation()
   this->ViewScaleFactorMmPerPixel = 1.0;
   this->ScreenSizePixel = 1000;
 
-  this->InteractionSize = 3.0;
   this->NeedToRender = false;
 
   this->PointPlacer = vtkSmartPointer<vtkFocalPlanePointPlacer>::New();
@@ -86,7 +86,6 @@ vtkMRMLInteractionWidgetRepresentation::vtkMRMLInteractionWidgetRepresentation()
 void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
 {
   this->Pipeline = new InteractionPipeline();
-
   if (this->GetSliceNode())
     {
     this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
@@ -138,8 +137,6 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
     {
     return;
     }
-
-  this->UpdateHandleSize();
 
   closestDistance2 = VTK_DOUBLE_MAX; // in display coordinate system
   foundComponentIndex = -1;
@@ -472,6 +469,8 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
   if (this->Pipeline && this->Pipeline->Actor->GetVisibility())
     {
     this->UpdateHandleColors();
+    this->UpdateViewScaleFactor();
+    this->UpdateHandleSize();
     count += this->Pipeline->Actor->RenderOpaqueGeometry(viewport);
     }
   return count;
@@ -1209,4 +1208,70 @@ void vtkMRMLInteractionWidgetRepresentation::UpdatePlaneFromSliceNode()
   this->SlicePlane->SetNormal(normal);
   this->SlicePlane->SetOrigin(origin);
   this->SlicePlane->Modified();
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::UpdateViewScaleFactor()
+{
+  this->ViewScaleFactorMmPerPixel = 1.0;
+  this->ScreenSizePixel = 1000.0;
+  if (!this->Renderer || !this->Renderer->GetActiveCamera())
+    {
+    return;
+    }
+
+  int* screenSize = this->Renderer->GetRenderWindow()->GetScreenSize();
+  double screenSizePixel = sqrt(screenSize[0] * screenSize[0] + screenSize[1] * screenSize[1]);
+  if (screenSizePixel < 1.0)
+    {
+    // render window is not fully initialized yet
+    return;
+    }
+  this->ScreenSizePixel = screenSizePixel;
+
+  if (this->GetSliceNode())
+    {
+    vtkMatrix4x4* xyToSlice = this->GetSliceNode()->GetXYToSlice();
+    this->ViewScaleFactorMmPerPixel = sqrt(xyToSlice->GetElement(0, 1) * xyToSlice->GetElement(0, 1)
+      + xyToSlice->GetElement(1, 1) * xyToSlice->GetElement(1, 1));
+    }
+  else
+    {
+    double cameraFP[3] = { 0.0 };
+    this->Renderer->GetActiveCamera()->GetFocalPoint(cameraFP);
+    this->ViewScaleFactorMmPerPixel = this->GetViewScaleFactorAtPosition(cameraFP);
+    }
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::UpdateHandleSize()
+{
+  if (!this->GetInteractionSizeAbsolute())
+    {
+    this->InteractionSize = this->ScreenSizePixel * this->ScreenScaleFactor
+      * this->GetInteractionScale() / 100.0 * this->ViewScaleFactorMmPerPixel;
+    }
+  else
+    {
+    this->InteractionSize = this->GetInteractionSize() / this->ViewScaleFactorMmPerPixel;
+    }
+  this->SetWidgetScale(this->InteractionSize);
+}
+
+//----------------------------------------------------------------------
+double vtkMRMLInteractionWidgetRepresentation::GetInteractionScale()
+{
+  return 3.0;
+}
+
+//----------------------------------------------------------------------
+double vtkMRMLInteractionWidgetRepresentation::GetInteractionSize()
+{
+  return 1.0;
+}
+
+//----------------------------------------------------------------------
+bool vtkMRMLInteractionWidgetRepresentation::GetInteractionSizeAbsolute()
+{
+  return false;
 }

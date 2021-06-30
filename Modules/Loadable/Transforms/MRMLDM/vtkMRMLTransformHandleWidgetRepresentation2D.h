@@ -103,9 +103,6 @@ protected:
   vtkMRMLTransformHandleWidgetRepresentation2D();
   ~vtkMRMLTransformHandleWidgetRepresentation2D() override;
 
-  void UpdateViewScaleFactor() override;
-  void UpdateHandleSize() override;
-
   /// Convert display to world coordinates
   void GetWorldToDisplayCoordinates(double r, double a, double s, double * displayCoordinates);
   void GetWorldToDisplayCoordinates(double * worldCoordinates, double * displayCoordinates);

@@ -71,6 +71,10 @@ public:
 
   void UpdateInteractionPipeline() override;
 
+  double GetInteractionScale() override;
+  double GetInteractionSize() override;
+  bool GetInteractionSizeAbsolute() override;
+
 protected:
   vtkMRMLTransformHandleWidgetRepresentation();
   ~vtkMRMLTransformHandleWidgetRepresentation() override;

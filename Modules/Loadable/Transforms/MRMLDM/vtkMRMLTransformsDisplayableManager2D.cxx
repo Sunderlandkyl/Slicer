@@ -64,7 +64,7 @@
 #include <map>
 
 //---------------------------------------------------------------------------
-vtkStandardNewMacro(vtkMRMLTransformsDisplayableManager2D );
+vtkStandardNewMacro(vtkMRMLTransformsDisplayableManager2D);
 
 //---------------------------------------------------------------------------
 class vtkMRMLTransformsDisplayableManager2D::vtkInternal

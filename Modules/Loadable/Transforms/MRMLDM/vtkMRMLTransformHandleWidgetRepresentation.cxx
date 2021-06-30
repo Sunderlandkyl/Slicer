@@ -132,3 +132,21 @@ void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
   vtkMRMLTransformNode::GetMatrixTransformBetweenNodes(this->GetTransformNode(), nullptr, nodeToWorld);
   this->Pipeline->HandleToWorldTransform->Concatenate(nodeToWorld);
 }
+
+//----------------------------------------------------------------------
+double vtkMRMLTransformHandleWidgetRepresentation::GetInteractionScale()
+{
+  return this->GetDisplayNode()->GetInteractionScale();
+}
+
+//----------------------------------------------------------------------
+double vtkMRMLTransformHandleWidgetRepresentation::GetInteractionSize()
+{
+  return this->GetDisplayNode()->GetInteractionSize();
+}
+
+//----------------------------------------------------------------------
+bool vtkMRMLTransformHandleWidgetRepresentation::GetInteractionSizeAbsolute()
+{
+  return this->GetDisplayNode()->GetInteractionSizeAbsolute();
+}

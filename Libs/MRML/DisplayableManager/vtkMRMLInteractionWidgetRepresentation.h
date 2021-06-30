@@ -237,9 +237,12 @@ protected:
   virtual void GetInteractionHandlePositionWorld(int type, int index, double position[3]);
 
   // Calculate view size and scale factor
-  virtual void UpdateViewScaleFactor() = 0;
+  virtual void UpdateViewScaleFactor();
 
-  virtual void UpdateHandleSize() = 0;
+  virtual void UpdateHandleSize();
+  virtual double GetInteractionScale();
+  virtual double GetInteractionSize();
+  virtual bool GetInteractionSizeAbsolute();
 
   double StartFadeAngle{ 30 };
   double EndFadeAngle{ 20 };
@@ -251,11 +254,11 @@ protected:
   vtkSmartPointer<vtkTransform> WorldToSliceTransform{ nullptr };
   vtkSmartPointer<vtkPlane> SlicePlane{ nullptr };
 
-  // Control point size, specified in renderer world coordinate system.
+  // Handle size, specified in renderer world coordinate system.
   // For slice views, renderer world coordinate system is the display coordinate system, so it is measured in pixels.
   // For 3D views, renderer world coordinate system is the Slicer world coordinate system, so it is measured in the
   // scene length unit (typically millimeters).
-  double InteractionSize;
+  double InteractionSize{ 3.0 };
 
   vtkSmartPointer<vtkPointPlacer> PointPlacer;
 

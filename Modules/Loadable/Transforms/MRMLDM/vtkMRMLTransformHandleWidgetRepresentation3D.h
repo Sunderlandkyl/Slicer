@@ -93,10 +93,6 @@ protected:
 
   double GetViewScaleFactorAtPosition(double positionWorld[3]);
 
-  void UpdateViewScaleFactor() override;
-
-  void UpdateHandleSize() override;
-
   vtkSmartPointer<vtkCellPicker> AccuratePicker;
 
 private:

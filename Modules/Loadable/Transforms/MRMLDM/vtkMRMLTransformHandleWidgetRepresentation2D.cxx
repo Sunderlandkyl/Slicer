@@ -351,39 +351,3 @@ void vtkMRMLTransformHandleWidgetRepresentation2D::GetWorldToDisplayCoordinates(
 
   this->GetWorldToDisplayCoordinates(worldCoordinates[0], worldCoordinates[1], worldCoordinates[2], displayCoordinates);
 }
-
-//----------------------------------------------------------------------
-void vtkMRMLTransformHandleWidgetRepresentation2D::UpdateViewScaleFactor()
-{
-  this->ViewScaleFactorMmPerPixel = 1.0;
-  this->ScreenSizePixel = 1000.0;
-  if (!this->Renderer || !this->Renderer->GetActiveCamera() || !this->GetSliceNode())
-    {
-    return;
-    }
-
-  int* screenSize = this->Renderer->GetRenderWindow()->GetScreenSize();
-  this->ScreenSizePixel = sqrt(screenSize[0] * screenSize[0] + screenSize[1] * screenSize[1]);
-
-  vtkMatrix4x4* xyToSlice = this->GetSliceNode()->GetXYToSlice();
-  this->ViewScaleFactorMmPerPixel = sqrt(xyToSlice->GetElement(0, 1) * xyToSlice->GetElement(0, 1)
-    + xyToSlice->GetElement(1, 1) * xyToSlice->GetElement(1, 1));
-}
-
-//----------------------------------------------------------------------
-void vtkMRMLTransformHandleWidgetRepresentation2D::UpdateHandleSize()
-{
-  // Since we use parallel camera projection and the camera scale is 1.0,
-  // the renderer coordinate system is the same as the display coordinate system, therefore
-  // InteractionSize is specified in pixels.
-  if (!this->DisplayNode->GetInteractionSizeAbsolute())
-    {
-    // relative
-    this->InteractionSize = this->ScreenSizePixel * this->ScreenScaleFactor * this->DisplayNode->GetInteractionScale() / 100.0;
-    }
-  else
-    {
-    // absolute
-    this->InteractionSize = this->DisplayNode->GetInteractionSize() / this->ViewScaleFactorMmPerPixel;
-    }
-}

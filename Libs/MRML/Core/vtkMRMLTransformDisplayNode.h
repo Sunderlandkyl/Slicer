@@ -273,7 +273,7 @@ protected:
   int ActiveInteractionIndex{ -1 };
   bool InteractionSizeAbsolute{ false };
   double InteractionSize{ 5.0 };
-  double InteractionScale{ 1.0 };
+  double InteractionScale{ 15.0 };
 
  protected:
   vtkMRMLTransformDisplayNode ( );
