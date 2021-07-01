@@ -60,6 +60,13 @@ class VTK_MRML_EXPORT vtkMRMLLinearTransformNode : public vtkMRMLTransformNode
     return Superclass::CreateDefaultStorageNode();
     };
 
+  /// The traansformation (rotation/scaling) that is referenced when the transform is modified
+  vtkSetVector3Macro(CenterOfTransformation, double);
+  vtkGetVector3Macro(CenterOfTransformation, double);
+
+protected:
+  double CenterOfTransformation[3];
+
 protected:
   vtkMRMLLinearTransformNode();
   ~vtkMRMLLinearTransformNode() override;
