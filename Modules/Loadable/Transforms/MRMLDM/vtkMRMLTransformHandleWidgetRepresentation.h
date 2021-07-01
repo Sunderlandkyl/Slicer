@@ -20,10 +20,10 @@
 
 /**
  * @class   vtkMRMLTransformHandleWidgetRepresentation
- * @brief   Default representation for the interaction widget in 3D views
+ * @brief   Abstract representation for the transform handle widgets
  *
  * @sa
- * vtkMRMLInteractionWidgetRepresentation vtkMRMLInteractionWidget
+ * vtkMRMLInteractionWidgetRepresentation
 */
 
 #ifndef vtkMRMLTransformHandleWidgetRepresentation_h
@@ -31,26 +31,20 @@
 
 #include "vtkSlicerTransformsModuleMRMLDisplayableManagerExport.h"
 
+// MRMLDM includes
 #include "vtkMRMLInteractionWidgetRepresentation.h"
 
+// MRML includes
 #include <vtkMRMLTransformDisplayNode.h>
-
-#include <map>
-
-class vtkActor;
-class vtkActor2D;
-class vtkCellPicker;
-class vtkFastSelectVisiblePoints;
-class vtkGlyph3DMapper;
-class vtkLabelPlacementMapper;
-class vtkPolyDataMapper;
-class vtkProperty;
-
-class vtkMRMLInteractionEventData;
 
 class VTK_SLICER_TRANSFORMS_MODULE_MRMLDISPLAYABLEMANAGER_EXPORT vtkMRMLTransformHandleWidgetRepresentation : public vtkMRMLInteractionWidgetRepresentation
 {
 public:
+  /**
+   * Instantiate this class.
+   */
+  static vtkMRMLTransformHandleWidgetRepresentation* New();
+
   //@{
   /**
    * Standard VTK class macros.
@@ -71,9 +65,11 @@ public:
 
   void UpdateInteractionPipeline() override;
 
-  double GetInteractionScale() override;
-  double GetInteractionSize() override;
-  bool GetInteractionSizeAbsolute() override;
+  double GetInteractionScale() override; // Size relative to screen
+  double GetInteractionSize() override; // Size in mm
+  bool GetInteractionSizeAbsolute() override; // True -> size in mm; false -> relative to screen
+
+  bool IsDisplayable() override;
 
 protected:
   vtkMRMLTransformHandleWidgetRepresentation();

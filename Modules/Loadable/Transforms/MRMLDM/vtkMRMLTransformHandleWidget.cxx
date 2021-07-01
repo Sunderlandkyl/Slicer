@@ -20,6 +20,7 @@
 
 
 #include "vtkMRMLTransformHandleWidget.h"
+#include "vtkMRMLTransformHandleWidgetRepresentation.h"
 
 #include "vtkMRMLApplicationLogic.h"
 #include "vtkMRMLInteractionEventData.h"
@@ -27,9 +28,6 @@
 #include "vtkMRMLScene.h"
 #include "vtkMRMLSliceCompositeNode.h"
 #include "vtkMRMLSliceLogic.h"
-
-#include "vtkMRMLTransformHandleWidgetRepresentation2D.h"
-#include "vtkMRMLTransformHandleWidgetRepresentation3D.h"
 
 // VTK includes
 #include <vtkCamera.h>
@@ -114,15 +112,7 @@ void vtkMRMLTransformHandleWidget::ApplyTransform(vtkTransform* transform)
 void vtkMRMLTransformHandleWidget::CreateDefaultRepresentation(vtkMRMLTransformDisplayNode* displayNode,
   vtkMRMLAbstractViewNode* viewNode, vtkRenderer* renderer)
 {
-  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = nullptr;
-  if (vtkMRMLSliceNode::SafeDownCast(viewNode))
-    {
-    rep = vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation2D>::New();
-    }
-  else
-    {
-    rep = vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation3D>::New();
-    }
+  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation>::New();
   this->SetRenderer(renderer);
   this->SetRepresentation(rep);
   rep->SetViewNode(viewNode);
