@@ -19,31 +19,10 @@
 ==============================================================================*/
 
 // VTK includes
-#include "vtkCallbackCommand.h"
-#include "vtkCamera.h"
-#include "vtkCellPicker.h"
-#include "vtkLabelPlacementMapper.h"
-#include "vtkLine.h"
-#include "vtkFloatArray.h"
-#include "vtkGlyph3DMapper.h"
-
-#include "vtkMath.h"
 #include "vtkMatrix4x4.h"
-#include "vtkObjectFactory.h"
-#include "vtkPointData.h"
-#include "vtkPointSetToLabelHierarchy.h"
-#include "vtkPolyDataMapper.h"
-#include "vtkProperty.h"
-#include "vtkRenderer.h"
-#include "vtkRenderWindow.h"
 
+// Transform MRMLDM includes
 #include "vtkMRMLTransformHandleWidgetRepresentation.h"
-#include "vtkSphereSource.h"
-#include "vtkStringArray.h"
-#include "vtkTextActor.h"
-#include "vtkTextProperty.h"
-#include "vtkTransform.h"
-#include "vtkTransformPolyDataFilter.h"
 
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
@@ -122,7 +101,7 @@ bool vtkMRMLTransformHandleWidgetRepresentation::IsDisplayable()
     {
     return false;
     }
-  return true;
+  return this->GetDisplayNode()->GetInteractionVisibility();
 }
 
 //----------------------------------------------------------------------
@@ -143,13 +122,13 @@ void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
 
   vtkMRMLDisplayableNode* displayableNode = this->DisplayNode->GetDisplayableNode();
 
-  double centerOfTransformation[3] = { 0.0, 0.0, 0.0 };
-  linearTransform->GetCenterOfTransformation(centerOfTransformation);
-  this->Pipeline->HandleToWorldTransform->Translate(centerOfTransformation);
-
   vtkNew<vtkMatrix4x4> nodeToWorld;
   vtkMRMLTransformNode::GetMatrixTransformBetweenNodes(this->GetTransformNode(), nullptr, nodeToWorld);
   this->Pipeline->HandleToWorldTransform->Concatenate(nodeToWorld);
+
+  double centerOfTransformation[3] = { 0.0, 0.0, 0.0 };
+  linearTransform->GetCenterOfTransformation(centerOfTransformation);
+  this->Pipeline->HandleToWorldTransform->Translate(centerOfTransformation);
 }
 
 //----------------------------------------------------------------------
