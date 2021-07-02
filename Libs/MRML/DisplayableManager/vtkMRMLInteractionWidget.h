@@ -71,7 +71,7 @@ public:
     WidgetStateOnTranslationHandle = WidgetStateUser, // hovering over a translation interaction handle
     WidgetStateOnRotationHandle, // hovering over a rotation interaction handle
     WidgetStateOnScaleHandle, // hovering over a scale interaction handle
-    WidgetState_Last
+    WidgetStateInteraction_Last
   };
 
   /// Widget events

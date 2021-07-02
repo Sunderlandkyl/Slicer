@@ -63,6 +63,18 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent) override;
   //@}
 
+  /// The state of the widget
+  enum
+  {
+    WidgetStateTranslateTransformCenter = WidgetStateInteraction_Last ///< mouse move transforms the center of transformation
+  };
+
+  enum
+  {
+    WidgetEventTranslateTransformCenterStart = WidgetEventUser,
+    WidgetEventTranslateTransformCenterEnd,
+  };
+
   /// Create the default widget representation and initializes the widget and representation.
   virtual void CreateDefaultRepresentation(vtkMRMLTransformDisplayNode* displayNode, vtkMRMLAbstractViewNode* viewNode, vtkRenderer* renderer);
 
@@ -75,9 +87,18 @@ public:
   int GetActiveComponentIndex() override;
   void SetActiveComponentIndex(int type) override;
 
+  bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& distance2) override;
+  bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
+
 protected:
   vtkMRMLTransformHandleWidget();
   ~vtkMRMLTransformHandleWidget() override;
+
+  bool ProcessWidgetTranslateTransformCenterStart(vtkMRMLInteractionEventData* eventData);
+  bool ProcessMouseMove(vtkMRMLInteractionEventData* eventData);
+  bool ProcessEndMouseDrag(vtkMRMLInteractionEventData* eventData);
+
+  void TranslateTransformCenter(double eventPos[2]);
 
   void ApplyTransform(vtkTransform* transform) override;
 

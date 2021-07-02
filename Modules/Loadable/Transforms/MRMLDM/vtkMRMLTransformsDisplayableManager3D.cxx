@@ -364,6 +364,11 @@ void vtkMRMLTransformsDisplayableManager3D::vtkInternal::AddObservations(vtkMRML
     {
     broker->AddObservation(node, vtkMRMLTransformableNode::TransformModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() );
     }
+  if (!broker->GetObservationExist(node, vtkCommand::ModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() ))
+    {
+    broker->AddObservation(node, vtkCommand::ModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() );
+    }
+
 }
 
 //---------------------------------------------------------------------------
@@ -374,6 +379,8 @@ void vtkMRMLTransformsDisplayableManager3D::vtkInternal::RemoveObservations(vtkM
   observations = broker->GetObservations(node, vtkMRMLTransformableNode::TransformModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() );
   broker->RemoveObservations(observations);
   observations = broker->GetObservations(node, vtkMRMLDisplayableNode::DisplayModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() );
+  broker->RemoveObservations(observations);
+  observations = broker->GetObservations(node, vtkCommand::ModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand());
   broker->RemoveObservations(observations);
 }
 
@@ -567,11 +574,14 @@ void vtkMRMLTransformsDisplayableManager3D::ProcessMRMLNodesEvents(vtkObject* ca
       this->RequestRender();
       }
 
-    for (auto i : this->Internal->InteractionPipelines)
+    for (auto interactionPipeline : this->Internal->InteractionPipelines)
       {
-      i.second->UpdateFromMRML(displayableNode, event, callData);
+      interactionPipeline.second->UpdateFromMRML(displayableNode, event, callData);
+      if (interactionPipeline.second->GetNeedToRender())
+        {
+        this->RequestRender();
+        }
       }
-
     }
   else
     {
