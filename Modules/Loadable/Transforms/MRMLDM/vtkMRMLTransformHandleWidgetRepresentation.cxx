@@ -27,7 +27,6 @@
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
-#include <vtkMRMLLinearTransformNode.h>
 #include <vtkMRMLTransformNode.h>
 #include <vtkMRMLViewNode.h>
 
@@ -97,7 +96,7 @@ void vtkMRMLTransformHandleWidgetRepresentation::SetActiveComponentIndex(int ind
 //----------------------------------------------------------------------
 bool vtkMRMLTransformHandleWidgetRepresentation::IsDisplayable()
 {
-  if (!this->GetDisplayNode())
+  if (!this->GetDisplayNode() || !this->GetTransformNode() || !this->GetTransformNode()->IsLinear())
     {
     return false;
     }
@@ -108,7 +107,6 @@ bool vtkMRMLTransformHandleWidgetRepresentation::IsDisplayable()
 void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
 {
   vtkMRMLAbstractViewNode* viewNode = vtkMRMLAbstractViewNode::SafeDownCast(this->ViewNode);
-  vtkMRMLLinearTransformNode* linearTransform = vtkMRMLLinearTransformNode::SafeDownCast(this->GetTransformNode());
   if (!viewNode || !this->GetTransformNode())
     {
     this->Pipeline->Actor->SetVisibility(false);
@@ -127,7 +125,7 @@ void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
   this->Pipeline->HandleToWorldTransform->Concatenate(nodeToWorld);
 
   double centerOfTransformation[3] = { 0.0, 0.0, 0.0 };
-  linearTransform->GetCenterOfTransformation(centerOfTransformation);
+  this->GetTransformNode()->GetCenterOfTransformation(centerOfTransformation);
   this->Pipeline->HandleToWorldTransform->Translate(centerOfTransformation);
 }
 

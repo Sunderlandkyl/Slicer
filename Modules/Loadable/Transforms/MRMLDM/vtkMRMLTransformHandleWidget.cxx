@@ -362,13 +362,8 @@ void vtkMRMLTransformHandleWidget::TranslateTransformCenter(double eventPos[2])
   vtkNew<vtkGeneralTransform> transform;
   this->GetTransformNode()->GetTransformFromWorld(transform);
 
-  vtkMRMLLinearTransformNode* linearTransformNode = vtkMRMLLinearTransformNode::SafeDownCast(this->GetTransformNode());
-
-  if (linearTransformNode)
-    {
-    double centerOfTransformation[3] = { 0.0, 0.0, 0.0 };
-    linearTransformNode->GetCenterOfTransformation(centerOfTransformation);
-    vtkMath::Add(transform->TransformVectorAtPoint(origin_World, translationVector_World), centerOfTransformation, centerOfTransformation);
-    linearTransformNode->SetCenterOfTransformation(centerOfTransformation);
-    }
+  double centerOfTransformation[3] = { 0.0, 0.0, 0.0 };
+  this->GetTransformNode()->GetCenterOfTransformation(centerOfTransformation);
+  vtkMath::Add(transform->TransformVectorAtPoint(origin_World, translationVector_World), centerOfTransformation, centerOfTransformation);
+  this->GetTransformNode()->SetCenterOfTransformation(centerOfTransformation);
 }
