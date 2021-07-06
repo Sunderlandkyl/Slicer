@@ -70,7 +70,7 @@ class AbstractScriptedSegmentEditorAutoCompleteEffect(AbstractScriptedSegmentEdi
         for k in [4,5]:
           voxelValue = labelmapOrientedImageData.GetScalarComponentAsFloat(extent[i],extent[j],extent[k],0)
           if label is None:
-            if  voxelValue > 0:
+            if voxelValue > 0:
               numberOfFilledCorners += 1
           else:
             if voxelValue == label:
@@ -521,29 +521,25 @@ class AbstractScriptedSegmentEditorAutoCompleteEffect(AbstractScriptedSegmentEdi
     if previewNode.GetSegmentation().GetNumberOfSegments() != self.selectedSegmentIds.GetNumberOfValues():
       # first update (or number of segments changed), need a full reinitialization
       previewNode.GetSegmentation().RemoveAllSegments()
-      outputLabelmapNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode", "_tmpAutoCompleteEffect")
-      slicer.vtkSlicerSegmentationsModuleLogic.CopyOrientedImageDataToVolumeNode(outputLabelmap, outputLabelmapNode)
-      slicer.vtkSlicerSegmentationsModuleLogic.ImportLabelmapToSegmentationNode(outputLabelmapNode, previewNode)
-      slicer.mrmlScene.RemoveNode(outputLabelmapNode)
-    else:
-      currentLabelmap = previewNode.GetBinaryLabelmapInternalRepresentation(self.selectedSegmentIds.GetValue(0))
-      currentLabelmap.ShallowCopy(outputLabelmap)
-      previewNode.GetSegmentation().InvokeEvent(slicer.vtkSegmentation.RepresentationModified)
 
-    # Write segmentation preview results into segments
     for index in range(self.selectedSegmentIds.GetNumberOfValues()):
-      inputSegmentID = self.selectedSegmentIds.GetValue(index)
-      inputSegment = segmentationNode.GetSegmentation().GetSegment(inputSegmentID)
-      previewSegmentID = previewNode.GetSegmentation().GetNthSegmentID(index)
-      previewSegment = previewNode.GetSegmentation().GetSegment(previewSegmentID)
+      segmentID = self.selectedSegmentIds.GetValue(index)
 
-      # Make sure segment name and color are up-to-date
-      previewSegment.SetName(inputSegment.GetName())
-      previewSegment.SetColor(inputSegment.GetColor())
+      previewSegment = previewNode.GetSegmentation().GetSegment(segmentID)
+      if not previewSegment:
+        inputSegment = segmentationNode.GetSegmentation().GetSegment(segmentID)
+
+        previewSegment = vtkSegmentationCore.vtkSegment()
+        previewSegment.SetName(inputSegment.GetName())
+        previewSegment.SetColor(inputSegment.GetColor())
+        previewNode.GetSegmentation().AddSegment(previewSegment, segmentID)
+
+      labelValue = index + 1 # n-th segment label value = n + 1 (background label value is 0)
+      previewSegment.AddRepresentation(vtkSegmentationCore.vtkSegmentationConverter.GetSegmentationBinaryLabelmapRepresentationName(), outputLabelmap)
+      previewSegment.SetLabelValue(labelValue)
 
       # Automatically hide result segments that are background (all eight corners are non-zero)
-      labelValue = index + 1 # n-th segment label value = n + 1 (background label value is 0)
-      previewNode.GetDisplayNode().SetSegmentVisibility3D(previewSegmentID, not self.isBackgroundLabelmap(outputLabelmap, labelValue))
+      previewNode.GetDisplayNode().SetSegmentVisibility3D(segmentID, not self.isBackgroundLabelmap(outputLabelmap, labelValue))
 
     # If the preview was reset, we need to restore the visibility options
     self.setPreviewOpacity(previewOpacity)
