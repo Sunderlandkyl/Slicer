@@ -29,6 +29,7 @@
 
 // STD includes
 #include <vector>
+#include <map>
 
 class vtkOrientedImageData;
 class vtkSegmentation;
@@ -56,6 +57,10 @@ public:
     MODE_MERGE_MASK
   };
   static bool ModifyBinaryLabelmap(vtkOrientedImageData* labelmap, vtkSegmentation* segmentation, std::string segmentID,
+    int mergeMode = MODE_REPLACE, const int extent[6] = nullptr, bool minimumOfAllSegments = false, bool masterRepresentationModifiedEnabled = false,
+    const std::vector<std::string> segmentIdsToOverwrite = {}, std::vector<std::string>* modifiedSegmentIDs = nullptr);
+  static bool ModifyMultipleBinaryLabelmaps(vtkOrientedImageData* labelmap, vtkSegmentation* segmentation,
+    std::vector<std::string> segmentIDs, const std::map<std::string, int> labelValues,
     int mergeMode = MODE_REPLACE, const int extent[6] = nullptr, bool minimumOfAllSegments = false, bool masterRepresentationModifiedEnabled = false,
     const std::vector<std::string> segmentIdsToOverwrite = {}, std::vector<std::string>* modifiedSegmentIDs = nullptr);
 

@@ -363,7 +363,7 @@ void qSlicerSegmentEditorPaintEffectPrivate::paintAddPoint(qMRMLWidget* viewWidg
   if (q->integerParameter("BrushPixelMode") || !this->DelayedPaint)
     {
     q->paintApply(viewWidget);
-    qSlicerSegmentEditorAbstractEffect::forceRender(viewWidget); // TODO: repaint all?
+    qSlicerSegmentEditorAbstractEffect::scheduleRender(viewWidget); // TODO: repaint all?
     }
 }
 
@@ -1312,7 +1312,7 @@ bool qSlicerSegmentEditorPaintEffect::processInteractionEvents(
         else
           {
           // too close to previous position, just update the brush position
-          qSlicerSegmentEditorAbstractEffect::forceRender(viewWidget);
+          qSlicerSegmentEditorAbstractEffect::scheduleRender(viewWidget);
           }
         }
       }
@@ -1339,7 +1339,7 @@ bool qSlicerSegmentEditorPaintEffect::processInteractionEvents(
     d->ActiveViewWidget = nullptr;
     d->updateBrushModel(viewWidget, nullptr);
     d->updateBrushes();
-    //qSlicerSegmentEditorAbstractEffect::forceRender(viewWidget);
+    qSlicerSegmentEditorAbstractEffect::scheduleRender(viewWidget);
     }
 
   return abortEvent;

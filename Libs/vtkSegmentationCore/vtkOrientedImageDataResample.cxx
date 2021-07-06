@@ -1410,6 +1410,19 @@ void vtkOrientedImageDataResample::FillImage(vtkImageData* image, double fillVal
     {
     return;
     }
+
+  if (!extent ||
+    (extent[0] > extent[1] && extent[2] > extent[3] && extent[4] > extent[5]) ||
+     (image->GetExtent()[0] == extent[0] && image->GetExtent()[1] == extent[1] &&
+      image->GetExtent()[2] == extent[2] && image->GetExtent()[3] == extent[3] &&
+      image->GetExtent()[4] == extent[4] && image->GetExtent()[5] == extent[5]))
+    {
+    // We are filling the entire image, either because the extent is not specified, is invalid, or is the same as the image extent.
+    // Use vtkDataArray::Fill() since it is faster.
+    image->GetPointData()->GetScalars()->Fill(fillValue);
+    return;
+    }
+
   switch (image->GetScalarType())
     {
     vtkTemplateMacro(FillImageGeneric<VTK_TT>(image, fillValue, extent));
@@ -1435,12 +1448,25 @@ bool vtkOrientedImageDataResample::ApplyImageMask(vtkOrientedImageData* input, v
     return false;
     }
 
+  int* inputExtent = input->GetExtent();
+  int* maskExtent = mask->GetExtent();
+  int commonExtent[6] = { 0, -1, 0, -1, 0, -1 };
+  for (int i = 0; i < 3; ++i)
+    {
+    commonExtent[2 * i] = std::max(inputExtent[2*i], maskExtent[2*i]);
+    commonExtent[2*i+1] = std::min(inputExtent[2*i+1], maskExtent[2*i+1]);
+    }
+  if (commonExtent[0] > commonExtent[1] || commonExtent[2] > commonExtent[3] > commonExtent[4] > commonExtent[5])
+    {
+    /// Masks don't overlap
+    return true;
+    }
+
   // Make sure mask has the same extent as the input labelmap
   vtkSmartPointer<vtkImageConstantPad> padder = vtkSmartPointer<vtkImageConstantPad>::New();
   padder->SetInputData(mask);
   padder->SetOutputWholeExtent(input->GetExtent());
   padder->Update();
-  //mask->DeepCopy(padder->GetOutput());
 
   // Apply mask
   vtkNew<vtkImageMask> masker;

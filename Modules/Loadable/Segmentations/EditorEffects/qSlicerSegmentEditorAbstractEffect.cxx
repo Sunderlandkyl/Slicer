@@ -65,6 +65,7 @@
 #include <vtkImageConstantPad.h>
 #include <vtkImageShiftScale.h>
 #include <vtkImageThreshold.h>
+#include <vtkIntArray.h>
 #include <vtkMatrix4x4.h>
 #include <vtkNew.h>
 #include <vtkProp.h>
@@ -73,6 +74,7 @@
 #include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
 #include <vtkSmartPointer.h>
+#include <vtkStringArray.h>
 #include <vtkWeakPointer.h>
 
 // CTK includes
@@ -219,30 +221,32 @@ void qSlicerSegmentEditorAbstractEffect::applyImageMask(vtkOrientedImageData* in
 void qSlicerSegmentEditorAbstractEffect::modifySelectedSegmentByLabelmap(vtkOrientedImageData* modifierLabelmap,
   ModificationMode modificationMode, bool bypassMasking/*=false*/)
 {
-  int modificationExtent[6] = { 0, -1, 0, -1, 0, -1 };
-  this->modifySelectedSegmentByLabelmap(modifierLabelmap, modificationMode, modificationExtent, bypassMasking);
+  int modifierExtent[6] = { 0, -1, 0, -1, 0, -1 };
+  this->modifySelectedSegmentByLabelmap(modifierLabelmap, modificationMode, modifierExtent, bypassMasking);
 }
 
 //-----------------------------------------------------------------------------
 void qSlicerSegmentEditorAbstractEffect::modifySelectedSegmentByLabelmap(vtkOrientedImageData* modifierLabelmap,
-  ModificationMode modificationMode, QList<int> extent, bool bypassMasking/*=false*/)
+  ModificationMode modificationMode, QList<int> modifierExtentList, bool bypassMasking/*=false*/)
 {
-  if (extent.size() != 6)
+  if (modifierExtentList.size() != 6)
     {
-    qCritical() << Q_FUNC_INFO << " failed: extent must have 6 int values";
+    qCritical() << Q_FUNC_INFO << " failed: modifierExtent must have 6 int values";
     return;
     }
-  int modificationExtent[6] = { extent[0], extent[1], extent[2], extent[3], extent[4], extent[5] };
-  this->modifySelectedSegmentByLabelmap(modifierLabelmap, modificationMode, modificationExtent, bypassMasking);
+  int modifierExtent[6] = {modifierExtentList[0], modifierExtentList[1],
+                           modifierExtentList[2], modifierExtentList[3],
+                           modifierExtentList[4], modifierExtentList[5] };
+  this->modifySelectedSegmentByLabelmap(modifierLabelmap, modificationMode, modifierExtent, bypassMasking);
 }
 
 //-----------------------------------------------------------------------------
 void qSlicerSegmentEditorAbstractEffect::modifySelectedSegmentByLabelmap(vtkOrientedImageData* modifierLabelmap,
-  ModificationMode modificationMode, const int modificationExtent[6], bool bypassMasking/*=false*/)
+  ModificationMode modificationMode, const int modifierExtent[6], bool bypassMasking/*=false*/)
 {
   this->modifySegmentByLabelmap(this->parameterSetNode()->GetSegmentationNode(),
     this->parameterSetNode()->GetSelectedSegmentID() ? this->parameterSetNode()->GetSelectedSegmentID() : "",
-    modifierLabelmap, modificationMode, modificationExtent, bypassMasking);
+    modifierLabelmap, modificationMode, modifierExtent, bypassMasking);
 }
 
 //-----------------------------------------------------------------------------
@@ -255,7 +259,7 @@ void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmenta
 
 //-----------------------------------------------------------------------------
 void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmentationNode* segmentationNode, const char* segmentID,
-  vtkOrientedImageData* modifierLabelmapInput, ModificationMode modificationMode, const int modificationExtent[6], bool bypassMasking/*=false*/)
+  vtkOrientedImageData* modifierLabelmapInput, ModificationMode modificationMode, const int modifierExtentInput[6], bool bypassMasking/*=false*/)
 {
   Q_D(qSlicerSegmentEditorAbstractEffect);
 
@@ -297,6 +301,369 @@ void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmenta
     return;
     }
 
+  const int* modifierExtent = modifierExtentInput;
+  if (modifierExtent[0] > modifierExtent[1] || modifierExtent[2] > modifierExtent[3] || modifierExtent[4] > modifierExtent[5])
+    {
+    // invalid extent, it means we have to work with the entire modifier labelmap
+    modifierExtent = nullptr;
+    }
+
+  // Prevent disappearing and reappearing of 3D representation during update
+  SlicerRenderBlocker renderBlocker;
+
+  // Apply masking to the modifier labelmap
+  vtkSmartPointer<vtkOrientedImageData> modifierLabelmap = modifierLabelmapInput;
+  if ((!bypassMasking && parameterSetNode->GetMaskMode() != vtkMRMLSegmentEditorNode::PaintAllowedEverywhere) ||
+    parameterSetNode->GetMasterVolumeIntensityMask())
+    {
+    this->maskModifierLabelmap(modifierLabelmap, modificationMode, modifierExtentInput, { segmentID });
+    }
+
+  std::vector<std::string> allSegmentIDs;
+  segmentationNode->GetSegmentation()->GetSegmentIDs(allSegmentIDs);
+  // remove selected segment, that is already handled
+  allSegmentIDs.erase(std::remove(allSegmentIDs.begin(), allSegmentIDs.end(), segmentID), allSegmentIDs.end());
+
+  std::vector<std::string> visibleSegmentIDs;
+  vtkMRMLSegmentationDisplayNode* displayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(segmentationNode->GetDisplayNode());
+  if (displayNode)
+    {
+    for (auto segmentID : allSegmentIDs)
+      {
+      if (displayNode->GetSegmentVisibility(segmentID))
+        {
+        visibleSegmentIDs.push_back(segmentID);
+        }
+      }
+    }
+
+  std::vector<std::string> segmentIDsToOverwrite;
+  switch (this->parameterSetNode()->GetOverwriteMode())
+    {
+    case vtkMRMLSegmentEditorNode::OverwriteNone:
+      // nothing to overwrite
+      break;
+    case vtkMRMLSegmentEditorNode::OverwriteVisibleSegments:
+      segmentIDsToOverwrite = visibleSegmentIDs;
+      break;
+    case vtkMRMLSegmentEditorNode::OverwriteAllSegments:
+      segmentIDsToOverwrite = allSegmentIDs;
+      break;
+    }
+
+  if (modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeRemoveAll)
+    {
+    segmentIDsToOverwrite = allSegmentIDs;
+    }
+
+  if (modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeSet)
+    {
+    vtkOrientedImageData* segmentLabelmap =vtkOrientedImageData::SafeDownCast(
+      segment->GetRepresentation(vtkSegmentationConverter::GetBinaryLabelmapRepresentationName()));
+    if (segmentLabelmap)
+      {
+      // Get the region ouside the current segment
+      vtkNew<vtkImageThreshold> segmentInverter;
+      segmentInverter->SetInputData(segmentLabelmap);
+      segmentInverter->SetInValue(m_EraseValue);
+      segmentInverter->SetOutValue(m_FillValue);
+      segmentInverter->ReplaceInOn();
+      segmentInverter->ThresholdBetween(segment->GetLabelValue(), segment->GetLabelValue());
+      segmentInverter->SetOutputScalarTypeToUnsignedChar();
+      segmentInverter->Update(); // Can't use modifier extent since modifier/segmentation geometry may not match
+
+      vtkNew<vtkOrientedImageData> invertedSegmentLabelmap;
+      invertedSegmentLabelmap->ShallowCopy(segmentInverter->GetOutput());
+      invertedSegmentLabelmap->CopyDirections(segmentLabelmap);
+      if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
+        invertedSegmentLabelmap, segmentationNode, segmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MIN))
+        {
+        qCritical() << Q_FUNC_INFO << ": Failed to add modifier labelmap to selected segment";
+        }
+      }
+
+    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
+      modifierLabelmap, segmentationNode, segmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MASK, modifierExtent, false, segmentIDsToOverwrite))
+      {
+      qCritical() << Q_FUNC_INFO << ": Failed to add modifier labelmap to selected segment";
+      }
+    }
+  else if (modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeAdd)
+    {
+    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
+      modifierLabelmap, segmentationNode, segmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MASK, modifierExtent, false, segmentIDsToOverwrite))
+      {
+      qCritical() << Q_FUNC_INFO << ": Failed to add modifier labelmap to selected segment";
+      }
+    }
+
+  if (modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeRemove
+    || modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeRemoveAll)
+    {
+    // Create inverted binary labelmap
+    vtkSmartPointer<vtkImageThreshold> inverter = vtkSmartPointer<vtkImageThreshold>::New();
+    inverter->SetInputData(modifierLabelmap);
+    inverter->SetInValue(VTK_UNSIGNED_CHAR_MAX);
+    inverter->SetOutValue(m_EraseValue);
+    inverter->ThresholdByLower(0);
+    inverter->SetOutputScalarTypeToUnsignedChar();
+    if (modifierExtent)
+      {
+      inverter->UpdateExtent(modifierExtent);
+      }
+    else
+      {
+      inverter->Update();
+      }
+
+    vtkNew<vtkOrientedImageData> invertedModifierLabelmap;
+    invertedModifierLabelmap->ShallowCopy(inverter->GetOutput());
+    invertedModifierLabelmap->CopyDirections(modifierLabelmap);
+    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
+      invertedModifierLabelmap.GetPointer(), segmentationNode, segmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MIN,
+      modifierExtent, false, segmentIDsToOverwrite))
+      {
+      qCritical() << Q_FUNC_INFO << ": Failed to remove modifier labelmap from selected segment";
+      }
+
+    if (modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeRemoveAll)
+      {
+      for (auto segmentID : segmentIDsToOverwrite)
+        {
+        if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
+          invertedModifierLabelmap.GetPointer(), segmentationNode, segmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MIN,
+          modifierExtent, false, segmentIDsToOverwrite))
+          {
+          qCritical() << Q_FUNC_INFO << ": Failed to remove modifier labelmap from selected segment";
+          }
+        }
+      }
+    }
+
+  if (segment)
+    {
+    if (vtkSlicerSegmentationsModuleLogic::GetSegmentStatus(segment) == vtkSlicerSegmentationsModuleLogic::NotStarted)
+      {
+      vtkSlicerSegmentationsModuleLogic::SetSegmentStatus(segment, vtkSlicerSegmentationsModuleLogic::InProgress);
+      }
+    }
+
+  std::vector<std::string> sharedSegmentIDs;
+  segmentationNode->GetSegmentation()->GetSegmentIDsSharingBinaryLabelmapRepresentation(segmentID, sharedSegmentIDs, false);
+
+  std::vector<std::string> segmentsToErase;
+  for (std::string segmentIDToOverwrite : segmentIDsToOverwrite)
+    {
+    std::vector<std::string>::iterator foundSegmentIDIt = std::find(sharedSegmentIDs.begin(), sharedSegmentIDs.end(), segmentIDToOverwrite);
+    if (foundSegmentIDIt == sharedSegmentIDs.end() || modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeRemoveAll)
+      {
+      segmentsToErase.push_back(segmentIDToOverwrite);
+      }
+    }
+
+  if (!segmentsToErase.empty() &&
+     ( modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeSet
+    || modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeAdd
+    || modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeRemoveAll))
+    {
+    // Create inverted binary labelmap
+    vtkSmartPointer<vtkImageThreshold> inverter = vtkSmartPointer<vtkImageThreshold>::New();
+    inverter->SetInputData(modifierLabelmap);
+    inverter->SetInValue(VTK_UNSIGNED_CHAR_MAX);
+    inverter->SetOutValue(m_EraseValue);
+    inverter->ThresholdByLower(0);
+    inverter->SetOutputScalarTypeToUnsignedChar();
+    if (modifierExtent)
+      {
+      inverter->UpdateExtent(modifierExtent);
+      }
+    else
+      {
+      inverter->Update();
+      }
+
+    vtkNew<vtkOrientedImageData> invertedModifierLabelmap;
+    invertedModifierLabelmap->ShallowCopy(inverter->GetOutput());
+    vtkNew<vtkMatrix4x4> imageToWorldMatrix;
+    modifierLabelmap->GetImageToWorldMatrix(imageToWorldMatrix.GetPointer());
+    invertedModifierLabelmap->SetGeometryFromImageToWorldMatrix(imageToWorldMatrix.GetPointer());
+
+    std::map<vtkDataObject*, bool> erased;
+    for (std::string eraseSegmentID : segmentsToErase)
+      {
+      vtkSegment* currentSegment = segmentationNode->GetSegmentation()->GetSegment(eraseSegmentID);
+      vtkDataObject* dataObject = currentSegment->GetRepresentation(vtkSegmentationConverter::GetBinaryLabelmapRepresentationName());
+      if (erased[dataObject])
+        {
+        continue;
+        }
+      erased[dataObject] = true;
+
+      vtkOrientedImageData* currentLabelmap = vtkOrientedImageData::SafeDownCast(dataObject);
+
+      std::vector<std::string> dontOverwriteIDs;
+      std::vector<std::string> currentSharedIDs;
+      segmentationNode->GetSegmentation()->GetSegmentIDsSharingBinaryLabelmapRepresentation(eraseSegmentID, currentSharedIDs, true);
+      if (modificationMode != qSlicerSegmentEditorAbstractEffect::ModificationModeRemoveAll)
+        {
+        for (std::string sharedSegmentID : currentSharedIDs)
+          {
+          if (std::find(segmentsToErase.begin(), segmentsToErase.end(), sharedSegmentID) == segmentsToErase.end())
+            {
+            dontOverwriteIDs.push_back(sharedSegmentID);
+            }
+          }
+        }
+
+      vtkSmartPointer<vtkOrientedImageData> invertedModifierLabelmap2 = invertedModifierLabelmap;
+      if (dontOverwriteIDs.size() > 0)
+        {
+        invertedModifierLabelmap2 = vtkSmartPointer<vtkOrientedImageData>::New();
+        invertedModifierLabelmap2->DeepCopy(invertedModifierLabelmap);
+
+        vtkNew<vtkOrientedImageData> maskImage;
+        maskImage->CopyDirections(currentLabelmap);
+        for (std::string dontOverwriteID : dontOverwriteIDs)
+          {
+          vtkSegment* dontOverwriteSegment = segmentationNode->GetSegmentation()->GetSegment(dontOverwriteID);
+          vtkNew<vtkImageThreshold> threshold;
+          threshold->SetInputData(currentLabelmap);
+          threshold->ThresholdBetween(dontOverwriteSegment->GetLabelValue(), dontOverwriteSegment->GetLabelValue());
+          threshold->SetInValue(1);
+          threshold->SetOutValue(0);
+          threshold->SetOutputScalarTypeToUnsignedChar();
+          if (modifierExtent)
+            {
+            threshold->UpdateExtent(modifierExtent);
+            }
+          else
+            {
+            threshold->Update();
+            }
+          maskImage->ShallowCopy(threshold->GetOutput());
+          vtkOrientedImageDataResample::ApplyImageMask(invertedModifierLabelmap2, maskImage, VTK_UNSIGNED_CHAR_MAX, true);
+          }
+        }
+
+      if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
+        invertedModifierLabelmap2, segmentationNode, eraseSegmentID,vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MIN,
+        modifierExtent, true, segmentIDsToOverwrite))
+        {
+        qCritical() << Q_FUNC_INFO << ": Failed to set modifier labelmap to segment " << (eraseSegmentID.c_str());
+        }
+      }
+    }
+  else if (modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeRemove)
+    {
+    // In general, we don't try to "add back" areas to other segments when an area is removed from the selected segment.
+    // The only exception is when we draw inside one specific segment. In that case erasing adds to the mask segment. It is useful
+    // for splitting a segment into two by painting.
+    if (this->parameterSetNode()->GetMaskMode() == vtkMRMLSegmentEditorNode::PaintAllowedInsideSingleSegment
+      && this->parameterSetNode()->GetMaskSegmentID())
+      {
+      if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
+        modifierLabelmap, segmentationNode, this->parameterSetNode()->GetMaskSegmentID(), vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MASK,
+        modifierExtent, false, segmentIDsToOverwrite))
+        {
+        qCritical() << Q_FUNC_INFO << ": Failed to remove modifier labelmap from segment " << this->parameterSetNode()->GetMaskSegmentID();
+        }
+      }
+    }
+
+  // Make sure the segmentation node is under the same parent as the master volume
+  vtkMRMLScalarVolumeNode* masterVolumeNode = d->ParameterSetNode->GetMasterVolumeNode();
+  if (masterVolumeNode)
+    {
+    vtkMRMLSubjectHierarchyNode* shNode = vtkMRMLSubjectHierarchyNode::GetSubjectHierarchyNode(d->ParameterSetNode->GetScene());
+    if (shNode)
+      {
+      vtkIdType segmentationId = shNode->GetItemByDataNode(segmentationNode);
+      vtkIdType masterVolumeShId = shNode->GetItemByDataNode(masterVolumeNode);
+      if (segmentationId && masterVolumeShId)
+        {
+        shNode->SetItemParent(segmentationId, shNode->GetItemParent(masterVolumeShId));
+        }
+      else
+        {
+        qCritical() << Q_FUNC_INFO << ": Subject hierarchy items not found for segmentation or master volume";
+        }
+      }
+    }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSegmentEditorAbstractEffect::modifySegmentsByLabelmap(vtkMRMLSegmentationNode* segmentationNode,
+  vtkStringArray* segmentIDsArray, vtkIntArray* labelValuesArray,
+  vtkOrientedImageData* modifierLabelmap, ModificationMode modificationMode, bool bypassMasking/*=false*/)
+{
+  int modificationExtent[6] = { 0, -1, 0, -1, 0, -1 };
+  this->modifySegmentsByLabelmap(segmentationNode, segmentIDsArray, labelValuesArray, modifierLabelmap, modificationMode, modificationExtent, bypassMasking);
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSegmentEditorAbstractEffect::modifySegmentsByLabelmap(vtkMRMLSegmentationNode* segmentationNode,
+  vtkStringArray* segmentIDsArray, vtkIntArray* labelValuesArray,
+  vtkOrientedImageData* modifierLabelmapInput, ModificationMode modificationMode, const int modifierExtentInput[6], bool bypassMasking/*=false*/)
+{
+  Q_D(qSlicerSegmentEditorAbstractEffect);
+
+  vtkMRMLSegmentEditorNode* parameterSetNode = this->parameterSetNode();
+  if (!parameterSetNode)
+    {
+    qCritical() << Q_FUNC_INFO << ": Invalid segment editor parameter set node";
+    this->defaultModifierLabelmap();
+    return;
+    }
+
+  if (!segmentationNode)
+    {
+    qCritical() << Q_FUNC_INFO << ": Invalid segmentation";
+    this->defaultModifierLabelmap();
+    return;
+    }
+
+  std::vector<std::string> segmentIDs;
+  std::map<std::string, int> labelValues;
+  for (int i = 0; i < segmentIDsArray->GetNumberOfValues(); ++i)
+    {
+    vtkSegment* segment = nullptr;
+    std::string segmentID = segmentIDsArray->GetValue(i);
+    segmentIDs.push_back(segmentID);
+    labelValues[segmentID] = labelValuesArray->GetValue(i);
+
+    if (!segmentID.empty())
+      {
+      segment = segmentationNode->GetSegmentation()->GetSegment(segmentID);
+      }
+    if (!segment)
+      {
+      qCritical() << Q_FUNC_INFO << ": Invalid segment";
+      this->defaultModifierLabelmap();
+      /*return;*/
+      continue;
+      }
+    }
+
+  if (!modifierLabelmapInput)
+    {
+    // If per-segment flag is off, then it is not an error (the effect itself has written it back to segmentation)
+    if (this->perSegment())
+      {
+      qCritical() << Q_FUNC_INFO << ": Cannot apply edit operation because modifier labelmap cannot be accessed";
+      }
+    this->defaultModifierLabelmap();
+    return;
+    }
+
+  // Copy the temporary padded modifier labelmap to the segment.
+  // Mask and threshold was already applied on modifier labelmap at this point if requested.
+  const int* modifierExtent = modifierExtentInput;
+  if (modifierExtent[0]>modifierExtent[1] || modifierExtent[2]>modifierExtent[3] || modifierExtent[4]>modifierExtent[5])
+    {
+    // invalid modifierExtent, it means we have to work with the entire modifier labelmap
+    modifierExtent = nullptr;
+    }
+
   // Prevent disappearing and reappearing of 3D representation during update
   SlicerRenderBlocker renderBlocker;
 
@@ -304,126 +671,16 @@ void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmenta
   if ((!bypassMasking && parameterSetNode->GetMaskMode() != vtkMRMLSegmentEditorNode::PaintAllowedEverywhere) ||
     parameterSetNode->GetMasterVolumeIntensityMask())
     {
-    vtkNew<vtkOrientedImageData> maskImage;
-    maskImage->SetExtent(modifierLabelmap->GetExtent());
-    maskImage->SetSpacing(modifierLabelmap->GetSpacing());
-    maskImage->SetOrigin(modifierLabelmap->GetOrigin());
-    maskImage->CopyDirections(modifierLabelmap);
-    maskImage->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
-    vtkOrientedImageDataResample::FillImage(maskImage, m_EraseValue);
-
-    // Apply mask to modifier labelmap if masking is enabled
-    if (!bypassMasking && parameterSetNode->GetMaskMode() != vtkMRMLSegmentEditorNode::PaintAllowedEverywhere)
-      {
-      vtkOrientedImageDataResample::ModifyImage(maskImage, this->maskLabelmap(), vtkOrientedImageDataResample::OPERATION_MAXIMUM);
-      }
-
-    // Apply threshold mask if paint threshold is turned on
-    if (parameterSetNode->GetMasterVolumeIntensityMask())
-      {
-      vtkOrientedImageData* masterVolumeOrientedImageData = this->masterVolumeImageData();
-      if (!masterVolumeOrientedImageData)
-        {
-        qCritical() << Q_FUNC_INFO << ": Unable to get master volume image";
-        this->defaultModifierLabelmap();
-        return;
-        }
-      // Make sure the modifier labelmap has the same geometry as the master volume
-      if (!vtkOrientedImageDataResample::DoGeometriesMatch(modifierLabelmap, masterVolumeOrientedImageData))
-        {
-        qCritical() << Q_FUNC_INFO << ": Modifier labelmap should have the same geometry as the master volume";
-        this->defaultModifierLabelmap();
-        return;
-        }
-
-      // Create threshold image
-      vtkSmartPointer<vtkImageThreshold> threshold = vtkSmartPointer<vtkImageThreshold>::New();
-      threshold->SetInputData(masterVolumeOrientedImageData);
-      threshold->ThresholdBetween(parameterSetNode->GetMasterVolumeIntensityMaskRange()[0], parameterSetNode->GetMasterVolumeIntensityMaskRange()[1]);
-      threshold->SetInValue(m_EraseValue);
-      threshold->SetOutValue(m_FillValue);
-      threshold->SetOutputScalarTypeToUnsignedChar();
-      threshold->Update();
-
-      vtkSmartPointer<vtkOrientedImageData> thresholdMask = vtkSmartPointer<vtkOrientedImageData>::New();
-      thresholdMask->ShallowCopy(threshold->GetOutput());
-      vtkSmartPointer<vtkMatrix4x4> modifierLabelmapToWorldMatrix = vtkSmartPointer<vtkMatrix4x4>::New();
-      modifierLabelmap->GetImageToWorldMatrix(modifierLabelmapToWorldMatrix);
-      thresholdMask->SetGeometryFromImageToWorldMatrix(modifierLabelmapToWorldMatrix);
-      vtkOrientedImageDataResample::ModifyImage(maskImage, thresholdMask, vtkOrientedImageDataResample::OPERATION_MAXIMUM);
-      }
-
-    vtkNew<vtkOrientedImageData> maskWithCurrentSegment;
-    maskWithCurrentSegment->DeepCopy(maskImage);
-
-    bool paintInsideSegments = this->parameterSetNode()->GetMaskMode() == vtkMRMLSegmentationNode::EditAllowedInsideAllSegments ||
-      this->parameterSetNode()->GetMaskMode() == vtkMRMLSegmentationNode::EditAllowedInsideVisibleSegments ||
-      this->parameterSetNode()->GetMaskMode() == vtkMRMLSegmentationNode::EditAllowedInsideSingleSegment;
-    vtkSmartPointer<vtkOrientedImageData> segmentLayerLabelmap =
-      vtkOrientedImageData::SafeDownCast(segment->GetRepresentation(segmentationNode->GetSegmentation()->GetMasterRepresentationName()));
-    if (segmentLayerLabelmap && paintInsideSegments)
-      {
-      // If we are painting inside a segment, some effects can modify the current segment outside the masking region (ex. erase effect can add-back regions)
-      // Add the current segment to the editable area
-      vtkNew<vtkImageThreshold> segmentInverter;
-      segmentInverter->SetInputData(segmentLayerLabelmap);
-      segmentInverter->SetInValue(m_EraseValue);
-      segmentInverter->SetOutValue(m_FillValue);
-      segmentInverter->ReplaceInOn();
-      segmentInverter->ThresholdBetween(segment->GetLabelValue(), segment->GetLabelValue());
-      segmentInverter->SetOutputScalarTypeToUnsignedChar();
-      segmentInverter->Update();
-
-      vtkNew<vtkOrientedImageData> invertedSegment;
-      invertedSegment->ShallowCopy(segmentInverter->GetOutput());
-      invertedSegment->CopyDirections(segmentLayerLabelmap);
-      vtkOrientedImageDataResample::ModifyImage(maskWithCurrentSegment, invertedSegment, vtkOrientedImageDataResample::OPERATION_MINIMUM);
-      }
-
-    // If we need to the modifier labelmap, make a copy to not modify the input
-    vtkOrientedImageDataResample::ApplyImageMask(modifierLabelmap, maskWithCurrentSegment, m_EraseValue, true);
-
-    if (segmentLayerLabelmap && modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeSet)
-      {
-      // If modification mode is "set", we don't want to erase the existing labelmap outside of the mask region,
-      // so we need to add it to the modifier labelmap
-      vtkNew<vtkImageThreshold> segmentThreshold;
-      segmentThreshold->SetInputData(segmentLayerLabelmap);
-      segmentThreshold->SetInValue(m_FillValue);
-      segmentThreshold->SetOutValue(m_EraseValue);
-      segmentThreshold->ReplaceInOn();
-      segmentThreshold->ThresholdBetween(segment->GetLabelValue(), segment->GetLabelValue());
-      segmentThreshold->SetOutputScalarTypeToUnsignedChar();
-      segmentThreshold->Update();
-
-      int segmentThresholdExtent[6] = { 0, -1, 0, -1, 0, -1 };
-      segmentThreshold->GetOutput()->GetExtent(segmentThresholdExtent);
-      if (segmentThresholdExtent[0] <= segmentThresholdExtent[1]
-        && segmentThresholdExtent[2] <= segmentThresholdExtent[3]
-        && segmentThresholdExtent[4] <= segmentThresholdExtent[5])
-        {
-        vtkNew<vtkOrientedImageData> segmentOutsideMask;
-        segmentOutsideMask->ShallowCopy(segmentThreshold->GetOutput());
-        segmentOutsideMask->CopyDirections(segmentLayerLabelmap);
-        vtkOrientedImageDataResample::ModifyImage(segmentOutsideMask, maskImage, vtkOrientedImageDataResample::OPERATION_MINIMUM);
-        vtkOrientedImageDataResample::ModifyImage(modifierLabelmap, segmentOutsideMask, vtkOrientedImageDataResample::OPERATION_MAXIMUM);
-        }
-      }
-    }
-
-  // Copy the temporary padded modifier labelmap to the segment.
-  // Mask and threshold was already applied on modifier labelmap at this point if requested.
-  const int* extent = modificationExtent;
-  if (extent[0]>extent[1] || extent[2]>extent[3] || extent[4]>extent[5])
-    {
-    // invalid extent, it means we have to work with the entire modifier labelmap
-    extent = nullptr;
+    this->maskModifierLabelmap(modifierLabelmap, modificationMode, modifierExtentInput, segmentIDs);
     }
 
   std::vector<std::string> allSegmentIDs;
   segmentationNode->GetSegmentation()->GetSegmentIDs(allSegmentIDs);
-  // remove selected segment, that is already handled
-  allSegmentIDs.erase(std::remove(allSegmentIDs.begin(), allSegmentIDs.end(), segmentID), allSegmentIDs.end());
+  // remove selected segments, they are already handled
+  for (std::string segmentID : segmentIDs)
+    {
+    allSegmentIDs.erase(std::remove(allSegmentIDs.begin(), allSegmentIDs.end(), segmentID), allSegmentIDs.end());
+    }
 
   std::vector<std::string> visibleSegmentIDs;
   vtkMRMLSegmentationDisplayNode* displayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(segmentationNode->GetDisplayNode());
@@ -457,6 +714,19 @@ void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmenta
     segmentIDsToOverwrite.clear();
     }
 
+  std::vector<std::string> sharedSegmentIDs;
+  /*segmentationNode->GetSegmentation()->GetSegmentIDsSharingBinaryLabelmapRepresentation(segmentID, sharedSegmentIDs, false);*/ // TODO: PERFORMANCE FIX
+
+  std::vector<std::string> segmentsToErase; // TODO: PERFORMANCE FIX
+  //for (std::string segmentIDToOverwrite : segmentIDsToOverwrite)
+  //  {
+  //  std::vector<std::string>::iterator foundSegmentIDIt = std::find(sharedSegmentIDs.begin(), sharedSegmentIDs.end(), segmentIDToOverwrite);
+  //  if (foundSegmentIDIt == sharedSegmentIDs.end())
+  //    {
+  //    segmentsToErase.push_back(segmentIDToOverwrite);
+  //    }
+  //  }
+
   // Create inverted binary labelmap
   vtkSmartPointer<vtkImageThreshold> inverter = vtkSmartPointer<vtkImageThreshold>::New();
   inverter->SetInputData(modifierLabelmap);
@@ -467,35 +737,22 @@ void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmenta
 
   if (modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeSet)
     {
-    vtkSmartPointer<vtkImageThreshold> segmentInverter = vtkSmartPointer<vtkImageThreshold>::New();
-    segmentInverter->SetInputData(segment->GetRepresentation(segmentationNode->GetSegmentation()->GetMasterRepresentationName()));
-    segmentInverter->SetInValue(m_EraseValue);
-    segmentInverter->SetOutValue(VTK_UNSIGNED_CHAR_MAX);
-    segmentInverter->ReplaceInOn();
-    segmentInverter->ThresholdBetween(segment->GetLabelValue(), segment->GetLabelValue());
-    segmentInverter->SetOutputScalarTypeToUnsignedChar();
-    segmentInverter->Update();
-    vtkNew<vtkOrientedImageData> invertedModifierLabelmap;
-    invertedModifierLabelmap->ShallowCopy(segmentInverter->GetOutput());
-    vtkNew<vtkMatrix4x4> imageToWorldMatrix;
-    modifierLabelmap->GetImageToWorldMatrix(imageToWorldMatrix.GetPointer());
-    invertedModifierLabelmap->SetGeometryFromImageToWorldMatrix(imageToWorldMatrix.GetPointer());
-    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
-      invertedModifierLabelmap.GetPointer(), segmentationNode, segmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MIN,
-      nullptr, false, segmentIDsToOverwrite))
+    for (std::string segmentID : segmentIDs)
       {
-      qCritical() << Q_FUNC_INFO << ": Failed to remove modifier labelmap from selected segment";
+      segmentationNode->GetSegmentation()->ClearSegment(segmentID);
       }
-    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
-      modifierLabelmap, segmentationNode, segmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MASK, extent, false, segmentIDsToOverwrite))
+    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegments(
+      modifierLabelmap, segmentationNode, segmentIDs, labelValues, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MASK,
+      modifierExtent, false, segmentIDsToOverwrite))
       {
       qCritical() << Q_FUNC_INFO << ": Failed to add modifier labelmap to selected segment";
       }
     }
   else if (modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeAdd)
     {
-    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
-      modifierLabelmap, segmentationNode, segmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MASK, extent, false, segmentIDsToOverwrite))
+    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegments(
+      modifierLabelmap, segmentationNode, segmentIDs, labelValues, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MASK,
+      modifierExtent, false, segmentIDsToOverwrite))
       {
       qCritical() << Q_FUNC_INFO << ": Failed to add modifier labelmap to selected segment";
       }
@@ -503,41 +760,35 @@ void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmenta
   else if (modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeRemove
     || modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeRemoveAll)
     {
+    // TODO: PERFORMANCE FIX
+    qCritical() << Q_FUNC_INFO << ": REMOVE ALL NOT IMPLEMENTED YET";
     inverter->Update();
     vtkNew<vtkOrientedImageData> invertedModifierLabelmap;
     invertedModifierLabelmap->ShallowCopy(inverter->GetOutput());
     vtkNew<vtkMatrix4x4> imageToWorldMatrix;
     modifierLabelmap->GetImageToWorldMatrix(imageToWorldMatrix.GetPointer());
     invertedModifierLabelmap->SetGeometryFromImageToWorldMatrix(imageToWorldMatrix.GetPointer());
-    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
-      invertedModifierLabelmap.GetPointer(), segmentationNode, segmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MIN,
-      extent, false, segmentIDsToOverwrite))
+    if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegments(
+      invertedModifierLabelmap.GetPointer(), segmentationNode, segmentIDs, labelValues, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MIN,
+      modifierExtent, false, segmentIDsToOverwrite))
       {
       qCritical() << Q_FUNC_INFO << ": Failed to remove modifier labelmap from selected segment";
       }
     }
 
-  if (segment)
+  for (std::string segmentID : segmentIDs)
     {
-    if (vtkSlicerSegmentationsModuleLogic::GetSegmentStatus(segment) == vtkSlicerSegmentationsModuleLogic::NotStarted)
+    vtkSegment* segment = segmentationNode->GetSegmentation()->GetSegment(segmentID);
+    if (segment)
       {
-      vtkSlicerSegmentationsModuleLogic::SetSegmentStatus(segment, vtkSlicerSegmentationsModuleLogic::InProgress);
+      if (vtkSlicerSegmentationsModuleLogic::GetSegmentStatus(segment) == vtkSlicerSegmentationsModuleLogic::NotStarted)
+        {
+        vtkSlicerSegmentationsModuleLogic::SetSegmentStatus(segment, vtkSlicerSegmentationsModuleLogic::InProgress);
+        }
       }
     }
 
-  std::vector<std::string> sharedSegmentIDs;
-  segmentationNode->GetSegmentation()->GetSegmentIDsSharingBinaryLabelmapRepresentation(segmentID, sharedSegmentIDs, false);
-
-  std::vector<std::string> segmentsToErase;
-  for (std::string segmentIDToOverwrite : segmentIDsToOverwrite)
-    {
-    std::vector<std::string>::iterator foundSegmentIDIt = std::find(sharedSegmentIDs.begin(), sharedSegmentIDs.end(), segmentIDToOverwrite);
-    if (foundSegmentIDIt == sharedSegmentIDs.end())
-      {
-      segmentsToErase.push_back(segmentIDToOverwrite);
-      }
-    }
-
+  // TODO: PERFORMANCE FIX
   if (!segmentsToErase.empty() &&
      ( modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeSet
     || modificationMode == qSlicerSegmentEditorAbstractEffect::ModificationModeAdd
@@ -598,7 +849,8 @@ void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmenta
         }
 
       if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
-        invertedModifierLabelmap2, segmentationNode, eraseSegmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MIN, extent, true, segmentIDsToOverwrite))
+        invertedModifierLabelmap2, segmentationNode, eraseSegmentID, vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MIN,
+        modifierExtent, true, segmentIDsToOverwrite))
         {
         qCritical() << Q_FUNC_INFO << ": Failed to set modifier labelmap to segment " << (eraseSegmentID.c_str());
         }
@@ -614,7 +866,7 @@ void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmenta
       {
       if (!vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment(
         modifierLabelmap, segmentationNode, this->parameterSetNode()->GetMaskSegmentID(), vtkSlicerSegmentationsModuleLogic::MODE_MERGE_MASK,
-        extent, false, segmentIDsToOverwrite))
+        modifierExtent, false, segmentIDsToOverwrite))
         {
         qCritical() << Q_FUNC_INFO << ": Failed to remove modifier labelmap from segment " << this->parameterSetNode()->GetMaskSegmentID();
         }
@@ -640,6 +892,119 @@ void qSlicerSegmentEditorAbstractEffect::modifySegmentByLabelmap(vtkMRMLSegmenta
         }
       }
     }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSegmentEditorAbstractEffect::maskModifierLabelmap(vtkOrientedImageData* modifierLabelmap,
+  ModificationMode modificationMode, const int modifierExtent[6], std::vector<std::string> segmentIDs)
+{
+  if (!modifierLabelmap)
+    {
+    qCritical() << Q_FUNC_INFO << ": Invalid modifier labelmap";
+    return;
+    }
+
+  vtkMRMLSegmentEditorNode* parameterSetNode = this->parameterSetNode();
+  if (!parameterSetNode)
+    {
+    qCritical() << Q_FUNC_INFO << ": Invalid segment editor parameter set node";
+    return;
+    }
+
+  vtkMRMLSegmentationNode* segmentationNode = parameterSetNode->GetSegmentationNode();
+  if (!segmentationNode)
+    {
+    qCritical() << Q_FUNC_INFO << ": Invalid segmentation node";
+    return;
+    }
+
+  // Generate mask labelmap
+  vtkSmartPointer<vtkOrientedImageData> maskLabelmap = this->maskLabelmap();
+
+  bool paintInsideSegments = this->parameterSetNode()->GetMaskMode() == vtkMRMLSegmentationNode::EditAllowedInsideAllSegments ||
+    this->parameterSetNode()->GetMaskMode() == vtkMRMLSegmentationNode::EditAllowedInsideVisibleSegments ||
+    this->parameterSetNode()->GetMaskMode() == vtkMRMLSegmentationNode::EditAllowedInsideSingleSegment;
+
+  // If we are painting inside a segment, some effects can modify the current segment outside the masking region (ex. erase effect can add-back regions)
+  if (paintInsideSegments)
+    {
+    for (auto segmentID : segmentIDs)
+      {
+      vtkSegment* segment = segmentationNode->GetSegmentation()->GetSegment(segmentID);
+      if (!segment)
+        {
+        continue;
+        }
+
+      vtkSmartPointer<vtkOrientedImageData> segmentLayerLabelmap =
+        vtkOrientedImageData::SafeDownCast(segment->GetRepresentation(segmentationNode->GetSegmentation()->GetMasterRepresentationName()));
+      if (!segmentLayerLabelmap)
+        {
+        continue;
+        }
+
+      // Get the region ouside the current segment
+      vtkNew<vtkImageThreshold> segmentInverter;
+      segmentInverter->SetInputData(segmentLayerLabelmap);
+      segmentInverter->SetInValue(m_EraseValue);
+      segmentInverter->SetOutValue(m_FillValue);
+      segmentInverter->ReplaceInOn();
+      segmentInverter->ThresholdBetween(segment->GetLabelValue(), segment->GetLabelValue());
+      segmentInverter->SetOutputScalarTypeToUnsignedChar();
+      segmentInverter->Update(); // Can't use modifier extent since modifier/segmentation geometry may not match
+
+      // Remove the current segment from the mask
+      vtkNew<vtkOrientedImageData> invertedSegment;
+      invertedSegment->ShallowCopy(segmentInverter->GetOutput());
+      invertedSegment->CopyDirections(segmentLayerLabelmap);
+      vtkOrientedImageDataResample::ModifyImage(maskLabelmap, invertedSegment, vtkOrientedImageDataResample::OPERATION_MINIMUM);
+      }
+    }
+
+  // Apply threshold mask if paint threshold is turned on
+  if (parameterSetNode->GetMasterVolumeIntensityMask())
+    {
+    vtkOrientedImageData* masterVolumeOrientedImageData = this->masterVolumeImageData();
+    if (!masterVolumeOrientedImageData)
+      {
+      qCritical() << Q_FUNC_INFO << ": Unable to get master volume image";
+      this->defaultModifierLabelmap();
+      return;
+      }
+    // Make sure the modifier labelmap has the same geometry as the master volume
+    if (!vtkOrientedImageDataResample::DoGeometriesMatch(modifierLabelmap, masterVolumeOrientedImageData))
+      {
+      qCritical() << Q_FUNC_INFO << ": Modifier labelmap should have the same geometry as the master volume";
+      this->defaultModifierLabelmap();
+      return;
+      }
+
+    // Threshold master volume to generate mask
+    vtkSmartPointer<vtkImageThreshold> threshold = vtkSmartPointer<vtkImageThreshold>::New();
+    threshold->SetInputData(masterVolumeOrientedImageData);
+    threshold->ThresholdBetween(parameterSetNode->GetMasterVolumeIntensityMaskRange()[0], parameterSetNode->GetMasterVolumeIntensityMaskRange()[1]);
+    threshold->SetInValue(m_EraseValue);
+    threshold->SetOutValue(m_FillValue);
+    threshold->SetOutputScalarTypeToUnsignedChar();
+    if (modifierExtent)
+      {
+      threshold->UpdateExtent(modifierExtent);
+      }
+    else
+      {
+      threshold->UpdateExtent(modifierLabelmap->GetExtent());
+      }
+
+    vtkSmartPointer<vtkOrientedImageData> thresholdMask = vtkSmartPointer<vtkOrientedImageData>::New();
+    thresholdMask->ShallowCopy(threshold->GetOutput());
+    vtkSmartPointer<vtkMatrix4x4> modifierLabelmapToWorldMatrix = vtkSmartPointer<vtkMatrix4x4>::New();
+    modifierLabelmap->GetImageToWorldMatrix(modifierLabelmapToWorldMatrix);
+    thresholdMask->SetGeometryFromImageToWorldMatrix(modifierLabelmapToWorldMatrix);
+    vtkOrientedImageDataResample::ModifyImage(maskLabelmap, thresholdMask, vtkOrientedImageDataResample::OPERATION_MAXIMUM);
+    }
+
+  // Mask the modifier labelmap
+  vtkOrientedImageDataResample::ApplyImageMask(modifierLabelmap, maskLabelmap, m_EraseValue, true);
 }
 
 //-----------------------------------------------------------------------------
@@ -1204,7 +1569,7 @@ vtkOrientedImageData* qSlicerSegmentEditorAbstractEffect::defaultModifierLabelma
 {
   Q_D(qSlicerSegmentEditorAbstractEffect);
   bool success = false;
-  emit d->updateVolumeSignal(d->ModifierLabelmap.GetPointer(), success); // this resets the labelmap and cleares it
+  emit d->updateVolumeSignal(d->ModifierLabelmap.GetPointer(), success); // this resets the labelmap and clears it
   if (!success)
     {
     return nullptr;

@@ -317,16 +317,23 @@ class AbstractScriptedSegmentEditorAutoCompleteEffect(AbstractScriptedSegmentEdi
     # Move segments from preview into current segmentation
     segmentIDs = vtk.vtkStringArray()
     previewNode.GetSegmentation().GetSegmentIDs(segmentIDs)
-    for index in range(segmentIDs.GetNumberOfValues()):
-      segmentID = segmentIDs.GetValue(index)
-      previewSegmentLabelmap = slicer.vtkOrientedImageData()
-      previewNode.GetBinaryLabelmapRepresentation(segmentID, previewSegmentLabelmap)
-      self.scriptedEffect.modifySegmentByLabelmap(segmentationNode, segmentID, previewSegmentLabelmap,
-        slicer.qSlicerSegmentEditorAbstractEffect.ModificationModeSet)
-      if segmentationDisplayNode is not None and self.isBackgroundLabelmap(previewSegmentLabelmap):
-        # Automatically hide result segments that are background (all eight corners are non-zero)
-        segmentationDisplayNode.SetSegmentVisibility(segmentID, False)
-      previewNode.GetSegmentation().RemoveSegment(segmentID) # delete now to limit memory usage
+
+    labelValues = vtk.vtkIntArray()
+    for i in range(segmentIDs.GetNumberOfValues()):
+      segmentID = segmentIDs.GetValue(i)
+      labelValue = previewNode.GetSegmentation().GetSegment(segmentID).GetLabelValue()
+      labelValues.InsertNextValue(labelValue)
+
+    segmentID = segmentIDs.GetValue(0)
+    previewSegmentLabelmap = previewNode.GetSegmentation().GetSegment(segmentID).GetRepresentation(
+      slicer.vtkSegmentationConverter.GetSegmentationBinaryLabelmapRepresentationName())
+    self.scriptedEffect.modifySegmentsByLabelmap(segmentationNode, segmentIDs, labelValues, previewSegmentLabelmap,
+      slicer.qSlicerSegmentEditorAbstractEffect.ModificationModeSet)
+    #if segmentationDisplayNode is not None and self.isBackgroundLabelmap(previewSegmentLabelmap):
+    #  # Automatically hide result segments that are background (all eight corners are non-zero)
+    #  #segmentationDisplayNode.SetSegmentVisibility(segmentID, False)
+
+    previewNode.GetSegmentation().RemoveAllSegments() # delete now to limit memory usage
 
     if previewContainsClosedSurfaceRepresentation:
       segmentationNode.CreateClosedSurfaceRepresentation()
