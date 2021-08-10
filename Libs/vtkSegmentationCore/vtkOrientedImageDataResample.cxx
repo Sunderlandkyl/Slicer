@@ -1456,7 +1456,7 @@ bool vtkOrientedImageDataResample::ApplyImageMask(vtkOrientedImageData* input, v
     commonExtent[2 * i] = std::max(inputExtent[2*i], maskExtent[2*i]);
     commonExtent[2*i+1] = std::min(inputExtent[2*i+1], maskExtent[2*i+1]);
     }
-  if (commonExtent[0] > commonExtent[1] || commonExtent[2] > commonExtent[3] > commonExtent[4] > commonExtent[5])
+  if (commonExtent[0] > commonExtent[1] || commonExtent[2] > commonExtent[3] || commonExtent[4] > commonExtent[5])
     {
     /// Masks don't overlap
     return true;

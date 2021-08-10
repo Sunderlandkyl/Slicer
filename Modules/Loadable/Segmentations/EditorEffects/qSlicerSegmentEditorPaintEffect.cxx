@@ -589,6 +589,7 @@ void qSlicerSegmentEditorPaintEffectPrivate::paintBrushes(
       }
     vtkOrientedImageDataResample::ModifyImage(modifierLabelmap, orientedBrushPositionerOutput.GetPointer(), vtkOrientedImageDataResample::OPERATION_MAXIMUM);
     }
+
   modifierLabelmap->Modified();
 }
 
