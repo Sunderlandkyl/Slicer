@@ -315,16 +315,15 @@ class AbstractScriptedSegmentEditorAutoCompleteEffect(AbstractScriptedSegmentEdi
       slicer.vtkSegmentationConverter.GetSegmentationClosedSurfaceRepresentationName())
 
     # Move segments from preview into current segmentation
-    segmentIDs = vtk.vtkStringArray()
-    previewNode.GetSegmentation().GetSegmentIDs(segmentIDs)
+    segmentIDs = list(previewNode.GetSegmentation().GetSegmentIDs())
 
-    labelValues = vtk.vtkIntArray()
-    for i in range(segmentIDs.GetNumberOfValues()):
-      segmentID = segmentIDs.GetValue(i)
+    labelValues = []
+    for segmentID in segmentIDs:
       labelValue = previewNode.GetSegmentation().GetSegment(segmentID).GetLabelValue()
-      labelValues.InsertNextValue(labelValue)
+      #labelValues.InsertNextValue(labelValue)
+      labelValues.append(labelValue)
 
-    segmentID = segmentIDs.GetValue(0)
+    segmentID = segmentIDs[0]
     previewSegmentLabelmap = previewNode.GetSegmentation().GetSegment(segmentID).GetRepresentation(
       slicer.vtkSegmentationConverter.GetSegmentationBinaryLabelmapRepresentationName())
     self.scriptedEffect.modifySegmentsByLabelmap(segmentationNode, segmentIDs, labelValues, previewSegmentLabelmap,

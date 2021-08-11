@@ -37,6 +37,7 @@
 class qSlicerSegmentEditorAbstractEffectPrivate;
 
 class vtkActor2D;
+class vtkIntArray;
 class vtkMRMLInteractionNode;
 class vtkMRMLScene;
 class vtkMRMLSegmentEditorNode;
@@ -55,9 +56,6 @@ class QColor;
 class QFormLayout;
 class QFrame;
 class QLayout;
-
-class vtkStringArray;
-class vtkIntArray;
 
 /// \ingroup SlicerRt_QtModules_Segmentations
 /// \brief Abstract class for segment editor effects
@@ -137,7 +135,7 @@ public:
   Q_INVOKABLE virtual bool active();
 
   Q_INVOKABLE virtual void maskModifierLabelmap(vtkOrientedImageData* modifierLabelmap,
-    ModificationMode modificationMode, const int modifierExtent[6], std::vector<std::string> segmentIDs);
+    ModificationMode modificationMode, const int modifierExtent[6], QStringList segmentIDs);
 
   Q_INVOKABLE virtual void modifySelectedSegmentByLabelmap(vtkOrientedImageData* modifierLabelmap,
     ModificationMode modificationMode, const int modifierExtent[6],bool bypassMasking = false);
@@ -150,9 +148,9 @@ public:
   Q_INVOKABLE virtual void modifySegmentByLabelmap(vtkMRMLSegmentationNode* segmentationNode, const char* segmentID,
     vtkOrientedImageData* modifierLabelmap, ModificationMode modificationMode, const int modifierExtent[6], bool bypassMasking = false);
 
-  Q_INVOKABLE virtual void modifySegmentsByLabelmap(vtkMRMLSegmentationNode* segmentationNode, vtkStringArray* segmentIDs, vtkIntArray* labelValues,
+  Q_INVOKABLE virtual void modifySegmentsByLabelmap(vtkMRMLSegmentationNode* segmentationNode, QStringList segmentIDs, QList<int> labelValues,
     vtkOrientedImageData* modifierLabelmap, ModificationMode modificationMode, bool bypassMasking = false);
-  Q_INVOKABLE virtual void modifySegmentsByLabelmap(vtkMRMLSegmentationNode* segmentationNode, vtkStringArray* segmentIDs, vtkIntArray* labelValues,
+  Q_INVOKABLE virtual void modifySegmentsByLabelmap(vtkMRMLSegmentationNode* segmentationNode, QStringList segmentIDs, QList<int> labelValues,
     vtkOrientedImageData* modifierLabelmap, ModificationMode modificationMode, const int modifierExtent[6], bool bypassMasking = false);
 
   /// Apply mask image on an input image.
