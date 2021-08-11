@@ -37,6 +37,7 @@
 class qSlicerSegmentEditorAbstractEffectPrivate;
 
 class vtkActor2D;
+class vtkIntArray;
 class vtkMRMLInteractionNode;
 class vtkMRMLScene;
 class vtkMRMLSegmentEditorNode;
@@ -133,16 +134,24 @@ public:
   /// Returns true if the effect is currently active (activated and has not deactivated since then)
   Q_INVOKABLE virtual bool active();
 
+  Q_INVOKABLE virtual void maskModifierLabelmap(vtkOrientedImageData* modifierLabelmap,
+    ModificationMode modificationMode, const int modifierExtent[6], QStringList segmentIDs);
+
   Q_INVOKABLE virtual void modifySelectedSegmentByLabelmap(vtkOrientedImageData* modifierLabelmap,
-    ModificationMode modificationMode, const int modificationExtent[6],bool bypassMasking = false);
+    ModificationMode modificationMode, const int modifierExtent[6],bool bypassMasking = false);
   Q_INVOKABLE virtual void modifySelectedSegmentByLabelmap(vtkOrientedImageData* modifierLabelmap,
     ModificationMode modificationMode, bool bypassMasking = false);
   Q_INVOKABLE virtual void modifySelectedSegmentByLabelmap(vtkOrientedImageData* modifierLabelmap,
-    ModificationMode modificationMode, QList<int> extent, bool bypassMasking = false);
+    ModificationMode modificationMode, QList<int> modifierExtent, bool bypassMasking = false);
   Q_INVOKABLE virtual void modifySegmentByLabelmap(vtkMRMLSegmentationNode* segmentationNode, const char* segmentID,
     vtkOrientedImageData* modifierLabelmap, ModificationMode modificationMode, bool bypassMasking = false);
   Q_INVOKABLE virtual void modifySegmentByLabelmap(vtkMRMLSegmentationNode* segmentationNode, const char* segmentID,
-    vtkOrientedImageData* modifierLabelmap, ModificationMode modificationMode, const int modificationExtent[6], bool bypassMasking = false);
+    vtkOrientedImageData* modifierLabelmap, ModificationMode modificationMode, const int modifierExtent[6], bool bypassMasking = false);
+
+  Q_INVOKABLE virtual void modifySegmentsByLabelmap(vtkMRMLSegmentationNode* segmentationNode, QStringList segmentIDs, QList<int> labelValues,
+    vtkOrientedImageData* modifierLabelmap, ModificationMode modificationMode, bool bypassMasking = false);
+  Q_INVOKABLE virtual void modifySegmentsByLabelmap(vtkMRMLSegmentationNode* segmentationNode, QStringList segmentIDs, QList<int> labelValues,
+    vtkOrientedImageData* modifierLabelmap, ModificationMode modificationMode, const int modifierExtent[6], bool bypassMasking = false);
 
   /// Apply mask image on an input image.
   /// This method is kept here for backward compatibility only and will be removed in the future.

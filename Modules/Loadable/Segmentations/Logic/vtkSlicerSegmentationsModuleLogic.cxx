@@ -45,7 +45,6 @@
 #include <vtkImageAccumulate.h>
 #include <vtkImageConstantPad.h>
 #include <vtkImageMathematics.h>
-#include <vtkImageThreshold.h>
 #include <vtkLookupTable.h>
 #include <vtkMatrix4x4.h>
 #include <vtkNew.h>
@@ -1876,6 +1875,69 @@ bool vtkSlicerSegmentationsModuleLogic::GetSegmentClosedSurfaceRepresentation(vt
 
   return vtkSlicerSegmentationsModuleLogic::GetSegmentRepresentation(segmentationNode, segmentID,
     vtkSegmentationConverter::GetSegmentationClosedSurfaceRepresentationName(), polyData, applyParentTransform);
+}
+
+//-----------------------------------------------------------------------------
+bool vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegments(
+  vtkOrientedImageData* labelmap, vtkMRMLSegmentationNode* segmentationNode, std::vector<std::string> segmentIDs,
+  std::map<std::string, int> labelValues, int mergeMode/*=MODE_REPLACE*/, const int extent[6]/*=0*/,
+  bool minimumOfAllSegments/*=false*/, std::vector<std::string> segmentIdsToOverwrite/*={}*/)
+{
+  if (!segmentationNode)
+    {
+    vtkGenericWarningMacro("vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment: Invalid input");
+    return false;
+    }
+
+  vtkSegmentation* segmentation = segmentationNode->GetSegmentation();
+  if (!segmentation)
+    {
+    vtkGenericWarningMacro("vtkSlicerSegmentationsModuleLogic::SetBinaryLabelmapToSegment: Invalid segmentation");
+    return false;
+    }
+
+  std::vector<std::string> modifiedSegmentIDs;
+  bool result = vtkSegmentationModifier::ModifyMultipleBinaryLabelmaps(labelmap, segmentation, segmentIDs, labelValues, mergeMode, extent, minimumOfAllSegments,
+    false, segmentIdsToOverwrite, &modifiedSegmentIDs);
+
+  // Re-convert all other representations
+  bool conversionHappened = false;
+  std::vector<std::string> representationNames;
+
+  for (std::string modifiedSegmentID : modifiedSegmentIDs)
+    {
+      vtkSegment* segment = segmentation->GetSegment(modifiedSegmentID);
+    if (segment)
+      {
+      segment->GetContainedRepresentationNames(representationNames);
+      for (std::vector<std::string>::iterator reprIt = representationNames.begin();
+        reprIt != representationNames.end(); ++reprIt)
+        {
+        std::string targetRepresentationName = (*reprIt);
+        if (targetRepresentationName.compare(vtkSegmentationConverter::GetSegmentationBinaryLabelmapRepresentationName()))
+          {
+          vtkSegmentationConverter::ConversionPathAndCostListType pathCosts;
+          segmentation->GetPossibleConversions(targetRepresentationName, pathCosts);
+
+          // Get cheapest path from found conversion paths
+          vtkSegmentationConverter::ConversionPathType cheapestPath = vtkSegmentationConverter::GetCheapestPath(pathCosts);
+          if (cheapestPath.empty())
+            {
+            continue;
+            }
+          conversionHappened |= segmentation->ConvertSegmentsUsingPath(modifiedSegmentIDs, cheapestPath, true);
+          }
+        }
+      }
+
+    if (conversionHappened)
+      {
+      const char* segmentIdChar = modifiedSegmentID.c_str();
+      segmentationNode->GetSegmentation()->InvokeEvent(vtkSegmentation::RepresentationModified, (void*)segmentIdChar);
+      }
+    }
+
+  return result;
 }
 
 //-----------------------------------------------------------------------------

@@ -189,18 +189,21 @@ class SegmentEditorMarginEffect(AbstractScriptedSegmentEditorEffect):
     margin.SetOuterMarginMM(abs(marginSizeMM))
     margin.Update()
 
+    thresh = vtk.vtkImageThreshold()
+    thresh.SetInputData(margin.GetOutput())
+    thresh.ThresholdByLower(0)
+    thresh.SetOutputScalarType(selectedSegmentLabelmap.GetScalarType())
+
     if marginSizeMM >= 0:
-      modifierLabelmap.ShallowCopy(margin.GetOutput())
+      thresh.SetInValue(backgroundValue)
+      thresh.SetOutValue(labelValue)
     else:
       # If we are shrinking then the result needs to be inverted.
-      thresh = vtk.vtkImageThreshold()
-      thresh.SetInputData(margin.GetOutput())
-      thresh.ThresholdByLower(0)
       thresh.SetInValue(labelValue)
       thresh.SetOutValue(backgroundValue)
-      thresh.SetOutputScalarType(selectedSegmentLabelmap.GetScalarType())
-      thresh.Update()
-      modifierLabelmap.ShallowCopy(thresh.GetOutput())
+
+    thresh.Update()
+    modifierLabelmap.ShallowCopy(thresh.GetOutput())
 
     # Apply changes
     self.scriptedEffect.modifySelectedSegmentByLabelmap(modifierLabelmap, slicer.qSlicerSegmentEditorAbstractEffect.ModificationModeSet)
