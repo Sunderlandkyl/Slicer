@@ -76,6 +76,9 @@ bool vtkMRMLMarkupsPlaneJsonStorageNode::vtkInternalPlane::WritePlaneProperties(
     return false;
     }
 
+  writer.Key("planeType");
+  writer.String(planeNode->GetPlaneTypeAsString(planeNode->GetPlaneType()));
+
   writer.Key("sizeMode");
   writer.String(planeNode->GetSizeModeAsString(planeNode->GetSizeMode()));
 
@@ -121,6 +124,25 @@ bool vtkMRMLMarkupsPlaneJsonStorageNode::vtkInternalPlane::WritePlaneProperties(
     }
   writer.Key("objectToBase");
   this->WriteVector(writer, objectToBase, 16);
+
+  double baseToNode[16] = { 0.0 };
+  vtkMatrix4x4* baseToNodeMatrix = planeNode->GetBaseToNodeMatrix();
+  for (int i = 0; i < 4; ++i)
+    {
+    baseToNode[4 * i]     = baseToNodeMatrix->GetElement(i, 0);
+    baseToNode[4 * i + 1] = baseToNodeMatrix->GetElement(i, 1);
+    baseToNode[4 * i + 2] = baseToNodeMatrix->GetElement(i, 2);
+    baseToNode[4 * i + 3] = baseToNodeMatrix->GetElement(i, 3);
+    }
+  if (coordinateSystem == vtkMRMLStorageNode::CoordinateSystemLPS)
+    {
+    for (int i = 0; i < 8; ++i)
+      {
+      baseToNode[i] = -baseToNode[i];
+      }
+    }
+  writer.Key("baseToNode");
+  this->WriteVector(writer, baseToNode, 16);
 
   double orientation[9] = { 0.0 };
 
@@ -168,13 +190,22 @@ bool vtkMRMLMarkupsPlaneJsonStorageNode::vtkInternalPlane::UpdateMarkupsNodeFrom
   vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(markupsNode);
 
   bool success = true;
+
+  if (markupsObject.HasMember("planeType"))
+    {
+    rapidjson::Value& planeTypeItem = markupsObject["planeType"];
+    std::string planeType = planeTypeItem.GetString();
+    planeNode->SetPlaneType(planeNode->GetPlaneTypeFromString(planeType.c_str()));
+    }
+
   success = vtkInternal::UpdateMarkupsNodeFromJsonValue(markupsNode, markupsObject);
 
   int coordinateSystem = this->External->GetCoordinateSystem();
 
-  double objectToBase[16] = { 0.0 };
+  vtkNew<vtkMatrix4x4> objectToBaseMatrix;
   if (markupsObject.HasMember("objectToBase"))
     {
+    double objectToBase[16] = { 0.0 };
     rapidjson::Value& objectToBaseItem= markupsObject["objectToBase"];
     if (!this->ReadVector(objectToBaseItem, objectToBase, 16))
       {
@@ -190,16 +221,44 @@ bool vtkMRMLMarkupsPlaneJsonStorageNode::vtkInternalPlane::UpdateMarkupsNodeFrom
         objectToBase[i] = -objectToBase[i];
         }
       }
-    }
-  vtkNew<vtkMatrix4x4> objectToBaseMatrix;
-  for (int i = 0; i < 4; ++i)
-    {
-    objectToBaseMatrix->SetElement(i, 0, objectToBase[4*i]);
-    objectToBaseMatrix->SetElement(i, 1, objectToBase[4*i + 1]);
-    objectToBaseMatrix->SetElement(i, 2, objectToBase[4*i + 2]);
-    objectToBaseMatrix->SetElement(i, 3, objectToBase[4*i + 3]);
+    for (int i = 0; i < 4; ++i)
+      {
+      objectToBaseMatrix->SetElement(i, 0, objectToBase[4*i]);
+      objectToBaseMatrix->SetElement(i, 1, objectToBase[4*i + 1]);
+      objectToBaseMatrix->SetElement(i, 2, objectToBase[4*i + 2]);
+      objectToBaseMatrix->SetElement(i, 3, objectToBase[4*i + 3]);
+      }
     }
   planeNode->GetObjectToBaseMatrix()->DeepCopy(objectToBaseMatrix);
+
+  vtkNew<vtkMatrix4x4> baseToNodeMatrix;
+  if (markupsObject.HasMember("baseToNode"))
+    {
+    double baseToNode[16] = { 0.0 };
+    rapidjson::Value& objectToBaseItem= markupsObject["baseToNode"];
+    if (!this->ReadVector(objectToBaseItem, baseToNode, 16))
+      {
+      vtkErrorToMessageCollectionWithObjectMacro(this->External, this->External->GetUserMessages(),
+        "vtkMRMLMarkupsJsonStorageNode::vtkInternal::UpdateMarkupsNodeFromJsonValue",
+        "File reading failed: objectToBase 16-element numeric array.");
+      return false;
+      }
+    if (coordinateSystem == vtkMRMLStorageNode::CoordinateSystemLPS)
+      {
+      for (int i = 0; i < 8; i++)
+        {
+        baseToNode[i] = -baseToNode[i];
+        }
+      }
+    for (int i = 0; i < 4; ++i)
+      {
+      baseToNodeMatrix->SetElement(i, 0, baseToNode[4 * i]);
+      baseToNodeMatrix->SetElement(i, 1, baseToNode[4 * i + 1]);
+      baseToNodeMatrix->SetElement(i, 2, baseToNode[4 * i + 2]);
+      baseToNodeMatrix->SetElement(i, 3, baseToNode[4 * i + 3]);
+      }
+    }
+  planeNode->GetBaseToNodeMatrix()->DeepCopy(baseToNodeMatrix);
 
   if (markupsObject.HasMember("sizeMode"))
     {

@@ -551,7 +551,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteractWithHandles(
       }
 
     double* handleWorldPos = handleInfo.PositionWorld;
-    double handleDisplayPos[3] = { 0 };
+    double handleDisplayPos[3] = { 0.0, 0.0, 0.0 };
 
     if (interactionEventData->IsDisplayPositionValid())
       {

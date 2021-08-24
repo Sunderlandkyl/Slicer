@@ -75,6 +75,15 @@ public:
     SizeMode_Last,
   };
 
+  // Plane type defines the calculation method that should be used to convert to and from control points.
+  enum
+  {
+    PlaneType3Points,
+    PlaneTypePointNormal,
+    PlaneTypePlaneFit,
+    PlaneType_Last
+  };
+
   vtkMRMLNode* CreateNodeInstance() override;
   /// Get node XML tag name (like Volume, Model)
   const char* GetNodeTagName() override {return "MarkupsPlane";}
@@ -95,6 +104,9 @@ public:
   /// \sa vtkMRMLNode::CopyContent
   vtkMRMLCopyContentMacro(vtkMRMLMarkupsPlaneNode);
 
+  /// Apply the passed transformation to the ROI
+  void ApplyTransform(vtkAbstractTransform* transform) override;
+
   //@{
   /// Method for calculating the size of the plane along the direction vectors.
   /// With size mode auto, the size of the plane is automatically calculated so that it ecompasses all of the points.
@@ -102,8 +114,8 @@ public:
   /// Default is SizeModeAuto.
   vtkSetMacro(SizeMode, int);
   vtkGetMacro(SizeMode, int);
-  const char* GetSizeModeAsString(int sizeMode);
-  int GetSizeModeFromString(const char* sizeMode);
+  static const char* GetSizeModeAsString(int sizeMode);
+  static int GetSizeModeFromString(const char* sizeMode);
   //@}
 
   /// The plane size multiplier used to calculate the size of the plane.
@@ -131,7 +143,8 @@ public:
   /// from the input control points.
   void GetSize(double size[2]);
   double* GetSize() VTK_SIZEHINT(2);
-  vtkSetVector2Macro(Size, double);
+  virtual void SetSize(double x, double y);
+  virtual void SetSize(double size[2]) { this->SetSize(size[0], size[1]); }
   //@}
 
   //@{
@@ -188,6 +201,7 @@ public:
   virtual void GetObjectToWorldMatrix(vtkMatrix4x4* planeToWorldMatrix);
   // Mapping from Base plane coordinates to local coordinates
   virtual void GetBaseToNodeMatrix(vtkMatrix4x4* matrix);
+  virtual vtkMatrix4x4* GetBaseToNodeMatrix();
 
   /// 4x4 matrix specifying the relative (rotation/translation) of the plane from the base coordinate system defined by the markup points.
   /// Default is the identity matrix.
@@ -205,18 +219,68 @@ public:
   /// Create default storage node or nullptr if does not have one
   vtkMRMLStorageNode* CreateDefaultStorageNode() override;
 
+  /// Create default display node or nullptr if does not have one
+  void CreateDefaultDisplayNodes() override;
+
+  /// Reimplemented to recalculate the axis-aligned bounds of the ROI.
+  /// If the ROI is rotated, this function will not reflect the oriented bounds defined by the ROI.
+  /// To get the planes that define the oriented bounding box, use GetPlanes()/GetPlanesWorld().
+  /// \sa GetPlanes(), GetPlanesWorld()
+  void GetRASBounds(double bounds[6]) override;
+  void GetBounds(double bounds[6]) override;
+  void GeneratePlaneBounds(double bounds[6], double xAxis[3], double yAxis[3], double center[3], double size[2]);
+
+  /// PlaneType represents the method that is used to calculate the size of the ROI.
+  vtkGetMacro(PlaneType, int);
+  void SetPlaneType(int planeType);
+  static const char* GetPlaneTypeAsString(int planeType);
+  static int GetPlaneTypeFromString(const char* planeType);
+
+  void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;
+
+  // Get plane validity flag. True if the plane is fully defined.
+  vtkGetMacro(IsPlaneValid, bool);
+
+  /// Helper method for generating an orthogonal right handed matrix from axes.
+/// Transform can optionally be specified to apply an additional transform on the vectors before generating the matrix.
+  static void GenerateOrthogonalMatrix(vtkMatrix4x4* inputMatrix,
+    vtkMatrix4x4* outputMatrix, vtkAbstractTransform* transform = nullptr, bool applyScaling = true);
+  static void GenerateOrthogonalMatrix(double xAxis[3], double yAxis[3], double zAxis[3], double origin[3],
+    vtkMatrix4x4* outputMatrix, vtkAbstractTransform* transform = nullptr, bool applyScaling = true);
+
 protected:
+
+  // Set plane validity flag. True if the plane is fully defined.
+  vtkSetMacro(IsPlaneValid, bool);
+
+  /// Reimplemented to recalculate InteractionHandleToWorld matrix when parent transform is changed.
+  void OnTransformNodeReferenceChanged(vtkMRMLTransformNode* transformNode) override;
 
   /// Calculates the x y and z axis of the plane from the 3 input points.
   void CalculateAxesFromPoints(const double point0[3], const double point1[3], const double point2[3], double x[3], double y[3], double z[3]);
 
-  // Updates the plane bounds based on SizeMode and AutoSizeScalingFactor.
-  void UpdateSize();
+  // Updates the plane based on plane type and control point position.
+  virtual void UpdatePlaneFromControlPoints();
+  virtual void UpdatePlaneFromPointNormal();
+  virtual void UpdatePlaneFrom3Points();
+  virtual void UpdatePlaneFromPlaneFit();
 
-  int SizeMode;
-  double AutoSizeScalingFactor;
-  double Size[2] = { 0.0, 0.0 };
+  /// Calculate the position of control points from the ROI
+  virtual void UpdateControlPointsFromPlane();
+  virtual void UpdateControlPointsFromPointNormal();
+  virtual void UpdateControlPointsFrom3Points();
+  virtual void UpdateControlPointsFromPlaneFit();
+  void GetClosestFitPlaneFromControlPoints(vtkMatrix4x4* closestFitPlane);
+
+  bool IsUpdatingInteractionHandleToWorldMatrix{ false };
+  bool IsUpdatingControlPointsFromPlane{ false };
+  bool IsUpdatingPlaneFromControlPoints{ false };
+
+  int SizeMode{ SizeModeAbsolute };
+  double AutoSizeScalingFactor{ 1.0 };
+  double Size[2] = { 100.0, 100.0 };
   vtkSmartPointer<vtkMatrix4x4> ObjectToBaseMatrix;
+  vtkSmartPointer<vtkMatrix4x4> BaseToNodeMatrix;
   double PlaneBounds[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
   // Arrays used to return pointers from GetNormal/GetOrigin functions.
@@ -225,10 +289,8 @@ protected:
   double Origin[3] = { 0.0,0.0,0.0 };
   double OriginWorld[3] = { 0.0,0.0,0.0 };
 
-  /// Helper method for ensuring that the plane has enough points and that the points/vectors are not coincident.
-  /// Used when calling SetNormal(), SetVectors() to ensure that the plane is valid before transforming to the new
-  /// orientation.
-  void CreatePlane();
+  int PlaneType{ PlaneTypePointNormal };
+  bool IsPlaneValid{ false };
 
   /// Calculates the handle to world matrix based on the current control points
   void UpdateInteractionHandleToWorldMatrix() override;
@@ -237,6 +299,8 @@ protected:
   ~vtkMRMLMarkupsPlaneNode() override;
   vtkMRMLMarkupsPlaneNode(const vtkMRMLMarkupsPlaneNode&);
   void operator=(const vtkMRMLMarkupsPlaneNode&);
+
+  friend class vtkSlicerPlaneWidget; // To directly access plane update functions
 };
 
 #endif
