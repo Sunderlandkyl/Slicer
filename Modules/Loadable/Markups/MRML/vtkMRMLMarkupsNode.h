@@ -467,6 +467,7 @@ public:
   void SetNthControlPointOrientationMatrix(int n, vtkMatrix3x3* matrix);
   /// Set orientation as 9 values: x, y, and z axis directions, respectively, in world coordinates.
   /// x (0, 3, 6), y (1, 4, 7), z (2, 5, 8)
+  /// x (0, 3, 6), y (1, 4, 7), z (2, 5, 8)
   void SetNthControlPointOrientationMatrixWorld(int n, double orientationMatrix[9]);
   /// Set orientation from a vtkMatrix3x3 in world coordinates
   void SetNthControlPointOrientationMatrixWorld(int n, vtkMatrix3x3* matrix);
