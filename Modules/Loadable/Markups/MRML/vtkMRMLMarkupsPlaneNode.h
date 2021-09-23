@@ -75,6 +75,15 @@ public:
     SizeMode_Last,
   };
 
+  // Plane type defines the calculation method that should be used to convert to and from control points.
+  enum
+  {
+    PlaneType3Points,
+    PlaneTypePointNormal,
+    PlaneTypePlaneFit,
+    PlaneType_Last
+  };
+
   vtkMRMLNode* CreateNodeInstance() override;
   /// Get node XML tag name (like Volume, Model)
   const char* GetNodeTagName() override {return "MarkupsPlane";}
@@ -101,8 +110,8 @@ public:
   /// Default is SizeModeAuto.
   vtkSetMacro(SizeMode, int);
   vtkGetMacro(SizeMode, int);
-  const char* GetSizeModeAsString(int sizeMode);
-  int GetSizeModeFromString(const char* sizeMode);
+  static const char* GetSizeModeAsString(int sizeMode);
+  static int GetSizeModeFromString(const char* sizeMode);
 
   /// The plane size multiplier used to calculate the size of the plane.
   /// This is only used when the size mode is auto.
@@ -119,7 +128,8 @@ public:
   void SetPlaneBounds(double, double, double, double, double, double);
   void GetSize(double size[2]);
   double* GetSize() VTK_SIZEHINT(2);
-  vtkSetVector2Macro(Size, double);
+  virtual void SetSize(double x, double y);
+  virtual void SetSize(double size[2]) { this->SetSize(size[0], size[1]); }
 
   /// The normal vector for the plane.
   void GetNormal(double normal[3]);
@@ -183,18 +193,49 @@ public:
   /// Create default storage node or nullptr if does not have one
   vtkMRMLStorageNode* CreateDefaultStorageNode() override;
 
+  /// PlaneType represents the method that is used to calculate the size of the ROI.
+  vtkGetMacro(PlaneType, int);
+  void SetPlaneType(int planeType);
+  static const char* GetPlaneTypeAsString(int planeType);
+  static int GetPlaneTypeFromString(const char* planeType);
+
+  void ProcessMRMLEvents(vtkObject* caller, unsigned long event, void* callData) override;
+
+  // Get plane validity flag. True if the plane is fully defined.
+  vtkGetMacro(IsPlaneValid, bool);
+
 protected:
+
+  // Set plane validity flag. True if the plane is fully defined.
+  vtkSetMacro(IsPlaneValid, bool);
+
+  /// Reimplemented to recalculate InteractionHandleToWorld matrix when parent transform is changed.
+  void OnTransformNodeReferenceChanged(vtkMRMLTransformNode* transformNode) override;
 
   /// Calculates the x y and z axis of the plane from the 3 input points.
   void CalculateAxesFromPoints(const double point0[3], const double point1[3], const double point2[3], double x[3], double y[3], double z[3]);
 
-  // Updates the plane bounds based on SizeMode and AutoSizeScalingFactor.
-  void UpdateSize();
+  // Updates the plane based on plane type and control point position.
+  virtual void UpdatePlaneFromControlPoints();
+  virtual void UpdatePlaneFromPointNormal();
+  virtual void UpdatePlaneFrom3Points();
+  virtual void UpdatePlaneFromPlaneFit();
 
-  int SizeMode;
-  double AutoSizeScalingFactor;
-  double Size[2] = { 0.0, 0.0 };
+  /// Calculate the position of control points from the ROI
+  virtual void UpdateControlPointsFromPlane();
+  virtual void UpdateControlPointsFromPointNormal();
+  virtual void UpdateControlPointsFrom3Points();
+  virtual void UpdateControlPointsFromPlaneFit();
+
+  bool IsUpdatingInteractionHandleToWorldMatrix{ false };
+  bool IsUpdatingControlPointsFromPlane{ false };
+  bool IsUpdatingPlaneFromControlPoints{ false };
+
+  int SizeMode{ SizeModeAbsolute };
+  double AutoSizeScalingFactor{ 1.0 };
+  double Size[2] = { 100.0, 100.0 };
   vtkSmartPointer<vtkMatrix4x4> ObjectToBaseMatrix;
+  vtkSmartPointer<vtkMatrix4x4> BaseToNodeMatrix;
   double PlaneBounds[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
   // Arrays used to return pointers from GetNormal/GetOrigin functions.
@@ -202,6 +243,9 @@ protected:
   double NormalWorld[3] = { 0.0, 0.0, 0.0 };
   double Origin[3] = { 0.0,0.0,0.0 };
   double OriginWorld[3] = { 0.0,0.0,0.0 };
+
+  int PlaneType{ PlaneTypePointNormal };
+  bool IsPlaneValid{ false };
 
   /// Helper method for ensuring that the plane has enough points and that the points/vectors are not coincident.
   /// Used when calling SetNormal(), SetVectors() to ensure that the plane is valid before transforming to the new

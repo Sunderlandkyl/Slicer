@@ -51,16 +51,21 @@ public:
   /// Widget states
   enum
   {
-    WidgetStateDefine = WidgetStateUser + 50, // click in empty area will place a new point
+    WidgetStateDefine = WidgetStateMarkups_Last, // click in empty area will place a new point
     WidgetStateTranslatePlane, // translating the plane
+    WidgetStateSymmetricScale,
+    WidgetStateMarkupsPlane_Last
   };
 
   /// Widget events
   enum
   {
-    WidgetEventControlPointPlace = WidgetEventUser + 50,
+    WidgetEventControlPointPlace = WidgetEventMarkups_Last,
     WidgetEventPlaneMoveStart,
     WidgetEventPlaneMoveEnd,
+    WidgetEventSymmetricScaleStart,
+    WidgetEventSymmetricScaleEnd,
+    WidgetEventMarkupsPlane_Last
   };
 
   /// Create the default widget representation and initializes the widget and representation.
@@ -76,6 +81,17 @@ protected:
   bool ProcessPlaneMoveEnd(vtkMRMLInteractionEventData* event);
   bool ProcessMouseMove(vtkMRMLInteractionEventData* eventData) override;
   bool ProcessPlaneTranslate(vtkMRMLInteractionEventData* event);
+  bool ProcessWidgetSymmetricScaleStart(vtkMRMLInteractionEventData* eventData);
+  bool ProcessPlaneSymmetricScale(vtkMRMLInteractionEventData* event);
+  bool ProcessEndMouseDrag(vtkMRMLInteractionEventData* eventData);
+
+  void ScaleWidget(double eventPos[2]) override;
+  virtual void ScaleWidget(double eventPos[2], bool symmetricScale);
+
+  /// Flip the selected index across the specified axis.
+  /// Ex. Switch between L--R face.
+  /// Used when the user drags an ROI handle across the ROI origin.
+  void FlipPlaneHandles(bool flipLRHandle, bool flipAPHandle);
 
 private:
   vtkSlicerPlaneWidget(const vtkSlicerPlaneWidget&) = delete;
