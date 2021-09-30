@@ -18,7 +18,6 @@
 
 #include "vtkSlicerMarkupsWidget.h"
 
-#include "vtkMRMLApplicationLogic.h"
 #include "vtkMRMLInteractionEventData.h"
 #include "vtkMRMLInteractionNode.h"
 #include "vtkMRMLScene.h"
@@ -790,6 +789,12 @@ bool vtkSlicerMarkupsWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData
 {
   unsigned long widgetEvent = this->TranslateInteractionEventToWidgetEvent(eventData);
 
+  if (this->ApplicationLogic)
+    {
+    this->ApplicationLogic->PauseRender();
+    }
+
+
   bool processedEvent = false;
   switch (widgetEvent)
     {
@@ -857,6 +862,11 @@ bool vtkSlicerMarkupsWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData
   if (!processedEvent)
     {
     processedEvent = this->ProcessButtonClickEvent(eventData);
+    }
+
+  if (this->ApplicationLogic)
+    {
+    this->ApplicationLogic->ResumeRender();
     }
 
   return processedEvent;

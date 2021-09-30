@@ -170,7 +170,7 @@ void vtkSlicerPlaneRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller, unsigne
   this->BuildPlane();
 
   bool visible = true;
-  if (markupsNode->GetNumberOfControlPoints() < 3)
+  if (!markupsNode->GetIsPlaneValid())
     {
     visible = false;
     }
@@ -534,7 +534,7 @@ void vtkSlicerPlaneRepresentation2D::PrintSelf(ostream& os, vtkIndent indent)
 void vtkSlicerPlaneRepresentation2D::BuildPlane()
 {
   vtkMRMLMarkupsPlaneNode* markupsNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
-  if (!markupsNode || markupsNode->GetNumberOfControlPoints() != 3)
+  if (!markupsNode || !markupsNode->GetIsPlaneValid())
     {
     this->PlaneFillMapper->SetInputData(vtkNew<vtkPolyData>());
     this->ArrowMapper->SetInputData(vtkNew<vtkPolyData>());
@@ -668,7 +668,7 @@ void vtkSlicerPlaneRepresentation2D::BuildPlane()
 void vtkSlicerPlaneRepresentation2D::UpdateInteractionPipeline()
 {
   vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
-  if (!planeNode || planeNode->GetNumberOfControlPoints() < 3)
+  if (!planeNode || !planeNode->GetIsPlaneValid())
     {
     this->InteractionPipeline->Actor->SetVisibility(false);
     return;

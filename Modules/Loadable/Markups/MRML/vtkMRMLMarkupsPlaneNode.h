@@ -104,6 +104,11 @@ public:
   /// \sa vtkMRMLNode::CopyContent
   vtkMRMLCopyContentMacro(vtkMRMLMarkupsPlaneNode);
 
+  int EndModify(int previousDisableModifiedEventState);
+
+  /// Apply the passed transformation to the ROI
+  void ApplyTransform(vtkAbstractTransform* transform) override;
+
   /// Method for calculating the size of the plane along the direction vectors.
   /// With size mode auto, the size of the plane is automatically calculated so that it ecompasses all of the points.
   /// Size mode absolute will never be recalculated.
@@ -193,6 +198,9 @@ public:
   /// Create default storage node or nullptr if does not have one
   vtkMRMLStorageNode* CreateDefaultStorageNode() override;
 
+  /// Create default display node or nullptr if does not have one
+  void CreateDefaultDisplayNodes() override;
+
   /// PlaneType represents the method that is used to calculate the size of the ROI.
   vtkGetMacro(PlaneType, int);
   void SetPlaneType(int planeType);
@@ -203,6 +211,13 @@ public:
 
   // Get plane validity flag. True if the plane is fully defined.
   vtkGetMacro(IsPlaneValid, bool);
+
+  /// Helper method for generating an orthogonal right handed matrix from axes.
+/// Transform can optionally be specified to apply an additional transform on the vectors before generating the matrix.
+  static void GenerateOrthogonalMatrix(vtkMatrix4x4* inputMatrix,
+    vtkMatrix4x4* outputMatrix, vtkAbstractTransform* transform = nullptr, bool applyScaling = true);
+  static void GenerateOrthogonalMatrix(double xAxis[3], double yAxis[3], double zAxis[3], double origin[3],
+    vtkMatrix4x4* outputMatrix, vtkAbstractTransform* transform = nullptr, bool applyScaling = true);
 
 protected:
 
@@ -226,6 +241,7 @@ protected:
   virtual void UpdateControlPointsFromPointNormal();
   virtual void UpdateControlPointsFrom3Points();
   virtual void UpdateControlPointsFromPlaneFit();
+  void GetClosestFitPlaneFromControlPoints(vtkMatrix4x4* closestFitPlane);
 
   bool IsUpdatingInteractionHandleToWorldMatrix{ false };
   bool IsUpdatingControlPointsFromPlane{ false };

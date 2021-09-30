@@ -24,13 +24,16 @@
 #include "vtkMRMLMarkupsPlaneDisplayNode.h"
 #include "vtkMRMLMarkupsPlaneNode.h"
 #include "vtkMRMLSliceNode.h"
+#include "vtkSlicerApplicationLogic.h"
 #include "vtkSlicerPlaneRepresentation2D.h"
 #include "vtkSlicerPlaneRepresentation3D.h"
 
 // VTK includes
+#include <vtkCamera.h>
 #include <vtkCommand.h>
 #include <vtkEvent.h>
 #include <vtkMatrix4x4.h>
+#include <vtkPlane.h>
 #include <vtkPointPlacer.h>
 #include <vtkRenderer.h>
 #include <vtkTransform.h>
@@ -107,6 +110,7 @@ bool vtkSlicerPlaneWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventDat
 bool vtkSlicerPlaneWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData)
 {
   unsigned long widgetEvent = this->TranslateInteractionEventToWidgetEvent(eventData);
+  this->ApplicationLogic->PauseRender();
 
   bool processedEvent = false;
   switch (widgetEvent)
@@ -133,6 +137,7 @@ bool vtkSlicerPlaneWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData* 
     processedEvent = Superclass::ProcessInteractionEvent(eventData);
     }
 
+  this->ApplicationLogic->ResumeRender();
   return processedEvent;
 }
 
@@ -364,8 +369,6 @@ void vtkSlicerPlaneWidget::ScaleWidget(double eventPos[2], bool symmetricScale)
     return;
     }
 
-  MRMLNodeModifyBlocker blocker(markupsNode);
-
   double lastEventPos_World[3] = { 0.0 };
   double eventPos_World[3] = { 0.0 };
   double orientation_World[9] = { 0.0 };
@@ -421,12 +424,55 @@ void vtkSlicerPlaneWidget::ScaleWidget(double eventPos[2], bool symmetricScale)
     worldToObjectTransform->SetMatrix(worldToObjectMatrix);
 
     int index = displayNode->GetActiveComponentIndex();
-    if (index < 3 && rep3d)
+    if (index <= vtkMRMLMarkupsPlaneDisplayNode::HandleAEdge && rep3d)
       {
       this->GetClosestPointOnInteractionAxis(
         vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, this->LastEventPosition, lastEventPos_World);
       this->GetClosestPointOnInteractionAxis(
         vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, eventPos, eventPos_World);
+      }
+    else if (rep3d)
+      {
+      double normal_World[3] = { 0.0, 0.0, 0.0 };
+      markupsNode->GetNormalWorld(normal_World);
+
+      double origin_World[3] = { 0.0, 0.0, 0.0 };
+      markupsNode->GetOriginWorld(origin_World);
+
+      vtkNew<vtkPlane> plane;
+      plane->SetOrigin(origin_World);
+      plane->SetNormal(normal_World);
+
+      vtkCamera* camera = this->Renderer->GetActiveCamera();
+      double cameraDirectionEventPos_World[3] = { 0.0, 0.0, 0.0 };
+      double cameraDirectionLastEventPos_World[3] = { 0.0, 0.0, 0.0 };
+      if (camera && camera->GetParallelProjection())
+        {
+        camera->GetDirectionOfProjection(cameraDirectionEventPos_World);
+        camera->GetDirectionOfProjection(cameraDirectionLastEventPos_World);
+        }
+      else if (camera)
+        {
+        // Camera position
+        double cameraPosition_World[4] = { 0.0 };
+        camera->GetPosition(cameraPosition_World);
+
+        //  Compute the ray endpoints.  The ray is along the line running from
+        //  the camera position to the selection point, starting where this line
+        //  intersects the front clipping plane, and terminating where this
+        //  line intersects the back clipping plane.
+        vtkMath::Subtract(cameraPosition_World, eventPos_World, cameraDirectionEventPos_World);
+        vtkMath::Subtract(cameraPosition_World, lastEventPos_World, cameraDirectionLastEventPos_World);
+        }
+
+      double eventPos2_World[3];
+      vtkMath::Add(eventPos_World, cameraDirectionEventPos_World, eventPos2_World);
+
+      double lastEventPos2_World[3];
+      vtkMath::Add(lastEventPos_World, cameraDirectionLastEventPos_World, lastEventPos2_World);
+      double t;
+      plane->IntersectWithLine(eventPos_World, eventPos2_World, t, eventPos_World);
+      plane->IntersectWithLine(lastEventPos_World, lastEventPos2_World, t, lastEventPos_World);
       }
 
     double scaleVector_World[3] = { 0.0, 0.0, 0.0 };
@@ -496,16 +542,60 @@ void vtkSlicerPlaneWidget::ScaleWidget(double eventPos[2], bool symmetricScale)
       newOrigin_Object[i] = (bounds_Plane[2 * i + 1] + bounds_Plane[2 * i]) / 2.0;
       }
 
-    vtkNew<vtkMatrix4x4> objectToNodeMatrix;
-    markupsNode->GetObjectToNodeMatrix(objectToNodeMatrix);
+    MRMLNodeModifyBlocker blocker(markupsNode);
 
-    vtkNew<vtkTransform> objectToNodeTransform;
-    objectToNodeTransform->SetMatrix(objectToNodeMatrix);
+    vtkNew<vtkMatrix4x4> objectToWorldMatrix;
+    //markupsNode->GetObjectToWorldMatrix(objectToWorldMatrix);
+    markupsNode->GetObjectToNodeMatrix(objectToWorldMatrix);
 
-    double newOrigin_Node[3] = { 0.0, 0.0, 0.0 };
-    objectToNodeTransform->TransformPoint(newOrigin_Object, newOrigin_Node);
-    markupsNode->SetCenter(newOrigin_Node);
+    vtkNew<vtkTransform> objectToWorldTransform;
+    objectToWorldTransform->SetMatrix(objectToWorldMatrix);
+
+    double newOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    objectToWorldTransform->TransformPoint(newOrigin_Object, newOrigin_World);
     markupsNode->SetSize(newSize);
+    markupsNode->SetCenterWorld(newOrigin_World);
+    /*markupsNode->SetCenter(newOrigin_World);*/
+
+
+    //double oldSize[2] = { 0.0, 0.0 };
+    //markupsNode->GetSize(oldSize);
+
+    //double scale[2] = { newSize[0] / oldSize[0], newSize[1] / oldSize[1]};
+
+    //double oldOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    //markupsNode->GetOriginWorld(oldOrigin_World);
+
+    //vtkNew<vtkTransform> scaleTransform;
+    //scaleTransform->Translate(-oldOrigin_World[0], -oldOrigin_World[1], -oldOrigin_World[2]);
+    //scaleTransform->Scale(scale[0], scale[1], 1.0);
+    //scaleTransform->Translate(newOrigin_World);
+    ////markupsNode->ApplyTransform(scaleTransform);
+
+    ///*MRMLNodeModifyBlocker blocker(markupsNode);*/
+
+    //// The orientation of some markup types are not fully defined by their control points (line, etc.).
+    //// For these cases, we need to manually apply a rotation to the interaction handles.
+    ///*vtkNew<vtkTransform> handleToWorldTransform;
+    //handleToWorldTransform->PostMultiply();
+    //handleToWorldTransform->Concatenate(markupsNode->GetInteractionHandleToWorldMatrix());
+    //handleToWorldTransform->Translate(-origin_World[0], -origin_World[1], -origin_World[2]);
+    //handleToWorldTransform->RotateWXYZ(angle, rotationAxis_World);
+    //handleToWorldTransform->Translate(origin_World[0], origin_World[1], origin_World[2]);*/
+    ///*markupsNode->GetInteractionHandleToWorldMatrix()->DeepCopy(handleToWorldTransform->GetMatrix());*/
+
+    //vtkNew<vtkPoints> transformedPoints_World;
+    //transformedPoints_World->SetNumberOfPoints(markupsNode->GetNumberOfControlPoints());
+    //for (int i = 0; i < markupsNode->GetNumberOfControlPoints(); i++)
+    //  {
+    //  double currentControlPointPosition_World[3] = { 0.0 };
+    //  markupsNode->GetNthControlPointPositionWorld(i, currentControlPointPosition_World);
+
+    //  double newControlPointPosition_World[3] = { 0.0 };
+    //  scaleTransform->TransformPoint(currentControlPointPosition_World, newControlPointPosition_World);
+    //  transformedPoints_World->SetPoint(i, newControlPointPosition_World);
+    //  }
+    //markupsNode->SetControlPointPositionsWorld(transformedPoints_World);
 
     bool flipLRHandle = bounds_Plane[1] < bounds_Plane[0];
     bool flipPAHandle = bounds_Plane[3] < bounds_Plane[2];

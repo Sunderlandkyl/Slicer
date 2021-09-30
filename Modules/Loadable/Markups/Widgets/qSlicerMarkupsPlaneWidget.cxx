@@ -44,6 +44,7 @@ public:
 
   qSlicerMarkupsPlaneWidgetPrivate(qSlicerMarkupsPlaneWidget* object);
   void setupUi(qSlicerMarkupsPlaneWidget* widget);
+  const char* getPlaneTypeName(int planeType);
 };
 
 // --------------------------------------------------------------------------
@@ -62,7 +63,7 @@ void qSlicerMarkupsPlaneWidgetPrivate::setupUi(qSlicerMarkupsPlaneWidget* widget
   this->planeTypeComboBox->clear();
   for (int planeType = 0; planeType < vtkMRMLMarkupsPlaneNode::PlaneType_Last; ++planeType)
     {
-    this->planeTypeComboBox->addItem(vtkMRMLMarkupsPlaneNode::GetPlaneTypeAsString(planeType), planeType);
+    this->planeTypeComboBox->addItem(this->getPlaneTypeName(planeType), planeType);
     }
 
   this->planeSizeModeComboBox->clear();
@@ -82,6 +83,23 @@ void qSlicerMarkupsPlaneWidgetPrivate::setupUi(qSlicerMarkupsPlaneWidget* widget
 
   q->setEnabled(vtkMRMLMarkupsPlaneNode::SafeDownCast(this->MarkupsNode) != nullptr);
   q->setVisible(vtkMRMLMarkupsPlaneNode::SafeDownCast(this->MarkupsNode) != nullptr);
+}
+
+// --------------------------------------------------------------------------
+const char* qSlicerMarkupsPlaneWidgetPrivate::getPlaneTypeName(int planeType)
+{
+  switch (planeType)
+    {
+    case vtkMRMLMarkupsPlaneNode::PlaneType3Points:
+      return "Three points";
+    case vtkMRMLMarkupsPlaneNode::PlaneTypePointNormal:
+      return "Point normal";
+    case vtkMRMLMarkupsPlaneNode::PlaneTypePlaneFit:
+      return "Plane fit";
+    default:
+      break;
+    }
+  return "";
 }
 
 // --------------------------------------------------------------------------
