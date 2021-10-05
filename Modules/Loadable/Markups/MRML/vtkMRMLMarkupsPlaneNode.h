@@ -201,6 +201,14 @@ public:
   /// Create default display node or nullptr if does not have one
   void CreateDefaultDisplayNodes() override;
 
+  /// Reimplemented to recalculate the axis-aligned bounds of the ROI.
+  /// If the ROI is rotated, this function will not reflect the oriented bounds defined by the ROI.
+  /// To get the planes that define the oriented bounding box, use GetPlanes()/GetPlanesWorld().
+  /// \sa GetPlanes(), GetPlanesWorld()
+  void GetRASBounds(double bounds[6]) override;
+  void GetBounds(double bounds[6]) override;
+  void GeneratePlaneBounds(double bounds[6], double xAxis[3], double yAxis[3], double center[3], double size[2]);
+
   /// PlaneType represents the method that is used to calculate the size of the ROI.
   vtkGetMacro(PlaneType, int);
   void SetPlaneType(int planeType);
@@ -275,6 +283,8 @@ protected:
   ~vtkMRMLMarkupsPlaneNode() override;
   vtkMRMLMarkupsPlaneNode(const vtkMRMLMarkupsPlaneNode&);
   void operator=(const vtkMRMLMarkupsPlaneNode&);
+
+  friend class vtkSlicerPlaneWidget; // To directly access plane update functions
 };
 
 #endif

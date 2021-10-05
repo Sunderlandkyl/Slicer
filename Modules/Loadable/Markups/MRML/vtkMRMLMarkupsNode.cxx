@@ -300,7 +300,7 @@ void vtkMRMLMarkupsNode::PrintSelf(ostream& os, vtkIndent indent)
   os << this->GetFixedNumberOfControlPoints() << "\n";
 
   os << indent << "MaximumNumberOfControlPoints: ";
-  if (this->MaximumNumberOfControlPoints>0)
+  if (this->MaximumNumberOfControlPoints>=0)
     {
     os << this->MaximumNumberOfControlPoints << "\n";
     }
@@ -580,7 +580,7 @@ std::vector< vtkMRMLMarkupsNode::ControlPoint* > * vtkMRMLMarkupsNode::GetContro
 //-----------------------------------------------------------
 int vtkMRMLMarkupsNode::AddControlPoint(ControlPoint *controlPoint, bool autoLabel/*=true*/)
 {
-  if (this->MaximumNumberOfControlPoints != 0 &&
+  if (this->MaximumNumberOfControlPoints >= 0 &&
       this->GetNumberOfControlPoints() + 1 > this->MaximumNumberOfControlPoints)
     {
     vtkErrorMacro("AddNControlPoints: number of points major than maximum number of control points allowed.");
@@ -642,7 +642,7 @@ int vtkMRMLMarkupsNode::AddNControlPoints(int n, std::string label /*=std::strin
     return -1;
     }
 
-  if (this->MaximumNumberOfControlPoints != 0 &&  this->GetNumberOfControlPoints() + n > this->MaximumNumberOfControlPoints)
+  if (this->MaximumNumberOfControlPoints >= 0 && this->GetNumberOfControlPoints() + n > this->MaximumNumberOfControlPoints)
     {
     vtkErrorMacro("AddNControlPoints: number of existing points (" << this->GetNumberOfControlPoints()
       << ") plus requested number of new points (" << n << ") are more than maximum number of control points allowed ("
@@ -1023,8 +1023,8 @@ void vtkMRMLMarkupsNode::SetNthControlPointPositionWorldFromArray(
 }
 
 //-----------------------------------------------------------
-void vtkMRMLMarkupsNode::TransformOrientationMatrixFromNodeToWorld(
-  const double position_Node[3], const double orientationMatrix_Node[9], double orientationMatrix_World[9])
+void vtkMRMLMarkupsNode::TransformOrientationMatrixFromNodeToWorld
+(const double position_Node[3], const double orientationMatrix_Node[9], double orientationMatrix_World[9])
 {
   double xAxis_World[3] = { orientationMatrix_Node[0], orientationMatrix_Node[3], orientationMatrix_Node[6] };
   double yAxis_World[3] = { orientationMatrix_Node[1], orientationMatrix_Node[4], orientationMatrix_Node[7] };

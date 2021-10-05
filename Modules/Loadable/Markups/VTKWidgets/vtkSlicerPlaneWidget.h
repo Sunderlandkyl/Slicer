@@ -61,6 +61,7 @@ public:
   enum
   {
     WidgetEventControlPointPlace = WidgetEventMarkups_Last,
+    WidgetEventControlPointPlacePlaneNormal,
     WidgetEventPlaneMoveStart,
     WidgetEventPlaneMoveEnd,
     WidgetEventSymmetricScaleStart,
@@ -71,12 +72,15 @@ public:
   /// Create the default widget representation and initializes the widget and representation.
   void CreateDefaultRepresentation(vtkMRMLMarkupsDisplayNode* markupsDisplayNode, vtkMRMLAbstractViewNode* viewNode, vtkRenderer* renderer) override;
 
+  bool PlacePoint(vtkMRMLInteractionEventData* eventData) override;
+
 protected:
   vtkSlicerPlaneWidget();
   ~vtkSlicerPlaneWidget() override;
 
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& distance2) override;
   bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
+  bool ProcessPlanePlaceWithViewNormal(vtkMRMLInteractionEventData* event);
   bool ProcessPlaneMoveStart(vtkMRMLInteractionEventData* event);
   bool ProcessPlaneMoveEnd(vtkMRMLInteractionEventData* event);
   bool ProcessMouseMove(vtkMRMLInteractionEventData* eventData) override;

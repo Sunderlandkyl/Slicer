@@ -132,7 +132,7 @@ void vtkMRMLMarkupsPlaneNode::PrintSelf(ostream& os, vtkIndent indent)
 //---------------------------------------------------------------------------
 int vtkMRMLMarkupsPlaneNode::EndModify(int previousDisableModifiedEventState)
 {
-  //bool processPendingPointModifiedEvents = !previousDisableModifiedEventState &&P
+  //bool processPendingPointModifiedEvents = !previousDisableModifiedEventState &&
   //  (this->GetModifiedEventPending() > 0
   //    || this->GetCustomModifiedEventPending(vtkMRMLMarkupsNode::PointModifiedEvent) > 0
   //    || this->GetCustomModifiedEventPending(vtkMRMLMarkupsNode::PointAddedEvent) > 0
@@ -281,8 +281,8 @@ void vtkMRMLMarkupsPlaneNode::SetPlaneType(int planeType)
       this->MaximumNumberOfControlPoints = 2;
       break;
     case vtkMRMLMarkupsPlaneNode::PlaneTypePlaneFit:
-      this->RequiredNumberOfControlPoints = 3;
-      this->MaximumNumberOfControlPoints = 1e6;
+      this->RequiredNumberOfControlPoints = 0;
+      this->MaximumNumberOfControlPoints = -1;
     default:
       break;
     }
@@ -616,67 +616,111 @@ void vtkMRMLMarkupsPlaneNode::GetObjectToWorldMatrix(vtkMatrix4x4* objectToWorld
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsPlaneNode::GetAxes(double xAxis_Node[3], double yAxis_Node[3], double zAxis_Node[3])
 {
-  if (!xAxis_Node || !yAxis_Node || !zAxis_Node)
+  if (!xAxis_Node && !yAxis_Node && !zAxis_Node)
     {
-    vtkErrorMacro("GetAxes: Invalid input argument");
+    vtkErrorMacro("GetAxes: Invalid input arguments");
     return;
     }
 
-  for (int i = 0; i < 3; ++i)
-    {
-    xAxis_Node[i] = 0.0;
-    yAxis_Node[i] = 0.0;
-    zAxis_Node[i] = 0.0;
-    }
-  xAxis_Node[0] = 1.0;
-  yAxis_Node[1] = 1.0;
-  zAxis_Node[2] = 1.0;
+  if (xAxis_Node)
+      {
+      xAxis_Node[0] = 1.0;
+      xAxis_Node[1] = 0.0;
+      xAxis_Node[2] = 0.0;
+      }
 
-  double xAxis_Object[3] = { 1.0, 0.0, 0.0 };
-  double yAxis_Object[3] = { 0.0, 1.0, 0.0 };
-  double zAxis_Object[3] = { 0.0, 0.0, 1.0 };
+  if (yAxis_Node)
+      {
+      yAxis_Node[0] = 0.0;
+      yAxis_Node[1] = 1.0;
+      yAxis_Node[2] = 0.0;
+      }
+
+  if (zAxis_Node)
+      {
+      zAxis_Node[0] = 0.0;
+      zAxis_Node[1] = 0.0;
+      zAxis_Node[2] = 1.0;
+      }
 
   vtkNew<vtkMatrix4x4> objectToNodeMatrix;
   this->GetObjectToNodeMatrix(objectToNodeMatrix);
 
   vtkNew<vtkTransform> objectToNodeTransform;
   objectToNodeTransform->SetMatrix(objectToNodeMatrix);
-  objectToNodeTransform->TransformVector(xAxis_Object, xAxis_Node);
-  objectToNodeTransform->TransformVector(yAxis_Object, yAxis_Node);
-  objectToNodeTransform->TransformVector(zAxis_Object, zAxis_Node);
+
+  if (xAxis_Node)
+    {
+    double xAxis_Object[3] = { 1.0, 0.0, 0.0 };
+    objectToNodeTransform->TransformVector(xAxis_Object, xAxis_Node);
+    }
+
+  if (yAxis_Node)
+    {
+    double yAxis_Object[3] = { 0.0, 1.0, 0.0 };
+    objectToNodeTransform->TransformVector(yAxis_Object, yAxis_Node);
+    }
+
+  if (zAxis_Node)
+    {
+    double zAxis_Object[3] = { 0.0, 0.0, 1.0 };
+    objectToNodeTransform->TransformVector(zAxis_Object, zAxis_Node);
+    }
 }
 
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsPlaneNode::GetAxesWorld(double xAxis_World[3], double yAxis_World[3], double zAxis_World[3])
 {
-  if (!xAxis_World || !yAxis_World || !zAxis_World)
+  if (!xAxis_World && !yAxis_World && !zAxis_World)
     {
-    vtkErrorMacro("GetAxesWorld: Invalid input argument");
+    vtkErrorMacro("GetAxesWorld: Invalid input arguments");
     return;
     }
 
-  for (int i = 0; i < 3; ++i)
-    {
-    xAxis_World[i] = 0.0;
-    yAxis_World[i] = 0.0;
-    zAxis_World[i] = 0.0;
-    }
-  xAxis_World[0] = 1.0;
-  yAxis_World[1] = 1.0;
-  zAxis_World[2] = 1.0;
+  if (xAxis_World)
+      {
+      xAxis_World[0] = 1.0;
+      xAxis_World[1] = 0.0;
+      xAxis_World[2] = 0.0;
+      }
 
-  double xAxis_Object[3] = { 1.0, 0.0, 0.0 };
-  double yAxis_Object[3] = { 0.0, 1.0, 0.0 };
-  double zAxis_Object[3] = { 0.0, 0.0, 1.0 };
+  if (yAxis_World)
+      {
+      yAxis_World[0] = 0.0;
+      yAxis_World[1] = 1.0;
+      yAxis_World[2] = 0.0;
+      }
+
+  if (zAxis_World)
+      {
+      zAxis_World[0] = 0.0;
+      zAxis_World[1] = 0.0;
+      zAxis_World[2] = 1.0;
+      }
 
   vtkNew<vtkMatrix4x4> objectToWorldMatrix;
   this->GetObjectToWorldMatrix(objectToWorldMatrix);
 
   vtkNew<vtkTransform> objectToWorldTransform;
   objectToWorldTransform->SetMatrix(objectToWorldMatrix);
-  objectToWorldTransform->TransformVector(xAxis_Object, xAxis_World);
-  objectToWorldTransform->TransformVector(yAxis_Object, yAxis_World);
-  objectToWorldTransform->TransformVector(zAxis_Object, zAxis_World);
+
+  if (xAxis_World)
+    {
+    double xAxis_Object[3] = { 1.0, 0.0, 0.0 };
+    objectToWorldTransform->TransformVector(xAxis_Object, xAxis_World);
+    }
+
+  if (yAxis_World)
+    {
+    double yAxis_Object[3] = { 0.0, 1.0, 0.0 };
+    objectToWorldTransform->TransformVector(yAxis_Object, yAxis_World);
+    }
+
+  if (zAxis_World)
+    {
+    double zAxis_Object[3] = { 0.0, 0.0, 1.0 };
+    objectToWorldTransform->TransformVector(zAxis_Object, zAxis_World);
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -1063,6 +1107,111 @@ void vtkMRMLMarkupsPlaneNode::CreateDefaultDisplayNodes()
   this->SetAndObserveDisplayNodeID(dispNode->GetID());
 }
 
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsPlaneNode::GetRASBounds(double bounds[6])
+{
+  if (!bounds)
+    {
+    vtkErrorMacro("Invalid bounds argument");
+    return;
+    }
+
+  double xAxis_World[3] = { 0.0, 0.0, 0.0 };
+  double yAxis_World[3] = { 0.0, 0.0, 0.0 };
+  this->GetAxesWorld(xAxis_World, yAxis_World, nullptr);
+
+  double centerWorld[3] = { 0.0, 0.0, 0.0 };
+  this->GetCenterWorld(centerWorld);
+
+  // TODO: SizeWorld?
+  double planeBounds[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+  this->GeneratePlaneBounds(planeBounds, xAxis_World, yAxis_World, centerWorld, this->Size);
+
+  // Get bounds from control points
+  Superclass::GetRASBounds(bounds);
+  bounds[0] = std::min(bounds[0], planeBounds[0]);
+  bounds[1] = std::max(bounds[1], planeBounds[1]);
+  bounds[2] = std::min(bounds[2], planeBounds[2]);
+  bounds[3] = std::max(bounds[3], planeBounds[3]);
+  bounds[4] = std::min(bounds[4], planeBounds[4]);
+  bounds[5] = std::max(bounds[5], planeBounds[5]);
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsPlaneNode::GetBounds(double bounds[6])
+{
+  if (!bounds)
+    {
+    vtkErrorMacro("Invalid bounds argument");
+    return;
+    }
+
+  double xAxis_Node[3] = { 0.0, 0.0, 0.0 };
+  double yAxis_Node[3] = { 0.0, 0.0, 0.0 };
+  this->GetAxes(xAxis_Node, yAxis_Node, nullptr);
+
+  double center_Node[3] = { 0.0, 0.0, 0.0 };
+  this->GetCenterWorld(center_Node);
+
+  double planeBounds[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+  this->GeneratePlaneBounds(planeBounds, xAxis_Node, yAxis_Node, center_Node, this->Size);
+
+  // Get bounds from control points
+  Superclass::GetBounds(bounds);
+  bounds[0] = std::min(bounds[0], planeBounds[0]);
+  bounds[1] = std::max(bounds[1], planeBounds[1]);
+  bounds[2] = std::min(bounds[2], planeBounds[2]);
+  bounds[3] = std::max(bounds[3], planeBounds[3]);
+  bounds[4] = std::min(bounds[4], planeBounds[4]);
+  bounds[5] = std::max(bounds[5], planeBounds[5]);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMarkupsPlaneNode::GeneratePlaneBounds(double bounds[6], double xAxis[3], double yAxis[3], double center[3], double size[3])
+{
+  if (!bounds || !xAxis || !yAxis || !center || !size)
+    {
+    vtkErrorMacro("Invalid arguments");
+    return;
+    }
+
+  double xVector[3] = { xAxis[0], xAxis[1], xAxis[2] };
+  vtkMath::MultiplyScalar(xVector, 0.5 * size[0]);
+
+  double yVector[3] = { yAxis[0], yAxis[1], yAxis[2] };
+  vtkMath::MultiplyScalar(yVector, 0.5 * size[1]);
+
+  vtkBoundingBox box;
+  for (int j = 0; j < 2; ++j)
+    {
+    for (int i = 0; i < 2; ++i)
+      {
+      double cornerPoint[3] = { 0.0, 0.0, 0.0 };
+      vtkMath::Add(cornerPoint, center, cornerPoint);
+      if (i == 0)
+        {
+        vtkMath::Subtract(cornerPoint, xVector, cornerPoint);
+        }
+      else
+        {
+        vtkMath::Add(cornerPoint, xVector, cornerPoint);
+        }
+
+      if (j == 0)
+        {
+        vtkMath::Subtract(cornerPoint, yVector, cornerPoint);
+        }
+      else
+        {
+        vtkMath::Add(cornerPoint, yVector, cornerPoint);
+        }
+
+      box.AddPoint(cornerPoint);
+      }
+    }
+  box.GetBounds(bounds);
+}
+
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsPlaneNode::UpdatePlaneFromControlPoints()
 {
@@ -1142,15 +1291,14 @@ void vtkMRMLMarkupsPlaneNode::UpdatePlaneFromPointNormal()
   baseToNodeTransform->Translate(origin_Node);
   this->BaseToNodeMatrix->DeepCopy(baseToNodeTransform->GetMatrix());
 
-  //if (this->GetNumberOfDefinedControlPoints() >= 1)
-  //  {
-  //  this->SetIsPlaneValid(true);
-  //  }
-  //else
-  //  {
-  //  this->SetIsPlaneValid(false);
-  //  }
-  this->SetIsPlaneValid(true);
+  if (this->GetNumberOfControlPoints() >= 1)
+    {
+    this->SetIsPlaneValid(true);
+    }
+  else
+    {
+    this->SetIsPlaneValid(false);
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -1381,13 +1529,6 @@ void vtkMRMLMarkupsPlaneNode::UpdateControlPointsFromPointNormal()
       {
       this->RemoveNthControlPoint(1);
       }
-    this->RequiredNumberOfControlPoints = 2;
-    this->MaximumNumberOfControlPoints = 2;
-    }
-  else
-    {
-    this->RequiredNumberOfControlPoints = 1;
-    this->MaximumNumberOfControlPoints = 2;
     }
 
   if (this->IsPlaneValid && this->GetNumberOfControlPoints() == 0)
@@ -1400,6 +1541,12 @@ void vtkMRMLMarkupsPlaneNode::UpdateControlPointsFromPointNormal()
     double origin[3] = { 0,0,0 };
     this->GetOrigin(origin);
     this->SetNthControlPointPosition(0, origin[0], origin[1], origin[2]);
+    }
+
+  if (this->IsPlaneValid)
+    {
+    this->RequiredNumberOfControlPoints = 1;
+    this->MaximumNumberOfControlPoints = 1;
     }
 }
 

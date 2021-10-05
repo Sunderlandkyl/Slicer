@@ -133,7 +133,7 @@ protected:
     void GetHandleColor(int type, int index, double color[4]) override;
     void GetInteractionHandleAxisWorld(int type, int index, double axis[3]) override;
   };
-  friend class vtkSlicerROIRepresentation2D;
+  friend class vtkSlicerPlaneRepresentation2D;
 
 private:
   vtkSlicerPlaneRepresentation3D(const vtkSlicerPlaneRepresentation3D&) = delete;

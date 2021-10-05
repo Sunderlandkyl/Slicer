@@ -21,8 +21,10 @@
 #include "vtkSlicerPlaneWidget.h"
 
 #include "vtkMRMLInteractionEventData.h"
+#include "vtkMRMLInteractionNode.h"
 #include "vtkMRMLMarkupsPlaneDisplayNode.h"
 #include "vtkMRMLMarkupsPlaneNode.h"
+#include "vtkMRMLScene.h"
 #include "vtkMRMLSliceNode.h"
 #include "vtkSlicerApplicationLogic.h"
 #include "vtkSlicerPlaneRepresentation2D.h"
@@ -43,6 +45,13 @@ vtkStandardNewMacro(vtkSlicerPlaneWidget);
 //----------------------------------------------------------------------
 vtkSlicerPlaneWidget::vtkSlicerPlaneWidget()
 {
+  /*this->SetEventTranslation(WidgetStateAny, vtkCommand::LeftButtonReleaseEvent, vtkEvent::AltModifier, WidgetEventControlPointPlacePlaneNormal);*/
+  /*this->SetEventTranslation(WidgetStateAny, vtkCommand::LeftButtonReleaseEvent, vtkEvent::AltModifier, WidgetEventControlPointPlacePlaneNormal);*/
+  //this->SetEventTranslation(WidgetStateAny, vtkCommand::MouseMoveEvent, vtkEvent::AltModifier, WidgetEventControlPointPlacePlaneNormal);
+  //this->SetEventTranslation(WidgetStateAny, vtkCommand::MouseMoveEvent, vtkEvent::AltModifier, WidgetEventControlPointPlacePlaneNormal);
+  this->SetEventTranslation(WidgetStateDefine, vtkCommand::MouseMoveEvent, vtkEvent::AltModifier, WidgetEventControlPointPlacePlaneNormal);
+  this->SetEventTranslation(WidgetStateDefine, vtkCommand::Move3DEvent, vtkEvent::AltModifier, WidgetEventControlPointPlacePlaneNormal);
+
   this->SetEventTranslationClickAndDrag(WidgetStateOnWidget, vtkCommand::LeftButtonPressEvent, vtkEvent::ShiftModifier,
     WidgetStateTranslatePlane, WidgetEventPlaneMoveStart, WidgetEventPlaneMoveEnd);
   this->SetEventTranslationClickAndDrag(WidgetStateOnScaleHandle, vtkCommand::LeftButtonPressEvent, vtkEvent::AltModifier,
@@ -115,6 +124,9 @@ bool vtkSlicerPlaneWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData* 
   bool processedEvent = false;
   switch (widgetEvent)
   {
+  case WidgetEventControlPointPlacePlaneNormal:
+    processedEvent = this->ProcessPlanePlaceWithViewNormal(eventData);
+    break;
   case WidgetEventPlaneMoveStart:
     processedEvent = this->ProcessPlaneMoveStart(eventData);
     break;
@@ -165,6 +177,140 @@ bool vtkSlicerPlaneWidget::ProcessPlaneMoveEnd(vtkMRMLInteractionEventData* vtkN
   this->SetWidgetState(WidgetStateOnWidget);
   this->EndWidgetInteraction();
   return true;
+}
+
+//-------------------------------------------------------------------------
+bool vtkSlicerPlaneWidget::ProcessPlanePlaceWithViewNormal(vtkMRMLInteractionEventData* eventData)
+{
+  vtkMRMLMarkupsPlaneNode* markupsNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  if (!markupsNode)
+    {
+    return false;
+    }
+
+  // save for undo and add the node to the scene after any reset of the
+  // interaction node so that don't end up back in place mode
+  markupsNode->GetScene()->SaveStateForUndo();
+
+  // Add/update preview point
+  const char* associatedNodeID = this->GetAssociatedNodeID(eventData);
+  this->UpdatePreviewPoint(eventData, associatedNodeID, vtkMRMLMarkupsNode::PositionDefined);
+  int controlPointIndex = this->PreviewPointIndex;
+  // Convert the preview point to a proper control point
+  this->PreviewPointIndex = -1;
+
+  // if this was a one time place, go back to view transform mode
+  vtkMRMLInteractionNode *interactionNode = this->GetInteractionNode();
+
+  // Get accurate world position
+  double eventPos_World[3] = { 0.0 };
+  double eventOrientation_World[9] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
+  if (eventData->IsWorldPositionValid() && eventData->IsWorldPositionAccurate())
+    {
+    eventData->GetWorldPosition(eventPos_World);
+
+    double worldOrientationQuaternion[4] = { 0.0 };
+    eventData->GetWorldOrientation(worldOrientationQuaternion);
+    vtkMRMLMarkupsNode::ConvertOrientationWXYZToMatrix(worldOrientationQuaternion, eventOrientation_World);
+    }
+  else if (eventData->IsDisplayPositionValid())
+    {
+    int displayPos[2] = { 0 };
+    eventData->GetDisplayPosition(displayPos);
+    if (!this->ConvertDisplayPositionToWorld(displayPos, eventPos_World, eventOrientation_World))
+      {
+      eventData->GetWorldPosition(eventPos_World);
+      }
+    }
+  eventData->SetWorldPosition(eventPos_World);
+
+
+  vtkSlicerPlaneRepresentation2D* rep2d = vtkSlicerPlaneRepresentation2D::SafeDownCast(this->WidgetRep);
+  vtkSlicerPlaneRepresentation3D* rep3d = vtkSlicerPlaneRepresentation3D::SafeDownCast(this->WidgetRep);
+
+  double planeNormal_World[3] = { 0.0, 0.0, 0.0 };
+
+  if (rep2d)
+    {
+    vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(rep2d->GetViewNode());
+    if (sliceNode)
+      {
+      double normal4_World[4] = { 0.0, 0.0, 1.0, 0.0 };
+      sliceNode->GetSliceToRAS()->MultiplyPoint(normal4_World, normal4_World);
+      planeNormal_World[0] = normal4_World[0];
+      planeNormal_World[1] = normal4_World[1];
+      planeNormal_World[2] = normal4_World[2];
+      }
+    }
+  else if (rep3d)
+    {
+    vtkCamera* camera = this->Renderer->GetActiveCamera();
+    double cameraDirectionEventPos_World[3] = { 0.0, 0.0, 0.0 };
+    double cameraDirectionLastEventPos_World[3] = { 0.0, 0.0, 0.0 };
+    if (camera && camera->GetParallelProjection())
+      {
+      camera->GetDirectionOfProjection(planeNormal_World);
+      }
+    else if (camera)
+      {
+      // Camera position
+      double cameraPosition_World[4] = { 0.0 };
+      camera->GetPosition(cameraPosition_World);
+
+      //  Compute the ray endpoints.  The ray is along the line running from
+      //  the camera position to the selection point, starting where this line
+      //  intersects the front clipping plane, and terminating where this
+      //  line intersects the back clipping plane.
+      vtkMath::Subtract(cameraPosition_World, eventPos_World, planeNormal_World);
+      }
+    }
+
+
+  // Add/update control point position and orientation
+  markupsNode->SetOriginWorld(eventPos_World);
+  markupsNode->SetNormalWorld(planeNormal_World);
+
+  //const char* viewNodeID = nullptr;
+  //if (this->WidgetRep && this->WidgetRep->GetViewNode())
+  //  {
+  //  viewNodeID = this->WidgetRep->GetViewNode()->GetID();
+  //  }
+
+  //this->UpdatePreviewPointIndex(eventData);
+  //int updatePointID = this->PreviewPointIndex;
+  //if (updatePointID < 0)
+  //  {
+  //  updatePointID = markupsNode->GetControlPointPlacementStartIndex();
+  //  }
+
+  //this->PreviewPointIndex = this->GetMarkupsDisplayNode()->UpdateActiveControlPointWorld(
+  //  updatePointID, eventData, accurateWorldOrientationMatrix, viewNodeID,
+  //  associatedNodeID, positionStatus);
+
+  if(interactionNode)
+    {
+    bool hasRequiredPoints = markupsNode->GetRequiredNumberOfControlPoints() > 0;
+    bool hasRequiredPointNumber = markupsNode->GetNumberOfControlPoints() >= markupsNode->GetRequiredNumberOfControlPoints();
+    bool requiredPointsReached = hasRequiredPoints && hasRequiredPointNumber && !bool(markupsNode->GetNumberOfUndefinedControlPoints() > 0);
+    bool lockedPointsReached = markupsNode->GetFixedNumberOfControlPoints() && !bool(markupsNode->GetNumberOfUndefinedControlPoints() > 0);
+
+    if((requiredPointsReached && !interactionNode->GetPlaceModePersistence())
+      || (!hasRequiredPoints && !interactionNode->GetPlaceModePersistence()) || lockedPointsReached)
+      {
+      vtkDebugMacro("End of one time place, place mode persistence = " << interactionNode->GetPlaceModePersistence());
+      interactionNode->SetCurrentInteractionMode(vtkMRMLInteractionNode::ViewTransform);
+
+      // The mouse is over the control point and we are not in place mode anymore
+      if (this->GetMarkupsDisplayNode())
+        {
+        this->GetMarkupsDisplayNode()->SetActiveControlPoint(controlPointIndex);
+        }
+      this->WidgetState = WidgetStateOnWidget;
+      }
+    }
+
+  bool success = (controlPointIndex >= 0);
+  return success;
 }
 
 //-------------------------------------------------------------------------
@@ -424,14 +570,14 @@ void vtkSlicerPlaneWidget::ScaleWidget(double eventPos[2], bool symmetricScale)
     worldToObjectTransform->SetMatrix(worldToObjectMatrix);
 
     int index = displayNode->GetActiveComponentIndex();
-    if (index <= vtkMRMLMarkupsPlaneDisplayNode::HandleAEdge && rep3d)
+    if (index <= vtkMRMLMarkupsPlaneDisplayNode::HandleAEdge)
       {
       this->GetClosestPointOnInteractionAxis(
         vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, this->LastEventPosition, lastEventPos_World);
       this->GetClosestPointOnInteractionAxis(
         vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, eventPos, eventPos_World);
       }
-    else if (rep3d)
+    else
       {
       double normal_World[3] = { 0.0, 0.0, 0.0 };
       markupsNode->GetNormalWorld(normal_World);
@@ -443,26 +589,44 @@ void vtkSlicerPlaneWidget::ScaleWidget(double eventPos[2], bool symmetricScale)
       plane->SetOrigin(origin_World);
       plane->SetNormal(normal_World);
 
-      vtkCamera* camera = this->Renderer->GetActiveCamera();
       double cameraDirectionEventPos_World[3] = { 0.0, 0.0, 0.0 };
       double cameraDirectionLastEventPos_World[3] = { 0.0, 0.0, 0.0 };
-      if (camera && camera->GetParallelProjection())
+      if (rep2d)
         {
-        camera->GetDirectionOfProjection(cameraDirectionEventPos_World);
-        camera->GetDirectionOfProjection(cameraDirectionLastEventPos_World);
+        vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(rep2d->GetViewNode());
+        if (sliceNode)
+          {
+          double normal4_World[4] = { 0.0, 0.0, 1.0, 0.0 };
+          sliceNode->GetSliceToRAS()->MultiplyPoint(normal4_World, normal4_World);
+          cameraDirectionEventPos_World[0] = normal4_World[0];
+          cameraDirectionEventPos_World[1] = normal4_World[1];
+          cameraDirectionEventPos_World[2] = normal4_World[2];
+          cameraDirectionLastEventPos_World[0] = normal4_World[0];
+          cameraDirectionLastEventPos_World[1] = normal4_World[1];
+          cameraDirectionLastEventPos_World[2] = normal4_World[2];
+          }
         }
-      else if (camera)
+      else if (rep3d)
         {
-        // Camera position
-        double cameraPosition_World[4] = { 0.0 };
-        camera->GetPosition(cameraPosition_World);
+        vtkCamera* camera = this->Renderer->GetActiveCamera();
+        if (camera && camera->GetParallelProjection())
+          {
+          camera->GetDirectionOfProjection(cameraDirectionEventPos_World);
+          camera->GetDirectionOfProjection(cameraDirectionLastEventPos_World);
+          }
+        else if (camera)
+          {
+          // Camera position
+          double cameraPosition_World[4] = { 0.0 };
+          camera->GetPosition(cameraPosition_World);
 
-        //  Compute the ray endpoints.  The ray is along the line running from
-        //  the camera position to the selection point, starting where this line
-        //  intersects the front clipping plane, and terminating where this
-        //  line intersects the back clipping plane.
-        vtkMath::Subtract(cameraPosition_World, eventPos_World, cameraDirectionEventPos_World);
-        vtkMath::Subtract(cameraPosition_World, lastEventPos_World, cameraDirectionLastEventPos_World);
+          //  Compute the ray endpoints.  The ray is along the line running from
+          //  the camera position to the selection point, starting where this line
+          //  intersects the front clipping plane, and terminating where this
+          //  line intersects the back clipping plane.
+          vtkMath::Subtract(cameraPosition_World, eventPos_World, cameraDirectionEventPos_World);
+          vtkMath::Subtract(cameraPosition_World, lastEventPos_World, cameraDirectionLastEventPos_World);
+          }
         }
 
       double eventPos2_World[3];
@@ -672,4 +836,31 @@ void vtkSlicerPlaneWidget::FlipPlaneHandles(bool flipLRHandle, bool flipPAHandle
     }
 
   displayNode->SetActiveComponent(displayNode->GetActiveComponentType(), index);
+}
+
+//---------------------------------------------------------------------------
+bool vtkSlicerPlaneWidget::PlacePoint(vtkMRMLInteractionEventData* eventData)
+{
+  vtkMRMLMarkupsPlaneNode* markupsNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  if (!markupsNode)
+    {
+      return false;
+    }
+
+  bool success = Superclass::PlacePoint(eventData);
+  if (!success)
+    {
+    return false;
+    }
+
+  // We have returned to place mode. Need to delete the uneccesary points
+  vtkMRMLInteractionNode* interactionNode = this->GetInteractionNode();
+  if (interactionNode && interactionNode->GetCurrentInteractionMode() == vtkMRMLInteractionNode::ViewTransform)
+    {
+    if (markupsNode->GetPlaneType() == vtkMRMLMarkupsPlaneNode::PlaneTypePointNormal)
+      {
+      markupsNode->UpdateControlPointsFromPlane();
+      }
+    }
+  return true;
 }
