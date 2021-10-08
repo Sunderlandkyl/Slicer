@@ -129,8 +129,9 @@ protected:
     // Update scale handle positions
     virtual void UpdateScaleHandles();
 
-
     void GetHandleColor(int type, int index, double color[4]) override;
+    double GetHandleOpacity(int type, int index) override;
+
     void GetInteractionHandleAxisWorld(int type, int index, double axis[3]) override;
   };
   friend class vtkSlicerPlaneRepresentation2D;

@@ -619,6 +619,55 @@ void vtkSlicerPlaneRepresentation3D::MarkupsInteractionPipelinePlane::GetHandleC
   color[3] = opacity;
 }
 
+//----------------------------------------------------------------------
+double vtkSlicerPlaneRepresentation3D::MarkupsInteractionPipelinePlane::GetHandleOpacity(int type, int index)
+{
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(
+    vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(this->Representation)->GetMarkupsNode());
+  if (!planeNode)
+    {
+    return 0.0;
+    }
+
+  vtkMRMLMarkupsDisplayNode* displayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(planeNode->GetDisplayNode());
+
+  double opacity = 1.0;
+  if (displayNode && type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle && !displayNode->GetScaleHandleVisibility())
+    {
+    opacity = 0.0;
+    }
+  else if (type == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle && index > vtkMRMLMarkupsPlaneDisplayNode::HandleAEdge)
+    {
+    double viewNormal_World[3] = { 0.0, 0.0, 0.0 };
+    this->GetViewPlaneNormal(viewNormal_World);
+
+    double planeNormal_World[3] = { 0.0, 0.0, 0.0 };
+    planeNode->GetNormalWorld(planeNormal_World);
+    if (vtkMath::Dot(viewNormal_World, planeNormal_World) < 0)
+      {
+      vtkMath::MultiplyScalar(planeNormal_World, -1);
+      }
+
+    double fadeAngleRange = this->StartFadeAngle - this->EndFadeAngle;
+    double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal_World, planeNormal_World));
+    // Fade happens when the axis approaches 90 degrees from the view normal
+    if (angle > 90 - this->EndFadeAngle)
+      {
+      opacity = 0.0;
+      }
+    else if (angle > 90 - this->StartFadeAngle)
+      {
+      double difference = angle - (90 - this->StartFadeAngle);
+      opacity = 1.0 - (difference / fadeAngleRange);
+      }
+    }
+  else
+    {
+    opacity = MarkupsInteractionPipeline::GetHandleOpacity(type, index);
+    }
+
+  return opacity;
+}
 
 //-----------------------------------------------------------------------------
 void vtkSlicerPlaneRepresentation3D::MarkupsInteractionPipelinePlane::CreateScaleHandles()

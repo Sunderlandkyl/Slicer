@@ -565,6 +565,12 @@ void vtkMRMLMarkupsPlaneNode::GetBaseToNodeMatrix(vtkMatrix4x4* baseToNodeMatrix
 }
 
 //----------------------------------------------------------------------------
+vtkMatrix4x4* vtkMRMLMarkupsPlaneNode::GetBaseToNodeMatrix()
+{
+  return this->BaseToNodeMatrix;
+}
+
+//----------------------------------------------------------------------------
 void vtkMRMLMarkupsPlaneNode::GetObjectToNodeMatrix(vtkMatrix4x4* objectToNodeMatrix)
 {
   if (!objectToNodeMatrix)

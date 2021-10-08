@@ -488,7 +488,6 @@ void vtkSlicerROIRepresentation3D::UpdateInteractionPipeline()
 vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::MarkupsInteractionPipelineROI(vtkSlicerMarkupsWidgetRepresentation* representation)
   : MarkupsInteractionPipeline(representation)
 {
-
 }
 
 //----------------------------------------------------------------------

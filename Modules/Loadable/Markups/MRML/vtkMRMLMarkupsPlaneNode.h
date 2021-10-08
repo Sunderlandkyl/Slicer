@@ -181,6 +181,7 @@ public:
   virtual void GetObjectToWorldMatrix(vtkMatrix4x4* planeToWorldMatrix);
   // Mapping from Base plane coordinates to local coordinates
   virtual void GetBaseToNodeMatrix(vtkMatrix4x4* matrix);
+  virtual vtkMatrix4x4* GetBaseToNodeMatrix();
 
   /// 4x4 matrix specifying the relative (rotation/translation) of the plane from the base coordinate system defined by the markup points.
   /// Default is the identity matrix.
