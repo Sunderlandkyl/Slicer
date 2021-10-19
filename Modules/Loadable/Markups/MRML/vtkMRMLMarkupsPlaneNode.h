@@ -250,6 +250,9 @@ public:
 
 protected:
 
+  vtkSetMacro(MaximumNumberOfControlPoints, int);
+  vtkSetMacro(RequiredNumberOfControlPoints, int);
+
   // Set plane validity flag. True if the plane is fully defined.
   vtkSetMacro(IsPlaneValid, bool);
 

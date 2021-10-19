@@ -442,6 +442,158 @@ bool vtkSlicerPlaneWidget::ProcessEndMouseDrag(vtkMRMLInteractionEventData* even
 }
 
 //----------------------------------------------------------------------
+void vtkSlicerPlaneWidget::RotateWidget(double eventPos[2])
+{
+  vtkMRMLMarkupsPlaneNode* markupsNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  if (!markupsNode)
+    {
+    return;
+    }
+
+  double eventPos_World[3] = { 0. };
+  double lastEventPos_World[3] = { 0. };
+  double orientation_World[9] = { 0. };
+  double eventPos_Display[2] = { 0. };
+
+  vtkSlicerMarkupsWidgetRepresentation* rep = vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(this->WidgetRep);
+  vtkSlicerMarkupsWidgetRepresentation2D* rep2d = vtkSlicerMarkupsWidgetRepresentation2D::SafeDownCast(this->WidgetRep);
+  vtkSlicerMarkupsWidgetRepresentation3D* rep3d = vtkSlicerMarkupsWidgetRepresentation3D::SafeDownCast(this->WidgetRep);
+  if (rep2d)
+    {
+    double eventPos_Slice[3] = { 0. };
+    eventPos_Slice[0] = this->LastEventPosition[0];
+    eventPos_Slice[1] = this->LastEventPosition[1];
+    rep2d->GetSliceToWorldCoordinates(eventPos_Slice, lastEventPos_World);
+
+    eventPos_Slice[0] = eventPos[0];
+    eventPos_Slice[1] = eventPos[1];
+    rep2d->GetSliceToWorldCoordinates(eventPos_Slice, eventPos_World);
+
+    eventPos_Display[0] = eventPos_Slice[0];
+    eventPos_Display[1] = eventPos_Slice[1];
+    }
+  else if (rep3d)
+    {
+    eventPos_Display[0] = this->LastEventPosition[0];
+    eventPos_Display[1] = this->LastEventPosition[1];
+
+    if (rep3d->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
+      eventPos_Display, eventPos_World, lastEventPos_World,
+      orientation_World))
+      {
+      for (int i = 0; i < 3; i++)
+        {
+        eventPos_World[i] = lastEventPos_World[i];
+        }
+      }
+    else
+      {
+      return;
+      }
+    eventPos_Display[0] = eventPos[0];
+    eventPos_Display[1] = eventPos[1];
+
+    if (!rep3d->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
+      eventPos_Display, eventPos_World, eventPos_World,
+      orientation_World))
+      {
+      return;
+      }
+    }
+
+  double origin_World[3] = { 0.0 };
+  rep->GetInteractionHandleOriginWorld(origin_World);
+
+  double epsilon = 1e-5;
+  double d2 = vtkMath::Distance2BetweenPoints(eventPos_World, origin_World);
+  if (d2 < epsilon)
+    {
+    return;
+    }
+
+  for (int i = 0; i < 3; i++)
+    {
+    lastEventPos_World[i] -= origin_World[i];
+    eventPos_World[i] -= origin_World[i];
+    }
+
+  double angle = vtkMath::DegreesFromRadians(
+    vtkMath::AngleBetweenVectors(lastEventPos_World, eventPos_World));
+  double rotationNormal_World[3] = { 0.0 };
+  vtkMath::Cross(lastEventPos_World, eventPos_World, rotationNormal_World);
+  double rotationAxis_World[3] = { 0.0, 1.0, 0.0 };
+  int type = this->GetActiveComponentType();
+  if (type == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
+    {
+    int index = this->GetMarkupsDisplayNode()->GetActiveComponentIndex();
+    double eventPositionOnAxisPlane_World[3] = { 0.0, 0.0, 0.0 };
+    if (!this->GetIntersectionOnAxisPlane(type, index, eventPos, eventPositionOnAxisPlane_World))
+      {
+      vtkWarningMacro("RotateWidget: Could not calculate intended orientation");
+      return;
+      }
+
+    rep->GetInteractionHandleAxisWorld(type, index, rotationAxis_World); // Axis of rotation
+    double origin_World[3] = { 0.0, 0.0, 0.0 };
+    rep->GetInteractionHandleOriginWorld(origin_World);
+
+    double lastEventPositionOnAxisPlane_World[3] = { 0.0, 0.0, 0.0 };
+    if (!this->GetIntersectionOnAxisPlane(
+      vtkMRMLMarkupsDisplayNode::ComponentRotationHandle, index, this->LastEventPosition,lastEventPositionOnAxisPlane_World))
+      {
+      vtkWarningMacro("RotateWidget: Could not calculate previous orientation");
+      return;
+      }
+
+    double rotationHandleVector_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Subtract(lastEventPositionOnAxisPlane_World, origin_World, rotationHandleVector_World);
+
+    double destinationVector_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Subtract(eventPositionOnAxisPlane_World, origin_World, destinationVector_World);
+
+    angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(rotationHandleVector_World, destinationVector_World));
+    vtkMath::Cross(rotationHandleVector_World, destinationVector_World, rotationNormal_World);
+    }
+  else
+    {
+    rotationAxis_World[0] = rotationNormal_World[0];
+    rotationAxis_World[1] = rotationNormal_World[1];
+    rotationAxis_World[2] = rotationNormal_World[2];
+    }
+
+  if (vtkMath::Dot(rotationNormal_World, rotationAxis_World) < 0.0)
+    {
+    angle *= -1.0;
+    }
+
+  vtkNew<vtkMatrix4x4> objectToNodeMatrix;
+  markupsNode->GetObjectToNodeMatrix(objectToNodeMatrix);
+
+  vtkNew<vtkMatrix4x4> nodeToObjectMatrix;
+  vtkMatrix4x4::Invert(objectToNodeMatrix, nodeToObjectMatrix);
+
+  vtkNew<vtkTransform> objectToNodeTransform;
+  objectToNodeTransform->SetMatrix(objectToNodeMatrix);
+
+  vtkNew<vtkMatrix4x4> worldToObjectMatrix;
+  markupsNode->GetObjectToWorldMatrix(worldToObjectMatrix);
+  worldToObjectMatrix->Invert();
+  vtkNew<vtkTransform> worldToObjectTransform;
+  worldToObjectTransform->SetMatrix(worldToObjectMatrix);
+
+  double rotationAxis_Object[3] = { 0.0, 0.0, 0.0 };
+  worldToObjectTransform->TransformVector(rotationAxis_World, rotationAxis_Object);
+
+  vtkNew<vtkTransform> rotateTransform;
+  rotateTransform->PostMultiply();
+  rotateTransform->Concatenate(nodeToObjectMatrix);
+  rotateTransform->RotateWXYZ(angle, rotationAxis_Object);
+  rotateTransform->Concatenate(objectToNodeMatrix);
+  markupsNode->ApplyTransform(rotateTransform);
+}
+
+
+//----------------------------------------------------------------------
 void vtkSlicerPlaneWidget::ScaleWidget(double eventPos[2])
 {
   this->ScaleWidget(eventPos, false);
@@ -648,60 +800,27 @@ void vtkSlicerPlaneWidget::ScaleWidget(double eventPos[2], bool symmetricScale)
       newOrigin_Object[i] = (bounds_Plane[2 * i + 1] + bounds_Plane[2 * i]) / 2.0;
       }
 
-    MRMLNodeModifyBlocker blocker(markupsNode);
+    vtkNew<vtkMatrix4x4> objectToNodeMatrix;
+    markupsNode->GetObjectToNodeMatrix(objectToNodeMatrix);
 
-    vtkNew<vtkMatrix4x4> objectToWorldMatrix;
-    //markupsNode->GetObjectToWorldMatrix(objectToWorldMatrix);
-    markupsNode->GetObjectToNodeMatrix(objectToWorldMatrix);
+    vtkNew<vtkMatrix4x4> nodeToObjectMatrix;
+    vtkMatrix4x4::Invert(objectToNodeMatrix, nodeToObjectMatrix);
 
-    vtkNew<vtkTransform> objectToWorldTransform;
-    objectToWorldTransform->SetMatrix(objectToWorldMatrix);
+    vtkNew<vtkTransform> objectToNodeTransform;
+    objectToNodeTransform->SetMatrix(objectToNodeMatrix);
 
-    double newOrigin_World[3] = { 0.0, 0.0, 0.0 };
-    objectToWorldTransform->TransformPoint(newOrigin_Object, newOrigin_World);
-    markupsNode->SetSize(newSize);
-    markupsNode->SetCenterWorld(newOrigin_World);
-    /*markupsNode->SetCenter(newOrigin_World);*/
+    double oldSize[2] = { 0.0, 0.0 };
+    markupsNode->GetSize(oldSize);
 
+    double scale[2] = { newSize[0] / oldSize[0], newSize[1] / oldSize[1]};
 
-    //double oldSize[2] = { 0.0, 0.0 };
-    //markupsNode->GetSize(oldSize);
-
-    //double scale[2] = { newSize[0] / oldSize[0], newSize[1] / oldSize[1]};
-
-    //double oldOrigin_World[3] = { 0.0, 0.0, 0.0 };
-    //markupsNode->GetOriginWorld(oldOrigin_World);
-
-    //vtkNew<vtkTransform> scaleTransform;
-    //scaleTransform->Translate(-oldOrigin_World[0], -oldOrigin_World[1], -oldOrigin_World[2]);
-    //scaleTransform->Scale(scale[0], scale[1], 1.0);
-    //scaleTransform->Translate(newOrigin_World);
-    ////markupsNode->ApplyTransform(scaleTransform);
-
-    ///*MRMLNodeModifyBlocker blocker(markupsNode);*/
-
-    //// The orientation of some markup types are not fully defined by their control points (line, etc.).
-    //// For these cases, we need to manually apply a rotation to the interaction handles.
-    ///*vtkNew<vtkTransform> handleToWorldTransform;
-    //handleToWorldTransform->PostMultiply();
-    //handleToWorldTransform->Concatenate(markupsNode->GetInteractionHandleToWorldMatrix());
-    //handleToWorldTransform->Translate(-origin_World[0], -origin_World[1], -origin_World[2]);
-    //handleToWorldTransform->RotateWXYZ(angle, rotationAxis_World);
-    //handleToWorldTransform->Translate(origin_World[0], origin_World[1], origin_World[2]);*/
-    ///*markupsNode->GetInteractionHandleToWorldMatrix()->DeepCopy(handleToWorldTransform->GetMatrix());*/
-
-    //vtkNew<vtkPoints> transformedPoints_World;
-    //transformedPoints_World->SetNumberOfPoints(markupsNode->GetNumberOfControlPoints());
-    //for (int i = 0; i < markupsNode->GetNumberOfControlPoints(); i++)
-    //  {
-    //  double currentControlPointPosition_World[3] = { 0.0 };
-    //  markupsNode->GetNthControlPointPositionWorld(i, currentControlPointPosition_World);
-
-    //  double newControlPointPosition_World[3] = { 0.0 };
-    //  scaleTransform->TransformPoint(currentControlPointPosition_World, newControlPointPosition_World);
-    //  transformedPoints_World->SetPoint(i, newControlPointPosition_World);
-    //  }
-    //markupsNode->SetControlPointPositionsWorld(transformedPoints_World);
+    vtkNew<vtkTransform> scaleTransform;
+    scaleTransform->PostMultiply();
+    scaleTransform->Concatenate(nodeToObjectMatrix);
+    scaleTransform->Scale(scale[0], scale[1], 1.0);
+    scaleTransform->Translate(newOrigin_Object);
+    scaleTransform->Concatenate(objectToNodeMatrix);
+    markupsNode->ApplyTransform(scaleTransform);
 
     bool flipLRHandle = bounds_Plane[1] < bounds_Plane[0];
     bool flipPAHandle = bounds_Plane[3] < bounds_Plane[2];

@@ -197,6 +197,11 @@ bool vtkMRMLMarkupsPlaneJsonStorageNode::vtkInternalPlane::UpdateMarkupsNodeFrom
     std::string planeType = planeTypeItem.GetString();
     planeNode->SetPlaneType(planeNode->GetPlaneTypeFromString(planeType.c_str()));
     }
+  else
+    {
+    /// Plane was created when the only type of plane was defined with 3 points.
+    planeNode->SetPlaneType(vtkMRMLMarkupsPlaneNode::PlaneType3Points);
+    }
 
   success = vtkInternal::UpdateMarkupsNodeFromJsonValue(markupsNode, markupsObject);
 

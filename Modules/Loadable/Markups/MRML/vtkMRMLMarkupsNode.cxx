@@ -1023,8 +1023,8 @@ void vtkMRMLMarkupsNode::SetNthControlPointPositionWorldFromArray(
 }
 
 //-----------------------------------------------------------
-void vtkMRMLMarkupsNode::TransformOrientationMatrixFromNodeToWorld
-(const double position_Node[3], const double orientationMatrix_Node[9], double orientationMatrix_World[9])
+void vtkMRMLMarkupsNode::TransformOrientationMatrixFromNodeToWorld(
+  const double position_Node[3], const double orientationMatrix_Node[9], double orientationMatrix_World[9])
 {
   double xAxis_World[3] = { orientationMatrix_Node[0], orientationMatrix_Node[3], orientationMatrix_Node[6] };
   double yAxis_World[3] = { orientationMatrix_Node[1], orientationMatrix_Node[4], orientationMatrix_Node[7] };
@@ -1939,20 +1939,17 @@ void vtkMRMLMarkupsNode::ConvertOrientationWXYZToMatrix(double orientationWXYZ[4
 
   double s = ww - xx - yy - zz;
 
-  double matrix[3][3] = { 0.0 };
-  vtkMath::QuaternionToMatrix3x3(orientationWXYZ, matrix);
+  orientationMatrix[0] = xx * 2 + s;    // (0,0)
+  orientationMatrix[3] = (xy + wz) * 2; // (1,0)
+  orientationMatrix[6] = (xz - wy) * 2; // (2,0)
 
-  //orientationMatrix[0] = matrix[0];
-  //orientationMatrix[3] = (xy + wz) * 2; // (1,0)
-  //orientationMatrix[6] = (xz - wy) * 2; // (2,0)
+  orientationMatrix[1] = (xy - wz) * 2; // (0,1)
+  orientationMatrix[4] = yy * 2 + s;    // (1,1)
+  orientationMatrix[7] = (yz + wx) * 2; // (2,1)
 
-  //orientationMatrix[1] = (xy - wz) * 2; // (0,1)
-  //orientationMatrix[4] = yy * 2 + s;    // (1,1)
-  //orientationMatrix[7] = (yz + wx) * 2; // (2,1)
-
-  //orientationMatrix[2] = (xz + wy) * 2; // (0,2)
-  //orientationMatrix[5] = (yz - wx) * 2; // (1,2)
-  //orientationMatrix[8] = zz * 2 + s;    // (2,2)
+  orientationMatrix[2] = (xz + wy) * 2; // (0,2)
+  orientationMatrix[5] = (yz - wx) * 2; // (1,2)
+  orientationMatrix[8] = zz * 2 + s;    // (2,2)
 }
 
 //----------------------------------------------------------------------
