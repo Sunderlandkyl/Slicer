@@ -18,6 +18,7 @@
 #include <vtkCodedEntry.h>
 #include "vtkMRMLMarkupsJsonStorageNode.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
+#include "vtkMRMLMarkupsPlaneNode.h"
 #include "vtkMRMLMarkupsNode.h"
 #include "vtkMRMLMessageCollection.h"
 #include "vtkMRMLStaticMeasurement.h"
@@ -545,6 +546,16 @@ bool vtkMRMLMarkupsJsonStorageNode::vtkInternal::UpdateMarkupsNodeFromJsonValue(
 
   // clear out the list
   markupsNode->RemoveAllControlPoints();
+
+  /// Added for backwards compatibility with storage nodes created before vtkMRMLMarkupsPlaneStorageNode or additional plane types were implemented.
+  /// This check must be done here to preserve compatibility with scenes saved before vtkMRMLMarkupsPlaneJsonStorageNode was added.
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(markupsNode);
+  if (planeNode && !markupObject.HasMember("planeType"))
+    {
+    // If planeType is not defined, then the json file was written before the additional plane types were implemented.
+    // Previously the only plane type used was PlaneType3Points.
+    planeNode->SetPlaneType(vtkMRMLMarkupsPlaneNode::PlaneType3Points);
+    }
 
   std::string coordinateSystemStr = "LPS";
   if (markupObject.HasMember("coordinateSystem"))
