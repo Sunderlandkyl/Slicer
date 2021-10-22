@@ -800,27 +800,17 @@ void vtkSlicerPlaneWidget::ScaleWidget(double eventPos[2], bool symmetricScale)
       newOrigin_Object[i] = (bounds_Plane[2 * i + 1] + bounds_Plane[2 * i]) / 2.0;
       }
 
-    vtkNew<vtkMatrix4x4> objectToNodeMatrix;
-    markupsNode->GetObjectToNodeMatrix(objectToNodeMatrix);
+    vtkNew<vtkMatrix4x4> objectToWorldMatrix;
+    markupsNode->GetObjectToWorldMatrix(objectToWorldMatrix);
+    vtkNew<vtkTransform> objectToWorldTransform;
+    objectToWorldTransform->SetMatrix(objectToWorldMatrix);
 
-    vtkNew<vtkMatrix4x4> nodeToObjectMatrix;
-    vtkMatrix4x4::Invert(objectToNodeMatrix, nodeToObjectMatrix);
+    double newOrigin_World[3] = { 0.0, 0.0, 0.0 };
+    objectToWorldTransform->TransformPoint(newOrigin_Object, newOrigin_World);
 
-    vtkNew<vtkTransform> objectToNodeTransform;
-    objectToNodeTransform->SetMatrix(objectToNodeMatrix);
-
-    double oldSize[2] = { 0.0, 0.0 };
-    markupsNode->GetSize(oldSize);
-
-    double scale[2] = { newSize[0] / oldSize[0], newSize[1] / oldSize[1]};
-
-    vtkNew<vtkTransform> scaleTransform;
-    scaleTransform->PostMultiply();
-    scaleTransform->Concatenate(nodeToObjectMatrix);
-    scaleTransform->Scale(scale[0], scale[1], 1.0);
-    scaleTransform->Translate(newOrigin_Object);
-    scaleTransform->Concatenate(objectToNodeMatrix);
-    markupsNode->ApplyTransform(scaleTransform);
+    MRMLNodeModifyBlocker blocker(markupsNode);
+    markupsNode->SetSize(newSize);
+    markupsNode->SetOriginWorld(newOrigin_World);
 
     bool flipLRHandle = bounds_Plane[1] < bounds_Plane[0];
     bool flipPAHandle = bounds_Plane[3] < bounds_Plane[2];

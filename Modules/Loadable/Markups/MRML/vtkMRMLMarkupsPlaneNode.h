@@ -267,6 +267,7 @@ protected:
   virtual void UpdatePlaneFromPointNormal();
   virtual void UpdatePlaneFrom3Points();
   virtual void UpdatePlaneFromPlaneFit();
+  virtual void UpdatePlaneSize();
 
   /// Calculate the position of control points from the ROI
   virtual void UpdateControlPointsFromPlane();
