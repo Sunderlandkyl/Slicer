@@ -37,6 +37,7 @@
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper2D.h>
 #include <vtkProperty2D.h>
+#include <vtkPropCollection.h>
 #include <vtkTextActor.h>
 #include <vtkTextProperty.h>
 #include <vtkTransform.h>
@@ -204,6 +205,8 @@ void vtkSlicerROIRepresentation2D::GetActors(vtkPropCollection *pc)
 {
   this->ROIActor->GetActors(pc);
   this->ROIOutlineActor->GetActors(pc);
+  pc->AddItem(this->ROIActor);
+  pc->AddItem(this->ROIOutlineActor);
   this->Superclass::GetActors(pc);
 }
 

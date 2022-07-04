@@ -339,6 +339,8 @@ void vtkSlicerAngleRepresentation2D::GetActors(vtkPropCollection *pc)
 {
   this->LineActor->GetActors(pc);
   this->ArcActor->GetActors(pc);
+  pc->AddItem(this->LineActor);
+  pc->AddItem(this->ArcActor);
   this->Superclass::GetActors(pc);
 }
 

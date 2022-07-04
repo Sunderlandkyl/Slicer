@@ -86,6 +86,9 @@ public:
   /// Get the widget of a node.
   vtkSlicerMarkupsWidget* GetWidget(vtkMRMLMarkupsDisplayNode * node);
 
+  /// TODO
+  void GetActorsByID(const char* id, vtkPropCollection* actors) override;
+
 protected:
 
   vtkMRMLMarkupsDisplayableManager();

@@ -937,3 +937,15 @@ void vtkMRMLMarkupsDisplayableManager::ConvertDeviceToXYZ(double x, double y, do
 {
   vtkMRMLAbstractSliceViewDisplayableManager::ConvertDeviceToXYZ(this->GetInteractor(), this->GetMRMLSliceNode(), x, y, xyz);
 }
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManager::GetActorsByID(const char* id, vtkPropCollection* actors)
+{
+  vtkMRMLMarkupsDisplayNode* markupsDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
+  auto it = this->GetHelper()->MarkupsDisplayNodesToWidgets.find(markupsDisplayNode);
+  if (it == this->GetHelper()->MarkupsDisplayNodesToWidgets.end())
+  {
+    return;
+  }
+  it->second->GetRepresentation()->GetActors(actors);
+}

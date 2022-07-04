@@ -52,6 +52,9 @@ public:
   /// Get the ID of the picked segment, returns empty string if no pick
   virtual const char* GetPickedSegmentID();
 
+  /// TODO
+  void GetActorsByID(const char* id, vtkPropCollection* actors) override;
+
 protected:
 
   vtkMRMLSegmentationsDisplayableManager3D();

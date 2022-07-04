@@ -223,6 +223,10 @@ void vtkSlicerROIRepresentation3D::GetActors(vtkPropCollection *pc)
   this->ROIOccludedActor->GetActors(pc);
   this->ROIOutlineActor->GetActors(pc);
   this->ROIOutlineOccludedActor->GetActors(pc);
+  pc->AddItem(this->ROIActor);
+  pc->AddItem(this->ROIOccludedActor);
+  pc->AddItem(this->ROIOutlineActor);
+  pc->AddItem(this->ROIOutlineOccludedActor);
   this->Superclass::GetActors(pc);
 }
 

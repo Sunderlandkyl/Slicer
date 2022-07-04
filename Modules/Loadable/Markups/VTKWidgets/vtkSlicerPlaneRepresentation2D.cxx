@@ -407,6 +407,9 @@ void vtkSlicerPlaneRepresentation2D::GetActors(vtkPropCollection *pc)
   this->PlaneFillActor->GetActors(pc);
   this->PlaneOutlineActor->GetActors(pc);
   this->ArrowActor->GetActors(pc);
+  pc->AddItem(this->PlaneFillActor);
+  pc->AddItem(this->PlaneOutlineActor);
+  pc->AddItem(this->ArrowActor);
   this->Superclass::GetActors(pc);
 }
 

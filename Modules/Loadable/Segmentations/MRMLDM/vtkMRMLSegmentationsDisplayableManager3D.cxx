@@ -957,3 +957,18 @@ const char* vtkMRMLSegmentationsDisplayableManager3D::GetPickedSegmentID()
 {
   return this->Internal->PickedSegmentID.c_str();
 }
+
+//---------------------------------------------------------------------------
+void vtkMRMLSegmentationsDisplayableManager3D::GetActorsByID(const char* id, vtkPropCollection* actors)
+{
+  vtkMRMLSegmentationDisplayNode* displayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
+  auto pipelineIt = this->Internal->DisplayPipelines.find(displayNode);
+  if (pipelineIt == this->Internal->DisplayPipelines.end())
+  {
+    return;
+  }
+  for (auto pipeline : pipelineIt->second)
+  {
+    actors->AddItem(pipeline.second->Actor);
+  }
+}

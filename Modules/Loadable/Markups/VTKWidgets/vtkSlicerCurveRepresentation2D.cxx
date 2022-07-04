@@ -229,6 +229,7 @@ void vtkSlicerCurveRepresentation2D::CanInteract(
 void vtkSlicerCurveRepresentation2D::GetActors(vtkPropCollection *pc)
 {
   this->LineActor->GetActors(pc);
+  pc->AddItem(this->LineActor);
   this->Superclass::GetActors(pc);
 }
 
