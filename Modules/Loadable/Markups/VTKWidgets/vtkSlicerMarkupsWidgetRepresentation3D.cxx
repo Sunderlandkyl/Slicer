@@ -788,6 +788,10 @@ void vtkSlicerMarkupsWidgetRepresentation3D::GetActors(vtkPropCollection *pc)
     controlPoints->OccludedActor->GetActors(pc);
     controlPoints->LabelsActor->GetActors(pc);
     controlPoints->LabelsOccludedActor->GetActors(pc);
+    pc->AddItem(controlPoints->Actor);
+    pc->AddItem(controlPoints->OccludedActor);
+    pc->AddItem(controlPoints->LabelsActor);
+    pc->AddItem(controlPoints->LabelsOccludedActor);
     }
   this->TextActor->GetActors(pc);
 }

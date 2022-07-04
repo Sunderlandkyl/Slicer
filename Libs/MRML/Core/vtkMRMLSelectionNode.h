@@ -225,6 +225,17 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
  /// the node has a locked number of points.
   bool GetActivePlaceNodePlacementValid();
 
+  ///
+  void SetFocusNodeID(const char* id);
+  const char* GetFocusNodeID();
+
+  vtkSetMacro(ComponentType, int);
+  vtkGetMacro(ComponentType, int);
+  vtkSetMacro(ComponentIndex, int);
+  vtkGetMacro(ComponentIndex, int);
+  vtkSetMacro(HighlightStrength, double);
+  vtkGetMacro(HighlightStrength, double);
+
 protected:
   vtkMRMLSelectionNode();
   ~vtkMRMLSelectionNode() override;
@@ -237,6 +248,10 @@ protected:
   std::vector<std::string> PlaceNodeClassNameList;
   std::vector<std::string> PlaceNodeResourceList;
   std::vector<std::string> PlaceNodeIconNameList;
+
+  int ComponentType{ -1 };
+  int ComponentIndex{ -1 };
+  double HighlightStrength{ 10.0 };
 };
 
 #endif

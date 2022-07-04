@@ -351,6 +351,8 @@ void vtkSlicerPlaneRepresentation3D::GetActors(vtkPropCollection *pc)
   this->Superclass::GetActors(pc);
   this->PlaneActor->GetActors(pc);
   this->PlaneOccludedActor->GetActors(pc);
+  pc->AddItem(this->PlaneActor);
+  pc->AddItem(this->PlaneOccludedActor);
 }
 
 //----------------------------------------------------------------------

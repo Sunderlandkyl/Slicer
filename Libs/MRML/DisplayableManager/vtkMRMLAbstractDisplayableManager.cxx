@@ -28,6 +28,7 @@
 
 // MRML includes
 #include <vtkMRMLAbstractViewNode.h>
+#include <vtkMRMLDisplayNode.h>
 #include <vtkMRMLInteractionNode.h>
 #include <vtkMRMLScene.h>
 #include <vtkMRMLSelectionNode.h>
@@ -1002,4 +1003,14 @@ void vtkMRMLAbstractDisplayableManager::SetMouseCursor(int cursor)
   {
     this->GetRenderer()->GetRenderWindow()->SetCurrentCursor(cursor);
   }
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLAbstractDisplayableManager::GetActorsByNode(vtkMRMLDisplayNode* node, vtkPropCollection* actors)
+{
+  if (!node)
+  {
+    return;
+  }
+  this->GetActorsByID(node->GetID(), actors);
 }

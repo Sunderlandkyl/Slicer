@@ -1765,3 +1765,21 @@ void vtkMRMLSegmentationsDisplayableManager2D::GetVisibleSegmentsForPosition(dou
       }
     }
 }
+
+//---------------------------------------------------------------------------
+void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByID(const char* id, vtkPropCollection* actors)
+{
+  vtkMRMLSegmentationDisplayNode* displayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
+  auto pipelineIt = this->Internal->DisplayPipelines.find(displayNode);
+  if (pipelineIt == this->Internal->DisplayPipelines.end())
+  {
+    return;
+  }
+  for (auto pipeline : pipelineIt->second)
+  {
+    actors->AddItem(pipeline.second->ImageFillActor);
+    actors->AddItem(pipeline.second->ImageOutlineActor);
+    actors->AddItem(pipeline.second->PolyDataFillActor);
+    actors->AddItem(pipeline.second->PolyDataOutlineActor);
+  }
+}

@@ -72,6 +72,8 @@ void vtkSlicerLineRepresentation3D::GetActors(vtkPropCollection *pc)
   this->Superclass::GetActors(pc);
   this->LineActor->GetActors(pc);
   this->LineOccludedActor->GetActors(pc);
+  pc->AddItem(this->LineActor);
+  pc->AddItem(this->LineOccludedActor);
 }
 
 //----------------------------------------------------------------------

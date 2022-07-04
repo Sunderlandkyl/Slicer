@@ -57,6 +57,7 @@
 #include <vtkMRMLScalarVolumeNode.h>
 #include <vtkMRMLTransformDisplayNode.h>
 #include <vtkMRMLTransformNode.h>
+#include <vtkMRMLSelectionNode.h>
 
 // qMRML includes
 #include "qMRMLItemDelegate.h"
@@ -2129,6 +2130,12 @@ void qMRMLSubjectHierarchyTreeView::applyReferenceHighlightForItems(QList<vtkIdT
       continue;
       }
     vtkMRMLNode* node = d->SubjectHierarchyNode->GetItemDataNode(itemID);
+    if (vtkMRMLDisplayableNode::SafeDownCast(node))
+    {
+      // TODO: hack. find a better way
+      vtkMRMLSelectionNode* selection = vtkMRMLSelectionNode::SafeDownCast(scene->GetFirstNodeByName("Selection"));
+      selection->SetFocusNodeID(node->GetID());
+    }
 
     // Get items referenced recursively by argument node by MRML
     vtkSmartPointer<vtkCollection> recursivelyReferencedNodes;

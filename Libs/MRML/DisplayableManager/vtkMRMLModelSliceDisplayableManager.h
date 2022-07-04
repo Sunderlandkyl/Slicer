@@ -46,6 +46,8 @@ public:
   void AddDisplayableNode(vtkMRMLDisplayableNode* displayableNode);
   void RemoveDisplayableNode(vtkMRMLDisplayableNode* displayableNode);
 
+  void GetActorsByID(const char* id, vtkPropCollection* actors) override;
+
 protected:
 
   vtkMRMLModelSliceDisplayableManager();

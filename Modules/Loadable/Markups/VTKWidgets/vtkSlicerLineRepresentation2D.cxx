@@ -189,6 +189,7 @@ void vtkSlicerLineRepresentation2D::CanInteract(
 void vtkSlicerLineRepresentation2D::GetActors(vtkPropCollection *pc)
 {
   this->LineActor->GetActors(pc);
+  pc->AddItem(this->LineActor);
   this->Superclass::GetActors(pc);
 }
 

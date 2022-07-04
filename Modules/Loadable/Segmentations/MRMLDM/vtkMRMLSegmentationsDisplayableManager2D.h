@@ -52,6 +52,9 @@ public:
   virtual void GetVisibleSegmentsForPosition(double ras[3], vtkMRMLSegmentationDisplayNode* displayNode,
     vtkStringArray* segmentIDs, vtkDoubleArray* segmentValues = nullptr);
 
+  /// TODO
+  void GetActorsByID(const char* id, vtkPropCollection* actors) override;
+
 protected:
   void UnobserveMRMLScene() override;
   void OnMRMLSceneNodeAdded(vtkMRMLNode* node) override;

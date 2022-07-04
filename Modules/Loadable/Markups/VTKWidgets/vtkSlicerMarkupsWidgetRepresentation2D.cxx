@@ -716,6 +716,8 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetActors(vtkPropCollection *pc)
     ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
     controlPoints->Actor->GetActors(pc);
     controlPoints->LabelsActor->GetActors(pc);
+    pc->AddItem(controlPoints->Actor);
+    pc->AddItem(controlPoints->LabelsActor);
     }
   this->TextActor->GetActors(pc);
 }

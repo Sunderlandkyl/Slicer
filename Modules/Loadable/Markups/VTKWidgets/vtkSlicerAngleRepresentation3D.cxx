@@ -238,6 +238,10 @@ void vtkSlicerAngleRepresentation3D::GetActors(vtkPropCollection *pc)
   this->ArcActor->GetActors(pc);
   this->ArcOccludedActor->GetActors(pc);
   this->LineOccludedActor->GetActors(pc);
+  pc->AddItem(this->LineActor);
+  pc->AddItem(this->ArcActor);
+  pc->AddItem(this->ArcOccludedActor);
+  pc->AddItem(this->LineOccludedActor);
 }
 
 //----------------------------------------------------------------------
