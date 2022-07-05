@@ -94,6 +94,9 @@ public:
   vtkSetMacro(OccludedRelativeOffset, double);
   vtkGetMacro(OccludedRelativeOffset, double);
 
+  /// TODO
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType=-1, int componentIndex=-1) override;
+
 protected:
   vtkSlicerMarkupsWidgetRepresentation3D();
   ~vtkSlicerMarkupsWidgetRepresentation3D() override;

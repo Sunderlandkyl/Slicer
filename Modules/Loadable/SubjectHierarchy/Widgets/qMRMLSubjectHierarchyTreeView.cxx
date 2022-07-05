@@ -1503,6 +1503,15 @@ void qMRMLSubjectHierarchyTreeView::onSelectionChanged(const QItemSelection& sel
     this->applyReferenceHighlightForItems(selectedShItems);
     }
 
+  vtkMRMLNode* node = d->SubjectHierarchyNode->GetItemDataNode(selectedShItems[0]);
+  vtkMRMLScene* scene = this->mrmlScene();
+  if (scene)
+  {
+    // TODO: hack. find a better way
+    vtkMRMLSelectionNode* selection = vtkMRMLSelectionNode::SafeDownCast(scene->GetFirstNodeByName("Selection"));
+    selection->SetFocusNodeID(node ? node->GetID() : nullptr);
+  }
+
   // Emit current item changed signal
   emit currentItemChanged(selectedShItems[0]);
   emit currentItemsChanged(selectedShItems);
@@ -2130,12 +2139,6 @@ void qMRMLSubjectHierarchyTreeView::applyReferenceHighlightForItems(QList<vtkIdT
       continue;
       }
     vtkMRMLNode* node = d->SubjectHierarchyNode->GetItemDataNode(itemID);
-    if (vtkMRMLDisplayableNode::SafeDownCast(node))
-    {
-      // TODO: hack. find a better way
-      vtkMRMLSelectionNode* selection = vtkMRMLSelectionNode::SafeDownCast(scene->GetFirstNodeByName("Selection"));
-      selection->SetFocusNodeID(node->GetID());
-    }
 
     // Get items referenced recursively by argument node by MRML
     vtkSmartPointer<vtkCollection> recursivelyReferencedNodes;

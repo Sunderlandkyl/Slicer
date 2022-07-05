@@ -117,8 +117,8 @@ public:
   void SetMouseCursor(int cursor);
 
   // TODO
-  virtual void GetActorsByID(const char* id, vtkPropCollection* actors) {};
-  virtual void GetActorsByNode(vtkMRMLDisplayNode* node, vtkPropCollection* actors);
+  virtual void GetActorsByID(vtkPropCollection* actors, const char* id, int component=-1, int index=-1) {};
+  virtual void GetActorsByNode(vtkPropCollection* actors, vtkMRMLDisplayNode* node, int component = -1, int index = -1);
 
 protected:
 

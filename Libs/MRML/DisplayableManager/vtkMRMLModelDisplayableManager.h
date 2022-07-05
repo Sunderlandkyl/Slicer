@@ -118,7 +118,7 @@ public:
   ///   False otherwise.
   static bool IsCellScalarsActive(vtkMRMLDisplayNode* displayNode, vtkMRMLModelNode* model = nullptr);
 
-  void GetActorsByID(const char* id, vtkPropCollection* actors) override;
+  void GetActorsByID(vtkPropCollection* actors, const char* id, int component=-1, int index=-1) override;
 
 protected:
   int ActiveInteractionModes() override;

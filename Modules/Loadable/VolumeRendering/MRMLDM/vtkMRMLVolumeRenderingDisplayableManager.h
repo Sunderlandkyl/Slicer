@@ -67,7 +67,7 @@ public:
   const char* GetPickedNodeID() override;
 
   /// TODO
-  void GetActorsByID(const char* id, vtkPropCollection* actors) override;
+  void GetActorsByID(vtkPropCollection* actors, const char* id, int componentType=-1, int componentIndex=-1) override;
 
 public:
   static int DefaultGPUMemorySize;
