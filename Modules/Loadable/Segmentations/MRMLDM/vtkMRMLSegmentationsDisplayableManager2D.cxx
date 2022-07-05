@@ -1767,7 +1767,7 @@ void vtkMRMLSegmentationsDisplayableManager2D::GetVisibleSegmentsForPosition(dou
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByID(const char* id, vtkPropCollection* actors)
+void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByID(vtkPropCollection* actors, const char* id, int componentType/*=-1*/, int componentIndex/*=-1*/)
 {
   vtkMRMLSegmentationDisplayNode* displayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
   auto pipelineIt = this->Internal->DisplayPipelines.find(displayNode);
@@ -1775,6 +1775,28 @@ void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByID(const char* id, vtk
   {
     return;
   }
+
+  // TODO select only one segment
+  //vtkMRMLSegmentationNode* segmentationNode = vtkMRMLSegmentationNode::SafeDownCast(displayNode->GetDisplayableNode());
+  //if (componentIndex >= 0)
+  //{
+  //  if (segmentationNode && segmentationNode->GetSegmentation())
+  //  {
+  //    std::string segmentId;
+  //    segmentationNode->GetSegmentation()->GetNthSegmentID(componentIndex);
+  //    if (segmentId.empty())
+  //    {
+  //      return;
+  //    }
+  //    actors->AddItem(pipelineIt->second[segmentId]->ImageFillActor);
+  //    actors->AddItem(pipelineIt->second[segmentId]->ImageOutlineActor);
+  //    actors->AddItem(pipelineIt->second[segmentId]->PolyDataFillActor);
+  //    actors->AddItem(pipelineIt->second[segmentId]->PolyDataOutlineActor);
+  //    return;
+  //  }
+  //}
+
+
   for (auto pipeline : pipelineIt->second)
   {
     actors->AddItem(pipeline.second->ImageFillActor);

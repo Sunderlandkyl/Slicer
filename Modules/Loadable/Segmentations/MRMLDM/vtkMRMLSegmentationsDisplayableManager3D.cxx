@@ -959,16 +959,34 @@ const char* vtkMRMLSegmentationsDisplayableManager3D::GetPickedSegmentID()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLSegmentationsDisplayableManager3D::GetActorsByID(const char* id, vtkPropCollection* actors)
+void vtkMRMLSegmentationsDisplayableManager3D::GetActorsByID(vtkPropCollection* actors, const char* id, int componentType/*=-1*/, int componentIndex/*=-1*/)
 {
   vtkMRMLSegmentationDisplayNode* displayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
   auto pipelineIt = this->Internal->DisplayPipelines.find(displayNode);
   if (pipelineIt == this->Internal->DisplayPipelines.end())
-  {
+    {
     return;
-  }
+    }
+
+  vtkMRMLSegmentationNode* segmentationNode = vtkMRMLSegmentationNode::SafeDownCast(displayNode->GetDisplayableNode());
+  if (componentIndex >= 0)
+    {
+    if (segmentationNode && segmentationNode->GetSegmentation())
+      {
+      std::string segmentId;
+      segmentationNode->GetSegmentation()->GetNthSegmentID(componentIndex);
+      if (segmentId.empty())
+        {
+        return;
+        }
+      actors->AddItem(pipelineIt->second[segmentId]->Actor);
+      return;
+      }
+    }
+
+  // No segment specified. Return all actors.
   for (auto pipeline : pipelineIt->second)
-  {
+    {
     actors->AddItem(pipeline.second->Actor);
-  }
+    }
 }

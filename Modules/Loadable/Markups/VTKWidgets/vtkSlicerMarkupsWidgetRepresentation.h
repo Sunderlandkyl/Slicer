@@ -97,6 +97,9 @@ public:
   int RenderTranslucentPolygonalGeometry(vtkViewport* viewport) override;
   vtkTypeBool HasTranslucentPolygonalGeometry() override;
 
+  // TODO
+  virtual void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex) {};
+
   /// Get number of control points.
   virtual int GetNumberOfControlPoints();
 

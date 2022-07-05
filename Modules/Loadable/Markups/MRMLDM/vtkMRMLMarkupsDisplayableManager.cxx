@@ -939,7 +939,7 @@ void vtkMRMLMarkupsDisplayableManager::ConvertDeviceToXYZ(double x, double y, do
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLMarkupsDisplayableManager::GetActorsByID(const char* id, vtkPropCollection* actors)
+void vtkMRMLMarkupsDisplayableManager::GetActorsByID(vtkPropCollection* actors, const char* id, int componentType, int componentIndex)
 {
   vtkMRMLMarkupsDisplayNode* markupsDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
   auto it = this->GetHelper()->MarkupsDisplayNodesToWidgets.find(markupsDisplayNode);

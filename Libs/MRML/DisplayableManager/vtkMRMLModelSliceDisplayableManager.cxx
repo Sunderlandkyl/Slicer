@@ -967,7 +967,7 @@ void vtkMRMLModelSliceDisplayableManager::Create()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLModelSliceDisplayableManager::GetActorsByID(const char* id, vtkPropCollection* actors)
+void vtkMRMLModelSliceDisplayableManager::GetActorsByID(vtkPropCollection* actors, const char* id, int component/*=-1*/, int index/*=-1*/)
 {
   vtkMRMLDisplayNode* displayNode = vtkMRMLDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
   vtkInternal::PipelinesCacheType::iterator it;

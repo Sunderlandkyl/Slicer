@@ -797,6 +797,28 @@ void vtkSlicerMarkupsWidgetRepresentation3D::GetActors(vtkPropCollection *pc)
 }
 
 //----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation3D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  for (int i = 0; i < NumberOfControlPointTypes; i++)
+    {
+    if (componentIndex >= 0 && componentIndex != i)
+      {
+      continue;
+      }
+
+    ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
+
+    if (componentType < 0 || componentType == vtkMRMLMarkupsDisplayNode::ComponentControlPoint)
+      {
+      actors->AddItem(controlPoints->Actor);
+      actors->AddItem(controlPoints->OccludedActor);
+      }
+    }
+}
+
+//----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation3D::ReleaseGraphicsResources(
   vtkWindow *win)
 {
