@@ -973,15 +973,14 @@ void vtkMRMLSegmentationsDisplayableManager3D::GetActorsByID(vtkPropCollection* 
     {
     if (segmentationNode && segmentationNode->GetSegmentation())
       {
-      std::string segmentId;
-      segmentationNode->GetSegmentation()->GetNthSegmentID(componentIndex);
-      if (segmentId.empty())
+      std::string segmentId =
+        segmentationNode->GetSegmentation()->GetNthSegmentID(componentIndex);
+      if (!segmentId.empty())
         {
-        return;
+        actors->AddItem(pipelineIt->second[segmentId]->Actor);
         }
-      actors->AddItem(pipelineIt->second[segmentId]->Actor);
-      return;
       }
+    return;
     }
 
   // No segment specified. Return all actors.

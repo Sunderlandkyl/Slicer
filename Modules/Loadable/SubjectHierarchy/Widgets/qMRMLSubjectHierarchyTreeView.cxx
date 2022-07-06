@@ -1504,12 +1504,25 @@ void qMRMLSubjectHierarchyTreeView::onSelectionChanged(const QItemSelection& sel
     }
 
   vtkMRMLNode* node = d->SubjectHierarchyNode->GetItemDataNode(selectedShItems[0]);
+  int index = -1;
+  if (!node)
+  {
+    node = d->SubjectHierarchyNode->GetItemDataNode(
+      d->SubjectHierarchyNode->GetItemParent(selectedShItems[0]));
+    if (node)
+    {
+      index = d->SubjectHierarchyNode->GetItemPositionUnderParent(selectedShItems[0]);
+    }
+  }
+
   vtkMRMLScene* scene = this->mrmlScene();
   if (scene)
   {
     // TODO: hack. find a better way
     vtkMRMLSelectionNode* selection = vtkMRMLSelectionNode::SafeDownCast(scene->GetFirstNodeByName("Selection"));
     selection->SetFocusNodeID(node ? node->GetID() : nullptr);
+    selection->SetFocusedComponentIndex(index);
+    selection->SetFocusedComponentType(-1);
   }
 
   // Emit current item changed signal

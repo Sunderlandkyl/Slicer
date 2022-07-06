@@ -229,12 +229,12 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
   void SetFocusNodeID(const char* id);
   const char* GetFocusNodeID();
 
-  vtkSetMacro(ComponentType, int);
-  vtkGetMacro(ComponentType, int);
-  vtkSetMacro(ComponentIndex, int);
-  vtkGetMacro(ComponentIndex, int);
-  vtkSetMacro(HighlightStrength, double);
-  vtkGetMacro(HighlightStrength, double);
+  vtkSetMacro(FocusedComponentType, int);
+  vtkGetMacro(FocusedComponentType, int);
+  vtkSetMacro(FocusedComponentIndex, int);
+  vtkGetMacro(FocusedComponentIndex, int);
+  vtkSetMacro(FocusedHighlightStrength, double);
+  vtkGetMacro(FocusedHighlightStrength, double);
 
 protected:
   vtkMRMLSelectionNode();
@@ -249,9 +249,9 @@ protected:
   std::vector<std::string> PlaceNodeResourceList;
   std::vector<std::string> PlaceNodeIconNameList;
 
-  int ComponentType{ -1 };
-  int ComponentIndex{ -1 };
-  double HighlightStrength{ 10.0 };
+  int FocusedComponentType{ -1 };
+  int FocusedComponentIndex{ -1 };
+  double FocusedHighlightStrength{ 10.0 };
 };
 
 #endif
