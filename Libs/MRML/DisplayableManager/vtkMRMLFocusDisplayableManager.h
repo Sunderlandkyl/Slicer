@@ -55,13 +55,8 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
 protected:
-  void UnobserveMRMLScene() override;
-
-  void OnMRMLSceneStartClose() override;
-  void OnMRMLSceneEndClose() override;
+  // Update selection node observer
   void UpdateFromMRMLScene() override;
-  void OnMRMLSceneNodeAdded(vtkMRMLNode* node) override;
-  void OnMRMLSceneNodeRemoved(vtkMRMLNode* node) override;
 
   /// Updates Actors based on models in the scene
   void UpdateFromMRML() override;
@@ -71,10 +66,6 @@ protected:
 protected:
   vtkMRMLFocusDisplayableManager();
   ~vtkMRMLFocusDisplayableManager() override;
-
-  vtkNew<vtkRenderer> RendererOutline;
-  vtkNew<vtkRenderStepsPass> BasicPasses;
-  vtkNew<vtkOutlineGlowPass> ROIGlowPass;
 
 private:
   vtkMRMLFocusDisplayableManager(const vtkMRMLFocusDisplayableManager&) = delete;
