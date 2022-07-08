@@ -74,6 +74,7 @@ vtkMRMLMarkupsDisplayableManager::vtkMRMLMarkupsDisplayableManager()
   this->LastClickWorldCoordinates[2]=0.0;
   this->LastClickWorldCoordinates[3]=1.0;
 
+  /*this->AddEvent*/
 }
 
 //---------------------------------------------------------------------------
@@ -944,8 +945,17 @@ void vtkMRMLMarkupsDisplayableManager::GetActorsByID(vtkPropCollection* actors, 
   vtkMRMLMarkupsDisplayNode* markupsDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
   auto it = this->GetHelper()->MarkupsDisplayNodesToWidgets.find(markupsDisplayNode);
   if (it == this->GetHelper()->MarkupsDisplayNodesToWidgets.end())
-  {
+    {
     return;
-  }
-  it->second->GetRepresentation()->GetActors(actors);
+    }
+
+  vtkSlicerMarkupsWidgetRepresentation* rep = vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(it->second->GetRepresentation());
+  if (rep)
+    {
+    rep->GetActorsForComponent(actors, componentType, componentIndex);
+    }
+  else
+    {
+    it->second->GetRepresentation()->GetActors(actors);
+    }
 }

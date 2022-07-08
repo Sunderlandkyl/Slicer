@@ -63,6 +63,10 @@ protected:
 
   void ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData) override;
 
+
+  bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2) override;
+  bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
+
 protected:
   vtkMRMLFocusDisplayableManager();
   ~vtkMRMLFocusDisplayableManager() override;

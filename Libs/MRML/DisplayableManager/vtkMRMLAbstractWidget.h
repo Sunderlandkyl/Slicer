@@ -91,6 +91,7 @@ public:
     WidgetStateTranslate, ///< mouse move transforms the entire widget
     WidgetStateRotate, ///< mouse move transforms the entire widget
     WidgetStateScale, ///< mouse move transforms the entire widget
+    WidgetStateSelected, ///< this state means that the widget is currently selected
     WidgetStateUser ///< this is a starting index that can be used for widget-specific states
   };
 

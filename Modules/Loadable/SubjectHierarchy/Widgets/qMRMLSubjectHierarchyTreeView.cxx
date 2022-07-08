@@ -1503,26 +1503,44 @@ void qMRMLSubjectHierarchyTreeView::onSelectionChanged(const QItemSelection& sel
     this->applyReferenceHighlightForItems(selectedShItems);
     }
 
-  vtkMRMLNode* node = d->SubjectHierarchyNode->GetItemDataNode(selectedShItems[0]);
+  vtkMRMLNode* focusNode = d->SubjectHierarchyNode->GetItemDataNode(selectedShItems[0]);
   int index = -1;
-  if (!node)
-  {
-    node = d->SubjectHierarchyNode->GetItemDataNode(
-      d->SubjectHierarchyNode->GetItemParent(selectedShItems[0]));
-    if (node)
+  if (!focusNode)
     {
+    vtkIdType parentId = d->SubjectHierarchyNode->GetItemParent(selectedShItems[0]);
+    if (parentId != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+      {
+      focusNode = d->SubjectHierarchyNode->GetItemDataNode(parentId);
+      }
+    if (focusNode)
+      {
       index = d->SubjectHierarchyNode->GetItemPositionUnderParent(selectedShItems[0]);
+      }
     }
-  }
 
   vtkMRMLScene* scene = this->mrmlScene();
   if (scene)
   {
+
     // TODO: hack. find a better way
     vtkMRMLSelectionNode* selection = vtkMRMLSelectionNode::SafeDownCast(scene->GetFirstNodeByName("Selection"));
-    selection->SetFocusNodeID(node ? node->GetID() : nullptr);
+
+    vtkMRMLNode* oldFocusNode = scene->GetNodeByID(selection->GetFocusNodeID());
+
+    selection->SetFocusNodeID(focusNode ? focusNode->GetID() : nullptr);
     selection->SetFocusedComponentIndex(index);
     selection->SetFocusedComponentType(-1);
+
+    if (oldFocusNode)
+      {
+      // TODO: Hack to update MRMLDM
+      oldFocusNode->Modified();
+      }
+    if (focusNode)
+      {
+      // TODO: Hack to update MRMLDM
+      focusNode->Modified();
+      }
   }
 
   // Emit current item changed signal
