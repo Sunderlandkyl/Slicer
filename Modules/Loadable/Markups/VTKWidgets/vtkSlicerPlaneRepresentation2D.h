@@ -89,6 +89,8 @@ public:
   // Update visibility of interaction handles for representation
   void UpdateInteractionPipeline() override;
 
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex) override;
+
 protected:
   vtkSlicerPlaneRepresentation2D();
   ~vtkSlicerPlaneRepresentation2D() override;

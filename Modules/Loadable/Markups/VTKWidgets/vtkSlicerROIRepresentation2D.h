@@ -80,6 +80,8 @@ public:
   // Update visibility of interaction handles for representation
   void UpdateInteractionPipeline() override;
 
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex) override;
+
 protected:
 
   /// Update the cube source filter from the ROI node.

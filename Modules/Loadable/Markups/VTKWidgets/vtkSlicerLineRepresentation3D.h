@@ -69,6 +69,8 @@ public:
   /// Return the bounds of the representation
   double *GetBounds() override;
 
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex);
+
 protected:
   vtkSlicerLineRepresentation3D();
   ~vtkSlicerLineRepresentation3D() override;

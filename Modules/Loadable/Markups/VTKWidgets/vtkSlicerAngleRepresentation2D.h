@@ -73,6 +73,8 @@ public:
 
   bool GetTransformationReferencePoint(double referencePointWorld[3]) override;
 
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex);
+
 protected:
   vtkSlicerAngleRepresentation2D();
   ~vtkSlicerAngleRepresentation2D() override;

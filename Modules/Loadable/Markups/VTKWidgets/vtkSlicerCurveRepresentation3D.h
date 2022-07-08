@@ -74,6 +74,8 @@ public:
   void CanInteractWithCurve(vtkMRMLInteractionEventData* interactionEventData,
     int &foundComponentType, int &componentIndex, double &closestDistance2);
 
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex);
+
 protected:
   vtkSlicerCurveRepresentation3D();
   ~vtkSlicerCurveRepresentation3D() override;
