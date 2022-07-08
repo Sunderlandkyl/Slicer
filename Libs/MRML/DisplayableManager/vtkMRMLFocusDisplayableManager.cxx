@@ -68,6 +68,8 @@ vtkMRMLFocusDisplayableManager::vtkInternal::vtkInternal(vtkMRMLFocusDisplayable
 {
   this->ROIGlowPass->SetDelegatePass(this->BasicPasses);
   this->RendererOutline->UseFXAAOn();
+  this->RendererOutline->UseShadowsOff();
+  this->RendererOutline->SetPass(this->ROIGlowPass);
 }
 
 //---------------------------------------------------------------------------
@@ -207,18 +209,47 @@ void vtkMRMLFocusDisplayableManager::ProcessMRMLNodesEvents(vtkObject* caller,
   this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
 }
 
+#include <vtkMRMLInteractionEventData.h>
+//---------------------------------------------------------------------------
+bool vtkMRMLFocusDisplayableManager::CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2)
+{
+  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
+  if (eventData->GetType() == vtkCommand::KeyPressEvent && eventData->GetKeyCode() == 27
+    && selectionNode && selectionNode->GetFocusNodeID())
+    {
+    closestDistance2 = 1e10; // Alow other widgets to have precedence.
+    return true;
+    }
+  return false;
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLFocusDisplayableManager::ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData)
+{
+  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
+  if (eventData->GetType() == vtkCommand::KeyPressEvent && eventData->GetKeyCode() == 27
+    && selectionNode && selectionNode->GetFocusNodeID())
+    {
+    vtkMRMLNode* focusNode = selectionNode->GetScene()->GetNodeByID(selectionNode->GetFocusNodeID());
+    this->GetSelectionNode()->SetFocusNodeID(nullptr);
+    focusNode->Modified();
+    return true;
+    }
+  return false;
+}
+
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
 {
   this->Internal->RendererOutline->RemoveAllViewProps();
 
+  this->Internal->RemoveFocusedNodeObservers();
+  this->Internal->DisplayableNodes.clear();
+
   vtkMRMLSelectionNode* selectionNode = this->Internal->SelectionNode;
   const char* focusNodeID = selectionNode ? selectionNode->GetFocusNodeID() : nullptr;
-  vtkMRMLDisplayableNode* focusedNode = nullptr;
-  if (focusNodeID)
-    {
-    focusedNode = vtkMRMLDisplayableNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(focusNodeID));
-    }
+  vtkMRMLDisplayableNode* focusedNode =
+    vtkMRMLDisplayableNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(focusNodeID));
 
   vtkRenderer* renderer = this->GetRenderer();
   if (!selectionNode || !focusedNode || !renderer || focusedNode->GetNumberOfDisplayNodes() == 0)
@@ -236,10 +267,7 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
 
   this->Internal->ROIGlowPass->SetOutlineIntensity(selectionNode->GetFocusedHighlightStrength());
   this->Internal->RendererOutline->SetLayer(RENDERER_LAYER);
-  this->Internal->RendererOutline->SetPass(this->Internal->ROIGlowPass);
 
-  this->Internal->RemoveFocusedNodeObservers();
-  this->Internal->DisplayableNodes.clear();
   this->Internal->DisplayableNodes.push_back(focusedNode);
   this->Internal->AddFocusedNodeObservers();
 
@@ -268,16 +296,19 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
 
   if (focusNodeActors->GetNumberOfItems() == 0)
     {
+    // The focused node has no actors for the focused component type/index.
     this->SetUpdateFromMRMLRequested(false);
     this->RequestRender();
     return;
     }
 
-  for (int i = 0; i < focusNodeActors->GetNumberOfItems(); ++i)
+  vtkProp* prop = nullptr;
+  vtkCollectionSimpleIterator it;
+  for (focusNodeActors->InitTraversal(it); prop = focusNodeActors->GetNextProp(it);)
     {
-    vtkProp* prop = vtkProp::SafeDownCast(focusNodeActors->GetItemAsObject(i));
-    if (!prop)
+    if (!prop->GetVisibility())
       {
+      // Ignore actors that are not visible.
       continue;
       }
 
@@ -287,6 +318,10 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
     vtkActor* newActor = vtkActor::SafeDownCast(newProp);
     if (newActor)
       {
+      //vtkSmartPointer<vtkMapper> newMapper = vtkSmartPointer<vtkMapper>::Take(newActor->GetMapper()->NewInstance());
+      //newMapper->ShallowCopy(newActor->GetMapper());
+      //newActor->SetMapper(newMapper);
+
       // Make the actor flat. This generates a better outline.
       vtkSmartPointer<vtkProperty> newProperty = vtkSmartPointer<vtkProperty>::Take(newActor->GetProperty()->NewInstance());
       newProperty->DeepCopy(newActor->GetProperty());
