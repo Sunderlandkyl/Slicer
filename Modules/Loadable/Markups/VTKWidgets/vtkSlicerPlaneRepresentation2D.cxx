@@ -688,10 +688,6 @@ void vtkSlicerPlaneRepresentation2D::UpdateInteractionPipeline()
     return;
     }
 
-  this->InteractionPipeline->Actor->SetVisibility(this->MarkupsDisplayNode->GetVisibility()
-    && this->MarkupsDisplayNode->GetVisibility2D()
-    && this->MarkupsDisplayNode->GetHandlesInteractive());
-
   vtkNew<vtkTransform> handleToWorldTransform;
   handleToWorldTransform->SetMatrix(planeNode->GetInteractionHandleToWorldMatrix());
   this->InteractionPipeline->HandleToWorldTransform->DeepCopy(handleToWorldTransform);

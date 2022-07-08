@@ -232,7 +232,6 @@ bool vtkMRMLFocusDisplayableManager::ProcessInteractionEvent(vtkMRMLInteractionE
     {
     vtkMRMLNode* focusNode = selectionNode->GetScene()->GetNodeByID(selectionNode->GetFocusNodeID());
     this->GetSelectionNode()->SetFocusNodeID(nullptr);
-    focusNode->Modified();
     return true;
     }
   return false;

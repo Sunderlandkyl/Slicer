@@ -431,6 +431,13 @@ bool vtkSlicerMarkupsWidget::ProcessWidgetJumpCursor(vtkMRMLInteractionEventData
     }
 
   vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  if (!this->GetNodeFocused() && this->selectionNode())
+    {
+    // TODO: Jump event is highjacked for focus selection.
+    this->selectionNode()->SetFocusNodeID(markupsNode ? markupsNode->GetID() : nullptr);
+    return true;
+    }
+
   vtkMRMLMarkupsDisplayNode* markupsDisplayNode = this->GetMarkupsDisplayNode();
   if (!markupsNode || !markupsDisplayNode)
     {
@@ -480,6 +487,21 @@ bool vtkSlicerMarkupsWidget::ProcessWidgetJumpCursor(vtkMRMLInteractionEventData
     }
 
   markupsDisplayNode->InvokeEvent(vtkMRMLMarkupsDisplayNode::JumpToPointEvent, jumpToPointEventData);
+  return true;
+}
+
+//-------------------------------------------------------------------------
+bool vtkSlicerMarkupsWidget::ProcessNodeGrabFocus(vtkMRMLInteractionEventData* vtkNotUsed(eventData))
+{
+  vtkMRMLSelectionNode* currentSelectionNode = this->selectionNode();
+
+  if (!this->selectionNode())
+    {
+    return false;
+    }
+
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  this->selectionNode()->SetFocusNodeID(markupsNode ? markupsNode->GetID() : nullptr);
   return true;
 }
 
@@ -892,6 +914,8 @@ bool vtkSlicerMarkupsWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData
     case WidgetEventJumpCursor:
       processedEvent = ProcessWidgetJumpCursor(eventData);
       break;
+    case WidgetEventGrabNodeFocus:
+      processedEvent = ProcessNodeGrabFocus(eventData);
     }
 
   if (!processedEvent)
@@ -1046,6 +1070,12 @@ void vtkSlicerMarkupsWidget::TranslatePoint(double eventPos[2], bool snapToSlice
     return;
     }
 
+  if (!this->GetNodeFocused())
+    {
+    // Node does not have focus, do not translate.
+    return;
+    }
+
   if (markupsNode->GetNthControlPointLocked(activeControlPointIndex))
     {
     // point is locked, do not translate
@@ -1111,25 +1141,25 @@ void vtkSlicerMarkupsWidget::TranslateWidget(double eventPos[2])
   if (rep2d)
     {
     // 2D view
-    double eventPos_Slice[3] = { 0. };
-    eventPos_Slice[0] = this->LastEventPosition[0];
-    eventPos_Slice[1] = this->LastEventPosition[1];
-    rep2d->GetSliceToWorldCoordinates(eventPos_Slice, lastEventPos_World);
+    rep2d->GetSliceToWorldCoordinates(this->LastEventPosition, lastEventPos_World);
 
-    eventPos_Slice[0] = eventPos[0];
-    eventPos_Slice[1] = eventPos[1];
+    double eventPos_Slice[3] = { eventPos[0], eventPos[1] };
     rep2d->GetSliceToWorldCoordinates(eventPos_Slice, eventPos_World);
     }
   else if (rep3d)
     {
-    // 3D view
-    if (!rep3d->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
-      this->LastEventPosition, lastEventPos_World, orientation_World))
+    int lastEventPos_Display[2] = { 0, 0 };
+    lastEventPos_Display[0] = static_cast<int>(this->LastEventPosition[0]);
+    lastEventPos_Display[1] = static_cast<int>(this->LastEventPosition[1]);
+    if (!this->ConvertDisplayPositionToWorld(lastEventPos_Display, lastEventPos_World, orientation_World))
       {
       return;
       }
-    if (!rep3d->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
-      eventPos, lastEventPos_World, eventPos_World, orientation_World))
+
+    int eventPos_Display[2] = { 0, 0 };
+    eventPos_Display[0] = static_cast<int>(eventPos[0]);
+    eventPos_Display[1] = static_cast<int>(eventPos[1]);
+    if (!this->ConvertDisplayPositionToWorld(eventPos_Display, eventPos_World, orientation_World, lastEventPos_World))
       {
       return;
       }
@@ -1861,5 +1891,12 @@ vtkMRMLSelectionNode* vtkSlicerMarkupsWidget::selectionNode()
 {
   return vtkMRMLSelectionNode::SafeDownCast(
     this->GetMarkupsNode()->GetScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton"));
+}
 
+//-----------------------------------------------------------------------------
+bool vtkSlicerMarkupsWidget::GetNodeFocused()
+{
+  vtkMRMLSelectionNode* selectionNode = this->selectionNode();
+  vtkMRMLNode* focusedNode = selectionNode ? selectionNode->GetFocusNode() : nullptr;
+  return focusedNode == this->GetMarkupsNode();
 }

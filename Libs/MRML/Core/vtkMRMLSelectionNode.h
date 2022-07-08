@@ -228,6 +228,7 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
   ///
   void SetFocusNodeID(const char* id);
   const char* GetFocusNodeID();
+  vtkMRMLNode* GetFocusNode();
   vtkSetMacro(FocusedComponentType, int);
   vtkGetMacro(FocusedComponentType, int);
   vtkSetMacro(FocusedComponentIndex, int);
