@@ -733,3 +733,21 @@ void vtkSlicerPlaneRepresentation2D::MarkupsInteractionPipelinePlane2D::GetViewP
   viewPlaneNormal[1] = viewPlaneNormal4[1];
   viewPlaneNormal[2] = viewPlaneNormal4[2];
 }
+
+//----------------------------------------------------------------------
+void vtkSlicerPlaneRepresentation2D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  if (componentType < 0)
+    {
+    actors->AddItem(this->TextActor);
+    }
+
+  if (componentType < 0 || componentType == vtkMRMLMarkupsPlaneDisplayNode::ComponentPlane)
+    {
+    actors->AddItem(this->ArrowActor);
+    actors->AddItem(this->PlaneFillActor);
+    actors->AddItem(this->PlaneOutlineActor);
+    }
+}

@@ -299,3 +299,12 @@ void vtkSlicerLineRepresentation2D::UpdateInteractionPipeline()
   // Final visibility handled by superclass in vtkSlicerMarkupsWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
 }
+
+//----------------------------------------------------------------------
+void vtkSlicerLineRepresentation2D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  actors->AddItem(this->LineActor);
+  actors->AddItem(this->TextActor);
+}

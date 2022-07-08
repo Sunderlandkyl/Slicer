@@ -72,6 +72,8 @@ public:
   void CanInteract(vtkMRMLInteractionEventData* interactionEventData,
     int &foundComponentType, int &foundComponentIndex, double &closestDistance2) override;
 
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex);
+
 protected:
   vtkSlicerAngleRepresentation3D();
   ~vtkSlicerAngleRepresentation3D() override;

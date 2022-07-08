@@ -729,13 +729,8 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetActorsForComponent(vtkPropCollec
 
   for (int i = 0; i < NumberOfControlPointTypes; i++)
     {
-    if (componentIndex >= 0 && componentIndex != i)
-      {
-      continue;
-      }
 
     ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
-
     if (componentType < 0 || componentType == vtkMRMLMarkupsDisplayNode::ComponentControlPoint)
       {
       actors->AddItem(controlPoints->Actor);

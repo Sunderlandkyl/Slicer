@@ -803,17 +803,12 @@ void vtkSlicerMarkupsWidgetRepresentation3D::GetActorsForComponent(vtkPropCollec
 
   for (int i = 0; i < NumberOfControlPointTypes; i++)
     {
-    if (componentIndex >= 0 && componentIndex != i)
-      {
-      continue;
-      }
-
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
 
     if (componentType < 0 || componentType == vtkMRMLMarkupsDisplayNode::ComponentControlPoint)
       {
       actors->AddItem(controlPoints->Actor);
-      actors->AddItem(controlPoints->OccludedActor);
+      actors->AddItem(controlPoints->LabelsActor);
       }
     }
 }
