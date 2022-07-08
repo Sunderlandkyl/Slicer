@@ -217,7 +217,7 @@ bool vtkMRMLFocusDisplayableManager::CanProcessInteractionEvent(vtkMRMLInteracti
   if (eventData->GetType() == vtkCommand::KeyPressEvent && eventData->GetKeyCode() == 27
     && selectionNode && selectionNode->GetFocusNodeID())
     {
-    closestDistance2 = 1e10; // Alow other widgets to have precedence.
+    closestDistance2 = 1e10; // Allow other widgets to have precedence.
     return true;
     }
   return false;
