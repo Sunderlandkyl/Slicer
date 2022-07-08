@@ -1530,17 +1530,6 @@ void qMRMLSubjectHierarchyTreeView::onSelectionChanged(const QItemSelection& sel
     selection->SetFocusNodeID(focusNode ? focusNode->GetID() : nullptr);
     selection->SetFocusedComponentIndex(index);
     selection->SetFocusedComponentType(-1);
-
-    if (oldFocusNode)
-      {
-      // TODO: Hack to update MRMLDM
-      oldFocusNode->Modified();
-      }
-    if (focusNode)
-      {
-      // TODO: Hack to update MRMLDM
-      focusNode->Modified();
-      }
   }
 
   // Emit current item changed signal

@@ -78,6 +78,7 @@ public:
     WidgetEventControlPointDelete,
     WidgetEventControlPointInsert,
     WidgetEventControlPointSnapToSlice,
+    WidgetEventGrabNodeFocus,
     WidgetEventReserved,  // this events is only to prevent other widgets from processing an event
     WidgetEventMarkups_Last
   };
@@ -175,6 +176,7 @@ protected:
   virtual bool ProcessEndMouseDrag(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetReset(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetJumpCursor(vtkMRMLInteractionEventData* eventData);
+  virtual bool ProcessNodeGrabFocus(vtkMRMLInteractionEventData* eventData);
 
   // Get the closest point on the line defined by the interaction handle axis.
   // Input coordinates are in display coordinates, while output are in world coordinates.
@@ -183,6 +185,8 @@ protected:
   // Get the closest point on the plane defined using the interaction handle axis as the plane normal.
   // Input coordinates are in display coordinates, while output are in world coordinates
   virtual bool GetIntersectionOnAxisPlane(int type, int index, const double inputDisplay[2], double outputIntersectionWorld[3]);
+
+  bool GetNodeFocused();
 
   // Variables for translate/rotate/scale
   double LastEventPosition[2];

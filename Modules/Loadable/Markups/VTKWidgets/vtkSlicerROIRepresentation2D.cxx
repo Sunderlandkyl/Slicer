@@ -402,6 +402,7 @@ void vtkSlicerROIRepresentation2D::SetupInteractionPipeline()
 void vtkSlicerROIRepresentation2D::UpdateInteractionPipeline()
 {
   Superclass::UpdateInteractionPipeline();
+
   vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
   if (!roiNode || !this->MarkupsDisplayNode || !this->ROISource)
     {
@@ -419,10 +420,10 @@ void vtkSlicerROIRepresentation2D::UpdateInteractionPipeline()
     return;
     }
 
-  this->InteractionPipeline->Actor->SetVisibility(this->MarkupsDisplayNode->GetVisibility()
-    && roiNode->GetNumberOfControlPoints() > 0
-    && this->MarkupsDisplayNode->GetVisibility2D()
-    && this->MarkupsDisplayNode->GetHandlesInteractive());
+  if (roiNode->GetNumberOfControlPoints() <= 0)
+    {
+    this->InteractionPipeline->Actor->SetVisibility(false);
+    }
 
   vtkNew<vtkTransform> handleToWorldTransform;
   handleToWorldTransform->SetMatrix(roiNode->GetInteractionHandleToWorldMatrix());

@@ -1250,12 +1250,12 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateViewScaleFactor()
     return;
     }
 
-  const int* screenSize = this->Renderer->GetRenderWindow()->GetScreenSize();
-  this->ScreenSizePixel = sqrt(screenSize[0] * screenSize[0] + screenSize[1] * screenSize[1]);
+    const int* screenSize = this->Renderer->GetRenderWindow()->GetScreenSize();
+    this->ScreenSizePixel = sqrt(screenSize[0] * screenSize[0] + screenSize[1] * screenSize[1]);
 
-  vtkMatrix4x4* xyToSlice = this->GetSliceNode()->GetXYToSlice();
-  this->ViewScaleFactorMmPerPixel = sqrt(xyToSlice->GetElement(0, 1) * xyToSlice->GetElement(0, 1)
-    + xyToSlice->GetElement(1, 1) * xyToSlice->GetElement(1, 1));
+    vtkMatrix4x4* xyToSlice = this->GetSliceNode()->GetXYToSlice();
+    this->ViewScaleFactorMmPerPixel = sqrt(xyToSlice->GetElement(0, 1) * xyToSlice->GetElement(0, 1)
+      + xyToSlice->GetElement(1, 1) * xyToSlice->GetElement(1, 1));
 }
 
 //----------------------------------------------------------------------
@@ -1265,15 +1265,15 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateControlPointSize()
   // the renderer coordinate system is the same as the display coordinate system, therefore
   // ControlPointSize is specified in pixels.
   if (this->MarkupsDisplayNode->GetUseGlyphScale())
-    {
+  {
     // relative
     this->ControlPointSize = this->ScreenSizePixel * this->ScreenScaleFactor * this->MarkupsDisplayNode->GetGlyphScale() / 100.0;
-    }
+  }
   else
-    {
+  {
     // absolute
     this->ControlPointSize = this->MarkupsDisplayNode->GetGlyphSize() / this->ViewScaleFactorMmPerPixel;
-    }
+  }
 }
 
 //----------------------------------------------------------------------
@@ -1287,9 +1287,9 @@ double vtkSlicerMarkupsWidgetRepresentation2D::GetMaximumControlPointPickingDist
 double vtkSlicerMarkupsWidgetRepresentation2D::GetMaximumInteractionHandlePickingDistance2()
 {
   if (!this->InteractionPipeline)
-    {
+  {
     return 0.0;
-    }
+  }
   double maximumInteractionHandlePickingDistance = this->InteractionPipeline->InteractionHandleSize / 2.0 + this->PickingTolerance * this->ScreenScaleFactor;
   return maximumInteractionHandlePickingDistance * maximumInteractionHandlePickingDistance;
 }
@@ -1298,9 +1298,9 @@ double vtkSlicerMarkupsWidgetRepresentation2D::GetMaximumInteractionHandlePickin
 bool vtkSlicerMarkupsWidgetRepresentation2D::IsRepresentationIntersectingSlice(vtkPolyData* representation, const char* arrayName)
 {
   if (!representation || !representation->GetPointData() || representation->GetNumberOfPoints() <= 0)
-    {
+  {
     return false;
-    }
+  }
 
   double sliceNormal_XY[4] = { 0.0, 0.0, 1.0, 0.0 };
   double sliceNormal_World[4] = { 0, 0, 1, 0 };
@@ -1310,16 +1310,16 @@ bool vtkSlicerMarkupsWidgetRepresentation2D::IsRepresentationIntersectingSlice(v
 
   vtkDataArray* distanceArray = representation->GetPointData()->GetArray(arrayName);
   if (!distanceArray)
-    {
+  {
     return false;
-    }
+  }
   double* scalarRange = distanceArray->GetRange();
 
   // If the closest point on the line is further than a half-slice thickness, then hide the markup in 2D
   if (scalarRange[0] > 0.5 * sliceThicknessMm || scalarRange[1] < -0.5 * sliceThicknessMm)
-    {
+  {
     return false;
-    }
+  }
   return true;
 }
 
@@ -1333,14 +1333,23 @@ void vtkSlicerMarkupsWidgetRepresentation2D::SetupInteractionPipeline()
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation2D::UpdateInteractionPipeline()
 {
-  MarkupsInteractionPipeline2D* interactionPipeline = dynamic_cast<MarkupsInteractionPipeline2D*>(this->InteractionPipeline);
-  if (!interactionPipeline)
-    {
-    return;
-    }
-  interactionPipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
-  // Final visibility handled by superclass in vtkSlicerMarkupsWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
+
+  MarkupsInteractionPipeline2D* interactionPipeline2D = dynamic_cast<MarkupsInteractionPipeline2D*>(this->InteractionPipeline);
+  if (interactionPipeline2D)
+    {
+    interactionPipeline2D->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
+    }
+
+  MarkupsInteractionPipeline* interactionPipeline = dynamic_cast<MarkupsInteractionPipeline*>(this->InteractionPipeline);
+
+  if (interactionPipeline)
+    {
+    if (!this->MarkupsDisplayNode->GetVisibility2D())
+      {
+      interactionPipeline->Actor->SetVisibility(false);
+      }
+    }
 }
 
 //----------------------------------------------------------------------
