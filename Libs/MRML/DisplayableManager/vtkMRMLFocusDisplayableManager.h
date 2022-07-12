@@ -1,42 +1,31 @@
-/*=========================================================================
-/*=========================================================================
+/*==============================================================================
 
-  Copyright 2005 Brigham and Women's Hospital (BWH) All Rights Reserved.
+  Copyright (c) Laboratory for Percutaneous Surgery (PerkLab)
+  Queen's University, Kingston, ON, Canada. All Rights Reserved.
 
   See COPYRIGHT.txt
   or http://www.slicer.org/copyright/copyright.txt for details.
 
-==========================================================================*/
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+  This file was originally developed by Kyle Sunderland, PerkLab, Queen's University
+  and was supported through CANARIE's Research Software Program, Cancer
+  Care Ontario, OpenAnatomy, and Brigham and Women's Hospital through NIH grant R01MH112748.
+
+==============================================================================*/
 
 #ifndef __vtkMRMLFocusDisplayableManager_h
 #define __vtkMRMLFocusDisplayableManager_h
 
 // MRMLDisplayableManager includes
-#include "vtkMRMLAbstractThreeDViewDisplayableManager.h"
+#include "vtkMRMLAbstractDisplayableManager.h"
 #include "vtkMRMLDisplayableManagerExport.h"
 
-// MRML includes
-#include <vtkMRMLModelNode.h>
-class vtkMRMLClipModelsNode;
-class vtkMRMLDisplayNode;
-class vtkMRMLDisplayableNode;
-class vtkMRMLTransformNode;
-
-// VTK includes
-#include "vtkRenderWindow.h"
-class vtkActor;
-class vtkAlgorithm;
-class vtkCellPicker;
-class vtkLookupTable;
-class vtkMatrix4x4;
-class vtkPlane;
-class vtkPointPicker;
-class vtkProp3D;
-class vtkPropPicker;
-class vtkWorldPointPicker;
-
-class vtkOutlineGlowPass;
-class vtkRenderStepsPass;
+class vtkProp;
 
 /// \brief Manage display nodes with polydata in 3D views.
 ///
@@ -63,9 +52,11 @@ protected:
 
   void ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData) override;
 
-
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2) override;
   bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
+
+  void UpdateActors();
+  void UpdateActor(vtkProp* originalProp);
 
 protected:
   vtkMRMLFocusDisplayableManager();
