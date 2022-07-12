@@ -1,15 +1,27 @@
-/*=========================================================================
+/*/*==============================================================================
 
-  Copyright 2005 Brigham and Women's Hospital (BWH) All Rights Reserved.
+  Copyright (c) Laboratory for Percutaneous Surgery (PerkLab)
+  Queen's University, Kingston, ON, Canada. All Rights Reserved.
 
   See COPYRIGHT.txt
   or http://www.slicer.org/copyright/copyright.txt for details.
 
-==========================================================================*/
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+  This file was originally developed by Kyle Sunderland, PerkLab, Queen's University
+  and was supported through CANARIE's Research Software Program, Cancer
+  Care Ontario, OpenAnatomy, and Brigham and Women's Hospital through NIH grant R01MH112748.
+
+==============================================================================*/
 
 // MRMLDisplayableManager includes
-#include "vtkMRMLFocusDisplayableManager.h"
 #include "vtkMRMLApplicationLogic.h"
+#include "vtkMRMLFocusDisplayableManager.h"
+#include <vtkMRMLInteractionEventData.h>
 
 // MRML/Slicer includes
 #include <vtkEventBroker.h>
@@ -31,6 +43,7 @@
 #include <vtkPolyDataMapper2D.h>
 #include <vtkRenderStepsPass.h>
 #include <vtkRenderer.h>
+#include <vtkRenderWindow.h>
 #include <vtkProperty.h>
 #include <vtkProperty2D.h>
 #include <vtkVolumeProperty.h>
@@ -57,6 +70,8 @@ public:
 
   vtkWeakPointer<vtkMRMLSelectionNode> SelectionNode;
   std::vector<vtkWeakPointer<vtkMRMLDisplayableNode>> DisplayableNodes;
+  std::vector<vtkSmartPointer<vtkProp>> OriginalActors;
+  std::map<vtkSmartPointer<vtkProp>, vtkSmartPointer<vtkProp>> OriginalToCopyActors;
 };
 
 //---------------------------------------------------------------------------
@@ -86,6 +101,7 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::AddFocusedNodeObservers()
       {
       continue;
       }
+
     vtkIntArray* contentModifiedEvents = displayableNode->GetContentModifiedEvents();
     for (int i = 0; i < contentModifiedEvents->GetNumberOfValues(); ++i)
       {
@@ -205,11 +221,18 @@ void vtkMRMLFocusDisplayableManager::ProcessMRMLNodesEvents(vtkObject* caller,
     return;
     }
 
-  this->UpdateFromMRML();
+  if (vtkMRMLNode::SafeDownCast(caller))
+    {
+    this->UpdateFromMRML();
+    }
+  else if (vtkProp::SafeDownCast(caller))
+    {
+    this->UpdateActor(vtkProp::SafeDownCast(caller));
+    }
+
   this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
 }
 
-#include <vtkMRMLInteractionEventData.h>
 //---------------------------------------------------------------------------
 bool vtkMRMLFocusDisplayableManager::CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2)
 {
@@ -270,6 +293,20 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
   this->Internal->DisplayableNodes.push_back(focusedNode);
   this->Internal->AddFocusedNodeObservers();
 
+  vtkEventBroker* broker = vtkEventBroker::GetInstance();
+
+  for (vtkProp* oldActor : this->Internal->OriginalActors)
+    {
+    if (!oldActor)
+      {
+      continue;
+      }
+    broker->RemoveObservations(oldActor, vtkCommand::ModifiedEvent,
+      this, this->GetMRMLNodesCallbackCommand());
+    }
+
+  this->Internal->OriginalActors.clear();
+
   std::vector<vtkMRMLDisplayNode*> displayNodes;
   for (int i = 0; i < focusedNode->GetNumberOfDisplayNodes(); ++i)
     {
@@ -301,8 +338,10 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
     return;
     }
 
-  vtkProp* prop = nullptr;
-  vtkCollectionSimpleIterator it;
+  std::map<vtkSmartPointer<vtkProp>, vtkSmartPointer<vtkProp>> newOriginalToCopyActors;
+
+  vtkSmartPointer<vtkProp> prop = nullptr;
+  vtkCollectionSimpleIterator it = nullptr;
   for (focusNodeActors->InitTraversal(it); prop = focusNodeActors->GetNextProp(it);)
     {
     if (!prop->GetVisibility())
@@ -311,51 +350,23 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
       continue;
       }
 
-    vtkSmartPointer<vtkProp> newProp = vtkSmartPointer<vtkProp>::Take(prop->NewInstance());
-    newProp->ShallowCopy(prop);
-
-    vtkActor* newActor = vtkActor::SafeDownCast(newProp);
-    if (newActor)
+    vtkSmartPointer<vtkProp> newProp = this->Internal->OriginalToCopyActors[prop];
+    if (!newProp)
       {
-      //vtkSmartPointer<vtkMapper> newMapper = vtkSmartPointer<vtkMapper>::Take(newActor->GetMapper()->NewInstance());
-      //newMapper->ShallowCopy(newActor->GetMapper());
-      //newActor->SetMapper(newMapper);
-
-      // Make the actor flat. This generates a better outline.
-      vtkSmartPointer<vtkProperty> newProperty = vtkSmartPointer<vtkProperty>::Take(newActor->GetProperty()->NewInstance());
-      newProperty->DeepCopy(newActor->GetProperty());
-      newProperty->SetLighting(false);
-      newProperty->SetColor(1.0, 1.0, 1.0);
-      newActor->SetProperty(newProperty);
+      newProp = vtkSmartPointer<vtkProp>::Take(prop->NewInstance());
       }
-
-    vtkVolume* newVolume = vtkVolume::SafeDownCast(newProp);
-    if (newVolume)
-      {
-      vtkNew<vtkColorTransferFunction> colorTransferFunction;
-      colorTransferFunction->AddRGBPoint(0, 1.0, 1.0, 1.0);
-
-      vtkSmartPointer<vtkVolumeProperty> newProperty = vtkSmartPointer<vtkVolumeProperty>::Take(newVolume->GetProperty()->NewInstance());;
-      newProperty->DeepCopy(newVolume->GetProperty());
-      newProperty->SetDiffuse(0.0);
-      newProperty->SetAmbient(1.0);
-      newProperty->ShadeOff();
-      newProperty->SetColor(colorTransferFunction);
-
-      newVolume->SetProperty(newProperty);
-      }
-
-    vtkActor2D* newActor2D = vtkActor2D::SafeDownCast(newProp);
-    if (newActor2D)
-      {
-      vtkSmartPointer<vtkProperty2D> newProperty2D = vtkSmartPointer<vtkProperty2D>::Take(newActor2D->GetProperty()->NewInstance());
-      newProperty2D->DeepCopy(newActor2D->GetProperty());
-      newProperty2D->SetColor(1.0, 1.0, 1.0);
-      newActor2D->SetProperty(newProperty2D);
-      }
+    this->Internal->OriginalActors.push_back(prop);
+    newOriginalToCopyActors[prop] = newProp;
 
     this->Internal->RendererOutline->AddViewProp(newProp);
+
+    broker->AddObservation(prop,
+      vtkCommand::ModifiedEvent,
+      this, this->GetMRMLNodesCallbackCommand());
     }
+  this->Internal->OriginalToCopyActors = newOriginalToCopyActors;
+
+  this->UpdateActors();
 
   this->Internal->RendererOutline->SetActiveCamera(renderer->GetActiveCamera());
   if (!renderer->GetRenderWindow()->HasRenderer(this->Internal->RendererOutline))
@@ -364,4 +375,68 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
     }
   this->SetUpdateFromMRMLRequested(false);
   this->RequestRender();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLFocusDisplayableManager::UpdateActor(vtkProp* originalProp)
+{
+  vtkProp* copyProp = this->Internal->OriginalToCopyActors[originalProp];
+  if (!copyProp)
+    {
+    return;
+    }
+
+  // Copy the properties of the original actor to the duplicate one
+  copyProp->ShallowCopy(originalProp);
+
+  vtkActor* copyActor = vtkActor::SafeDownCast(copyProp);
+  if (copyActor)
+    {
+    copyActor->SetTexture(nullptr);
+
+    // Make the actor flat. This generates a better outline.
+    vtkSmartPointer<vtkProperty> copyProperty = vtkSmartPointer<vtkProperty>::Take(copyActor->GetProperty()->NewInstance());
+    copyProperty->DeepCopy(copyActor->GetProperty());
+    copyProperty->SetLighting(false);
+    copyProperty->SetColor(1.0, 1.0, 1.0);
+    copyActor->SetProperty(copyProperty);
+    }
+
+  vtkVolume* copyVolume = vtkVolume::SafeDownCast(copyProp);
+  if (copyVolume)
+    {
+    vtkNew<vtkColorTransferFunction> colorTransferFunction;
+    colorTransferFunction->AddRGBPoint(0, 1.0, 1.0, 1.0);
+
+    vtkSmartPointer<vtkVolumeProperty> newProperty = vtkSmartPointer<vtkVolumeProperty>::Take(copyVolume->GetProperty()->NewInstance());
+    newProperty->DeepCopy(copyVolume->GetProperty());
+    newProperty->SetDiffuse(0.0);
+    newProperty->SetAmbient(1.0);
+    newProperty->ShadeOff();
+    newProperty->SetColor(colorTransferFunction);
+
+    copyVolume->SetProperty(newProperty);
+    }
+
+  vtkActor2D* newActor2D = vtkActor2D::SafeDownCast(copyProp);
+  if (newActor2D)
+    {
+    vtkSmartPointer<vtkProperty2D> newProperty2D = vtkSmartPointer<vtkProperty2D>::Take(newActor2D->GetProperty()->NewInstance());
+    newProperty2D->DeepCopy(newActor2D->GetProperty());
+    newProperty2D->SetColor(1.0, 1.0, 1.0);
+    newActor2D->SetProperty(newProperty2D);
+    }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLFocusDisplayableManager::UpdateActors()
+{
+  for (auto prop : this->Internal->OriginalActors)
+    {
+    if (!prop)
+      {
+      continue;
+      }
+    this->UpdateActor(prop);
+    }
 }

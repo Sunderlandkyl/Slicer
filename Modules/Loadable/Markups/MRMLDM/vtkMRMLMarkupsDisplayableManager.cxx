@@ -950,12 +950,8 @@ void vtkMRMLMarkupsDisplayableManager::GetActorsByID(vtkPropCollection* actors, 
     }
 
   vtkSlicerMarkupsWidgetRepresentation* rep = vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(it->second->GetRepresentation());
-  if (rep)
+  if (rep && rep->GetVisibility())
     {
     rep->GetActorsForComponent(actors, componentType, componentIndex);
-    }
-  else
-    {
-    it->second->GetRepresentation()->GetActors(actors);
     }
 }
