@@ -157,6 +157,7 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
     PlaceNodeClassNameListModifiedEvent,
     UnitModifiedEvent,
     ActivePlaceNodePlacementValidEvent,
+    FocusNodeIDChangedEvent,
   };
 
   /// Add a new valid placeNode class name to the list, with optional qt resource

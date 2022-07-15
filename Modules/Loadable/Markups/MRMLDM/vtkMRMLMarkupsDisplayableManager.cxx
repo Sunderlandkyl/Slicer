@@ -227,11 +227,13 @@ void vtkMRMLMarkupsDisplayableManager::SetMRMLSceneInternal(vtkMRMLScene* newSce
   if (newScene)
     {
     this->AddObserversToInteractionNode();
+    this->AddObserversToSelectionNode();
     }
   else
     {
     // there's no scene to get the interaction node from, so this won't do anything
     this->RemoveObserversFromInteractionNode();
+    this->RemoveObserversFromSelectionNode();
     }
   vtkDebugMacro("SetMRMLSceneInternal: add observer on interaction node now?");
 
@@ -243,8 +245,9 @@ void vtkMRMLMarkupsDisplayableManager::SetMRMLSceneInternal(vtkMRMLScene* newSce
 void vtkMRMLMarkupsDisplayableManager
 ::ProcessMRMLNodesEvents(vtkObject *caller, unsigned long event, void *callData)
 {
-  vtkMRMLMarkupsNode * markupsNode = vtkMRMLMarkupsNode::SafeDownCast(caller);
-  vtkMRMLInteractionNode * interactionNode = vtkMRMLInteractionNode::SafeDownCast(caller);
+  vtkMRMLMarkupsNode* markupsNode = vtkMRMLMarkupsNode::SafeDownCast(caller);
+  vtkMRMLInteractionNode* interactionNode = vtkMRMLInteractionNode::SafeDownCast(caller);
+  vtkMRMLSelectionNode* selectionNode = vtkMRMLSelectionNode::SafeDownCast(caller);
   if (markupsNode)
     {
     bool renderRequested = false;
@@ -292,6 +295,21 @@ void vtkMRMLMarkupsDisplayableManager
         vtkMRMLInteractionEventData* eventData = reinterpret_cast<vtkMRMLInteractionEventData*>(callData);
         widget->Leave(eventData);
         }
+      }
+    }
+  else if (selectionNode)
+    {
+    // loop through all widgets and update the widget status
+    for (vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToWidgetIt widgetIterator = this->Helper->MarkupsDisplayNodesToWidgets.begin();
+      widgetIterator != this->Helper->MarkupsDisplayNodesToWidgets.end(); ++widgetIterator)
+      {
+      vtkSlicerMarkupsWidget* widget = widgetIterator->second;
+      if (!widget)
+        {
+        continue;
+        }
+      vtkMRMLInteractionEventData* eventData = reinterpret_cast<vtkMRMLInteractionEventData*>(callData);
+      widget->UpdateFromMRML(selectionNode, event, callData);
       }
     }
   else
@@ -351,13 +369,18 @@ void vtkMRMLMarkupsDisplayableManager::OnMRMLSceneNodeAdded(vtkMRMLNode* node)
     return;
     }
 
+  if (node->IsA("vtkMRMLSelectionNode"))
+    {
+    this->AddObserversToSelectionNode();
+    }
+
   if (node->IsA("vtkMRMLMarkupsNode"))
-  {
+    {
     this->Helper->AddMarkupsNode(vtkMRMLMarkupsNode::SafeDownCast(node));
 
     // and render again
     this->RequestRender();
-  }
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -378,7 +401,10 @@ void vtkMRMLMarkupsDisplayableManager::AddObserversToInteractionNode()
     interactionEvents->InsertNextValue(vtkMRMLInteractionNode::EndPlacementEvent);
     vtkObserveMRMLNodeEventsMacro(interactionNode, interactionEvents.GetPointer());
     }
-  else { vtkDebugMacro("AddObserversToInteractionNode: No interaction node!"); }
+  else
+    {
+    vtkDebugMacro("AddObserversToInteractionNode: No interaction node!");
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -390,10 +416,49 @@ void vtkMRMLMarkupsDisplayableManager::RemoveObserversFromInteractionNode()
     }
 
   // find the interaction node
-  vtkMRMLInteractionNode *interactionNode =  this->GetInteractionNode();
+  vtkMRMLInteractionNode* interactionNode =  this->GetInteractionNode();
   if (interactionNode)
     {
     vtkUnObserveMRMLNodeMacro(interactionNode);
+    }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManager::AddObserversToSelectionNode()
+{
+  if (!this->GetMRMLScene())
+    {
+    return;
+    }
+
+  // Observe the selection node for changes
+  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
+  if (selectionNode)
+    {
+    vtkDebugMacro("AddObserversToSelectionNode: selectionNode found");
+    vtkNew<vtkIntArray> interactionEvents;
+    interactionEvents->InsertNextValue(vtkMRMLSelectionNode::FocusNodeIDChangedEvent);
+    vtkObserveMRMLNodeEventsMacro(selectionNode, interactionEvents.GetPointer());
+    }
+  else
+    {
+    vtkDebugMacro("AddObserversToSelectionNode: No selection node!");
+    }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManager::RemoveObserversFromSelectionNode()
+{
+  if (!this->GetMRMLScene())
+    {
+    return;
+    }
+
+  // find the interaction node
+  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
+  if (selectionNode)
+    {
+    vtkUnObserveMRMLNodeMacro(selectionNode);
     }
 }
 

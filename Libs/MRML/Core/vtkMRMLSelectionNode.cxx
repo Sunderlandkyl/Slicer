@@ -598,19 +598,18 @@ bool vtkMRMLSelectionNode::GetActivePlaceNodePlacementValid()
 //----------------------------------------------------------------------------
 void vtkMRMLSelectionNode::SetFocusNodeID(const char* id)
 {
-  vtkMRMLNode* oldFocusNode = this->GetFocusNode();
-  this->SetNodeReferenceID(FOCUS_NODE_REFERENCE_ROLE, id);
-  vtkMRMLNode* newFocusNode = this->GetFocusNode();
+  const char* oldFocusNodeID = this->GetFocusNodeID();
+  if (!oldFocusNodeID && !id)
+  {
+    return;
+  }
+  else if (oldFocusNodeID && id && strcmp(oldFocusNodeID, id) == 0)
+  {
+    return;
+  }
 
-  // TODO: Hack to update displayable managers that don't observe selection node
-  if (oldFocusNode)
-  {
-    oldFocusNode->Modified();
-  }
-  if (newFocusNode)
-  {
-    newFocusNode->Modified();
-  }
+  this->SetNodeReferenceID(FOCUS_NODE_REFERENCE_ROLE, id);
+  this->InvokeCustomModifiedEvent(FocusNodeIDChangedEvent);
 }
 
 //----------------------------------------------------------------------------
