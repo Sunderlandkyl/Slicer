@@ -44,6 +44,12 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
 protected:
+  // TODO
+  void UpdateSelectionNode();
+
+  // TODO
+  void SetAndObserveSelectionNode(vtkMRMLSelectionNode* newSelectionNode);
+
   // Update selection node observer
   void UpdateFromMRMLScene() override;
 
