@@ -108,6 +108,8 @@ private:
 
   std::vector<unsigned long> ObservedMarkupNodeEvents;
 
+  vtkWeakPointer<vtkMRMLMarkupsNode> FocusedMarkupsNode{nullptr};
+
   vtkMRMLMarkupsDisplayableManager* DisplayableManager;
 };
 

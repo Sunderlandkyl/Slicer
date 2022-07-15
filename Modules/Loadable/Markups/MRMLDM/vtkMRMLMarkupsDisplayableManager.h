@@ -128,6 +128,10 @@ protected:
   void AddObserversToInteractionNode();
   void RemoveObserversFromInteractionNode();
 
+  /// Observe the selection nodenode.
+  void AddObserversToSelectionNode();
+  void RemoveObserversFromSelectionNode();
+
   /// Check if it is the right displayManager
   virtual bool IsCorrectDisplayableManager();
 

@@ -36,16 +36,20 @@
 #include <vtkActor2D.h>
 #include <vtkColorTransferFunction.h>
 #include <vtkGPUVolumeRayCastMapper.h>
+#include <vtkLabelPlacementMapper.h>
 #include <vtkMapper.h>
 #include <vtkMapper2D.h>
 #include <vtkOutlineGlowPass.h>
+#include <vtkPointSetToLabelHierarchy.h>
 #include <vtkPolyDataMapper.h>
 #include <vtkPolyDataMapper2D.h>
+#include <vtkProperty.h>
+#include <vtkProperty2D.h>
 #include <vtkRenderStepsPass.h>
 #include <vtkRenderer.h>
 #include <vtkRenderWindow.h>
-#include <vtkProperty.h>
-#include <vtkProperty2D.h>
+#include<vtkTextActor.h>
+#include <vtkTextProperty.h>
 #include <vtkVolumeProperty.h>
 
 //---------------------------------------------------------------------------
@@ -84,6 +88,8 @@ vtkMRMLFocusDisplayableManager::vtkInternal::vtkInternal(vtkMRMLFocusDisplayable
   this->ROIGlowPass->SetDelegatePass(this->BasicPasses);
   this->RendererOutline->UseFXAAOn();
   this->RendererOutline->UseShadowsOff();
+  this->RendererOutline->UseDepthPeelingOff();
+  this->RendererOutline->UseDepthPeelingForVolumesOff();
   this->RendererOutline->SetPass(this->ROIGlowPass);
 }
 
@@ -213,14 +219,6 @@ void vtkMRMLFocusDisplayableManager::ProcessMRMLNodesEvents(vtkObject* caller,
     return;
     }
 
-  if (this->GetRenderer() &&
-    this->GetRenderer()->GetRenderWindow() &&
-    this->GetRenderer()->GetRenderWindow()->CheckInRenderStatus())
-    {
-    vtkDebugMacro("skipping ProcessMRMLNodesEvents during render");
-    return;
-    }
-
   if (vtkMRMLNode::SafeDownCast(caller))
     {
     this->UpdateFromMRML();
@@ -228,6 +226,10 @@ void vtkMRMLFocusDisplayableManager::ProcessMRMLNodesEvents(vtkObject* caller,
   else if (vtkProp::SafeDownCast(caller))
     {
     this->UpdateActor(vtkProp::SafeDownCast(caller));
+    }
+  else if (vtkCoordinate::SafeDownCast(caller))
+    {
+    this->UpdateActors();
     }
 
   this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
@@ -274,7 +276,7 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
     vtkMRMLDisplayableNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(focusNodeID));
 
   vtkRenderer* renderer = this->GetRenderer();
-  if (!selectionNode || !focusedNode || !renderer || focusedNode->GetNumberOfDisplayNodes() == 0)
+  if (!selectionNode || !renderer || !focusedNode || focusedNode->GetNumberOfDisplayNodes() == 0)
     {
     this->SetUpdateFromMRMLRequested(false);
     this->RequestRender();
@@ -303,6 +305,15 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
       }
     broker->RemoveObservations(oldActor, vtkCommand::ModifiedEvent,
       this, this->GetMRMLNodesCallbackCommand());
+
+    vtkActor2D* oldActor2D = vtkActor2D::SafeDownCast(oldActor);
+    if (oldActor2D)
+      {
+      // Need to update copied actors when the position of the 2D actor changes
+      broker->RemoveObservations(oldActor2D->GetPositionCoordinate(),
+        vtkCommand::ModifiedEvent,
+        this, this->GetMRMLNodesCallbackCommand());
+      }
     }
 
   this->Internal->OriginalActors.clear();
@@ -355,14 +366,23 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
       {
       newProp = vtkSmartPointer<vtkProp>::Take(prop->NewInstance());
       }
+
     this->Internal->OriginalActors.push_back(prop);
     newOriginalToCopyActors[prop] = newProp;
-
     this->Internal->RendererOutline->AddViewProp(newProp);
 
     broker->AddObservation(prop,
       vtkCommand::ModifiedEvent,
       this, this->GetMRMLNodesCallbackCommand());
+
+    vtkActor2D* newActor2D = vtkActor2D::SafeDownCast(prop);
+    if (newActor2D)
+      {
+      broker->AddObservation(newActor2D->GetPositionCoordinate(),
+        vtkCommand::ModifiedEvent,
+        this, this->GetMRMLNodesCallbackCommand());
+      }
+
     }
   this->Internal->OriginalToCopyActors = newOriginalToCopyActors;
 
@@ -375,6 +395,19 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
     }
   this->SetUpdateFromMRMLRequested(false);
   this->RequestRender();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLFocusDisplayableManager::UpdateActors()
+{
+  for (auto prop : this->Internal->OriginalActors)
+    {
+    if (!prop)
+      {
+      continue;
+      }
+    this->UpdateActor(prop);
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -399,6 +432,7 @@ void vtkMRMLFocusDisplayableManager::UpdateActor(vtkProp* originalProp)
     copyProperty->DeepCopy(copyActor->GetProperty());
     copyProperty->SetLighting(false);
     copyProperty->SetColor(1.0, 1.0, 1.0);
+    copyProperty->SetOpacity(1.0);
     copyActor->SetProperty(copyProperty);
     }
 
@@ -414,7 +448,6 @@ void vtkMRMLFocusDisplayableManager::UpdateActor(vtkProp* originalProp)
     newProperty->SetAmbient(1.0);
     newProperty->ShadeOff();
     newProperty->SetColor(colorTransferFunction);
-
     copyVolume->SetProperty(newProperty);
     }
 
@@ -426,17 +459,41 @@ void vtkMRMLFocusDisplayableManager::UpdateActor(vtkProp* originalProp)
     newProperty2D->SetColor(1.0, 1.0, 1.0);
     newActor2D->SetProperty(newProperty2D);
     }
-}
 
-//---------------------------------------------------------------------------
-void vtkMRMLFocusDisplayableManager::UpdateActors()
-{
-  for (auto prop : this->Internal->OriginalActors)
+  vtkLabelPlacementMapper* oldLabelMapper = newActor2D ? vtkLabelPlacementMapper::SafeDownCast(newActor2D->GetMapper()) : nullptr;
+  if (oldLabelMapper)
     {
-    if (!prop)
+    // TODO: Workaround for markups widgets in order to modify text property for control point labels.
+
+    vtkPointSetToLabelHierarchy* oldPointSetInput = vtkPointSetToLabelHierarchy::SafeDownCast(oldLabelMapper->GetInputAlgorithm());
+    if (oldPointSetInput)
       {
-      continue;
+      vtkSmartPointer<vtkLabelPlacementMapper> newLabelMapper = vtkSmartPointer<vtkLabelPlacementMapper>::Take(oldLabelMapper->NewInstance());
+      newLabelMapper->ShallowCopy(oldLabelMapper);
+
+      vtkSmartPointer<vtkPointSetToLabelHierarchy> newPointSetInput = vtkSmartPointer<vtkPointSetToLabelHierarchy>::Take(oldPointSetInput->NewInstance());
+      newPointSetInput->SetInputData(oldPointSetInput->GetInput());
+      newPointSetInput->SetLabelArrayName("labels");
+      newPointSetInput->SetPriorityArrayName("priority");
+
+      vtkSmartPointer<vtkTextProperty> textProperty = vtkSmartPointer<vtkTextProperty>::Take(newPointSetInput->GetTextProperty()->NewInstance());
+      textProperty->ShallowCopy(newPointSetInput->GetTextProperty());
+      textProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
+      newPointSetInput->SetTextProperty(textProperty);
+
+      newLabelMapper->SetInputConnection(newPointSetInput->GetOutputPort());
+
+      newActor2D->SetMapper(newLabelMapper);
       }
-    this->UpdateActor(prop);
+    }
+
+  vtkTextActor* textActor = vtkTextActor::SafeDownCast(copyProp);
+  if (textActor)
+    {
+    // TODO: Outline is not large enough if background is fully transparent.
+    vtkSmartPointer<vtkTextProperty> textProperty = vtkSmartPointer<vtkTextProperty>::Take(textActor->GetTextProperty()->NewInstance());
+    textProperty->ShallowCopy(textActor->GetTextProperty());
+    textProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
+    textActor->SetTextProperty(textProperty);
     }
 }

@@ -109,7 +109,6 @@ vtkSlicerMarkupsWidget::vtkSlicerMarkupsWidget()
   this->SetEventTranslation(WidgetStateOnScaleHandle, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::NoModifier, WidgetEventMenu);
   this->SetEventTranslation(WidgetStateOnScaleHandle, vtkMRMLInteractionEventData::LeftButtonClickEvent, vtkEvent::NoModifier, WidgetEventJumpCursor);
 
-
   // Update active interaction handle component
   this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkCommand::MouseMoveEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
   this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkCommand::Move3DEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
@@ -130,7 +129,8 @@ bool vtkSlicerMarkupsWidget::ProcessControlPointMoveStart(vtkMRMLInteractionEven
     return false;
     }
   int activeControlPoint = this->GetActiveControlPoint();
-  if (activeControlPoint < 0)
+  int activeComponentType = this->GetActiveComponentType();
+  if (activeControlPoint < 0 && activeComponentType == vtkMRMLMarkupsDisplayNode::ComponentControlPoint)
     {
     return false;
     }
@@ -420,7 +420,7 @@ bool vtkSlicerMarkupsWidget::ProcessControlPointDelete(vtkMRMLInteractionEventDa
 }
 
 //-------------------------------------------------------------------------
-bool vtkSlicerMarkupsWidget::ProcessWidgetJumpCursor(vtkMRMLInteractionEventData* vtkNotUsed(eventData))
+bool vtkSlicerMarkupsWidget::ProcessWidgetJumpCursor(vtkMRMLInteractionEventData* eventData)
 {
   if (this->WidgetState != WidgetStateOnWidget &&
     this->WidgetState != WidgetStateOnTranslationHandle &&
@@ -434,8 +434,7 @@ bool vtkSlicerMarkupsWidget::ProcessWidgetJumpCursor(vtkMRMLInteractionEventData
   if (!this->GetNodeFocused() && this->selectionNode())
     {
     // TODO: Jump event is highjacked for focus selection.
-    this->selectionNode()->SetFocusNodeID(markupsNode ? markupsNode->GetID() : nullptr);
-    return true;
+    this->ProcessNodeGrabFocus(eventData);
     }
 
   vtkMRMLMarkupsDisplayNode* markupsDisplayNode = this->GetMarkupsDisplayNode();
@@ -712,6 +711,16 @@ bool vtkSlicerMarkupsWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventD
     return true;
     }
 
+  if (widgetEvent == WidgetEventGrabNodeFocus)
+    {
+    if (this->GetNodeFocused())
+      {
+      return false;
+      }
+    distance2 = 1e10;
+    return true;
+    }
+
   int foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentNone;
   int foundComponentIndex = -1;
   double closestDistance2 = 0.0;
@@ -850,7 +859,6 @@ bool vtkSlicerMarkupsWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData
     {
     this->ApplicationLogic->PauseRender();
     }
-
 
   bool processedEvent = false;
   switch (widgetEvent)
