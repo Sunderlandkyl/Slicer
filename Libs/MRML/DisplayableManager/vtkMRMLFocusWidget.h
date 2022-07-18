@@ -61,6 +61,7 @@ public:
 
   /// Process interaction event.
   bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
+  virtual bool ProcessCancelFocusEvent(vtkMRMLInteractionEventData* eventData);
 
   /// Widget states
   enum
