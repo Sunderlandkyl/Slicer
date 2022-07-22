@@ -18,8 +18,6 @@
 
 ==============================================================================*/
 
-#include "vtkMRMLFocusWidget.h"
-
 // VTK includes
 #include "vtkCamera.h"
 #include "vtkEvent.h"
@@ -31,35 +29,51 @@
 #include "vtkTransform.h"
 
 /// MRML includes
-#include "vtkMRMLCrosshairDisplayableManager.h"
 #include "vtkMRMLCrosshairNode.h"
-#include "vtkMRMLInteractionEventData.h"
+#include "vtkEventBroker.h"
 #include "vtkMRMLInteractionNode.h"
 #include "vtkMRMLLayoutNode.h"
 #include "vtkMRMLScene.h"
+#include "vtkMRMLSelectionNode.h"
 #include "vtkMRMLViewNode.h"
 
-vtkStandardNewMacro(vtkMRMLFocusWidget);
+// MRMLDM includes
+#include "vtkMRMLCrosshairDisplayableManager.h"
+#include "vtkMRMLFocusWidget.h"
+#include <vtkMRMLFocusRepresentation.h>
+#include "vtkMRMLInteractionEventData.h"
 
-//----------------------------------------------------------------------------------
+vtkStandardNewMacro(vtkMRMLFocusWidget);
+#include <vtkObserverManager.h>
+#include <vtkCallbackCommand.h>
+//---------------------------------------------------------------------------
 vtkMRMLFocusWidget::vtkMRMLFocusWidget()
 {
+  this->MRMLNodesObserverManager->AssignOwner(this);
+  this->MRMLNodesObserverManager->GetCallbackCommand()->SetClientData(reinterpret_cast<void*> (this));
+  this->MRMLNodesObserverManager->GetCallbackCommand()->SetCallback(vtkMRMLFocusWidget::ProcessMRMLNodesEvents);
+
   this->SetKeyboardEventTranslation(WidgetStateFocus, vtkEvent::NoModifier, 0, 0, "Escape", WidgetEventCancelFocus);
 }
 
-//----------------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 vtkMRMLFocusWidget::~vtkMRMLFocusWidget()
 {
 }
 
-//----------------------------------------------------------------------
-void vtkMRMLFocusWidget::CreateDefaultRepresentation()
+//---------------------------------------------------------------------------
+void vtkMRMLFocusWidget::PrintSelf(ostream& os, vtkIndent indent)
 {
-  // This widget has no visible representation
-  return;
+  Superclass::PrintSelf(os, indent);
 }
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------------------------
+void vtkMRMLFocusWidget::CreateDefaultRepresentation()
+{
+  this->WidgetRep = this->FocusRep;
+}
+
+//---------------------------------------------------------------------------
 bool vtkMRMLFocusWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double &distance2)
 {
   unsigned long widgetEvent = this->TranslateInteractionEventToWidgetEvent(eventData);
@@ -71,13 +85,9 @@ bool vtkMRMLFocusWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventData*
   return false;
 }
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 bool vtkMRMLFocusWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData)
 {
-  if (!this->SelectionNode)
-    {
-    return false;
-    }
   unsigned long widgetEvent = this->TranslateInteractionEventToWidgetEvent(eventData);
 
   bool processedEvent = false;
@@ -88,11 +98,6 @@ bool vtkMRMLFocusWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData* ev
       break;
     default:
       processedEvent = false;
-    }
-
-  if (!processedEvent)
-    {
-    processedEvent = this->ProcessButtonClickEvent(eventData);
     }
   return processedEvent;
 }
@@ -109,296 +114,303 @@ bool vtkMRMLFocusWidget::ProcessCancelFocusEvent(vtkMRMLInteractionEventData* ev
   return true;
 }
 
-#include <vtkEventBroker.h>
 //---------------------------------------------------------------------------
 void vtkMRMLFocusWidget::ProcessMRMLNodesEvents(vtkObject* caller,
-  unsigned long event,
-  void* callData)
+  unsigned long event, void* clientData, void* callData)
 {
-  if (this->GetMRMLScene() == nullptr)
+  //if (this->GetMRMLScene() == nullptr)
+  //  {
+  //  return;
+  //  }
+  vtkMRMLFocusWidget* self = reinterpret_cast<vtkMRMLFocusWidget*>(clientData);
+  vtkMRMLSelectionNode* callerSelectionNode = vtkMRMLSelectionNode::SafeDownCast(caller);
+  if (callerSelectionNode)
+    {
+    bool focused = callerSelectionNode->GetFocusNodeID() && strcmp(callerSelectionNode->GetFocusNodeID(), "") != 0;
+    self->SetWidgetState(focused ? WidgetStateFocus : WidgetStateIdle);
+    }
+  //if (vtkMRMLNode::SafeDownCast(caller))
+  //  {
+  //  this->UpdateFromMRML();
+  //  }
+  //else if (vtkProp::SafeDownCast(caller))
+  //  {
+  //  this->UpdateActor(vtkProp::SafeDownCast(caller));
+  //  }
+  //else if (vtkCoordinate::SafeDownCast(caller))x
+  //  {
+  //  this->UpdateActors();
+  //  }
+
+  //this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
+}
+
+//---------------------------------------------------------------------------
+//void vtkMRMLFocusWidget::UpdateFromMRML()
+//{
+  //this->Internal->RendererOutline->RemoveAllViewProps();
+
+  //this->Internal->RemoveFocusedNodeObservers();
+  //this->Internal->DisplayableNodes.clear();
+
+  //vtkMRMLSelectionNode* selectionNode = this->Internal->SelectionNode;
+  //const char* focusNodeID = selectionNode ? selectionNode->GetFocusNodeID() : nullptr;
+  //vtkMRMLDisplayableNode* focusedNode =
+  //  vtkMRMLDisplayableNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(focusNodeID));
+
+  //vtkRenderer* renderer = this->GetRenderer();
+  //if (!selectionNode || !renderer || !focusedNode || focusedNode->GetNumberOfDisplayNodes() == 0)
+  //  {
+  //  this->SetUpdateFromMRMLRequested(false);
+  //  this->RequestRender();
+  //  return;
+  //  }
+
+  //int RENDERER_LAYER = 1;
+  //if (renderer->GetRenderWindow()->GetNumberOfLayers() < RENDERER_LAYER + 1)
+  //  {
+  //  renderer->GetRenderWindow()->SetNumberOfLayers(RENDERER_LAYER + 1);
+  //  }
+
+  //this->Internal->ROIGlowPass->SetOutlineIntensity(selectionNode->GetFocusedHighlightStrength());
+  //this->Internal->RendererOutline->SetLayer(RENDERER_LAYER);
+
+  //this->Internal->DisplayableNodes.push_back(focusedNode);
+  //this->Internal->AddFocusedNodeObservers();
+
+  //vtkEventBroker* broker = vtkEventBroker::GetInstance();
+
+  //for (vtkProp* oldActor : this->Internal->OriginalActors)
+  //  {
+  //  if (!oldActor)
+  //    {
+  //    continue;
+  //    }
+  //  broker->RemoveObservations(oldActor, vtkCommand::ModifiedEvent,
+  //    this, this->GetMRMLNodesCallbackCommand());
+
+  //  vtkActor2D* oldActor2D = vtkActor2D::SafeDownCast(oldActor);
+  //  if (oldActor2D)
+  //    {
+  //    // Need to update copied actors when the position of the 2D actor changes
+  //    broker->RemoveObservations(oldActor2D->GetPositionCoordinate(),
+  //      vtkCommand::ModifiedEvent,
+  //      this, this->GetMRMLNodesCallbackCommand());
+  //    }
+  //  }
+
+  //this->Internal->OriginalActors.clear();
+
+  //std::vector<vtkMRMLDisplayNode*> displayNodes;
+  //for (int i = 0; i < focusedNode->GetNumberOfDisplayNodes(); ++i)
+  //  {
+  //  vtkMRMLDisplayNode* displayNode = focusedNode->GetNthDisplayNode(i);
+  //  if (!displayNode)
+  //    {
+  //    continue;
+  //    }
+  //  displayNodes.push_back(displayNode);
+  //  }
+
+  //vtkNew<vtkPropCollection> focusNodeActors;
+  //vtkMRMLDisplayableManagerGroup* group = this->GetMRMLDisplayableManagerGroup();
+  //for (vtkMRMLDisplayNode* displayNode : displayNodes)
+  //  {
+  //  for (int i = 0; i < group->GetDisplayableManagerCount(); ++i)
+  //    {
+  //    vtkMRMLAbstractDisplayableManager* displayableManager = group->GetNthDisplayableManager(i);
+  //    displayableManager->GetActorsByID(focusNodeActors, displayNode->GetID(),
+  //      selectionNode->GetFocusedComponentType(), selectionNode->GetFocusedComponentIndex());
+  //    }
+  //  }
+
+  //if (focusNodeActors->GetNumberOfItems() == 0)
+  //  {
+  //  // The focused node has no actors for the focused component type/index.
+  //  this->SetUpdateFromMRMLRequested(false);
+  //  this->RequestRender();
+  //  return;
+  //  }
+
+  //std::map<vtkSmartPointer<vtkProp>, vtkSmartPointer<vtkProp>> newOriginalToCopyActors;
+
+  //vtkSmartPointer<vtkProp> prop = nullptr;
+  //vtkCollectionSimpleIterator it = nullptr;
+  //for (focusNodeActors->InitTraversal(it); prop = focusNodeActors->GetNextProp(it);)
+  //  {
+  //  if (!prop->GetVisibility())
+  //    {
+  //    // Ignore actors that are not visible.
+  //    continue;
+  //    }
+
+  //  vtkSmartPointer<vtkProp> newProp = this->Internal->OriginalToCopyActors[prop];
+  //  if (!newProp)
+  //    {
+  //    newProp = vtkSmartPointer<vtkProp>::Take(prop->NewInstance());
+  //    }
+
+  //  this->Internal->OriginalActors.push_back(prop);
+  //  newOriginalToCopyActors[prop] = newProp;
+  //  this->Internal->RendererOutline->AddViewProp(newProp);
+
+  //  broker->AddObservation(prop,
+  //    vtkCommand::ModifiedEvent,
+  //    this, this->GetMRMLNodesCallbackCommand());
+
+  //  vtkActor2D* copyActor2D = vtkActor2D::SafeDownCast(prop);
+  //  if (copyActor2D)
+  //    {
+  //    broker->AddObservation(copyActor2D->GetPositionCoordinate(),
+  //      vtkCommand::ModifiedEvent,
+  //      this, this->GetMRMLNodesCallbackCommand());
+  //    }
+  //  }
+  //this->Internal->OriginalToCopyActors = newOriginalToCopyActors;
+
+  //this->UpdateActors();
+
+  //if (!renderer->HasViewProp(this->Internal->CornerROIActor))
+  //  {
+  //  renderer->AddActor(this->Internal->CornerROIActor);
+  //  }
+
+  //this->Internal->RendererOutline->SetActiveCamera(renderer->GetActiveCamera());
+  //if (!renderer->GetRenderWindow()->HasRenderer(this->Internal->RendererOutline))
+  //  {
+  //  renderer->GetRenderWindow()->AddRenderer(this->Internal->RendererOutline);
+  //  }
+  //this->SetUpdateFromMRMLRequested(false);
+  //this->RequestRender();
+//}
+
+//---------------------------------------------------------------------------
+//void vtkMRMLFocusWidget::UpdateActors()
+//{
+  //for (auto prop : this->Internal->OriginalActors)
+  //  {
+  //  if (!prop)
+  //    {
+  //    continue;
+  //    }
+  //  this->UpdateActor(prop);
+  //  }
+//}
+
+//---------------------------------------------------------------------------
+//void vtkMRMLFocusWidget::UpdateActor(vtkProp* originalProp)
+//{
+  //vtkProp* copyProp = this->Internal->OriginalToCopyActors[originalProp];
+  //if (!copyProp)
+  //  {
+  //  return;
+  //  }
+
+  //// Copy the properties of the original actor to the duplicate one
+  //copyProp->ShallowCopy(originalProp);
+
+  //vtkActor* copyActor = vtkActor::SafeDownCast(copyProp);
+  //if (copyActor)
+  //  {
+  //  copyActor->SetTexture(nullptr);
+
+  //  // Make the actor flat. This generates a better outline.
+  //  vtkSmartPointer<vtkProperty> copyProperty = vtkSmartPointer<vtkProperty>::Take(copyActor->GetProperty()->NewInstance());
+  //  copyProperty->DeepCopy(copyActor->GetProperty());
+  //  copyProperty->SetLighting(false);
+  //  copyProperty->SetColor(1.0, 1.0, 1.0);
+  //  copyProperty->SetOpacity(1.0);
+  //  copyActor->SetProperty(copyProperty);
+  //  }
+
+  //vtkVolume* copyVolume = vtkVolume::SafeDownCast(copyProp);
+  //if (copyVolume)
+  //  {
+  //  vtkNew<vtkColorTransferFunction> colorTransferFunction;
+  //  colorTransferFunction->AddRGBPoint(0, 1.0, 1.0, 1.0);
+
+  //  vtkSmartPointer<vtkVolumeProperty> copyProperty = vtkSmartPointer<vtkVolumeProperty>::Take(copyVolume->GetProperty()->NewInstance());
+  //  copyProperty->DeepCopy(copyVolume->GetProperty());
+  //  copyProperty->SetDiffuse(0.0);
+  //  copyProperty->SetAmbient(1.0);
+  //  copyProperty->ShadeOff();
+  //  copyProperty->SetColor(colorTransferFunction);
+  //  copyVolume->SetProperty(copyProperty);
+  //  }
+
+  //vtkActor2D* copyActor2D = vtkActor2D::SafeDownCast(copyProp);
+  //if (copyActor2D)
+  //  {
+  //  vtkSmartPointer<vtkProperty2D> copyProperty2D = vtkSmartPointer<vtkProperty2D>::Take(copyActor2D->GetProperty()->NewInstance());
+  //  copyProperty2D->DeepCopy(copyActor2D->GetProperty());
+  //  copyProperty2D->SetColor(1.0, 1.0, 1.0);
+  //  copyActor2D->SetProperty(copyProperty2D);
+  //  }
+
+  //vtkLabelPlacementMapper* oldLabelMapper = copyActor2D ? vtkLabelPlacementMapper::SafeDownCast(copyActor2D->GetMapper()) : nullptr;
+  //if (oldLabelMapper)
+  //  {
+  //  // TODO: Workaround for markups widgets in order to modify text property for control point labels.
+
+  //  vtkPointSetToLabelHierarchy* oldPointSetInput = vtkPointSetToLabelHierarchy::SafeDownCast(oldLabelMapper->GetInputAlgorithm());
+  //  if (oldPointSetInput)
+  //    {
+  //    vtkSmartPointer<vtkLabelPlacementMapper> newLabelMapper = vtkSmartPointer<vtkLabelPlacementMapper>::Take(oldLabelMapper->NewInstance());
+  //    newLabelMapper->ShallowCopy(oldLabelMapper);
+
+  //    vtkSmartPointer<vtkPointSetToLabelHierarchy> newPointSetInput = vtkSmartPointer<vtkPointSetToLabelHierarchy>::Take(oldPointSetInput->NewInstance());
+  //    newPointSetInput->SetInputData(oldPointSetInput->GetInput());
+  //    newPointSetInput->SetLabelArrayName("labels");
+  //    newPointSetInput->SetPriorityArrayName("priority");
+
+  //    vtkSmartPointer<vtkTextProperty> textProperty = vtkSmartPointer<vtkTextProperty>::Take(newPointSetInput->GetTextProperty()->NewInstance());
+  //    textProperty->ShallowCopy(newPointSetInput->GetTextProperty());
+  //    textProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
+  //    newPointSetInput->SetTextProperty(textProperty);
+
+  //    newLabelMapper->SetInputConnection(newPointSetInput->GetOutputPort());
+
+  //    copyActor2D->SetMapper(newLabelMapper);
+  //    }
+  //  }
+
+  //vtkTextActor* copyTextActor = vtkTextActor::SafeDownCast(copyProp);
+  //if (copyTextActor)
+  //  {
+  //  // TODO: Outline is not large enough if background is fully transparent.
+  //  vtkSmartPointer<vtkTextProperty> copyTextProperty = vtkSmartPointer<vtkTextProperty>::Take(copyTextActor->GetTextProperty()->NewInstance());
+  //  copyTextProperty->ShallowCopy(copyTextActor->GetTextProperty());
+  //  copyTextProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
+  //  copyTextActor->SetTextProperty(copyTextProperty);
+  //  }
+// }
+
+//---------------------------------------------------------------------------
+void vtkMRMLFocusWidget::SetSelectionNode(vtkMRMLSelectionNode* selectionNode)
+{
+  if (this->SelectionNode == selectionNode)
     {
     return;
     }
-
-  if (vtkMRMLNode::SafeDownCast(caller))
-    {
-    this->UpdateFromMRML();
-    }
-  else if (vtkProp::SafeDownCast(caller))
-    {
-    this->UpdateActor(vtkProp::SafeDownCast(caller));
-    }
-  else if (vtkCoordinate::SafeDownCast(caller))
-    {
-    this->UpdateActors();
-    }
-
-  this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
-}
-
-//---------------------------------------------------------------------------
-bool vtkMRMLFocusWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2)
-{
-  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
-  if (eventData->GetType() == vtkCommand::KeyPressEvent && eventData->GetKeyCode() == 27
-    && selectionNode && selectionNode->GetFocusNodeID())
-    {
-    closestDistance2 = 1e10; // Allow other widgets to have precedence.
-    return true;
-    }
-  return false;
-}
-
-//---------------------------------------------------------------------------
-bool vtkMRMLFocusWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData)
-{
-  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
-  if (eventData->GetType() == vtkCommand::KeyPressEvent && eventData->GetKeyCode() == 27
-    && selectionNode && selectionNode->GetFocusNodeID())
-    {
-    vtkMRMLNode* focusNode = selectionNode->GetScene()->GetNodeByID(selectionNode->GetFocusNodeID());
-    this->GetSelectionNode()->SetFocusNodeID(nullptr);
-    return true;
-    }
-  return false;
-}
-
-//---------------------------------------------------------------------------
-void vtkMRMLFocusWidget::UpdateFromMRML()
-{
-  this->Internal->RendererOutline->RemoveAllViewProps();
-
-  this->Internal->RemoveFocusedNodeObservers();
-  this->Internal->DisplayableNodes.clear();
-
-  vtkMRMLSelectionNode* selectionNode = this->Internal->SelectionNode;
-  const char* focusNodeID = selectionNode ? selectionNode->GetFocusNodeID() : nullptr;
-  vtkMRMLDisplayableNode* focusedNode =
-    vtkMRMLDisplayableNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(focusNodeID));
-
-  vtkRenderer* renderer = this->GetRenderer();
-  if (!selectionNode || !renderer || !focusedNode || focusedNode->GetNumberOfDisplayNodes() == 0)
-    {
-    this->SetUpdateFromMRMLRequested(false);
-    this->RequestRender();
-    return;
-    }
-
-  int RENDERER_LAYER = 1;
-  if (renderer->GetRenderWindow()->GetNumberOfLayers() < RENDERER_LAYER + 1)
-    {
-    renderer->GetRenderWindow()->SetNumberOfLayers(RENDERER_LAYER + 1);
-    }
-
-  this->Internal->ROIGlowPass->SetOutlineIntensity(selectionNode->GetFocusedHighlightStrength());
-  this->Internal->RendererOutline->SetLayer(RENDERER_LAYER);
-
-  this->Internal->DisplayableNodes.push_back(focusedNode);
-  this->Internal->AddFocusedNodeObservers();
 
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
-
-  for (vtkProp* oldActor : this->Internal->OriginalActors)
+  if (this->SelectionNode)
     {
-    if (!oldActor)
-      {
-      continue;
-      }
-    broker->RemoveObservations(oldActor, vtkCommand::ModifiedEvent,
-      this, this->GetMRMLNodesCallbackCommand());
-
-    vtkActor2D* oldActor2D = vtkActor2D::SafeDownCast(oldActor);
-    if (oldActor2D)
-      {
-      // Need to update copied actors when the position of the 2D actor changes
-      broker->RemoveObservations(oldActor2D->GetPositionCoordinate(),
-        vtkCommand::ModifiedEvent,
-        this, this->GetMRMLNodesCallbackCommand());
-      }
+    vtkUnObserveMRMLNodeMacro(this->SelectionNode);
     }
 
-  this->Internal->OriginalActors.clear();
+  this->SelectionNode = selectionNode;
 
-  std::vector<vtkMRMLDisplayNode*> displayNodes;
-  for (int i = 0; i < focusedNode->GetNumberOfDisplayNodes(); ++i)
+  if (this->SelectionNode)
     {
-    vtkMRMLDisplayNode* displayNode = focusedNode->GetNthDisplayNode(i);
-    if (!displayNode)
-      {
-      continue;
-      }
-    displayNodes.push_back(displayNode);
-    }
-
-  vtkNew<vtkPropCollection> focusNodeActors;
-  vtkMRMLDisplayableManagerGroup* group = this->GetMRMLDisplayableManagerGroup();
-  for (vtkMRMLDisplayNode* displayNode : displayNodes)
-    {
-    for (int i = 0; i < group->GetDisplayableManagerCount(); ++i)
-      {
-      vtkMRMLAbstractDisplayableManager* displayableManager = group->GetNthDisplayableManager(i);
-      displayableManager->GetActorsByID(focusNodeActors, displayNode->GetID(),
-        selectionNode->GetFocusedComponentType(), selectionNode->GetFocusedComponentIndex());
-      }
-    }
-
-  if (focusNodeActors->GetNumberOfItems() == 0)
-    {
-    // The focused node has no actors for the focused component type/index.
-    this->SetUpdateFromMRMLRequested(false);
-    this->RequestRender();
-    return;
-    }
-
-  std::map<vtkSmartPointer<vtkProp>, vtkSmartPointer<vtkProp>> newOriginalToCopyActors;
-
-  vtkSmartPointer<vtkProp> prop = nullptr;
-  vtkCollectionSimpleIterator it = nullptr;
-  for (focusNodeActors->InitTraversal(it); prop = focusNodeActors->GetNextProp(it);)
-    {
-    if (!prop->GetVisibility())
-      {
-      // Ignore actors that are not visible.
-      continue;
-      }
-
-    vtkSmartPointer<vtkProp> newProp = this->Internal->OriginalToCopyActors[prop];
-    if (!newProp)
-      {
-      newProp = vtkSmartPointer<vtkProp>::Take(prop->NewInstance());
-      }
-
-    this->Internal->OriginalActors.push_back(prop);
-    newOriginalToCopyActors[prop] = newProp;
-    this->Internal->RendererOutline->AddViewProp(newProp);
-
-    broker->AddObservation(prop,
-      vtkCommand::ModifiedEvent,
-      this, this->GetMRMLNodesCallbackCommand());
-
-    vtkActor2D* copyActor2D = vtkActor2D::SafeDownCast(prop);
-    if (copyActor2D)
-      {
-      broker->AddObservation(copyActor2D->GetPositionCoordinate(),
-        vtkCommand::ModifiedEvent,
-        this, this->GetMRMLNodesCallbackCommand());
-      }
-    }
-  this->Internal->OriginalToCopyActors = newOriginalToCopyActors;
-
-  this->UpdateActors();
-
-  if (!renderer->HasViewProp(this->Internal->CornerROIActor))
-    {
-    renderer->AddActor(this->Internal->CornerROIActor);
-    }
-
-  this->Internal->RendererOutline->SetActiveCamera(renderer->GetActiveCamera());
-  if (!renderer->GetRenderWindow()->HasRenderer(this->Internal->RendererOutline))
-    {
-    renderer->GetRenderWindow()->AddRenderer(this->Internal->RendererOutline);
-    }
-  this->SetUpdateFromMRMLRequested(false);
-  this->RequestRender();
-}
-
-//---------------------------------------------------------------------------
-void vtkMRMLFocusWidget::UpdateActors()
-{
-  for (auto prop : this->Internal->OriginalActors)
-    {
-    if (!prop)
-      {
-      continue;
-      }
-    this->UpdateActor(prop);
+    vtkNew<vtkIntArray> events;
+    events->InsertNextValue(vtkMRMLSelectionNode::FocusNodeIDChangedEvent);
+    vtkObserveMRMLNodeEventsMacro(this->SelectionNode, events);
     }
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLFocusWidget::UpdateActor(vtkProp* originalProp)
+vtkMRMLSelectionNode* vtkMRMLFocusWidget::GetSelectionNode()
 {
-  vtkProp* copyProp = this->Internal->OriginalToCopyActors[originalProp];
-  if (!copyProp)
-    {
-    return;
-    }
-
-  // Copy the properties of the original actor to the duplicate one
-  copyProp->ShallowCopy(originalProp);
-
-  vtkActor* copyActor = vtkActor::SafeDownCast(copyProp);
-  if (copyActor)
-    {
-    copyActor->SetTexture(nullptr);
-
-    // Make the actor flat. This generates a better outline.
-    vtkSmartPointer<vtkProperty> copyProperty = vtkSmartPointer<vtkProperty>::Take(copyActor->GetProperty()->NewInstance());
-    copyProperty->DeepCopy(copyActor->GetProperty());
-    copyProperty->SetLighting(false);
-    copyProperty->SetColor(1.0, 1.0, 1.0);
-    copyProperty->SetOpacity(1.0);
-    copyActor->SetProperty(copyProperty);
-    }
-
-  vtkVolume* copyVolume = vtkVolume::SafeDownCast(copyProp);
-  if (copyVolume)
-    {
-    vtkNew<vtkColorTransferFunction> colorTransferFunction;
-    colorTransferFunction->AddRGBPoint(0, 1.0, 1.0, 1.0);
-
-    vtkSmartPointer<vtkVolumeProperty> copyProperty = vtkSmartPointer<vtkVolumeProperty>::Take(copyVolume->GetProperty()->NewInstance());
-    copyProperty->DeepCopy(copyVolume->GetProperty());
-    copyProperty->SetDiffuse(0.0);
-    copyProperty->SetAmbient(1.0);
-    copyProperty->ShadeOff();
-    copyProperty->SetColor(colorTransferFunction);
-    copyVolume->SetProperty(copyProperty);
-    }
-
-  vtkActor2D* copyActor2D = vtkActor2D::SafeDownCast(copyProp);
-  if (copyActor2D)
-    {
-    vtkSmartPointer<vtkProperty2D> copyProperty2D = vtkSmartPointer<vtkProperty2D>::Take(copyActor2D->GetProperty()->NewInstance());
-    copyProperty2D->DeepCopy(copyActor2D->GetProperty());
-    copyProperty2D->SetColor(1.0, 1.0, 1.0);
-    copyActor2D->SetProperty(copyProperty2D);
-    }
-
-  vtkLabelPlacementMapper* oldLabelMapper = copyActor2D ? vtkLabelPlacementMapper::SafeDownCast(copyActor2D->GetMapper()) : nullptr;
-  if (oldLabelMapper)
-    {
-    // TODO: Workaround for markups widgets in order to modify text property for control point labels.
-
-    vtkPointSetToLabelHierarchy* oldPointSetInput = vtkPointSetToLabelHierarchy::SafeDownCast(oldLabelMapper->GetInputAlgorithm());
-    if (oldPointSetInput)
-      {
-      vtkSmartPointer<vtkLabelPlacementMapper> newLabelMapper = vtkSmartPointer<vtkLabelPlacementMapper>::Take(oldLabelMapper->NewInstance());
-      newLabelMapper->ShallowCopy(oldLabelMapper);
-
-      vtkSmartPointer<vtkPointSetToLabelHierarchy> newPointSetInput = vtkSmartPointer<vtkPointSetToLabelHierarchy>::Take(oldPointSetInput->NewInstance());
-      newPointSetInput->SetInputData(oldPointSetInput->GetInput());
-      newPointSetInput->SetLabelArrayName("labels");
-      newPointSetInput->SetPriorityArrayName("priority");
-
-      vtkSmartPointer<vtkTextProperty> textProperty = vtkSmartPointer<vtkTextProperty>::Take(newPointSetInput->GetTextProperty()->NewInstance());
-      textProperty->ShallowCopy(newPointSetInput->GetTextProperty());
-      textProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
-      newPointSetInput->SetTextProperty(textProperty);
-
-      newLabelMapper->SetInputConnection(newPointSetInput->GetOutputPort());
-
-      copyActor2D->SetMapper(newLabelMapper);
-      }
-    }
-
-  vtkTextActor* copyTextActor = vtkTextActor::SafeDownCast(copyProp);
-  if (copyTextActor)
-    {
-    // TODO: Outline is not large enough if background is fully transparent.
-    vtkSmartPointer<vtkTextProperty> copyTextProperty = vtkSmartPointer<vtkTextProperty>::Take(copyTextActor->GetTextProperty()->NewInstance());
-    copyTextProperty->ShallowCopy(copyTextActor->GetTextProperty());
-    copyTextProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
-    copyTextActor->SetTextProperty(copyTextProperty);
-    }
+  return this->SelectionNode;
 }

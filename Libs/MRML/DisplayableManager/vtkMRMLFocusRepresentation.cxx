@@ -18,10 +18,19 @@
 
 ==============================================================================*/
 
-
+// MRMLDM includes
 #include "vtkMRMLFocusRepresentation.h"
 
-#include "vtkMRMLFocusRepresentationHelper.h"
+// MRML includes
+#include <vtkMRMLSelectionNode.h>
+
+// VTK includes
+#include <vtkActor2D.h>
+#include <vtkOutlineGlowPass.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataMapper2D.h>
+#include <vtkRenderer.h>
+#include <vtkRenderStepsPass.h>
 
 class FocusDisplayPipeline
 {
@@ -38,11 +47,22 @@ class FocusDisplayPipeline
     }
 };
 
+//---------------------------------------------------------------------------
 class vtkMRMLFocusRepresentation::vtkInternal
 {
   public:
     vtkInternal(vtkMRMLFocusRepresentation* external);
     ~vtkInternal();
+
+    vtkWeakPointer<vtkMRMLSelectionNode> SelectionNode;
+
+    vtkNew<vtkRenderer> RendererOutline;
+    vtkNew<vtkRenderStepsPass> BasicPasses;
+    vtkNew<vtkOutlineGlowPass> ROIGlowPass;
+
+    vtkNew<vtkPolyData>         CornerROIPolyData;
+    vtkNew<vtkPolyDataMapper2D> CornerROIMapper;
+    vtkNew<vtkActor2D>          CornerROIActor;
 
     vtkMRMLFocusRepresentation* External;
 };
@@ -55,10 +75,23 @@ vtkMRMLFocusRepresentation::vtkInternal
 ::vtkInternal(vtkMRMLFocusRepresentation* external)
 {
   this->External = external;
+
+  this->ROIGlowPass->SetDelegatePass(this->BasicPasses);
+  this->RendererOutline->UseFXAAOn();
+  this->RendererOutline->UseShadowsOff();
+  this->RendererOutline->UseDepthPeelingOff();
+  this->RendererOutline->UseDepthPeelingForVolumesOff();
+  this->RendererOutline->SetPass(this->ROIGlowPass);
+
+  this->CornerROIMapper->SetInputData(this->CornerROIPolyData);
+  this->CornerROIActor->SetMapper(this->CornerROIMapper);
 }
 
 //---------------------------------------------------------------------------
 vtkMRMLFocusRepresentation::vtkInternal::~vtkInternal() = default;
+
+//---------------------------------------------------------------------------
+vtkStandardNewMacro(vtkMRMLFocusRepresentation);
 
 //----------------------------------------------------------------------
 vtkMRMLFocusRepresentation::vtkMRMLFocusRepresentation()
@@ -74,36 +107,17 @@ vtkMRMLFocusRepresentation::~vtkMRMLFocusRepresentation()
 //----------------------------------------------------------------------
 void vtkMRMLFocusRepresentation::GetActors2D(vtkPropCollection * pc)
 {
-  for (std::deque<SliceIntersectionInteractionDisplayPipeline*>::iterator
-    sliceIntersectionIt = this->Internal->SliceIntersectionInteractionDisplayPipelines.begin();
-    sliceIntersectionIt != this->Internal->SliceIntersectionInteractionDisplayPipelines.end(); ++sliceIntersectionIt)
-    {
-    (*sliceIntersectionIt)->GetActors2D(pc);
-    }
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLFocusRepresentation::ReleaseGraphicsResources(vtkWindow * win)
 {
-  for (std::deque<SliceIntersectionInteractionDisplayPipeline*>::iterator
-    sliceIntersectionIt = this->Internal->SliceIntersectionInteractionDisplayPipelines.begin();
-    sliceIntersectionIt != this->Internal->SliceIntersectionInteractionDisplayPipelines.end(); ++sliceIntersectionIt)
-    {
-    (*sliceIntersectionIt)->ReleaseGraphicsResources(win);
-    }
 }
 
 //----------------------------------------------------------------------
 int vtkMRMLFocusRepresentation::RenderOverlay(vtkViewport * viewport)
 {
   int count = 0;
-
-  for (std::deque<SliceIntersectionInteractionDisplayPipeline*>::iterator
-    sliceIntersectionIt = this->Internal->SliceIntersectionInteractionDisplayPipelines.begin();
-    sliceIntersectionIt != this->Internal->SliceIntersectionInteractionDisplayPipelines.end(); ++sliceIntersectionIt)
-    {
-    count += (*sliceIntersectionIt)->RenderOverlay(viewport);
-    }
   return count;
 }
 

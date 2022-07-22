@@ -31,7 +31,8 @@
 #include "vtkMRMLDisplayableManagerExport.h" // For export macro
 #include "vtkMRMLAbstractWidget.h"
 class vtkMRMLSelectionNode;
-
+class vtkMRMLFocusRepresentation;
+class vtkObserverManager;
 class VTK_MRML_DISPLAYABLEMANAGER_EXPORT vtkMRMLFocusWidget : public vtkMRMLAbstractWidget
 {
 public:
@@ -53,8 +54,8 @@ public:
    */
   void CreateDefaultRepresentation();
 
-  void SetSelectionNode(vtkMRMLSelectionNode* cameraNode);
-  vtkMRMLSelectionNode* GetCameraNode();
+  void SetSelectionNode(vtkMRMLSelectionNode* selectionNode);
+  vtkMRMLSelectionNode* GetSelectionNode();
 
   /// Return true if the widget can process the event.
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double &distance2) override;
@@ -75,9 +76,20 @@ public:
     WidgetEventCancelFocus = WidgetEventUser,
     };
 
+
 protected:
   vtkMRMLFocusWidget();
   ~vtkMRMLFocusWidget() override;
+
+  static void ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* clientData, void* callData);
+
+  vtkGetObjectMacro(MRMLNodesObserverManager, vtkObserverManager);
+
+protected:
+  vtkNew<vtkObserverManager> MRMLNodesObserverManager;
+
+  vtkMRMLSelectionNode* SelectionNode{ nullptr };
+  vtkNew<vtkMRMLFocusRepresentation> FocusRep;
 
 private:
   vtkMRMLFocusWidget(const vtkMRMLFocusWidget&) = delete;

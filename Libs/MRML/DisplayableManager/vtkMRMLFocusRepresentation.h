@@ -32,8 +32,6 @@
 #include "vtkMRMLDisplayableManagerExport.h" // For export macro
 #include "vtkMRMLAbstractWidgetRepresentation.h"
 
-#include "vtkMRMLSelectionNode.h"
-
 class SliceIntersectionInteractionDisplayPipeline;
 class vtkMRMLInteractionEventData;
 
@@ -53,8 +51,7 @@ class VTK_MRML_DISPLAYABLEMANAGER_EXPORT vtkMRMLFocusRepresentation : public vtk
     void PrintSelf(ostream& os, vtkIndent indent) override;
     //@}
 
-    bool IsDisplayable();
-    void UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void* callData = nullptr) override;
+    /*void UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void* callData = nullptr) override;*/
 
     //@{
     /**
@@ -70,13 +67,6 @@ class VTK_MRML_DISPLAYABLEMANAGER_EXPORT vtkMRMLFocusRepresentation : public vtk
     /// componentIndex returns index of the found component (e.g., if control point is found then control point index is returned).
     virtual std::string CanInteract(vtkMRMLInteractionEventData* interactionEventData,
         int& foundComponentType, int& foundComponentIndex, double& closestDistance2, double& handleOpacity);
-
-
-    /// Get the list of info for all interaction handles
-    typedef std::vector<HandleInfo> HandleInfoList;
-    virtual HandleInfoList GetHandleInfoList(SliceIntersectionInteractionDisplayPipeline* pipeline);
-
-    virtual int GetTranslateArrowCursor(const std::string& intersectingSliceNodeID);
 
   protected:
     vtkMRMLFocusRepresentation();

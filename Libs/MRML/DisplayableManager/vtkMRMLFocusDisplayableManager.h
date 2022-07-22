@@ -44,10 +44,10 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
 protected:
-  // TODO
-  void UpdateSelectionNode();
+  //// TODO
+  //void UpdateSelectionNode();
 
-  // TODO
+  //// TODO
   void SetAndObserveSelectionNode(vtkMRMLSelectionNode* newSelectionNode);
 
   // Update selection node observer
@@ -60,9 +60,6 @@ protected:
 
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2) override;
   bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
-
-  void UpdateActors();
-  void UpdateActor(vtkProp* originalProp);
 
 protected:
   vtkMRMLFocusDisplayableManager();
