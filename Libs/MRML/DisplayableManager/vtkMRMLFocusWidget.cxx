@@ -383,7 +383,7 @@ void vtkMRMLFocusWidget::ProcessMRMLNodesEvents(vtkObject* caller,
   //  copyTextProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
   //  copyTextActor->SetTextProperty(copyTextProperty);
   //  }
-// }
+//}
 
 //---------------------------------------------------------------------------
 void vtkMRMLFocusWidget::SetSelectionNode(vtkMRMLSelectionNode* selectionNode)

@@ -51,15 +51,20 @@ class VTK_MRML_DISPLAYABLEMANAGER_EXPORT vtkMRMLFocusRepresentation : public vtk
     void PrintSelf(ostream& os, vtkIndent indent) override;
     //@}
 
-    /*void UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void* callData = nullptr) override;*/
+    void UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void* callData) override;
+    void UpdateActors();
+    void UpdateActor(vtkProp* originalProp);
 
     //@{
     /**
      * Methods to make this class behave as a vtkProp.
      */
+    void GetActors(vtkPropCollection*) override;
     void GetActors2D(vtkPropCollection*) override;
     void ReleaseGraphicsResources(vtkWindow*) override;
     int RenderOverlay(vtkViewport* viewport) override;
+    int RenderOpaqueGeometry(vtkViewport* viewport) override;
+    int RenderTranslucentPolygonalGeometry(vtkViewport* viewport) override;
     //@}
 
     /// Return found component type (as vtkMRMLInteractionDisplayNode::ComponentType).
