@@ -22,16 +22,18 @@
  * @class   vtkMRMLFocusWidget
  * @brief   Display focus visualizations and process events.
  *
- * TODO
+ * Widget used to control interaction events involving node focus.
 */
 
 #ifndef vtkMRMLFocusWidget_h
 #define vtkMRMLFocusWidget_h
 
+// MRMLDM includes
 #include "vtkMRMLDisplayableManagerExport.h" // For export macro
 #include "vtkMRMLAbstractWidget.h"
+
 class vtkMRMLSelectionNode;
-class vtkMRMLFocusRepresentation;
+
 class vtkObserverManager;
 class VTK_MRML_DISPLAYABLEMANAGER_EXPORT vtkMRMLFocusWidget : public vtkMRMLAbstractWidget
 {
@@ -49,11 +51,6 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent) override;
   //@}
 
-  /**
-   * Create the default widget representation if one is not set.
-   */
-  void CreateDefaultRepresentation();
-
   void SetSelectionNode(vtkMRMLSelectionNode* selectionNode);
   vtkMRMLSelectionNode* GetSelectionNode();
 
@@ -67,7 +64,7 @@ public:
   /// Widget states
   enum
     {
-    WidgetStateFocus = WidgetStateUser, ///< Move crosshair position, can be used for moving the crosshair with click-and-drag.
+    WidgetStateFocus = WidgetStateUser, ///< A node currently has focus.
     };
 
   /// Widget events
@@ -89,7 +86,6 @@ protected:
   vtkNew<vtkObserverManager> MRMLNodesObserverManager;
 
   vtkMRMLSelectionNode* SelectionNode{ nullptr };
-  vtkNew<vtkMRMLFocusRepresentation> FocusRep;
 
 private:
   vtkMRMLFocusWidget(const vtkMRMLFocusWidget&) = delete;

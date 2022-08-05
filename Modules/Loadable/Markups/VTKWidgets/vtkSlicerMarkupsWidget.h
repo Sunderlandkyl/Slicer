@@ -131,8 +131,6 @@ public:
   int GetActiveComponentType();
   int GetActiveComponentIndex();
 
-  vtkMRMLSelectionNode* selectionNode();
-
 protected:
   vtkSlicerMarkupsWidget();
   ~vtkSlicerMarkupsWidget() override;
@@ -186,7 +184,8 @@ protected:
   // Input coordinates are in display coordinates, while output are in world coordinates
   virtual bool GetIntersectionOnAxisPlane(int type, int index, const double inputDisplay[2], double outputIntersectionWorld[3]);
 
-  bool GetNodeFocused();
+  vtkMRMLSelectionNode* GetSelectionNode();
+  bool GetHasFocus();
 
   // Variables for translate/rotate/scale
   double LastEventPosition[2];

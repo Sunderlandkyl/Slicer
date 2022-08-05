@@ -44,10 +44,10 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
 protected:
-  //// TODO
-  //void UpdateSelectionNode();
+  // TODO
+  void UpdateSelectionNode();
 
-  //// TODO
+  // TODO
   void SetAndObserveSelectionNode(vtkMRMLSelectionNode* newSelectionNode);
 
   // Update selection node observer
@@ -56,10 +56,25 @@ protected:
   /// Updates Actors based on models in the scene
   void UpdateFromMRML() override;
 
+  void UpdateDisplayableNodes();
+  void UpdateOriginalFocusActors();
+
+  void UpdateSoftFocus();
+
+  void UpdateHardFocus();
+
   void ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData) override;
 
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2) override;
   bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
+
+  void UpdateActors();
+  void UpdateActor(vtkProp* originalProp);
+
+  void UpdateActorRASBounds();
+  void UpdateCornerROIPolyData();
+
+  vtkMRMLNode* GetFocusNode();
 
 protected:
   vtkMRMLFocusDisplayableManager();

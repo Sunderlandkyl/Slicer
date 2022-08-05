@@ -390,6 +390,7 @@ bool vtkSlicerMarkupsWidget::ProcessControlPointDelete(vtkMRMLInteractionEventDa
     {
     return false;
     }
+
   std::vector<int> controlPointsToDelete;
   if (this->WidgetState == WidgetStateDefine)
     {
@@ -431,7 +432,7 @@ bool vtkSlicerMarkupsWidget::ProcessWidgetJumpCursor(vtkMRMLInteractionEventData
     }
 
   vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
-  if (!this->GetNodeFocused() && this->selectionNode())
+  if (!this->GetHasFocus())
     {
     // TODO: Jump event is highjacked for focus selection.
     this->ProcessNodeGrabFocus(eventData);
@@ -492,15 +493,15 @@ bool vtkSlicerMarkupsWidget::ProcessWidgetJumpCursor(vtkMRMLInteractionEventData
 //-------------------------------------------------------------------------
 bool vtkSlicerMarkupsWidget::ProcessNodeGrabFocus(vtkMRMLInteractionEventData* vtkNotUsed(eventData))
 {
-  vtkMRMLSelectionNode* currentSelectionNode = this->selectionNode();
+  vtkMRMLSelectionNode* currentSelectionNode = this->GetSelectionNode();
 
-  if (!this->selectionNode())
+  if (!this->GetSelectionNode())
     {
     return false;
     }
 
   vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
-  this->selectionNode()->SetFocusNodeID(markupsNode ? markupsNode->GetID() : nullptr);
+  this->GetSelectionNode()->SetFocusNodeID(markupsNode ? markupsNode->GetID() : nullptr);
   return true;
 }
 
@@ -713,12 +714,25 @@ bool vtkSlicerMarkupsWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventD
 
   if (widgetEvent == WidgetEventGrabNodeFocus)
     {
-    if (this->GetNodeFocused())
+    if (this->GetHasFocus())
       {
       return false;
       }
     distance2 = 1e10;
     return true;
+    }
+
+  if (widgetEvent == WidgetEventControlPointDelete
+    || widgetEvent == WidgetEventControlPointInsert
+    || widgetEvent == WidgetEventTranslateStart
+    || widgetEvent == WidgetEventControlPointSnapToSlice)
+    {
+    vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+    if (!markupsNode || (!markupsNode->GetAllowUnselectedEditing() && !this->GetHasFocus()))
+      {
+      // Node does not have focus, do not process interaction event.
+      return false;
+      }
     }
 
   int foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentNone;
@@ -1078,7 +1092,7 @@ void vtkSlicerMarkupsWidget::TranslatePoint(double eventPos[2], bool snapToSlice
     return;
     }
 
-  if (!this->GetNodeFocused())
+  if (!markupsNode->GetAllowUnselectedEditing() && !this->GetHasFocus())
     {
     // Node does not have focus, do not translate.
     return;
@@ -1895,16 +1909,20 @@ int vtkSlicerMarkupsWidget::GetActiveComponentIndex()
 }
 
 //-----------------------------------------------------------------------------
-vtkMRMLSelectionNode* vtkSlicerMarkupsWidget::selectionNode()
+vtkMRMLSelectionNode* vtkSlicerMarkupsWidget::GetSelectionNode()
 {
   return vtkMRMLSelectionNode::SafeDownCast(
     this->GetMarkupsNode()->GetScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton"));
 }
 
 //-----------------------------------------------------------------------------
-bool vtkSlicerMarkupsWidget::GetNodeFocused()
+bool vtkSlicerMarkupsWidget::GetHasFocus()
 {
-  vtkMRMLSelectionNode* selectionNode = this->selectionNode();
+  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
+  if (!selectionNode)
+    {
+    return false;
+    }
   vtkMRMLNode* focusedNode = selectionNode ? selectionNode->GetFocusNode() : nullptr;
   return focusedNode == this->GetMarkupsNode();
 }
