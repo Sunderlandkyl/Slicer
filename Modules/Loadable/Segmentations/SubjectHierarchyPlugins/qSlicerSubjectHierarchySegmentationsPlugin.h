@@ -118,6 +118,9 @@ public:
   /// Returns true on success.
   bool showItemInView(vtkIdType itemID, vtkMRMLAbstractViewNode* viewNode, vtkIdList* allItemsToShow) override;
 
+  /// TODO
+  int componentIndex(vtkIdType itemID) override;
+
 public slots:
   /// Called when segment is added in an observed segmentation node
   /// Adds per-segment subject hierarchy node

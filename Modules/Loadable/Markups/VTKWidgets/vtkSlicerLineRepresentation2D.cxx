@@ -286,3 +286,12 @@ void vtkSlicerLineRepresentation2D::SetMarkupsNode(vtkMRMLMarkupsNode *markupsNo
   }
   this->Superclass::SetMarkupsNode(markupsNode);
 }
+
+//----------------------------------------------------------------------
+void vtkSlicerLineRepresentation2D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  actors->AddItem(this->LineActor);
+  actors->AddItem(this->TextActor);
+}

@@ -39,9 +39,11 @@
 #include "qMRMLSceneModel.h"
 
 // MRML includes
+#include <vtkMRMLDisplayableNode.h>
 #include <vtkMRMLInteractionNode.h>
 #include <vtkMRMLNode.h>
 #include <vtkMRMLScene.h>
+#include <vtkMRMLSelectionNode.h>
 
 // ----------------------------------------------------------------------------
 
@@ -1216,6 +1218,9 @@ void qMRMLNodeComboBox::setComboBox(QComboBox* comboBox)
           this, SLOT(emitCurrentNodeChanged()));
   connect(d->ComboBox, SIGNAL(activated(int)),
           this, SLOT(emitNodeActivated(int)));
+  connect(d->ComboBox, SIGNAL(highlighted(int)),
+    this, SLOT(onNodeHighlighted(int)));
+  d->ComboBox->view()->viewport()->installEventFilter(this);
   d->ComboBox->setSizePolicy(QSizePolicy(QSizePolicy::Expanding,
                                          QSizePolicy::Expanding,
                                          QSizePolicy::DefaultType));
@@ -1356,4 +1361,99 @@ void qMRMLNodeComboBox::setInteractionNodeSingletonTag(const QString& tag)
 {
   Q_D(qMRMLNodeComboBox);
   d->InteractionNodeSingletonTag = tag;
+}
+
+//--------------------------------------------------------------------------
+bool qMRMLNodeComboBox::eventFilter(QObject* obj, QEvent* evt)
+{
+  Q_D(qMRMLNodeComboBox);
+
+  switch (evt->type())
+  {
+    case QEvent::Enter:
+    case QEvent::Show:
+      this->onNodeHighlighted(d->ComboBox->view()->currentIndex().row());
+      break;
+    case QEvent::Hide:
+      this->onNodeHighlighted();
+      break;
+    default:
+      break;
+  }
+
+  return Superclass::eventFilter(obj, evt);
+}
+
+//---------------------------------------------------------------------------
+void qMRMLNodeComboBox::enterEvent(QEvent* evt)
+{
+  Q_D(qMRMLNodeComboBox);
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene()
+    ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  if (!selectionNode)
+  {
+    return;
+  }
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->RemoveAllSoftFocus();
+
+  QModelIndex index = d->ComboBox->view()->currentIndex();
+  vtkMRMLNode* softFocusNode = d->mrmlNode(index.row());
+  selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
+}
+
+//---------------------------------------------------------------------------
+void qMRMLNodeComboBox::leaveEvent(QEvent* e)
+{
+  Q_D(qMRMLNodeComboBox);
+  Superclass::leaveEvent(e);
+
+  if (d->ComboBox->view()->isVisible())
+  {
+    // Combobox is open.
+    // Don't change the selection
+    return;
+  }
+
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetFirstNodeByName("Selection")) : nullptr;
+  if (!selectionNode)
+  {
+    return;
+  }
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->RemoveAllSoftFocus();
+}
+
+//---------------------------------------------------------------------------
+void qMRMLNodeComboBox::onNodeHighlighted(int index/*=-1*/)
+{
+  Q_D(qMRMLNodeComboBox);
+
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene()
+    ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  if (!selectionNode)
+  {
+    return;
+  }
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->RemoveAllSoftFocus();
+
+  if (!d->ComboBox->view()->isVisible())
+  {
+    // Combobox is not open.
+    // Remove the selection.
+    return;
+  }
+
+  if (index < 0)
+  {
+    // No index is specified. Use the index of the currently selected node.
+    index = d->ComboBox->currentIndex();
+  }
+
+  vtkMRMLDisplayableNode* softFocusNode = vtkMRMLDisplayableNode::SafeDownCast(d->mrmlNode(index));
+  selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
 }

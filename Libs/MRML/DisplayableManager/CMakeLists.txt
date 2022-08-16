@@ -86,6 +86,7 @@ set(DisplayableManager_SRCS
   vtkMRMLOrientationMarkerDisplayableManager.cxx
   vtkMRMLRulerDisplayableManager.cxx
   vtkMRMLScalarBarDisplayableManager.cxx
+  vtkMRMLFocusDisplayableManager.cxx
   )
 
 set(KIT_SRCS
@@ -112,6 +113,7 @@ set(KIT_SRCS
   vtkMRMLAbstractWidget.cxx
   vtkMRMLAbstractWidgetRepresentation.cxx
   vtkMRMLCameraWidget.cxx
+  vtkMRMLFocusWidget.cxx
   vtkMRMLInteractionWidget.cxx
   vtkMRMLInteractionWidgetRepresentation.cxx
   vtkMRMLSliceIntersectionWidget.cxx

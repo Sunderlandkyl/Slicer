@@ -200,6 +200,7 @@ void qMRMLSliceViewPrivate::initDisplayableManagers()
   displayableManagers << "vtkMRMLOrientationMarkerDisplayableManager";
   displayableManagers << "vtkMRMLRulerDisplayableManager";
   displayableManagers << "vtkMRMLScalarBarDisplayableManager";
+  displayableManagers << "vtkMRMLFocusDisplayableManager";
   foreach(const QString& displayableManager, displayableManagers)
   {
     if (!factory->IsDisplayableManagerRegistered(displayableManager.toUtf8()))

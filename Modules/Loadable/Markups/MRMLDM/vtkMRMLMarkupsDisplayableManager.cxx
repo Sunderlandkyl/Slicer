@@ -228,11 +228,13 @@ void vtkMRMLMarkupsDisplayableManager::SetMRMLSceneInternal(vtkMRMLScene* newSce
   if (newScene)
   {
     this->AddObserversToInteractionNode();
+    this->AddObserversToSelectionNode();
   }
   else
   {
     // there's no scene to get the interaction node from, so this won't do anything
     this->RemoveObserversFromInteractionNode();
+    this->RemoveObserversFromSelectionNode();
   }
   vtkDebugMacro("SetMRMLSceneInternal: add observer on interaction node now?");
 
@@ -246,6 +248,7 @@ void vtkMRMLMarkupsDisplayableManager
 {
   vtkMRMLMarkupsNode * markupsNode = vtkMRMLMarkupsNode::SafeDownCast(caller);
   vtkMRMLInteractionNode * interactionNode = vtkMRMLInteractionNode::SafeDownCast(caller);
+  vtkMRMLSelectionNode* selectionNode = vtkMRMLSelectionNode::SafeDownCast(caller);
   if (markupsNode)
   {
     bool renderRequested = false;
@@ -307,6 +310,21 @@ void vtkMRMLMarkupsDisplayableManager
       }
     }
   }
+  else if (selectionNode)
+  {
+    // loop through all widgets and update the widget status
+    for (vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToWidgetIt widgetIterator = this->Helper->MarkupsDisplayNodesToWidgets.begin();
+      widgetIterator != this->Helper->MarkupsDisplayNodesToWidgets.end(); ++widgetIterator)
+    {
+      vtkSlicerMarkupsWidget* widget = widgetIterator->second;
+      if (!widget)
+      {
+        continue;
+      }
+      vtkMRMLInteractionEventData* eventData = reinterpret_cast<vtkMRMLInteractionEventData*>(callData);
+      widget->UpdateFromMRML(selectionNode, event, callData);
+    }
+  }
   else
   {
     this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
@@ -364,6 +382,11 @@ void vtkMRMLMarkupsDisplayableManager::OnMRMLSceneNodeAdded(vtkMRMLNode* node)
     return;
   }
 
+  if (node->IsA("vtkMRMLSelectionNode"))
+  {
+    this->AddObserversToSelectionNode();
+  }
+
   if (node->IsA("vtkMRMLMarkupsNode"))
   {
     this->Helper->AddMarkupsNode(vtkMRMLMarkupsNode::SafeDownCast(node));
@@ -407,6 +430,45 @@ void vtkMRMLMarkupsDisplayableManager::RemoveObserversFromInteractionNode()
   if (interactionNode)
   {
     vtkUnObserveMRMLNodeMacro(interactionNode);
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManager::AddObserversToSelectionNode()
+{
+  if (!this->GetMRMLScene())
+  {
+    return;
+  }
+
+  // Observe the selection node for changes
+  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
+  if (selectionNode)
+  {
+    vtkDebugMacro("AddObserversToSelectionNode: selectionNode found");
+    vtkNew<vtkIntArray> interactionEvents;
+    interactionEvents->InsertNextValue(vtkMRMLSelectionNode::FocusNodeIDChangedEvent);
+    vtkObserveMRMLNodeEventsMacro(selectionNode, interactionEvents.GetPointer());
+  }
+  else
+  {
+    vtkDebugMacro("AddObserversToSelectionNode: No selection node!");
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManager::RemoveObserversFromSelectionNode()
+{
+  if (!this->GetMRMLScene())
+  {
+    return;
+  }
+
+  // find the interaction node
+  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
+  if (selectionNode)
+  {
+    vtkUnObserveMRMLNodeMacro(selectionNode);
   }
 }
 
@@ -1064,4 +1126,26 @@ vtkSlicerMarkupsInteractionWidget* vtkMRMLMarkupsDisplayableManager::CreateInter
 void vtkMRMLMarkupsDisplayableManager::ConvertDeviceToXYZ(double x, double y, double xyz[3])
 {
   vtkMRMLAbstractSliceViewDisplayableManager::ConvertDeviceToXYZ(this->GetInteractor(), this->GetMRMLSliceNode(), x, y, xyz);
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManager::GetActorsByDisplayNode(vtkPropCollection* actors, vtkMRMLDisplayNode* displayNode, int componentType, int componentIndex)
+{
+  vtkMRMLMarkupsDisplayNode* markupsDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(displayNode);
+  if (!markupsDisplayNode)
+  {
+    return;
+  }
+
+  auto it = this->GetHelper()->MarkupsDisplayNodesToWidgets.find(markupsDisplayNode);
+  if (it == this->GetHelper()->MarkupsDisplayNodesToWidgets.end())
+  {
+    return;
+  }
+
+  vtkSlicerMarkupsWidgetRepresentation* rep = vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(it->second->GetRepresentation());
+  if (rep && rep->GetVisibility())
+  {
+    rep->GetActorsForComponent(actors, componentType, componentIndex);
+  }
 }

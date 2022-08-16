@@ -389,3 +389,18 @@ void vtkSlicerCurveRepresentation2D::CanInteractWithCurve(
     componentIndex = markupsNode->GetControlPointIndexFromInterpolatedPointIndex(subId);
   }
 }
+
+//----------------------------------------------------------------------
+void vtkSlicerCurveRepresentation2D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+  if (componentType < 0)
+  {
+    actors->AddItem(this->TextActor);
+  }
+
+  if (componentType < 0 || componentType == vtkMRMLMarkupsDisplayNode::ComponentLine)
+  {
+    actors->AddItem(this->LineActor);
+  }
+}

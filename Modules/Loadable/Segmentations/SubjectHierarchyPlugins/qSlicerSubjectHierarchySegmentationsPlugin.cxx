@@ -1395,3 +1395,30 @@ bool qSlicerSubjectHierarchySegmentationsPlugin::showItemInView(vtkIdType itemID
 
   return qSlicerSubjectHierarchyAbstractPlugin::showItemInView(itemID, viewNode, allItemsToShow);
 }
+
+//-----------------------------------------------------------------------------
+int qSlicerSubjectHierarchySegmentationsPlugin::componentIndex(vtkIdType itemID)
+{
+  vtkMRMLSubjectHierarchyNode* shNode = qSlicerSubjectHierarchyPluginHandler::instance()->subjectHierarchyNode();
+  if (!shNode)
+  {
+    qCritical() << Q_FUNC_INFO << ": Failed to access subject hierarchy node";
+    return -1;
+  }
+
+  vtkMRMLSegmentationNode* segmentationNode = vtkSlicerSegmentationsModuleLogic::GetSegmentationNodeForSegmentSubjectHierarchyItem(
+    itemID, qSlicerSubjectHierarchyPluginHandler::instance()->mrmlScene());
+  if (!segmentationNode || !segmentationNode->GetSegmentation())
+  {
+    qCritical() << Q_FUNC_INFO << ": Failed to access segmentation node";
+    return -1;
+  }
+
+  if (!shNode->HasItemAttribute(itemID, vtkMRMLSegmentationNode::GetSegmentIDAttributeName()))
+  {
+    return -1;
+  }
+
+  std::string segmentID = shNode->GetItemAttribute(itemID, vtkMRMLSegmentationNode::GetSegmentIDAttributeName());
+  return segmentationNode->GetSegmentation()->GetSegmentIndex(segmentID);
+}

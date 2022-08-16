@@ -128,6 +128,9 @@ public:
   /// Implemented by calling the segmentation plugin.
   bool showItemInView(vtkIdType itemID, vtkMRMLAbstractViewNode* viewNode, vtkIdList* allItemsToShow) override;
 
+  /// TODO
+  int componentIndex(vtkIdType itemID) override;
+
 protected slots:
   /// Show only selected segment, hide all others in segmentation
   void showOnlyCurrentSegment();

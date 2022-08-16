@@ -108,6 +108,10 @@ class SegmentEditorGrowFromSeedsEffect(AbstractScriptedSegmentEditorAutoComplete
     def computePreviewLabelmap(self, mergedImage, outputLabelmap):
         import vtkITK
 
+        minDimension = min(self.clippedMasterImageData.GetDimensions())
+        if minDimension < 3:
+            raise Exception(f"Minimum required image size in any direction is 3 voxels, current minimum size is {minDimension} voxels.")
+
         if not self.growCutFilter:
             self.growCutFilter = vtkITK.vtkITKGrowCut()
             self.growCutFilter.SetIntensityVolume(self.clippedMasterImageData)

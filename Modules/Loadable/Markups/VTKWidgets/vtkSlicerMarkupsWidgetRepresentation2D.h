@@ -75,6 +75,11 @@ public:
   int RenderTranslucentPolygonalGeometry(vtkViewport *viewport) override;
   vtkTypeBool HasTranslucentPolygonalGeometry() override;
 
+  ///@{
+  /// Retrieve a list of actors for the selected component.
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType = -1, int componentIndex = -1) override;
+  ///@}
+
   /// Get the nth node's position on the slice. Will return
   /// 1 on success, or 0 if there are not at least
   /// (n+1) nodes (0 based counting).

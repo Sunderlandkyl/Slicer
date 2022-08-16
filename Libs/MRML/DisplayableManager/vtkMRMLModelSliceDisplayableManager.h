@@ -46,6 +46,11 @@ public:
   void AddDisplayableNode(vtkMRMLDisplayableNode* displayableNode);
   void RemoveDisplayableNode(vtkMRMLDisplayableNode* displayableNode);
 
+  ///@{
+  /// Retrieve a list of actors for the specified vtkMRMLDisplayNode.
+  void GetActorsByDisplayNode(vtkPropCollection* actors, vtkMRMLDisplayNode* id, int component=-1, int index=-1) override;
+  ///@}
+
 protected:
 
   vtkMRMLModelSliceDisplayableManager();

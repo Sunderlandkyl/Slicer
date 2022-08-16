@@ -437,3 +437,15 @@ void qSlicerSubjectHierarchyAbstractPlugin::setActionPosition(QAction* action, i
   }
   action->setProperty("section", section + weight * 0.01 + weightAdjustment * 0.0001);
 }
+
+//-----------------------------------------------------------------------------
+int qSlicerSubjectHierarchyAbstractPlugin::componentIndex(vtkIdType idType)
+{
+  return -1;
+}
+
+//-----------------------------------------------------------------------------
+int qSlicerSubjectHierarchyAbstractPlugin::componentType(vtkIdType idType)
+{
+  return -1;
+}

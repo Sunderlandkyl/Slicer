@@ -83,6 +83,11 @@ public:
 
   void BuildPlane();
 
+  ///@{
+  /// Retrieve a list of actors for the selected component.
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex) override;
+  ///@}
+
 protected:
   vtkSlicerPlaneRepresentation2D();
   ~vtkSlicerPlaneRepresentation2D() override;

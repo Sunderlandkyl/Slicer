@@ -47,6 +47,7 @@
 #include <vtkMRMLApplicationLogic.h>
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
+#include <vtkMRMLScene.h>
 #include <vtkMRMLViewNode.h>
 
 std::map<vtkRenderer*, vtkSmartPointer<vtkFloatArray> > vtkSlicerMarkupsWidgetRepresentation3D::CachedZBuffers;
@@ -246,6 +247,17 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
     return;
   }
 
+  vtkMRMLSelectionNode* selectionNode = nullptr;
+  if (markupsNode->GetScene())
+  {
+    selectionNode = vtkMRMLSelectionNode::SafeDownCast(markupsNode->GetScene()->GetFirstNodeByClass("vtkMRMLSelectionNode"));
+  }
+  bool hasFocus = false;
+  if (selectionNode && markupsNode && selectionNode->GetFocusNodeID() && markupsNode->GetID())
+  {
+    hasFocus = strcmp(selectionNode->GetFocusNodeID(), markupsNode->GetID()) == 0;
+  }
+
   int numPoints = markupsNode->GetNumberOfControlPoints();
   std::vector<int> activeControlPointIndices;
   this->MarkupsDisplayNode->GetActiveControlPoints(activeControlPointIndices);
@@ -253,7 +265,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
   {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[controlPointType]);
 
-    if (controlPointType == Project || controlPointType == ProjectBack)
+    if (!hasFocus || controlPointType == Project || controlPointType == ProjectBack)
     {
       // no projection display in 3D
       controlPoints->Actor->SetVisibility(false);
@@ -355,6 +367,11 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteract(
     return;
   }
 
+  vtkMRMLSelectionNode* selectionNode = markupsNode->GetScene() ?
+    vtkMRMLSelectionNode::SafeDownCast(markupsNode->GetScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  bool nodeSelected = selectionNode ? selectionNode->GetFocusNode() == markupsNode : false;
+  nodeSelected = nodeSelected && !markupsNode->GetAllowUnselectedEditing();
+
   double displayPosition3[3] = { 0.0, 0.0, 0.0 };
   // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
   // virtual reality, and then we expect a valid world position in the absence of display position.
@@ -408,6 +425,11 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteract(
   vtkIdType numberOfPoints = markupsNode->GetNumberOfControlPoints();
   for (int i = 0; i < numberOfPoints; i++)
   {
+    if (!nodeSelected)
+    {
+      break;
+    }
+
     if (!(markupsNode->GetNthControlPointPositionVisibility(i)
       && markupsNode->GetNthControlPointVisibility(i)))
     {
@@ -656,6 +678,23 @@ void vtkSlicerMarkupsWidgetRepresentation3D::GetActors(vtkPropCollection *pc)
     controlPoints->LabelsOccludedActor->GetActors(pc);
   }
   this->TextActor->GetActors(pc);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation3D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  for (int i = 0; i < NumberOfControlPointTypes; i++)
+  {
+    ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
+
+    if (componentType < 0 || componentType == vtkMRMLMarkupsDisplayNode::ComponentControlPoint)
+    {
+      actors->AddItem(controlPoints->Actor);
+      actors->AddItem(controlPoints->LabelsActor);
+    }
+  }
 }
 
 //----------------------------------------------------------------------

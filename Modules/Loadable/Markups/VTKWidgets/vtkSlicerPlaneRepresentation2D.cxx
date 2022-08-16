@@ -407,6 +407,9 @@ void vtkSlicerPlaneRepresentation2D::GetActors(vtkPropCollection *pc)
   this->PlaneFillActor->GetActors(pc);
   this->PlaneOutlineActor->GetActors(pc);
   this->ArrowActor->GetActors(pc);
+  pc->AddItem(this->PlaneFillActor);
+  pc->AddItem(this->PlaneOutlineActor);
+  pc->AddItem(this->ArrowActor);
   this->Superclass::GetActors(pc);
 }
 
@@ -658,4 +661,22 @@ void vtkSlicerPlaneRepresentation2D::BuildPlane()
   planeEndFadeFar->SetNormal(this->SlicePlane->GetNormal());
   planeEndFadeFar->Push(-1.0 * displayNode->GetLineColorFadingEnd());
   this->PlaneClipperEndFadeFar->SetClipFunction(planeEndFadeFar);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerPlaneRepresentation2D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  if (componentType < 0)
+  {
+    actors->AddItem(this->TextActor);
+  }
+
+  if (componentType < 0 || componentType == vtkMRMLMarkupsPlaneDisplayNode::ComponentPlane)
+  {
+    actors->AddItem(this->ArrowActor);
+    actors->AddItem(this->PlaneFillActor);
+    actors->AddItem(this->PlaneOutlineActor);
+  }
 }

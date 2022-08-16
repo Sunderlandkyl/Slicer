@@ -471,3 +471,19 @@ void vtkSlicerAngleRepresentation2D::SetMarkupsNode(vtkMRMLMarkupsNode *markupsN
   }
   this->Superclass::SetMarkupsNode(markupsNode);
 }
+
+//----------------------------------------------------------------------
+void vtkSlicerAngleRepresentation2D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+  if (componentType < 0)
+  {
+    actors->AddItem(this->TextActor);
+  }
+
+  if (componentType < 0 || componentType == vtkMRMLMarkupsDisplayNode::ComponentLine)
+  {
+    actors->AddItem(this->LineActor);
+    actors->AddItem(this->ArcActor);
+  }
+}

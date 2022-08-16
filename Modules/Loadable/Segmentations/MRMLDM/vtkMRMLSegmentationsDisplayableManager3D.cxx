@@ -957,3 +957,41 @@ const char* vtkMRMLSegmentationsDisplayableManager3D::GetPickedSegmentID()
 {
   return this->Internal->PickedSegmentID.c_str();
 }
+
+//---------------------------------------------------------------------------
+void vtkMRMLSegmentationsDisplayableManager3D::GetActorsByDisplayNode(
+  vtkPropCollection* actors, vtkMRMLDisplayNode* displayNode, int componentType/*=-1*/, int componentIndex/*=-1*/)
+{
+  vtkMRMLSegmentationDisplayNode* segmentationDisplayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(displayNode);
+  if (!segmentationDisplayNode)
+  {
+    return;
+  }
+
+  auto pipelineIt = this->Internal->DisplayPipelines.find(segmentationDisplayNode);
+  if (pipelineIt == this->Internal->DisplayPipelines.end())
+  {
+    return;
+  }
+
+  vtkMRMLSegmentationNode* segmentationNode = vtkMRMLSegmentationNode::SafeDownCast(displayNode->GetDisplayableNode());
+  if (componentIndex >= 0)
+  {
+    if (segmentationNode && segmentationNode->GetSegmentation())
+    {
+      std::string segmentId =
+        segmentationNode->GetSegmentation()->GetNthSegmentID(componentIndex);
+      if (!segmentId.empty())
+      {
+        actors->AddItem(pipelineIt->second[segmentId]->Actor);
+      }
+    }
+    return;
+  }
+
+  // No segment specified. Return all actors.
+  for (auto pipeline : pipelineIt->second)
+  {
+    actors->AddItem(pipeline.second->Actor);
+  }
+}

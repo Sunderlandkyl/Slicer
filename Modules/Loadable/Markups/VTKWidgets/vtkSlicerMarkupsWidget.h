@@ -75,6 +75,7 @@ public:
     WidgetEventControlPointDelete,
     WidgetEventControlPointInsert,
     WidgetEventControlPointSnapToSlice,
+    WidgetEventGrabNodeFocus,
     WidgetEventReserved,  // this events is only to prevent other widgets from processing an event
     WidgetEventMarkups_Last
   };
@@ -127,7 +128,7 @@ public:
   int GetActiveComponentType();
   int GetActiveComponentIndex();
 
-  vtkMRMLSelectionNode* selectionNode();
+  vtkMRMLSelectionNode* selectionNode() { return this->GetSelectionNode(); }
 
 protected:
   vtkSlicerMarkupsWidget();
@@ -168,6 +169,13 @@ protected:
   virtual bool ProcessEndMouseDrag(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetReset(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetJumpCursor(vtkMRMLInteractionEventData* eventData);
+  virtual bool ProcessNodeGrabFocus(vtkMRMLInteractionEventData* eventData);
+
+  /// Returns the current selection node.
+  vtkMRMLSelectionNode* GetSelectionNode();
+
+  /// Returns true if the node for this widget has focus, otherwise returns false.
+  bool GetHasFocus();
 
   // Variables for translate
   double LastEventPosition[2];

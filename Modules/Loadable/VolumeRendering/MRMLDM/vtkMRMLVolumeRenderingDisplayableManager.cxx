@@ -1771,3 +1771,44 @@ const char* vtkMRMLVolumeRenderingDisplayableManager::GetPickedNodeID()
 {
   return this->Internal->PickedNodeID.c_str();
 }
+
+//---------------------------------------------------------------------------
+void vtkMRMLVolumeRenderingDisplayableManager::GetActorsByDisplayNode(vtkPropCollection* actors, vtkMRMLDisplayNode* displayNode,
+  int vtkNotUsed(componentType), int vtkNotUsed(componentIndex))
+{
+  vtkMRMLVolumeRenderingDisplayNode* volumeRenderingDisplayNode = vtkMRMLVolumeRenderingDisplayNode::SafeDownCast(displayNode);
+  if (!volumeRenderingDisplayNode || !volumeRenderingDisplayNode->GetVisibility())
+  {
+    return;
+  }
+
+  vtkMRMLVolumeNode* volumeNode = displayNode ? vtkMRMLVolumeNode::SafeDownCast(displayNode->GetDisplayableNode()) : nullptr;
+  if (!volumeNode)
+  {
+    return;
+  }
+
+  vtkInternal::Pipeline* pipeline = this->Internal->GetPipeline(volumeRenderingDisplayNode);
+
+  vtkMRMLMultiVolumeRenderingDisplayNode* multiVolumeRenderingDisplayNode = vtkMRMLMultiVolumeRenderingDisplayNode::SafeDownCast(volumeRenderingDisplayNode);
+  if (multiVolumeRenderingDisplayNode)
+  {
+    vtkInternal::PipelineMultiVolume* multiVolumePipeline = dynamic_cast<vtkInternal::PipelineMultiVolume*>(pipeline);
+    if (multiVolumePipeline)
+    {
+      vtkVolume* volume = this->Internal->MultiVolumeActor->GetVolume(multiVolumePipeline->ActorPortIndex);
+      if (volume)
+      {
+        actors->AddItem(volume);
+      }
+    }
+    actors->AddItem(this->Internal->MultiVolumeActor);
+  }
+  else
+  {
+    if (pipeline && pipeline->VolumeActor)
+    {
+      actors->AddItem(pipeline->VolumeActor);
+    }
+  }
+}

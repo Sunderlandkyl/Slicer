@@ -1765,3 +1765,94 @@ void vtkMRMLSegmentationsDisplayableManager2D::GetVisibleSegmentsForPosition(dou
     }
   }
 }
+
+//---------------------------------------------------------------------------
+void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByDisplayNode(
+  vtkPropCollection* actors, vtkMRMLDisplayNode* displayNode, int componentType/*=-1*/, int componentIndex/*=-1*/)
+{
+  vtkMRMLSegmentationDisplayNode* segmentationDisplayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(displayNode);
+  if (!segmentationDisplayNode)
+  {
+    return;
+  }
+
+  vtkMRMLSegmentationNode* segmentationNode = vtkMRMLSegmentationNode::SafeDownCast(segmentationDisplayNode->GetDisplayableNode());
+  vtkSegmentation* segmentation = segmentationNode ? segmentationNode->GetSegmentation() : nullptr;
+  if (!segmentationNode || !segmentation)
+  {
+    return;
+  }
+
+  auto pipelineIt = this->Internal->DisplayPipelines.find(segmentationDisplayNode);
+  if (pipelineIt == this->Internal->DisplayPipelines.end())
+  {
+    return;
+  }
+
+  for (auto pipeline : pipelineIt->second)
+  {
+    vtkNew<vtkLookupTable> lookupTableFill;
+    lookupTableFill->DeepCopy(pipeline.second->LookupTableFill);
+
+    double fillValue = componentIndex < 0 ? 1.0 : 0.0;
+    for (int i = 0; i < lookupTableFill->GetNumberOfTableValues(); ++i)
+    {
+      lookupTableFill->SetTableValue(i, fillValue, fillValue, fillValue, fillValue);
+    }
+
+    if (componentIndex >= 0)
+    {
+      int index = 0;
+      vtkSegment* segment = segmentation->GetNthSegment(componentIndex);
+      if (segment)
+      {
+        double labelValue = segment->GetLabelValue();
+        index = lookupTableFill->GetIndex(labelValue);
+      }
+      lookupTableFill->SetTableValue(index, 1.0, 1.0, 1.0, 1.0);
+    }
+
+    int index = lookupTableFill->GetIndex(0.0);
+    lookupTableFill->SetTableValue(index, 0.0, 0.0, 0.0, 0.0);
+
+    vtkNew<vtkImageMapToRGBA> fillColorMapper;
+    fillColorMapper->SetInputConnection(pipeline.second->Reslice->GetOutputPort());
+    fillColorMapper->SetOutputFormatToRGBA();
+    fillColorMapper->SetLookupTable(lookupTableFill);
+
+    if (pipeline.second->ImageFillActor->GetVisibility())
+    {
+      vtkNew<vtkActor2D> imageFillActor;
+      imageFillActor->ShallowCopy(pipeline.second->ImageFillActor);
+      vtkNew<vtkImageMapper> imageFillMapper;
+      imageFillMapper->SetInputConnection(fillColorMapper->GetOutputPort());
+      imageFillMapper->SetColorWindow(255);
+      imageFillMapper->SetColorLevel(127.5);
+      imageFillActor->SetMapper(imageFillMapper);
+      actors->AddItem(imageFillActor);
+    }
+
+    if (pipeline.second->ImageOutlineActor->GetVisibility())
+    {
+      vtkNew<vtkImageMapper> imageOutlineMapper;
+      imageOutlineMapper->SetInputConnection(fillColorMapper->GetOutputPort());
+      imageOutlineMapper->SetColorWindow(255);
+      imageOutlineMapper->SetColorLevel(127.5);
+
+      vtkNew<vtkActor2D> imageOutlineActor;
+      imageOutlineActor->ShallowCopy(pipeline.second->ImageOutlineActor);
+      imageOutlineActor->SetMapper(imageOutlineMapper);
+      actors->AddItem(imageOutlineActor);
+    }
+
+    if (pipeline.second->PolyDataFillActor->GetVisibility())
+    {
+      actors->AddItem(pipeline.second->PolyDataFillActor);
+    }
+
+    if (pipeline.second->PolyDataOutlineActor->GetVisibility())
+    {
+      actors->AddItem(pipeline.second->PolyDataOutlineActor);
+    }
+  }
+}

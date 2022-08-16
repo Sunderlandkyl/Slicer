@@ -91,18 +91,18 @@ bool vtkSlicerPlaneWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventDat
     distance2 = 0.0;
     return true;
   }
-  else if (eventData->GetType() == vtkCommand::LeftButtonPressEvent &&
-           !(eventData->GetModifiers() & vtkEvent::ShiftModifier))
-  {
-    // Because the plane widget is so large, we don't want to interrupt the mouse button down event if it is not necessary,
-    // because we would interfere with the camera rotation function.
-    // If the shift modifier is not enabled, then return false when the active component is not a plane.
-    vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
-    if (displayNode && displayNode->GetActiveComponentType() == vtkMRMLMarkupsDisplayNode::ComponentPlane)
-    {
-      return false;
-    }
-  }
+//  else if (eventData->GetType() == vtkCommand::LeftButtonPressEvent &&
+//           !(eventData->GetModifiers() & vtkEvent::ShiftModifier))
+//  {
+//    // Because the plane widget is so large, we don't want to interrupt the mouse button down event if it is not necessary,
+//    // because we would interfere with the camera rotation function.
+//    // If the shift modifier is not enabled, then return false when the active component is not a plane.
+//    vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+//    if (displayNode && displayNode->GetActiveComponentType() == vtkMRMLMarkupsDisplayNode::ComponentPlane)
+//    {
+//      return false;
+//    }
+//  }
 
   return Superclass::CanProcessInteractionEvent(eventData, distance2);
 }

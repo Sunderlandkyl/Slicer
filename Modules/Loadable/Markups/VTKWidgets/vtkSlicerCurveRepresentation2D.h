@@ -71,6 +71,11 @@ public:
   void CanInteractWithCurve(vtkMRMLInteractionEventData* interactionEventData,
     int &foundComponentType, int &componentIndex, double &closestDistance2);
 
+  ///@{
+  /// Retrieve a list of actors for the Markups node.
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex);
+  ///@}
+
 protected:
   vtkSlicerCurveRepresentation2D();
   ~vtkSlicerCurveRepresentation2D() override;

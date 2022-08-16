@@ -731,6 +731,13 @@ public:
   vtkSetMacro(LastUsedControlPointNumber, int);
   ///@}
 
+  ///@{
+  /// This flag is used to define whether or not the node should be editable when it is unselected.
+  /// Off by default.
+  vtkGetMacro(AllowUnselectedEditing, bool);
+  vtkSetMacro(AllowUnselectedEditing, bool);
+  ///@}
+
   //-----------------------------------------------------------
   // All public methods below are deprecated
   //
@@ -1045,6 +1052,9 @@ protected:
 
   /// Flag set from SetControlPointPositionsWorld that pauses update of measurements until the update is complete.
   bool IsUpdatingPoints{false};
+
+  /// Flag for enabling/disabling editing of control points when the node is unselected.
+  bool AllowUnselectedEditing{ false };
 
   friend class qSlicerMarkupsModuleWidget; // To directly access measurements
 };

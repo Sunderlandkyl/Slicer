@@ -266,3 +266,12 @@ void vtkSlicerLineRepresentation3D::PrintSelf(ostream& os, vtkIndent indent)
     os << indent << "Line Visibility: (none)\n";
   }
 }
+
+//----------------------------------------------------------------------
+void vtkSlicerLineRepresentation3D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  actors->AddItem(this->LineActor);
+  actors->AddItem(this->TextActor);
+}

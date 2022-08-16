@@ -934,6 +934,25 @@ bool vtkSlicerSegmentationsModuleLogic::ExportSegmentsToModels(vtkMRMLSegmentati
       shNode->SetItemParent( shNode->GetItemByDataNode(newModelNode), folderItemId );
     }
 
+    vtkIdType destFolderId = folderItemId;
+    std::string segmentHierarchy;
+    segment->GetTag("Hierarchy", segmentHierarchy);
+    if (!segmentHierarchy.empty())
+    {
+      std::string s, tmp;
+      std::stringstream ss(s);
+      while (getline(ss, tmp, '/'))
+      {
+        if (tmp.empty())
+        {
+          continue;
+        }
+        //TODO
+        /*words.push_back(tmp);*/
+      }
+      /*if (shNode->GetItemChildWithName(folderItemId)*/
+    }
+
     // Export segment into model node
     if (!vtkSlicerSegmentationsModuleLogic::ExportSegmentToRepresentationNode(segment, modelNode))
     {
@@ -1310,7 +1329,7 @@ bool vtkSlicerSegmentationsModuleLogic::ImportModelToSegmentationNode(vtkMRMLMod
 
 //-----------------------------------------------------------------------------
 bool vtkSlicerSegmentationsModuleLogic::ImportModelsToSegmentationNode(vtkIdType folderItemId,
-  vtkMRMLSegmentationNode* segmentationNode, std::string vtkNotUsed(insertBeforeSegmentId)/*=""*/)
+  vtkMRMLSegmentationNode* segmentationNode, std::string insertBeforeSegmentId/*=""*/, std::string hierarchyPrefix/*=""*/)
 {
   if (!segmentationNode || !segmentationNode->GetScene())
   {
@@ -1324,6 +1343,12 @@ bool vtkSlicerSegmentationsModuleLogic::ImportModelsToSegmentationNode(vtkIdType
       return false;
   }
 
+  std::string hierarchyValue = shNode->GetItemName(folderItemId);
+  if (!hierarchyPrefix.empty())
+  {
+    hierarchyValue = hierarchyPrefix + "/" + hierarchyValue;
+  }
+
   // Get model nodes
   bool returnValue = true;
   std::vector<vtkIdType> childItemIDs;
@@ -1334,6 +1359,14 @@ bool vtkSlicerSegmentationsModuleLogic::ImportModelsToSegmentationNode(vtkIdType
       shNode->GetItemDataNode(*itemIt) );
     if (!modelNode)
     {
+      if (shNode->GetItemLevel(*itemIt) == vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyLevelFolder())
+      {
+        if (!vtkSlicerSegmentationsModuleLogic::ImportModelsToSegmentationNode(
+          *itemIt, segmentationNode, insertBeforeSegmentId, hierarchyValue))
+        {
+          returnValue = false;
+        }
+      }
       continue;
     }
     // TODO: look up segment with matching name and overwrite that
@@ -1343,6 +1376,10 @@ bool vtkSlicerSegmentationsModuleLogic::ImportModelsToSegmentationNode(vtkIdType
         << modelNode->GetName() << " to segmentation " << segmentationNode->GetName());
       returnValue = false;
     }
+
+    vtkSegmentation* segmentation = segmentationNode->GetSegmentation();
+    vtkSegment* newSegment = segmentation->GetNthSegment(segmentation->GetNumberOfSegments() - 1);
+    newSegment->SetTag("Hierarchy", hierarchyValue);
   }
 
   return returnValue;

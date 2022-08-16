@@ -85,6 +85,11 @@ public:
   /// Get the widget of a node.
   vtkSlicerMarkupsWidget* GetWidget(vtkMRMLMarkupsDisplayNode * node);
 
+  ///@{
+  /// Retrieve a list of actors for the specified vtkMRMLDisplayNode.
+  void GetActorsByDisplayNode(vtkPropCollection* actors, vtkMRMLDisplayNode* displayNode, int componentType=-1, int componentIndex=-1) override;
+  ///@}
+
 protected:
 
   vtkMRMLMarkupsDisplayableManager();
@@ -129,6 +134,10 @@ protected:
   /// Observe the interaction node.
   void AddObserversToInteractionNode();
   void RemoveObserversFromInteractionNode();
+
+  /// Observe the selection node.
+  void AddObserversToSelectionNode();
+  void RemoveObserversFromSelectionNode();
 
   /// Check if it is the right displayManager
   virtual bool IsCorrectDisplayableManager();

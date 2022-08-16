@@ -604,6 +604,9 @@ void vtkSlicerMarkupsLogic::SetActiveList(vtkMRMLMarkupsNode *markupsNode)
     return;
   }
 
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->SetFocusNodeID(markupsNode ? markupsNode->GetID() : nullptr);
+
   if (markupsNode == nullptr)
   {
     // If fiducial node was placed then reset node ID and deactivate placement

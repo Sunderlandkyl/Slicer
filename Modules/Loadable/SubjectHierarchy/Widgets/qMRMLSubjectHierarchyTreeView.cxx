@@ -57,6 +57,7 @@
 #include <vtkMRMLScalarVolumeNode.h>
 #include <vtkMRMLTransformDisplayNode.h>
 #include <vtkMRMLTransformNode.h>
+#include <vtkMRMLSelectionNode.h>
 
 // qMRML includes
 #include "qMRMLItemDelegate.h"
@@ -683,6 +684,7 @@ qMRMLSubjectHierarchyTreeView::qMRMLSubjectHierarchyTreeView(QWidget *parent)
   , d_ptr(new qMRMLSubjectHierarchyTreeViewPrivate(*this))
 {
   Q_D(qMRMLSubjectHierarchyTreeView);
+  this->setMouseTracking(true);
   d->init();
 }
 
@@ -742,11 +744,74 @@ void qMRMLSubjectHierarchyTreeView::setMRMLScene(vtkMRMLScene* scene)
 
   this->setSubjectHierarchyNode(scene ? vtkMRMLSubjectHierarchyNode::GetSubjectHierarchyNode(scene) : nullptr);
 
+  vtkMRMLSelectionNode* selectionNode = scene ? vtkMRMLSelectionNode::SafeDownCast(scene->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  qvtkReconnect(selectionNode, vtkCommand::ModifiedEvent, this, SLOT(onSelectionNodeModified()));
+
   // Connect scene close ended event so that subject hierarchy can be cleared
   qvtkReconnect( scene, vtkMRMLScene::StartCloseEvent, this, SLOT( onMRMLSceneStartClose(vtkObject*) ) );
   qvtkReconnect( scene, vtkMRMLScene::EndCloseEvent, this, SLOT( onMRMLSceneEndClose(vtkObject*) ) );
   qvtkReconnect( scene, vtkMRMLScene::StartBatchProcessEvent, this, SLOT( onMRMLSceneStartBatchProcess(vtkObject*) ) );
   qvtkReconnect( scene, vtkMRMLScene::EndBatchProcessEvent, this, SLOT( onMRMLSceneEndBatchProcess(vtkObject*) ) );
+}
+
+//------------------------------------------------------------------------------
+void qMRMLSubjectHierarchyTreeView::onSelectionNodeModified()
+{
+  Q_D(qMRMLSubjectHierarchyTreeView);
+
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ?
+    vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  if (!selectionNode)
+  {
+    return;
+  }
+
+  QList<vtkIdType> selectedShItems;
+  QList<QModelIndex> selectedIndices = this->selectedIndexes();
+  foreach (QModelIndex index, selectedIndices)
+  {
+    // Only consider the first column to avoid duplicates
+    if (index.column() != 0)
+    {
+      continue;
+    }
+    vtkIdType itemID = this->sortFilterProxyModel()->subjectHierarchyItemFromIndex(index);
+    selectedShItems << itemID;
+  }
+
+  vtkMRMLNode* focusNode = selectionNode->GetFocusNode();
+  foreach(vtkIdType itemID, selectedShItems)
+  {
+    vtkMRMLNode* selectedNode = d->SubjectHierarchyNode->GetItemDataNode(itemID);
+    if (d->SubjectHierarchyNode->IsItemLevel(itemID, vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyLevelFolder()))
+    {
+      continue;
+    }
+
+    if (!selectedNode)
+    {
+      // If the current item isn't a MRML node, check the parent item.
+      selectedNode = d->SubjectHierarchyNode->GetItemDataNode(d->SubjectHierarchyNode->GetItemParent(itemID));
+    }
+
+    if (!focusNode && selectedNode)
+    {
+      this->clearSelection();
+      return;
+    }
+
+    if (focusNode == selectedNode)
+    {
+      // Already contained in selected items
+      return;
+    }
+  }
+
+  if (focusNode)
+  {
+    vtkIdType focusShID = d->SubjectHierarchyNode->GetItemByDataNode(focusNode);
+    this->setCurrentItem(focusShID);
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -1566,6 +1631,57 @@ void qMRMLSubjectHierarchyTreeView::onSelectionChanged(const QItemSelection& sel
   if (this->highlightReferencedItems())
   {
     this->applyReferenceHighlightForItems(selectedShItems);
+  }
+
+  vtkMRMLScene* scene = this->mrmlScene();
+  vtkMRMLSelectionNode* selectionNode = scene ? vtkMRMLSelectionNode::SafeDownCast(scene->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  if (selectionNode)
+  {
+    MRMLNodeModifyBlocker blocker(selectionNode);
+    selectionNode->SetFocusNodeID(nullptr);
+    selectionNode->SetFocusedComponentIndex(-1);
+    selectionNode->SetFocusedComponentType(-1);
+
+    vtkMRMLNode* focusNode = nullptr;
+    vtkMRMLNode* oldFocusNode = scene->GetNodeByID(selectionNode->GetFocusNodeID());
+
+    for (vtkIdType shItem : selectedShItems)
+    {
+      if (shItem != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+      {
+        focusNode = d->SubjectHierarchyNode->GetItemDataNode(shItem);
+      }
+
+      int componentIndex = -1;
+      int componentType = -1;
+
+      qSlicerSubjectHierarchyAbstractPlugin* ownerPlugin =
+        qSlicerSubjectHierarchyPluginHandler::instance()->getOwnerPluginForSubjectHierarchyItem(shItem);
+      if (ownerPlugin)
+      {
+        componentIndex = ownerPlugin->componentIndex(shItem);
+        componentType = ownerPlugin->componentType(shItem);
+      }
+
+
+      if (!focusNode && shItem != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+      {
+        vtkIdType parentId = d->SubjectHierarchyNode->GetItemParent(shItem);
+        if (parentId != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+        {
+          focusNode = d->SubjectHierarchyNode->GetItemDataNode(parentId);
+        }
+      }
+
+      const char* focusNodeID = focusNode ? focusNode->GetID() : nullptr;
+      if (selectedShItems.size() == 1)
+      {
+        selectionNode->SetFocusNodeID(focusNodeID);
+        selectionNode->SetFocusedComponentIndex(componentIndex);
+        selectionNode->SetFocusedComponentType(componentType);
+      }
+
+    }
   }
 
   // Emit current item changed signal
@@ -2658,4 +2774,114 @@ void qMRMLSubjectHierarchyTreeView::changeEvent(QEvent* e)
       break;
   }
   QTreeView::changeEvent(e);
+}
+
+//---------------------------------------------------------------------------
+void qMRMLSubjectHierarchyTreeView::mouseMoveEvent(QMouseEvent* e)
+{
+  Q_D(qMRMLSubjectHierarchyTreeView);
+  Superclass::mouseMoveEvent(e);
+  if (e->type() != QMouseEvent::MouseMove)
+  {
+    return;
+  }
+
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetFirstNodeByName("Selection")) : nullptr;
+  if (!selectionNode)
+  {
+    return;
+  }
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->RemoveAllSoftFocus();
+
+  QModelIndex index = this->indexAt(e->pos());
+  if (!index.isValid())
+  {
+    return;
+  }
+
+  vtkIdType shItemID = d->SortFilterModel->subjectHierarchyItemFromIndex(index);
+
+  std::vector<std::pair<vtkIdType, vtkMRMLNode*>> softFocusNodes;
+  if (shItemID != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+  {
+    vtkMRMLNode* softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(shItemID);
+    if (softFocusNode)
+    {
+      softFocusNodes.push_back(std::make_pair(shItemID, softFocusNode));
+    }
+    else if (d->SubjectHierarchyNode->IsItemLevel(shItemID, vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyVirtualBranchAttributeName()))
+    {
+      softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(d->SubjectHierarchyNode->GetItemParent(shItemID));
+      if (softFocusNode)
+      {
+        softFocusNodes.push_back(std::make_pair(shItemID, softFocusNode));
+      }
+    }
+
+    vtkNew<vtkIdList> children;
+    d->SubjectHierarchyNode->GetItemChildren(shItemID, children, true);
+    for (int i = 0; i < children->GetNumberOfIds(); ++i)
+    {
+      vtkIdType childID = children->GetId(i);
+      if (d->SubjectHierarchyNode->IsItemLevel(childID, vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyVirtualBranchAttributeName()))
+      {
+        continue;
+      }
+
+      vtkMRMLNode* softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(childID);
+      if (softFocusNode)
+      {
+        softFocusNodes.push_back(std::make_pair(childID, softFocusNode));
+      }
+    }
+  }
+
+  int componentIndex = -1;
+  int componentType = -1;
+
+  qSlicerSubjectHierarchyAbstractPlugin* ownerPlugin =
+    qSlicerSubjectHierarchyPluginHandler::instance()->getOwnerPluginForSubjectHierarchyItem(shItemID);
+  if (ownerPlugin)
+  {
+    componentIndex = ownerPlugin->componentIndex(shItemID);
+    componentType = ownerPlugin->componentType(shItemID);
+  }
+
+  for (auto softFocusIdNode : softFocusNodes)
+  {
+    vtkIdType softFocusID = softFocusIdNode.first;
+    vtkMRMLNode* softFocusNode = softFocusIdNode.second;
+
+    if (!softFocusNode && softFocusID != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+    {
+      vtkIdType parentId = d->SubjectHierarchyNode->GetItemParent(softFocusID);
+      if (parentId != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+      {
+        softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(parentId);
+      }
+    }
+
+    selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
+    if (softFocusNode)
+    {
+      selectionNode->SetSoftFocusComponent(softFocusNode->GetID(), componentType, componentIndex);
+    }
+  }
+}
+
+//---------------------------------------------------------------------------
+void qMRMLSubjectHierarchyTreeView::leaveEvent(QEvent* e)
+{
+  Superclass::leaveEvent(e);
+
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetFirstNodeByName("Selection")) : nullptr;
+  if (!selectionNode)
+  {
+    return;
+  }
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->RemoveAllSoftFocus();
 }

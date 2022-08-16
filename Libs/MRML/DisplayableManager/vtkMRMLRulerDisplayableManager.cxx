@@ -48,7 +48,7 @@
 #include <sstream>
 
 // Constants
-static const int RENDERER_LAYER = 1; // layer ID where the orientation marker will be displayed
+static const int RENDERER_LAYER = 2; // layer ID where the orientation marker will be displayed
 static const int RULER_BASE_FONT_SIZE = 14; // thin: font size = base; thick: font size is 2x
 static const double RULER_MINIMUM_LENGTH = 0.05; // minimum ruler length (as ratio of window width)
 static const double RULER_MAXIMUM_LENGTH = 0.7; // maximum ruler length (as ratio of window width)

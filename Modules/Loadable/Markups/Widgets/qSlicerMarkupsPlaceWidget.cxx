@@ -424,14 +424,11 @@ void qSlicerMarkupsPlaceWidget::setPlaceModeEnabled(bool placeEnable)
     }
     return;
   }
-  bool wasActive = this->currentNodeActive();
-  if ( placeEnable )
+
+  if (placeEnable)
   {
     // activate and set place mode
-    if (!wasActive)
-    {
-      d->MarkupsLogic->SetActiveList(this->currentMarkupsNode());
-    }
+    d->MarkupsLogic->SetActiveList(this->currentMarkupsNode());
     if (d->PlaceMultipleMarkups == ForcePlaceSingleMarkup)
     {
       setPlaceModePersistency(false);

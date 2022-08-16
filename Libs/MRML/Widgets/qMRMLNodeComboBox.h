@@ -383,6 +383,9 @@ protected:
 
   void changeEvent(QEvent* event) override;
 
+  bool eventFilter(QObject* obj, QEvent* evt) override;
+  void enterEvent(QEvent* event) override;
+
 protected slots:
   void activateExtraItem(const QModelIndex& index);
   void emitCurrentNodeChanged();
@@ -391,8 +394,12 @@ protected slots:
   void emitNodesAboutToBeRemoved(const QModelIndex & parent, int start, int end);
   void refreshIfCurrentNodeHidden();
 
+  void onNodeHighlighted(int index=-1);
+
 protected:
   QScopedPointer<qMRMLNodeComboBoxPrivate> d_ptr;
+
+  void leaveEvent(QEvent* e) override;
 
 private:
   Q_DECLARE_PRIVATE(qMRMLNodeComboBox);

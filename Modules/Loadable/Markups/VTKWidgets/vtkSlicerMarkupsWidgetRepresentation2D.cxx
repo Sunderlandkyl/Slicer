@@ -47,6 +47,7 @@
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
+#include <vtkMRMLScene.h>
 
 vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D::ControlPointsPipeline2D()
 {
@@ -181,7 +182,6 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetWorldToSliceCoordinates(const do
   slicePos[1] = sliceCoordinates[1];
 }
 
-
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(double labelsOffset)
 {
@@ -189,6 +189,17 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
   if (!this->ViewNode || !markupsNode || !this->MarkupsDisplayNode || !this->Renderer)
   {
     return;
+  }
+
+  vtkMRMLSelectionNode* selectionNode = nullptr;
+  if (markupsNode->GetScene())
+  {
+    selectionNode = vtkMRMLSelectionNode::SafeDownCast(markupsNode->GetScene()->GetFirstNodeByClass("vtkMRMLSelectionNode"));
+  }
+  bool hasFocus = false;
+  if (selectionNode && markupsNode && selectionNode->GetFocusNodeID() && markupsNode->GetID())
+  {
+    hasFocus = markupsNode->GetAllowUnselectedEditing() || strcmp(selectionNode->GetFocusNodeID(), markupsNode->GetID()) == 0;
   }
 
   // Use first active control point for jumping //TODO: Have an 'even more active' point concept
@@ -214,12 +225,18 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
     controlPoints->Labels->Reset();
     controlPoints->LabelsPriority->Reset();
 
+    if (!hasFocus)
+    {
+      controlPoints->Actor->VisibilityOff();
+      controlPoints->LabelsActor->VisibilityOff();
+      continue;
+    }
+
     int startIndex = 0;
     int stopIndex = numPoints - 1;
     if (controlPointType == Active)
     {
       if (activeControlPointIndex >= 0 && activeControlPointIndex < numPoints &&
-          markupsNode->GetNthControlPointPositionVisibility(activeControlPointIndex) &&
           markupsNode->GetNthControlPointPositionVisibility(activeControlPointIndex) &&
           ((this->PointsVisibilityOnSlice->GetValue(activeControlPointIndex) &&
            !this->MarkupsDisplayNode->GetSliceProjection()) ||
@@ -518,6 +535,11 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteract(
     return;
   }
 
+  vtkMRMLSelectionNode* selectionNode = markupsNode->GetScene() ?
+    vtkMRMLSelectionNode::SafeDownCast(markupsNode->GetScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  bool nodeSelected = selectionNode ? selectionNode->GetFocusNode() == markupsNode : false;
+  nodeSelected &= !markupsNode->GetAllowUnselectedEditing();
+
   const int* displayPosition = interactionEventData->GetDisplayPosition();
   double displayPosition3[3] = { static_cast<double>(displayPosition[0]), static_cast<double>(displayPosition[1]), 0.0 };
 
@@ -552,6 +574,11 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteract(
   sliceNode->GetXYToRAS()->Invert(sliceNode->GetXYToRAS(), rasToxyMatrix.GetPointer());
   for (int i = 0; i < numberOfPoints; i++)
   {
+    if (!nodeSelected)
+    {
+      break;
+    }
+
     if (!this->GetNthControlPointViewVisibility(i))
     {
       continue;
@@ -638,6 +665,22 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetActors(vtkPropCollection *pc)
     controlPoints->LabelsActor->GetActors(pc);
   }
   this->TextActor->GetActors(pc);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation2D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  for (int i = 0; i < NumberOfControlPointTypes; i++)
+  {
+
+    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
+    if (componentType < 0 || componentType == vtkMRMLMarkupsDisplayNode::ComponentControlPoint)
+    {
+      actors->AddItem(controlPoints->Actor);
+    }
+  }
 }
 
 //----------------------------------------------------------------------

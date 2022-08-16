@@ -31,9 +31,11 @@ class vtkMRMLInteractionNode;
 class vtkMRMLSelectionNode;
 class vtkMRMLDisplayableManagerGroup;
 class vtkMRMLNode;
+class vtkMRMLDisplayNode;
 class vtkMRMLScene;
 class vtkMRMLLightBoxRendererManagerProxy;
 
+class vtkPropCollection;
 class vtkRenderer;
 class vtkRenderWindowInteractor;
 
@@ -113,6 +115,11 @@ public:
   virtual int GetMouseCursor();
 
   void SetMouseCursor(int cursor);
+
+  ///@{
+  /// Retrieve a list of actors for the specified vtkMRMLDisplayNode.
+  virtual void GetActorsByDisplayNode(vtkPropCollection* actors, vtkMRMLDisplayNode* node, int component = -1, int index = -1) {};
+  ///@}
 
 protected:
 

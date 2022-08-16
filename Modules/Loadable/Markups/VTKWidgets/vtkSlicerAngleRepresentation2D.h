@@ -73,6 +73,11 @@ public:
 
   bool GetTransformationReferencePoint(double referencePointWorld[3]) override;
 
+  ///@{
+  /// Retrieve a list of actors for the Markups node.
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex);
+  ///@}
+
 protected:
   vtkSlicerAngleRepresentation2D();
   ~vtkSlicerAngleRepresentation2D() override;

@@ -344,6 +344,9 @@ protected slots:
   /// Called when batch processing ends. Restores selection, which is lost when the hierarchy is rebuilt
   virtual void onMRMLSceneEndBatchProcess(vtkObject* sceneObject);
 
+  ///  TODO
+  virtual void onSelectionNodeModified();
+
   void onCustomContextMenu(const QPoint& point);
 
   virtual void onTransformActionSelected();
@@ -383,6 +386,10 @@ protected:
   vtkIdType firstSelectedSubjectHierarchyItemInBranch(vtkIdType itemID);
 
   void changeEvent(QEvent* e) override;
+
+  void mouseMoveEvent(QMouseEvent* e) override;
+
+  void leaveEvent(QEvent* e) override;
 
 protected:
   QScopedPointer<qMRMLSubjectHierarchyTreeViewPrivate> d_ptr;
