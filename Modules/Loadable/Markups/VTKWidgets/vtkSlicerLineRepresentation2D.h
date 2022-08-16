@@ -67,6 +67,11 @@ public:
   /// Return the bounds of the representation
   double* GetBounds() VTK_SIZEHINT(6) override;
 
+  ///@{
+  /// Retrieve a list of actors for the Markups node.
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex);
+  ///@}
+
 protected:
   vtkSlicerLineRepresentation2D();
   ~vtkSlicerLineRepresentation2D() override;

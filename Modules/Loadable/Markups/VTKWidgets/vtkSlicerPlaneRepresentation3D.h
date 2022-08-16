@@ -82,6 +82,11 @@ public:
   void CanInteractWithPlane(vtkMRMLInteractionEventData* interactionEventData,
     int& foundComponentType, int& foundComponentIndex, double& closestDistance2);
 
+  ///@{
+  /// Retrieve a list of actors for the selected component.
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex) override;
+  ///@}
+
 protected:
   vtkSlicerPlaneRepresentation3D();
   ~vtkSlicerPlaneRepresentation3D() override;

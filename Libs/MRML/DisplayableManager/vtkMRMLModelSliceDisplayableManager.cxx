@@ -965,3 +965,16 @@ void vtkMRMLModelSliceDisplayableManager::Create()
   this->Internal->SetSliceNode(this->GetMRMLSliceNode());
   this->SetUpdateFromMRMLRequested(true);
 }
+
+//---------------------------------------------------------------------------
+void vtkMRMLModelSliceDisplayableManager::GetActorsByID(vtkPropCollection* actors, const char* id, int component/*=-1*/, int index/*=-1*/)
+{
+  vtkMRMLDisplayNode* displayNode = vtkMRMLDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
+  vtkInternal::PipelinesCacheType::iterator it;
+  it = this->Internal->DisplayPipelines.find(displayNode);
+  if (it == this->Internal->DisplayPipelines.end())
+    {
+    return;
+    }
+  actors->AddItem(it->second->Actor);
+}

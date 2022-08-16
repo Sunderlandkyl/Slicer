@@ -725,6 +725,22 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetActors(vtkPropCollection *pc)
 }
 
 //----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation2D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  for (int i = 0; i < NumberOfControlPointTypes; i++)
+    {
+
+    ControlPointsPipeline2D* controlPoints = reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[i]);
+    if (componentType < 0 || componentType == vtkMRMLMarkupsDisplayNode::ComponentControlPoint)
+      {
+      actors->AddItem(controlPoints->Actor);
+      }
+    }
+}
+
+//----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation2D::ReleaseGraphicsResources(
   vtkWindow *win)
 {
@@ -1319,14 +1335,23 @@ void vtkSlicerMarkupsWidgetRepresentation2D::SetupInteractionPipeline()
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation2D::UpdateInteractionPipeline()
 {
-  MarkupsInteractionPipeline2D* interactionPipeline = dynamic_cast<MarkupsInteractionPipeline2D*>(this->InteractionPipeline);
-  if (!interactionPipeline)
-    {
-    return;
-    }
-  interactionPipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
-  // Final visibility handled by superclass in vtkSlicerMarkupsWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
+
+  MarkupsInteractionPipeline2D* interactionPipeline2D = dynamic_cast<MarkupsInteractionPipeline2D*>(this->InteractionPipeline);
+  if (interactionPipeline2D)
+    {
+    interactionPipeline2D->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
+    }
+
+  MarkupsInteractionPipeline* interactionPipeline = dynamic_cast<MarkupsInteractionPipeline*>(this->InteractionPipeline);
+
+  if (interactionPipeline)
+    {
+    if (!this->MarkupsDisplayNode->GetVisibility2D())
+      {
+      interactionPipeline->Actor->SetVisibility(false);
+      }
+    }
 }
 
 //----------------------------------------------------------------------
