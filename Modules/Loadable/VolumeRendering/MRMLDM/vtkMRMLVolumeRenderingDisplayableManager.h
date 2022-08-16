@@ -66,6 +66,11 @@ public:
   /// Get the MRML ID of the picked node, returns empty string if no pick
   const char* GetPickedNodeID() override;
 
+  ///@{
+  /// Retrieve a list of actors for the selected component.
+  void GetActorsByID(vtkPropCollection* actors, const char* id, int componentType=-1, int componentIndex=-1) override;
+  ///@}
+
 public:
   static int DefaultGPUMemorySize;
 

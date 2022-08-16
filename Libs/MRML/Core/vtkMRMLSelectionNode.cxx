@@ -34,6 +34,7 @@ static const char* ACTIVE_TABLE_REFERENCE_ROLE = "ActiveTable";
 static const char* ACTIVE_VIEW_REFERENCE_ROLE = "ActiveView";
 static const char* ACTIVE_LAYOUT_REFERENCE_ROLE = "ActiveLayout";
 static const char* ACTIVE_PLOT_CHART_REFERENCE_ROLE = "ActivePlotChart";
+static const char* FOCUS_NODE_REFERENCE_ROLE = "FocusNode";
 
 //----------------------------------------------------------------------------
 vtkMRMLNodeNewMacro(vtkMRMLSelectionNode);
@@ -60,6 +61,7 @@ vtkMRMLSelectionNode::vtkMRMLSelectionNode()
   this->AddNodeReferenceRole(ACTIVE_VIEW_REFERENCE_ROLE, "ActiveViewID");
   this->AddNodeReferenceRole(ACTIVE_LAYOUT_REFERENCE_ROLE, "ActiveLayoutID");
   this->AddNodeReferenceRole(ACTIVE_PLOT_CHART_REFERENCE_ROLE, "ActivePlotChartID");
+  this->AddNodeReferenceRole(FOCUS_NODE_REFERENCE_ROLE, "FocusNodeID");
 }
 
 //----------------------------------------------------------------------------
@@ -591,4 +593,33 @@ void vtkMRMLSelectionNode::SetActivePlaceNodePlacementValid(bool valid)
 bool vtkMRMLSelectionNode::GetActivePlaceNodePlacementValid()
 {
   return this->ActivePlaceNodePlacementValid;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSelectionNode::SetFocusNodeID(const char* id)
+{
+  const char* oldFocusNodeID = this->GetFocusNodeID();
+  if (!oldFocusNodeID && !id)
+  {
+    return;
+  }
+  else if (oldFocusNodeID && id && strcmp(oldFocusNodeID, id) == 0)
+  {
+    return;
+  }
+
+  this->SetNodeReferenceID(FOCUS_NODE_REFERENCE_ROLE, id);
+  this->InvokeCustomModifiedEvent(FocusNodeIDChangedEvent);
+}
+
+//----------------------------------------------------------------------------
+const char* vtkMRMLSelectionNode::GetFocusNodeID()
+{
+  return this->GetNodeReferenceID(FOCUS_NODE_REFERENCE_ROLE);
+}
+
+//----------------------------------------------------------------------------
+vtkMRMLNode* vtkMRMLSelectionNode::GetFocusNode()
+{
+  return vtkMRMLNode::SafeDownCast(this->GetNodeReference(FOCUS_NODE_REFERENCE_ROLE));
 }

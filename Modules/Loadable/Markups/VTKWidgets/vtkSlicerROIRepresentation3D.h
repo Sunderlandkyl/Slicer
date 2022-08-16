@@ -87,6 +87,11 @@ public:
   void CanInteractWithROI(vtkMRMLInteractionEventData* interactionEventData,
     int& foundComponentType, int& foundComponentIndex, double& closestDistance2);
 
+  ///@{
+  /// Retrieve a list of actors for the selected component.
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex) override;
+  ///@}
+
 protected:
   vtkSlicerROIRepresentation3D();
   ~vtkSlicerROIRepresentation3D() override;

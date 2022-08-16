@@ -154,6 +154,7 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
     PlaceNodeClassNameListModifiedEvent,
     UnitModifiedEvent,
     ActivePlaceNodePlacementValidEvent,
+    FocusNodeIDChangedEvent,
   };
 
   /// Add a new valid placeNode class name to the list, with optional qt resource
@@ -222,6 +223,17 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
  /// the node has a locked number of points.
   bool GetActivePlaceNodePlacementValid();
 
+  ///
+  void SetFocusNodeID(const char* id);
+  const char* GetFocusNodeID();
+  vtkMRMLNode* GetFocusNode();
+  vtkSetMacro(FocusedComponentType, int);
+  vtkGetMacro(FocusedComponentType, int);
+  vtkSetMacro(FocusedComponentIndex, int);
+  vtkGetMacro(FocusedComponentIndex, int);
+  vtkSetMacro(FocusedHighlightStrength, double);
+  vtkGetMacro(FocusedHighlightStrength, double);
+
 protected:
   vtkMRMLSelectionNode();
   ~vtkMRMLSelectionNode() override;
@@ -234,6 +246,10 @@ protected:
   std::vector<std::string> PlaceNodeClassNameList;
   std::vector<std::string> PlaceNodeResourceList;
   std::vector<std::string> PlaceNodeIconNameList;
+
+  int FocusedComponentType{ -1 };
+  int FocusedComponentIndex{ -1 };
+  double FocusedHighlightStrength{ 10.0 };
 };
 
 #endif

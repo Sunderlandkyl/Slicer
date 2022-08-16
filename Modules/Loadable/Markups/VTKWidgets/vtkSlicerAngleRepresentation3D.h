@@ -72,6 +72,11 @@ public:
   void CanInteract(vtkMRMLInteractionEventData* interactionEventData,
     int &foundComponentType, int &foundComponentIndex, double &closestDistance2) override;
 
+  ///@{
+  /// Retrieve a list of actors for the Markups node.
+  void GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex);
+  ///@}
+
 protected:
   vtkSlicerAngleRepresentation3D();
   ~vtkSlicerAngleRepresentation3D() override;
