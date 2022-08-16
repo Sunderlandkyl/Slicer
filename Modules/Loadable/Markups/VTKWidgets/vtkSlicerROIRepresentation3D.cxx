@@ -475,6 +475,19 @@ void vtkSlicerROIRepresentation3D::UpdateInteractionPipeline()
     return;
     }
 
+  vtkMRMLSelectionNode* selectionNode = nullptr;
+  if (roiNode->GetScene())
+    {
+    selectionNode = vtkMRMLSelectionNode::SafeDownCast(roiNode->GetScene()->GetFirstNodeByClass("vtkMRMLSelectionNode"));
+    }
+  bool hasFocus = selectionNode && selectionNode->GetFocusNodeID() ? strcmp(selectionNode->GetFocusNodeID(), roiNode->GetID()) == 0 : false;
+  if (!hasFocus)
+    {
+    this->InteractionPipeline->Actor->SetVisibility(false);
+    return;
+    }
+
+
   this->InteractionPipeline->Actor->SetVisibility(this->MarkupsDisplayNode->GetVisibility()
     && roiNode->GetNumberOfControlPoints() > 0
     && this->MarkupsDisplayNode->GetVisibility3D()
@@ -845,4 +858,21 @@ void vtkSlicerROIRepresentation3D::MarkupsInteractionPipelineROI::GetInteraction
     }
   double origin[3] = { 0.0, 0.0, 0.0 };
   this->HandleToWorldTransform->TransformVectorAtPoint(origin, axisWorld, axisWorld);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerROIRepresentation3D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  if (componentType < 0)
+    {
+    actors->AddItem(this->TextActor);
+    }
+
+  if (componentType < 0 || componentType == vtkMRMLMarkupsROIDisplayNode::ComponentROI)
+    {
+    actors->AddItem(this->ROIActor);
+    actors->AddItem(this->ROIOutlineActor);
+    }
 }

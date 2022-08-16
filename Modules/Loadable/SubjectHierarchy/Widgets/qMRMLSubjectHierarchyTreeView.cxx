@@ -57,6 +57,7 @@
 #include <vtkMRMLScalarVolumeNode.h>
 #include <vtkMRMLTransformDisplayNode.h>
 #include <vtkMRMLTransformNode.h>
+#include <vtkMRMLSelectionNode.h>
 
 // qMRML includes
 #include "qMRMLItemDelegate.h"
@@ -1499,6 +1500,33 @@ void qMRMLSubjectHierarchyTreeView::onSelectionChanged(const QItemSelection& sel
     {
     this->applyReferenceHighlightForItems(selectedShItems);
     }
+
+  vtkMRMLNode* focusNode = d->SubjectHierarchyNode->GetItemDataNode(selectedShItems[0]);
+  int index = -1;
+  if (!focusNode)
+    {
+    vtkIdType parentId = d->SubjectHierarchyNode->GetItemParent(selectedShItems[0]);
+    if (parentId != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+      {
+      focusNode = d->SubjectHierarchyNode->GetItemDataNode(parentId);
+      }
+    if (focusNode)
+      {
+      index = d->SubjectHierarchyNode->GetItemPositionUnderParent(selectedShItems[0]);
+      }
+    }
+
+  vtkMRMLScene* scene = this->mrmlScene();
+  if (scene)
+  {
+    vtkMRMLSelectionNode* selection = vtkMRMLSelectionNode::SafeDownCast(scene->GetFirstNodeByName("Selection"));
+
+    vtkMRMLNode* oldFocusNode = scene->GetNodeByID(selection->GetFocusNodeID());
+
+    selection->SetFocusNodeID(focusNode ? focusNode->GetID() : nullptr);
+    selection->SetFocusedComponentIndex(index);
+    selection->SetFocusedComponentType(-1);
+  }
 
   // Emit current item changed signal
   emit currentItemChanged(selectedShItems[0]);

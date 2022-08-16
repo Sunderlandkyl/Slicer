@@ -407,6 +407,9 @@ void vtkSlicerPlaneRepresentation2D::GetActors(vtkPropCollection *pc)
   this->PlaneFillActor->GetActors(pc);
   this->PlaneOutlineActor->GetActors(pc);
   this->ArrowActor->GetActors(pc);
+  pc->AddItem(this->PlaneFillActor);
+  pc->AddItem(this->PlaneOutlineActor);
+  pc->AddItem(this->ArrowActor);
   this->Superclass::GetActors(pc);
 }
 
@@ -685,10 +688,6 @@ void vtkSlicerPlaneRepresentation2D::UpdateInteractionPipeline()
     return;
     }
 
-  this->InteractionPipeline->Actor->SetVisibility(this->MarkupsDisplayNode->GetVisibility()
-    && this->MarkupsDisplayNode->GetVisibility2D()
-    && this->MarkupsDisplayNode->GetHandlesInteractive());
-
   vtkNew<vtkTransform> handleToWorldTransform;
   handleToWorldTransform->SetMatrix(planeNode->GetInteractionHandleToWorldMatrix());
   this->InteractionPipeline->HandleToWorldTransform->DeepCopy(handleToWorldTransform);
@@ -729,4 +728,22 @@ void vtkSlicerPlaneRepresentation2D::MarkupsInteractionPipelinePlane2D::GetViewP
   viewPlaneNormal[0] = viewPlaneNormal4[0];
   viewPlaneNormal[1] = viewPlaneNormal4[1];
   viewPlaneNormal[2] = viewPlaneNormal4[2];
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerPlaneRepresentation2D::GetActorsForComponent(vtkPropCollection* actors, int componentType, int componentIndex)
+{
+  Superclass::GetActorsForComponent(actors, componentType, componentIndex);
+
+  if (componentType < 0)
+    {
+    actors->AddItem(this->TextActor);
+    }
+
+  if (componentType < 0 || componentType == vtkMRMLMarkupsPlaneDisplayNode::ComponentPlane)
+    {
+    actors->AddItem(this->ArrowActor);
+    actors->AddItem(this->PlaneFillActor);
+    actors->AddItem(this->PlaneOutlineActor);
+    }
 }

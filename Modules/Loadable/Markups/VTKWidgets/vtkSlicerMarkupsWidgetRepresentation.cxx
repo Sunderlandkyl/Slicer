@@ -49,6 +49,7 @@
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
+#include <vtkMRMLScene.h>
 #include <vtkMRMLTransformNode.h>
 
 //----------------------------------------------------------------------
@@ -585,7 +586,14 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateInteractionPipeline()
     return;
     }
 
-  if (!this->MarkupsDisplayNode)
+  vtkMRMLSelectionNode* selectionNode = nullptr;
+  if (markupsNode->GetScene())
+    {
+    selectionNode = vtkMRMLSelectionNode::SafeDownCast(markupsNode->GetScene()->GetFirstNodeByClass("vtkMRMLSelectionNode"));
+    }
+  bool hasFocus = selectionNode && selectionNode->GetFocusNodeID() ? strcmp(selectionNode->GetFocusNodeID(), markupsNode->GetID()) == 0 : false;
+
+  if (!this->MarkupsDisplayNode || !hasFocus)
     {
     this->InteractionPipeline->Actor->SetVisibility(false);
     return;
