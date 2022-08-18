@@ -417,11 +417,6 @@ void vtkSlicerROIRepresentation2D::UpdateInteractionPipeline()
     return;
     }
 
-  this->InteractionPipeline->Actor->SetVisibility(this->MarkupsDisplayNode->GetVisibility()
-    && roiNode->GetNumberOfControlPoints() > 0
-    && this->MarkupsDisplayNode->GetVisibility2D()
-    && this->MarkupsDisplayNode->GetHandlesInteractive());
-
   vtkNew<vtkTransform> handleToWorldTransform;
   handleToWorldTransform->SetMatrix(roiNode->GetInteractionHandleToWorldMatrix());
   this->InteractionPipeline->HandleToWorldTransform->DeepCopy(handleToWorldTransform);
