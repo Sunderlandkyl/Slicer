@@ -36,6 +36,7 @@
 // VTK includes
 #include <vtkAbstractVolumeMapper.h>
 #include <vtkActor2D.h>
+#include <vtkCallbackCommand.h>
 #include <vtkCamera.h>
 #include <vtkCellArray.h>
 #include <vtkColorTransferFunction.h>
@@ -89,6 +90,10 @@ public:
   vtkNew<vtkPolyDataMapper2D> HardFocusMapper;
   vtkNew<vtkActor2D> HardFocusActor;
 
+  vtkNew<vtkCallbackCommand> ObjectCallback;
+  static void ObjectsCallback(vtkObject* caller, unsigned long eid,
+    void* clientData, void* callData);
+
   double Bounds_RAS[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN };
 };
 
@@ -110,6 +115,9 @@ vtkMRMLFocusDisplayableManager::vtkInternal::vtkInternal(vtkMRMLFocusDisplayable
   this->HardFocusMapper->SetInputData(this->HardFocusPolyData);
   this->HardFocusActor->SetMapper(this->HardFocusMapper);
   this->HardFocusActor->GetProperty()->SetLineWidth(widthPx);
+
+  this->ObjectCallback->SetCallback(vtkMRMLFocusDisplayableManager::vtkInternal::ObjectsCallback);
+  this->ObjectCallback->SetClientData(this->External);
 }
 
 //---------------------------------------------------------------------------
@@ -148,7 +156,7 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::AddFocusedNodeObservers()
       this->External, this->External->GetMRMLNodesCallbackCommand());
     }
   broker->AddObservation(this->External->GetRenderer()->GetActiveCamera(), vtkCommand::ModifiedEvent,
-    this->External, this->External->GetMRMLNodesCallbackCommand());
+    this->External, this->ObjectCallback);
 }
 
 //---------------------------------------------------------------------------
@@ -181,8 +189,16 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::RemoveFocusedNodeObservers()
       vtkMRMLDisplayableNode::DisplayModifiedEvent,
       this->External, this->External->GetMRMLNodesCallbackCommand());
     }
-  broker->RemoveObservations(this->External->GetRenderer(), vtkCommand::InteractionEvent,
-    this->External, this->External->GetMRMLNodesCallbackCommand());
+  broker->RemoveObservations(this->External->GetRenderer()->GetActiveCamera(), vtkCommand::InteractionEvent,
+    this->External, this->ObjectCallback);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLFocusDisplayableManager::vtkInternal::ObjectsCallback(vtkObject* caller, unsigned long eid,
+  void* clientData, void* callData)
+{
+  vtkMRMLFocusDisplayableManager* external = reinterpret_cast<vtkMRMLFocusDisplayableManager*>(clientData);
+  external->ProcesObjectsEvents(caller, eid, callData);
 }
 
 //---------------------------------------------------------------------------
@@ -251,11 +267,17 @@ void vtkMRMLFocusDisplayableManager::ProcessMRMLNodesEvents(vtkObject* caller,
     return;
     }
 
-  if (vtkMRMLNode::SafeDownCast(caller))
-    {
-    this->UpdateFromMRML();
-    }
-  else if (vtkProp::SafeDownCast(caller))
+  this->UpdateFromMRML();
+
+  this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLFocusDisplayableManager::ProcesObjectsEvents(vtkObject* caller,
+  unsigned long event,
+  void* callData)
+{
+  if (vtkProp::SafeDownCast(caller))
     {
     this->UpdateActor(vtkProp::SafeDownCast(caller));
     }
@@ -268,7 +290,7 @@ void vtkMRMLFocusDisplayableManager::ProcessMRMLNodesEvents(vtkObject* caller,
     this->UpdateCornerROIPolyData();
     }
 
-  this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
+  this->Superclass::ProcessMRMLLogicsEvents(caller, event, callData);
 }
 
 //---------------------------------------------------------------------------
@@ -321,7 +343,7 @@ void vtkMRMLFocusDisplayableManager::UpdateOriginalFocusActors()
       continue;
     }
     broker->RemoveObservations(oldActor, vtkCommand::ModifiedEvent,
-      this, this->GetMRMLNodesCallbackCommand());
+      this, this->Internal->ObjectCallback);
 
     vtkActor2D* oldActor2D = vtkActor2D::SafeDownCast(oldActor);
     if (oldActor2D)
@@ -329,7 +351,7 @@ void vtkMRMLFocusDisplayableManager::UpdateOriginalFocusActors()
       // Need to update copied actors when the position of the 2D actor changes
       broker->RemoveObservations(oldActor2D->GetPositionCoordinate(),
         vtkCommand::ModifiedEvent,
-        this, this->GetMRMLNodesCallbackCommand());
+        this, this->Internal->ObjectCallback);
     }
   }
 
@@ -379,14 +401,14 @@ void vtkMRMLFocusDisplayableManager::UpdateOriginalFocusActors()
 
     broker->AddObservation(prop,
       vtkCommand::ModifiedEvent,
-      this, this->GetMRMLNodesCallbackCommand());
+      this, this->Internal->ObjectCallback);
 
     vtkActor2D* actor2D = vtkActor2D::SafeDownCast(prop);
     if (actor2D)
       {
       broker->AddObservation(actor2D->GetPositionCoordinate(),
         vtkCommand::ModifiedEvent,
-        this, this->GetMRMLNodesCallbackCommand());
+        this, this->Internal->ObjectCallback);
       }
     }
 }

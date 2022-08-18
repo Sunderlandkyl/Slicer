@@ -78,6 +78,11 @@ protected:
   ///@}
 
   ///@{
+  /// Handle events from observed nodes/actors/etc.
+  virtual void ProcesObjectsEvents(vtkObject* caller, unsigned long event, void* callData);
+  ///@}
+
+  ///@{
   /// Return true if the widget can process the event.
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2) override;
   ///@}
