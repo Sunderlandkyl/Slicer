@@ -181,7 +181,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetWorldToSliceCoordinates(const do
   slicePos[1] = sliceCoordinates[1];
 }
 
-
+#include <vtkMRMLScene.h>
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(double labelsOffset)
 {
@@ -189,6 +189,17 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
   if (!this->ViewNode || !markupsNode || !this->MarkupsDisplayNode || !this->Renderer)
     {
     return;
+    }
+
+  vtkMRMLSelectionNode* selectionNode = nullptr;
+  if (markupsNode->GetScene())
+    {
+    selectionNode = vtkMRMLSelectionNode::SafeDownCast(markupsNode->GetScene()->GetFirstNodeByClass("vtkMRMLSelectionNode"));
+    }
+  bool hasFocus = false;
+  if (selectionNode && markupsNode && selectionNode->GetFocusNodeID() && markupsNode->GetID())
+    {
+    hasFocus = strcmp(selectionNode->GetFocusNodeID(), markupsNode->GetID()) == 0;
     }
 
   // Use first active control point for jumping //TODO: Have an 'even more active' point concept
@@ -214,12 +225,18 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
     controlPoints->Labels->Reset();
     controlPoints->LabelsPriority->Reset();
 
+    if (!hasFocus)
+      {
+      controlPoints->Actor->VisibilityOff();
+      controlPoints->LabelsActor->VisibilityOff();
+      continue;
+      }
+
     int startIndex = 0;
     int stopIndex = numPoints - 1;
     if (controlPointType == Active)
       {
       if (activeControlPointIndex >= 0 && activeControlPointIndex < numPoints &&
-          markupsNode->GetNthControlPointPositionVisibility(activeControlPointIndex) &&
           markupsNode->GetNthControlPointPositionVisibility(activeControlPointIndex) &&
           ((this->PointsVisibilityOnSlice->GetValue(activeControlPointIndex) &&
            !this->MarkupsDisplayNode->GetSliceProjection()) ||

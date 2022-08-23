@@ -93,7 +93,10 @@ bool vtkMRMLFocusWidget::ProcessCancelFocusEvent(vtkMRMLInteractionEventData* ev
     {
     return false;
     }
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
   selectionNode->SetFocusNodeID(nullptr);
+  selectionNode->RemoveAllSoftFocus();
   return true;
 }
 
@@ -105,7 +108,8 @@ void vtkMRMLFocusWidget::ProcessMRMLNodesEvents(vtkObject* caller,
   vtkMRMLSelectionNode* callerSelectionNode = vtkMRMLSelectionNode::SafeDownCast(caller);
   if (callerSelectionNode)
     {
-    bool focused = callerSelectionNode->GetFocusNodeID() && strcmp(callerSelectionNode->GetFocusNodeID(), "") != 0;
+    bool focused = (callerSelectionNode->GetFocusNodeID() && strcmp(callerSelectionNode->GetFocusNodeID(), "") != 0)
+      || callerSelectionNode->GetNumberOfNodeReferences(callerSelectionNode->GetSoftFocusNodeReferenceRole()) > 0;
     self->SetWidgetState(focused ? WidgetStateFocus : WidgetStateIdle);
     }
 }

@@ -492,15 +492,17 @@ bool vtkSlicerMarkupsWidget::ProcessWidgetJumpCursor(vtkMRMLInteractionEventData
 //-------------------------------------------------------------------------
 bool vtkSlicerMarkupsWidget::ProcessNodeGrabFocus(vtkMRMLInteractionEventData* vtkNotUsed(eventData))
 {
-  vtkMRMLSelectionNode* currentSelectionNode = this->GetSelectionNode();
-
-  if (!this->GetSelectionNode())
+  vtkMRMLSelectionNode* selectionNode = this->GetSelectionNode();
+  if (!selectionNode)
     {
     return false;
     }
 
   vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
-  this->GetSelectionNode()->SetFocusNodeID(markupsNode ? markupsNode->GetID() : nullptr);
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->SetFocusNodeID(markupsNode ? markupsNode->GetID() : nullptr);
+  selectionNode->RemoveAllSoftFocus();
   return true;
 }
 
