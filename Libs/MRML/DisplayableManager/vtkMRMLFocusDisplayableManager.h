@@ -54,13 +54,25 @@ protected:
 
   ///@{
   /// Update the list of displayable nodes that have focus.
-  void UpdateDisplayableNodes();
+  void UpdateHardFocusDisplayableNodes();
+  ///@}
+
+  ///@{
+  /// Update the list of displayable nodes that have focus.
+  void UpdateSoftFocusDisplayableNodes();
   ///@}
 
   ///@{
   /// Update the list of actors for focused nodes.
-  void UpdateOriginalFocusActors();
+  void UpdateOriginalHardFocusActors();
   ///@}
+
+
+  ///@{
+  /// Update the list of actors for focused nodes.
+  void UpdateOriginalSoftFocusActors();
+  ///@}
+
 
   ///@{
   /// Update actors for the soft focus representation.
