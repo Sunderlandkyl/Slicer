@@ -383,6 +383,10 @@ protected:
 
   void changeEvent(QEvent* e) override;
 
+  void mouseMoveEvent(QMouseEvent* e) override;
+
+  void leaveEvent(QEvent* e) override;
+
 protected:
   QScopedPointer<qMRMLSubjectHierarchyTreeViewPrivate> d_ptr;
 

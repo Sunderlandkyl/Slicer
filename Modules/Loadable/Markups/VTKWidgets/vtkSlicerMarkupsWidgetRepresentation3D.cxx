@@ -47,6 +47,7 @@
 #include <vtkMRMLApplicationLogic.h>
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
+#include <vtkMRMLScene.h>
 #include <vtkMRMLViewNode.h>
 
 std::map<vtkRenderer*, vtkSmartPointer<vtkFloatArray> > vtkSlicerMarkupsWidgetRepresentation3D::CachedZBuffers;
@@ -246,6 +247,17 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
     return;
     }
 
+  vtkMRMLSelectionNode* selectionNode = nullptr;
+  if (markupsNode->GetScene())
+    {
+    selectionNode = vtkMRMLSelectionNode::SafeDownCast(markupsNode->GetScene()->GetFirstNodeByClass("vtkMRMLSelectionNode"));
+    }
+  bool hasFocus = false;
+  if (selectionNode && markupsNode && selectionNode->GetFocusNodeID() && markupsNode->GetID())
+    {
+    hasFocus = strcmp(selectionNode->GetFocusNodeID(), markupsNode->GetID()) == 0;
+    }
+
   int numPoints = markupsNode->GetNumberOfControlPoints();
   std::vector<int> activeControlPointIndices;
   this->MarkupsDisplayNode->GetActiveControlPoints(activeControlPointIndices);
@@ -253,7 +265,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateAllPointsAndLabelsFromMRML()
     {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[controlPointType]);
 
-    if (controlPointType == Project || controlPointType == ProjectBack)
+    if (!hasFocus || controlPointType == Project || controlPointType == ProjectBack)
       {
       // no projection display in 3D
       controlPoints->Actor->SetVisibility(false);

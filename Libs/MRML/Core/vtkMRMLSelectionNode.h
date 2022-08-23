@@ -233,6 +233,18 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
   vtkGetMacro(FocusedComponentIndex, int);
   vtkSetMacro(FocusedHighlightStrength, double);
   vtkGetMacro(FocusedHighlightStrength, double);
+  const char* GetFocusNodeReferenceRole();
+  const char* GetFocusNodeReferenceMRMLAttributeName();
+
+  ///
+  void AddSoftFocusNodeID(const char* id);
+  const char* GetNthSoftFocusNodeID(int n);
+  vtkMRMLNode* GetNthSoftFocusNode(int n);
+  void SetSoftFocusComponent(const char* nodeId, int type, int index);
+  void GetSoftFocusComponent(const char* nodeId, int& type, int& index);
+  void RemoveAllSoftFocus();
+  const char* GetSoftFocusNodeReferenceRole();
+  const char* GetSoftFocusNodeReferenceMRMLAttributeName();
 
 protected:
   vtkMRMLSelectionNode();
@@ -250,6 +262,8 @@ protected:
   int FocusedComponentType{ -1 };
   int FocusedComponentIndex{ -1 };
   double FocusedHighlightStrength{ 10.0 };
+
+  std::map<std::string, std::pair<int, int>> SoftFocusComponents;
 };
 
 #endif

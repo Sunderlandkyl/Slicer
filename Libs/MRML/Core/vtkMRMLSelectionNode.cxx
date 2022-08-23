@@ -35,6 +35,10 @@ static const char* ACTIVE_VIEW_REFERENCE_ROLE = "ActiveView";
 static const char* ACTIVE_LAYOUT_REFERENCE_ROLE = "ActiveLayout";
 static const char* ACTIVE_PLOT_CHART_REFERENCE_ROLE = "ActivePlotChart";
 static const char* FOCUS_NODE_REFERENCE_ROLE = "FocusNode";
+static const char* FOCUS_NODE_REFERENCE_MRML_ATTRIBUTE_NAME = "FocusNodeID";
+
+static const char* SOFT_FOCUS_NODE_REFERENCE_ROLE = "SoftFocusNode";
+static const char* SOFT_FOCUS_NODE_REFERENCE_MRML_ATTRIBUTE_NAME = "SoftFocusNodeID";
 
 //----------------------------------------------------------------------------
 vtkMRMLNodeNewMacro(vtkMRMLSelectionNode);
@@ -61,7 +65,8 @@ vtkMRMLSelectionNode::vtkMRMLSelectionNode()
   this->AddNodeReferenceRole(ACTIVE_VIEW_REFERENCE_ROLE, "ActiveViewID");
   this->AddNodeReferenceRole(ACTIVE_LAYOUT_REFERENCE_ROLE, "ActiveLayoutID");
   this->AddNodeReferenceRole(ACTIVE_PLOT_CHART_REFERENCE_ROLE, "ActivePlotChartID");
-  this->AddNodeReferenceRole(FOCUS_NODE_REFERENCE_ROLE, "FocusNodeID");
+  this->AddNodeReferenceRole(FOCUS_NODE_REFERENCE_ROLE, FOCUS_NODE_REFERENCE_MRML_ATTRIBUTE_NAME);
+  this->AddNodeReferenceRole(SOFT_FOCUS_NODE_REFERENCE_ROLE, SOFT_FOCUS_NODE_REFERENCE_MRML_ATTRIBUTE_NAME);
 }
 
 //----------------------------------------------------------------------------
@@ -596,17 +601,29 @@ bool vtkMRMLSelectionNode::GetActivePlaceNodePlacementValid()
 }
 
 //----------------------------------------------------------------------------
+const char* vtkMRMLSelectionNode::GetFocusNodeReferenceRole()
+{
+  return FOCUS_NODE_REFERENCE_ROLE;
+}
+
+//----------------------------------------------------------------------------
+const char* vtkMRMLSelectionNode::GetFocusNodeReferenceMRMLAttributeName()
+{
+  return FOCUS_NODE_REFERENCE_MRML_ATTRIBUTE_NAME;
+}
+
+//----------------------------------------------------------------------------
 void vtkMRMLSelectionNode::SetFocusNodeID(const char* id)
 {
   const char* oldFocusNodeID = this->GetFocusNodeID();
   if (!oldFocusNodeID && !id)
-  {
+    {
     return;
-  }
+    }
   else if (oldFocusNodeID && id && strcmp(oldFocusNodeID, id) == 0)
-  {
+    {
     return;
-  }
+    }
 
   this->SetNodeReferenceID(FOCUS_NODE_REFERENCE_ROLE, id);
   this->InvokeCustomModifiedEvent(FocusNodeIDChangedEvent);
@@ -621,5 +638,67 @@ const char* vtkMRMLSelectionNode::GetFocusNodeID()
 //----------------------------------------------------------------------------
 vtkMRMLNode* vtkMRMLSelectionNode::GetFocusNode()
 {
-  return vtkMRMLNode::SafeDownCast(this->GetNodeReference(FOCUS_NODE_REFERENCE_ROLE));
+  return this->GetNodeReference(FOCUS_NODE_REFERENCE_ROLE);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSelectionNode::AddSoftFocusNodeID(const char* id)
+{
+  this->AddNodeReferenceID(SOFT_FOCUS_NODE_REFERENCE_ROLE, id);
+}
+
+//----------------------------------------------------------------------------
+const char* vtkMRMLSelectionNode::GetNthSoftFocusNodeID(int n)
+{
+  return this->GetNthNodeReferenceID(SOFT_FOCUS_NODE_REFERENCE_ROLE, n);
+}
+
+//----------------------------------------------------------------------------
+vtkMRMLNode* vtkMRMLSelectionNode::GetNthSoftFocusNode(int n)
+{
+  return this->GetNthNodeReference(SOFT_FOCUS_NODE_REFERENCE_ROLE, n);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSelectionNode::SetSoftFocusComponent(const char* nodeId, int type, int index)
+{
+  if (nodeId == nullptr)
+    {
+    vtkErrorMacro("SetSoftFocusComponent: Invalid node ID");
+    return;
+    }
+  this->SoftFocusComponents[nodeId] = std::make_pair(type, index);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSelectionNode::GetSoftFocusComponent(const char* nodeId, int& type, int& index)
+{
+  type = -1;
+  index = -1;
+
+  auto softFocusComponentIt = this->SoftFocusComponents.find(nodeId);
+  if (softFocusComponentIt != this->SoftFocusComponents.end())
+    {
+    type = softFocusComponentIt->second.first;
+    index = softFocusComponentIt->second.second;
+    }
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSelectionNode::RemoveAllSoftFocus()
+{
+  this->RemoveNodeReferenceIDs(SOFT_FOCUS_NODE_REFERENCE_ROLE);
+  this->SoftFocusComponents.clear();
+}
+
+//----------------------------------------------------------------------------
+const char* vtkMRMLSelectionNode::GetSoftFocusNodeReferenceRole()
+{
+  return SOFT_FOCUS_NODE_REFERENCE_ROLE;
+}
+
+//----------------------------------------------------------------------------
+const char* vtkMRMLSelectionNode::GetSoftFocusNodeReferenceMRMLAttributeName()
+{
+  return SOFT_FOCUS_NODE_REFERENCE_MRML_ATTRIBUTE_NAME;
 }
