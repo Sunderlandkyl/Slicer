@@ -176,6 +176,8 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::AddFocusedNodeObservers()
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
   broker->AddObservation(this->External->GetRenderer()->GetActiveCamera(), vtkCommand::ModifiedEvent,
     this->External, this->ObjectCallback);
+  broker->AddObservation(this->External->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
+    this->External, this->ObjectCallback);
 }
 
 //---------------------------------------------------------------------------
@@ -223,6 +225,8 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::RemoveFocusedNodeObservers()
   this->RemoveDisplayableNodeObservers(this->SoftFocusDisplayableNodes);
   this->RemoveDisplayableNodeObservers(this->HardFocusDisplayableNodes);
   broker->RemoveObservations(this->External->GetRenderer()->GetActiveCamera(), vtkCommand::InteractionEvent,
+    this->External, this->ObjectCallback);
+  broker->RemoveObservations(this->External->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
     this->External, this->ObjectCallback);
 }
 
@@ -318,7 +322,7 @@ void vtkMRMLFocusDisplayableManager::ProcesObjectsEvents(vtkObject* caller,
     {
     this->UpdateActors();
     }
-  else if (vtkRenderer::SafeDownCast(caller) || vtkCamera::SafeDownCast(caller))
+  else if (vtkRenderWindow::SafeDownCast(caller) || vtkCamera::SafeDownCast(caller))
     {
     this->UpdateCornerROIPolyData();
     }
