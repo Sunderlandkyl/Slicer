@@ -53,6 +53,11 @@ protected:
   ///@}
 
   ///@{
+  /// Perform a full update for all actors and nodes.
+  virtual void UpdateFromDisplayableNode();
+  ///@}
+
+  ///@{
   /// Update the list of displayable nodes that have focus.
   void UpdateHardFocusDisplayableNodes();
   ///@}
