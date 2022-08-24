@@ -156,9 +156,9 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::AddDisplayableNodeObservers(vt
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLFocusDisplayableManager::vtkInternal::AddDisplayableNodeObservers(std::vector<vtkWeakPointer<vtkMRMLDisplayableNode>>& displayNodes)
+void vtkMRMLFocusDisplayableManager::vtkInternal::AddDisplayableNodeObservers(std::vector<vtkWeakPointer<vtkMRMLDisplayableNode>>& displayableNodes)
 {
-  for (vtkMRMLDisplayableNode* displayableNode : this->SoftFocusDisplayableNodes)
+  for (vtkMRMLDisplayableNode* displayableNode : displayableNodes)
     {
     if (!displayableNode)
       {
@@ -174,10 +174,6 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::AddFocusedNodeObservers()
   this->AddDisplayableNodeObservers(this->SoftFocusDisplayableNodes);
   this->AddDisplayableNodeObservers(this->HardFocusDisplayableNodes);
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
-  broker->AddObservation(this->External->GetRenderer()->GetActiveCamera(), vtkCommand::ModifiedEvent,
-    this->External, this->ObjectCallback);
-  broker->AddObservation(this->External->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
-    this->External, this->ObjectCallback);
 }
 
 //---------------------------------------------------------------------------
@@ -224,10 +220,6 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::RemoveFocusedNodeObservers()
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
   this->RemoveDisplayableNodeObservers(this->SoftFocusDisplayableNodes);
   this->RemoveDisplayableNodeObservers(this->HardFocusDisplayableNodes);
-  broker->RemoveObservations(this->External->GetRenderer()->GetActiveCamera(), vtkCommand::InteractionEvent,
-    this->External, this->ObjectCallback);
-  broker->RemoveObservations(this->External->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
-    this->External, this->ObjectCallback);
 }
 
 //----------------------------------------------------------------------------
@@ -291,6 +283,20 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRMLScene()
     this, this->GetMRMLNodesCallbackCommand());
   this->Internal->FocusWidget->SetSelectionNode(this->Internal->SelectionNode);
 
+  if (!broker->GetObservationExist(this->GetRenderer()->GetActiveCamera(), vtkCommand::ModifiedEvent,
+    this, this->Internal->ObjectCallback))
+    {
+    broker->AddObservation(this->GetRenderer()->GetActiveCamera(), vtkCommand::ModifiedEvent,
+      this, this->Internal->ObjectCallback);
+    }
+
+  if (!broker->GetObservationExist(this->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
+      this, this->Internal->ObjectCallback))
+    {
+    broker->AddObservation(this->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
+      this, this->Internal->ObjectCallback);
+    }
+
   this->UpdateFromMRML();
 }
 
@@ -304,7 +310,15 @@ void vtkMRMLFocusDisplayableManager::ProcessMRMLNodesEvents(vtkObject* caller,
     return;
     }
 
-  this->UpdateFromMRML();
+  if (vtkMRMLSelectionNode::SafeDownCast(caller))
+    {
+    this->UpdateFromMRML();
+    }
+  else if (vtkMRMLNode::SafeDownCast(caller))
+    {
+    this->UpdateFromDisplayableNode();
+    }
+
 
   this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
 }
@@ -343,10 +357,8 @@ bool vtkMRMLFocusDisplayableManager::ProcessInteractionEvent(vtkMRMLInteractionE
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
+void vtkMRMLFocusDisplayableManager::UpdateFromDisplayableNode()
 {
-  this->Internal->RemoveFocusedNodeObservers();
-
   this->UpdateSoftFocusDisplayableNodes();
   this->UpdateOriginalSoftFocusActors();
   this->UpdateSoftFocus();
@@ -354,6 +366,14 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
   this->UpdateHardFocusDisplayableNodes();
   this->UpdateOriginalHardFocusActors();
   this->UpdateHardFocus();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
+{
+  this->Internal->RemoveFocusedNodeObservers();
+
+  this->UpdateFromDisplayableNode();
 
   this->Internal->AddFocusedNodeObservers();
 
@@ -776,12 +796,19 @@ void vtkMRMLFocusDisplayableManager::UpdateCornerROIPolyData()
     index = 0;
     for (int lineIndex = 0; lineIndex < 4; ++lineIndex)
       {
-      vtkNew<vtkIdList> corner;
-      for (int i = 0; i < 3; ++i)
-        {
-        corner->InsertNextId(index++);
-        }
-      lines->InsertNextCell(corner);
+      int point0 = index++;
+      int point1 = index++;
+      int point2 = index++;
+
+      vtkNew<vtkIdList> cornerA;
+      cornerA->InsertNextId(point0);
+      cornerA->InsertNextId(point1);
+      lines->InsertNextCell(cornerA);
+
+      vtkNew<vtkIdList> cornerB;
+      cornerB->InsertNextId(point1);
+      cornerB->InsertNextId(point2);
+      lines->InsertNextCell(cornerB);
       }
 
     this->Internal->HardFocusPolyData->SetLines(lines);
