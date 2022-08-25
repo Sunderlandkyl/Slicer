@@ -1516,12 +1516,15 @@ void qMRMLSubjectHierarchyTreeView::onSelectionChanged(const QItemSelection& sel
 
     for (vtkIdType shItem : selectedShItems)
       {
-      focusNode = d->SubjectHierarchyNode->GetItemDataNode(shItem);
+      if (shItem != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+        {
+        focusNode = d->SubjectHierarchyNode->GetItemDataNode(shItem);
+        }
 
       int componentIndex = -1;
       int componentType = -1;
 
-      if (!focusNode)
+      if (!focusNode && shItem != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
         {
         vtkIdType parentId = d->SubjectHierarchyNode->GetItemParent(shItem);
         if (parentId != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
@@ -2675,11 +2678,15 @@ void qMRMLSubjectHierarchyTreeView::mouseMoveEvent(QMouseEvent* e)
     }
 
   vtkIdType shItemID = d->SortFilterModel->subjectHierarchyItemFromIndex(index);
-  vtkMRMLNode* softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(shItemID);
+  vtkMRMLNode* softFocusNode = nullptr;
+  if (shItemID != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+    {
+    softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(shItemID);
+    }
+
   int componentType = -1;
   int componentIndex = -1;
-
-  if (!softFocusNode)
+  if (!softFocusNode && shItemID != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
     {
     vtkIdType parentId = d->SubjectHierarchyNode->GetItemParent(shItemID);
     if (parentId != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
