@@ -39,8 +39,10 @@
 #include "qMRMLSceneModel.h"
 
 // MRML includes
+#include<vtkMRMLDisplayableNode.h>
 #include <vtkMRMLInteractionNode.h>
 #include <vtkMRMLNode.h>
+#include<vtkMRMLSelectionNode.h>
 #include <vtkMRMLScene.h>
 
 // --------------------------------------------------------------------------
@@ -1175,6 +1177,8 @@ void qMRMLNodeComboBox::setComboBox(QComboBox* comboBox)
           this, SLOT(emitCurrentNodeChanged()));
   connect(d->ComboBox, SIGNAL(activated(int)),
           this, SLOT(emitNodeActivated(int)));
+  connect(d->ComboBox, SIGNAL(highlighted(int)),
+    this, SLOT(onNodeHighlighted(int)));
   d->ComboBox->setSizePolicy(QSizePolicy(QSizePolicy::Expanding,
                                          QSizePolicy::Expanding,
                                          QSizePolicy::DefaultType));
@@ -1315,4 +1319,22 @@ void qMRMLNodeComboBox::setInteractionNodeSingletonTag(const QString& tag)
 {
   Q_D(qMRMLNodeComboBox);
   d->InteractionNodeSingletonTag = tag;
+}
+
+//---------------------------------------------------------------------------
+void qMRMLNodeComboBox::onNodeHighlighted(int index)
+{
+  Q_D(qMRMLNodeComboBox);
+
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene()
+    ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  if (!selectionNode)
+    {
+    return;
+    }
+
+  vtkMRMLDisplayableNode* softFocusNode = vtkMRMLDisplayableNode::SafeDownCast(d->mrmlNode(index));
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->RemoveAllSoftFocus();
+  selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
 }

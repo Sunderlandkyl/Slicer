@@ -1503,7 +1503,7 @@ void qMRMLSubjectHierarchyTreeView::onSelectionChanged(const QItemSelection& sel
     }
 
   vtkMRMLScene* scene = this->mrmlScene();
-  vtkMRMLSelectionNode* selectionNode = scene ? vtkMRMLSelectionNode::SafeDownCast(scene->GetFirstNodeByName("Selection")) : nullptr;
+  vtkMRMLSelectionNode* selectionNode = scene ? vtkMRMLSelectionNode::SafeDownCast(scene->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
   if (selectionNode)
     {
     MRMLNodeModifyBlocker blocker(selectionNode);

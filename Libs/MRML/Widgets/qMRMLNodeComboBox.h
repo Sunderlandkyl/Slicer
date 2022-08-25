@@ -391,6 +391,8 @@ protected slots:
   void emitNodesAboutToBeRemoved(const QModelIndex & parent, int start, int end);
   void refreshIfCurrentNodeHidden();
 
+  void onNodeHighlighted(int index);
+
 protected:
   QScopedPointer<qMRMLNodeComboBoxPrivate> d_ptr;
 
