@@ -771,34 +771,34 @@ void vtkMRMLFocusDisplayableManager::UpdateCornerROIPolyData()
     outlinePoints->SetNumberOfPoints(12);
     }
 
-  int index = 0;
-  outlinePoints->SetPoint(index++, displayBounds[0] + lenPx, displayBounds[2], 0.0);
-  outlinePoints->SetPoint(index++, displayBounds[0], displayBounds[2], 0.0);
-  outlinePoints->SetPoint(index++, displayBounds[0], displayBounds[2] + lenPx, 0.0);
+  int pointIndex = 0;
+  outlinePoints->SetPoint(pointIndex++, displayBounds[0] + lenPx, displayBounds[2], 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[2], 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[2] + lenPx, 0.0);
 
-  outlinePoints->SetPoint(index++, displayBounds[0], displayBounds[3] - lenPx, 0.0);
-  outlinePoints->SetPoint(index++, displayBounds[0], displayBounds[3], 0.0);
-  outlinePoints->SetPoint(index++, displayBounds[0] + lenPx, displayBounds[3], 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[3] - lenPx, 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[3], 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[0] + lenPx, displayBounds[3], 0.0);
 
-  outlinePoints->SetPoint(index++, displayBounds[1] - lenPx, displayBounds[3], 0.0);
-  outlinePoints->SetPoint(index++, displayBounds[1], displayBounds[3], 0.0);
-  outlinePoints->SetPoint(index++, displayBounds[1], displayBounds[3] - lenPx, 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[1] - lenPx, displayBounds[3], 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[3], 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[3] - lenPx, 0.0);
 
-  outlinePoints->SetPoint(index++, displayBounds[1], displayBounds[2] + lenPx, 0.0);
-  outlinePoints->SetPoint(index++, displayBounds[1], displayBounds[2], 0.0);
-  outlinePoints->SetPoint(index++, displayBounds[1] - lenPx, displayBounds[2], 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[2] + lenPx, 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[2], 0.0);
+  outlinePoints->SetPoint(pointIndex++, displayBounds[1] - lenPx, displayBounds[2], 0.0);
 
   vtkSmartPointer<vtkCellArray> lines = this->Internal->HardFocusPolyData->GetLines();
   if (!lines || lines->GetNumberOfCells() == 0)
     {
     lines = vtkSmartPointer<vtkCellArray>::New();
 
-    index = 0;
+    pointIndex = 0;
     for (int lineIndex = 0; lineIndex < 4; ++lineIndex)
       {
-      int point0 = index++;
-      int point1 = index++;
-      int point2 = index++;
+      int point0 = pointIndex++;
+      int point1 = pointIndex++;
+      int point2 = pointIndex++;
 
       vtkNew<vtkIdList> cornerA;
       cornerA->InsertNextId(point0);
@@ -806,8 +806,8 @@ void vtkMRMLFocusDisplayableManager::UpdateCornerROIPolyData()
       lines->InsertNextCell(cornerA);
 
       vtkNew<vtkIdList> cornerB;
-      cornerB->InsertNextId(point1);
       cornerB->InsertNextId(point2);
+      cornerB->InsertNextId(point1);
       lines->InsertNextCell(cornerB);
       }
 
