@@ -1775,21 +1775,26 @@ const char* vtkMRMLVolumeRenderingDisplayableManager::GetPickedNodeID()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLVolumeRenderingDisplayableManager::GetActorsByID(vtkPropCollection* actors, const char* id,
+void vtkMRMLVolumeRenderingDisplayableManager::GetActorsByDisplayNode(vtkPropCollection* actors, vtkMRMLDisplayNode* displayNode,
   int vtkNotUsed(componentType), int vtkNotUsed(componentIndex))
 {
-  vtkMRMLVolumeRenderingDisplayNode* displayNode = vtkMRMLVolumeRenderingDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
+  vtkMRMLVolumeRenderingDisplayNode* volumeRenderingDisplayNode = vtkMRMLVolumeRenderingDisplayNode::SafeDownCast(displayNode);
+  if (!displayNode)
+    {
+    return;
+    }
+
   vtkMRMLVolumeNode* volumeNode = displayNode ? vtkMRMLVolumeNode::SafeDownCast(displayNode->GetDisplayableNode()) : nullptr;
   if (!volumeNode)
-  {
+    {
     return;
-  }
+    }
 
   vtkVolume* actor = this->GetVolumeActor(volumeNode);
   if (!actor)
-  {
+    {
     return;
-  }
+    }
 
   actors->AddItem(actor);
 }
