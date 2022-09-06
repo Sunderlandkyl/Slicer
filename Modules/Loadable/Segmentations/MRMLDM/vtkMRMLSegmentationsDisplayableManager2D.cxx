@@ -1767,10 +1767,16 @@ void vtkMRMLSegmentationsDisplayableManager2D::GetVisibleSegmentsForPosition(dou
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByID(vtkPropCollection* actors, const char* id, int componentType/*=-1*/, int componentIndex/*=-1*/)
+void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByDisplayNode(
+  vtkPropCollection* actors, vtkMRMLDisplayNode* displayNode, int componentType/*=-1*/, int componentIndex/*=-1*/)
 {
-  vtkMRMLSegmentationDisplayNode* displayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
-  auto pipelineIt = this->Internal->DisplayPipelines.find(displayNode);
+  vtkMRMLSegmentationDisplayNode* segmentationDisplayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(displayNode);
+  if (!segmentationDisplayNode)
+    {
+    return;
+    }
+
+  auto pipelineIt = this->Internal->DisplayPipelines.find(segmentationDisplayNode);
   if (pipelineIt == this->Internal->DisplayPipelines.end())
     {
     return;
@@ -1779,15 +1785,19 @@ void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByID(vtkPropCollection* 
   if (componentIndex >= 0)
     {
     vtkMRMLSegmentationNode* segmentationNode = vtkMRMLSegmentationNode::SafeDownCast(displayNode->GetDisplayableNode());
-    vtkSegmentation* segmentation = segmentationNode->GetSegmentation();
-    vtkSegment* segment = segmentation->GetNthSegment(componentIndex);
-    std::string segmentId = segmentation->GetSegmentIdBySegment(segment);
+    vtkSegmentation* segmentation = segmentationNode ? segmentationNode->GetSegmentation() : nullptr;
+    vtkSegment* segment = segmentation ? segmentation->GetNthSegment(componentIndex) : nullptr;
+    if (!segment)
+      {
+      return;
+      }
 
-    vtkDataObject* representation = segment->GetRepresentation(displayNode->GetDisplayRepresentationName2D());
+    vtkDataObject* representation = segment->GetRepresentation(segmentationDisplayNode->GetDisplayRepresentationName2D());
     auto pipeline = pipelineIt->second[representation];
-
-    vtkNew<vtkActor2D> polyDataFillActor;
-    polyDataFillActor->ShallowCopy(pipeline->PolyDataFillActor);
+    if (!pipeline)
+      {
+      return;
+      }
 
     vtkNew<vtkActor2D> imageFillActor;
     imageFillActor->ShallowCopy(pipeline->ImageFillActor);

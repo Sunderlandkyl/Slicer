@@ -2087,8 +2087,20 @@ void vtkMRMLModelDisplayableManager::OnInteractorStyleEvent(int eventid)
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLModelDisplayableManager::GetActorsByID(vtkPropCollection* actors, const char* id, int vtkNotUsed(component), int vtkNotUsed(index))
+void vtkMRMLModelDisplayableManager::GetActorsByDisplayNode(
+  vtkPropCollection* actors, vtkMRMLDisplayNode* displayNode, int vtkNotUsed(component), int vtkNotUsed(index))
 {
+  if (!displayNode)
+    {
+    return;
+    }
+
+  const char* id = displayNode->GetID();
+  if (!id)
+    {
+    return;
+    }
+
   vtkProp3D* actor = this->GetActorByID(id);
   if (actor)
   {
