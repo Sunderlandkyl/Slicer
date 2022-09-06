@@ -1004,13 +1004,3 @@ void vtkMRMLAbstractDisplayableManager::SetMouseCursor(int cursor)
     this->GetRenderer()->GetRenderWindow()->SetCurrentCursor(cursor);
   }
 }
-
-//----------------------------------------------------------------------------
-void vtkMRMLAbstractDisplayableManager::GetActorsByNode(vtkPropCollection* actors, vtkMRMLDisplayNode* node, int component/*=-1*/, int index/*=-1*/)
-{
-  if (!node)
-    {
-    return;
-    }
-  this->GetActorsByID(actors, node->GetID(), component, index);
-}

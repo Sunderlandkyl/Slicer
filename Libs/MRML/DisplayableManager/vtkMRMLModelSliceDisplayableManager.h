@@ -48,7 +48,7 @@ public:
 
   ///@{
   /// Retrieve a list of actors for the specified vtkMRMLDisplayNode.
-  void GetActorsByID(vtkPropCollection* actors, const char* id, int component=-1, int index=-1) override;
+  void GetActorsByDisplayNode(vtkPropCollection* actors, vtkMRMLDisplayNode* id, int component=-1, int index=-1) override;
   ///@}
 
 protected:

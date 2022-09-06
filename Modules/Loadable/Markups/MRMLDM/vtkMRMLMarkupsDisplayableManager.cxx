@@ -1004,9 +1004,14 @@ void vtkMRMLMarkupsDisplayableManager::ConvertDeviceToXYZ(double x, double y, do
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLMarkupsDisplayableManager::GetActorsByID(vtkPropCollection* actors, const char* id, int componentType, int componentIndex)
+void vtkMRMLMarkupsDisplayableManager::GetActorsByDisplayNode(vtkPropCollection* actors, vtkMRMLDisplayNode* displayNode, int componentType, int componentIndex)
 {
-  vtkMRMLMarkupsDisplayNode* markupsDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(id));
+  vtkMRMLMarkupsDisplayNode* markupsDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(displayNode);
+  if (!markupsDisplayNode)
+    {
+    return;
+    }
+
   auto it = this->GetHelper()->MarkupsDisplayNodesToWidgets.find(markupsDisplayNode);
   if (it == this->GetHelper()->MarkupsDisplayNodesToWidgets.end())
     {

@@ -465,7 +465,7 @@ void vtkMRMLFocusDisplayableManager::UpdateOriginalHardFocusActors()
         // Ignore focus display manager.
         continue;
         }
-      displayableManager->GetActorsByID(focusNodeActors, displayNode->GetID(),
+      displayableManager->GetActorsByDisplayNode(focusNodeActors, displayNode,
         this->Internal->SelectionNode->GetFocusedComponentType(), this->Internal->SelectionNode->GetFocusedComponentIndex());
       }
     }
@@ -566,7 +566,7 @@ void vtkMRMLFocusDisplayableManager::UpdateOriginalSoftFocusActors()
 
       A b = info[displayNode];
 
-      displayableManager->GetActorsByID(focusNodeActors, displayNode->GetID(),
+      displayableManager->GetActorsByDisplayNode(focusNodeActors, displayNode,
         b.ComponentType, b.ComponentIndex);
       }
     }
