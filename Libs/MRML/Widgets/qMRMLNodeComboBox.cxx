@@ -1179,6 +1179,7 @@ void qMRMLNodeComboBox::setComboBox(QComboBox* comboBox)
           this, SLOT(emitNodeActivated(int)));
   connect(d->ComboBox, SIGNAL(highlighted(int)),
     this, SLOT(onNodeHighlighted(int)));
+  d->ComboBox->view()->viewport()->installEventFilter(this);
   d->ComboBox->setSizePolicy(QSizePolicy(QSizePolicy::Expanding,
                                          QSizePolicy::Expanding,
                                          QSizePolicy::DefaultType));
@@ -1321,8 +1322,105 @@ void qMRMLNodeComboBox::setInteractionNodeSingletonTag(const QString& tag)
   d->InteractionNodeSingletonTag = tag;
 }
 
+//--------------------------------------------------------------------------
+bool qMRMLNodeComboBox::eventFilter(QObject* obj, QEvent* evt)
+{
+  Q_D(qMRMLNodeComboBox);
+
+  switch (evt->type())
+    {
+    case QEvent::Enter:
+    case QEvent::Show:
+      this->onNodeHighlighted(d->ComboBox->view()->currentIndex().row());
+      break;
+    case QEvent::Hide:
+      this->onNodeHighlighted();
+      break;
+    default:
+      break;
+    }
+
+  return Superclass::eventFilter(obj, evt);
+}
+
 //---------------------------------------------------------------------------
-void qMRMLNodeComboBox::onNodeHighlighted(int index)
+void qMRMLNodeComboBox::enterEvent(QEvent* evt)
+{
+  Q_D(qMRMLNodeComboBox);
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene()
+    ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  if (!selectionNode)
+    {
+    return;
+    }
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->RemoveAllSoftFocus();
+
+  QModelIndex index = d->ComboBox->view()->currentIndex();
+  vtkMRMLNode* softFocusNode = d->mrmlNode(index.row());
+  selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
+}
+
+//---------------------------------------------------------------------------
+void qMRMLNodeComboBox::mouseMoveEvent(QMouseEvent* e)
+{
+  Q_D(qMRMLNodeComboBox);
+  Superclass::mouseMoveEvent(e);
+  if (e->type() != QMouseEvent::MouseMove)
+    {
+    return;
+    }
+
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetFirstNodeByName("Selection")) : nullptr;
+  if (!selectionNode)
+    {
+    return;
+    }
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->RemoveAllSoftFocus();
+
+  QPoint globalPos = e->globalPos();
+  QPoint pos = d->ComboBox->view()->viewport()->mapFromGlobal(globalPos);
+
+  QModelIndex index = d->ComboBox->view()->currentIndex();
+  if (d->ComboBox->view()->indexAt(pos).isValid())
+    {
+    index = d->ComboBox->view()->indexAt(pos);
+    return;
+    }
+
+  vtkMRMLNode* softFocusNode = d->mrmlNode(index.row());
+  selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
+}
+
+//---------------------------------------------------------------------------
+void qMRMLNodeComboBox::leaveEvent(QEvent* e)
+{
+  Q_D(qMRMLNodeComboBox);
+  Superclass::leaveEvent(e);
+
+  if (d->ComboBox->view()->isVisible())
+    {
+    // Combobox is open.
+    // Don't change the selection
+    return;
+    }
+
+
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetFirstNodeByName("Selection")) : nullptr;
+  if (!selectionNode)
+    {
+    return;
+    }
+
+  MRMLNodeModifyBlocker blocker(selectionNode);
+  selectionNode->RemoveAllSoftFocus();
+}
+
+//---------------------------------------------------------------------------
+void qMRMLNodeComboBox::onNodeHighlighted(int index/*=-1*/)
 {
   Q_D(qMRMLNodeComboBox);
 
@@ -1333,8 +1431,22 @@ void qMRMLNodeComboBox::onNodeHighlighted(int index)
     return;
     }
 
-  vtkMRMLDisplayableNode* softFocusNode = vtkMRMLDisplayableNode::SafeDownCast(d->mrmlNode(index));
   MRMLNodeModifyBlocker blocker(selectionNode);
   selectionNode->RemoveAllSoftFocus();
+
+  if (!d->ComboBox->view()->isVisible())
+    {
+    // Combobox is not open.
+    // Remove the selection.
+    return;
+    }
+
+  if (index < 0)
+    {
+    // No index is specified. Use the index of the currently selected node.
+    index = d->ComboBox->currentIndex();
+    }
+
+  vtkMRMLDisplayableNode* softFocusNode = vtkMRMLDisplayableNode::SafeDownCast(d->mrmlNode(index));
   selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
 }
