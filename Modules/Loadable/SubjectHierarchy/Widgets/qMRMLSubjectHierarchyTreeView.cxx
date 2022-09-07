@@ -2706,6 +2706,8 @@ void qMRMLSubjectHierarchyTreeView::mouseMoveEvent(QMouseEvent* e)
 //---------------------------------------------------------------------------
 void qMRMLSubjectHierarchyTreeView::leaveEvent(QEvent* e)
 {
+  Superclass::leaveEvent(e);
+
   vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetFirstNodeByName("Selection")) : nullptr;
   if (!selectionNode)
     {
