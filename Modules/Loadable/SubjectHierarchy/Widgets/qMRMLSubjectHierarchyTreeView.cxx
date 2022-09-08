@@ -2678,28 +2678,55 @@ void qMRMLSubjectHierarchyTreeView::mouseMoveEvent(QMouseEvent* e)
     }
 
   vtkIdType shItemID = d->SortFilterModel->subjectHierarchyItemFromIndex(index);
-  vtkMRMLNode* softFocusNode = nullptr;
+
+  std::vector<std::pair<vtkIdType, vtkMRMLNode*>> softFocusNodes;
   if (shItemID != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
     {
-    softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(shItemID);
+    if (d->SubjectHierarchyNode->IsItemLevel(shItemID, vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyLevelFolder()))
+      {
+      vtkNew<vtkIdList> children;
+      d->SubjectHierarchyNode->GetItemChildren(shItemID, children, true);
+      for (int i = 0; i < children->GetNumberOfIds(); ++i)
+        {
+        vtkIdType childID = children->GetId(i);
+        if (d->SubjectHierarchyNode->IsItemLevel(childID, vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyVirtualBranchAttributeName()))
+          {
+          continue;
+          }
+
+        vtkMRMLNode* softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(childID);
+        softFocusNodes.push_back(std::make_pair(childID, softFocusNode));
+        }
+      }
+    else
+      {
+      vtkMRMLNode* softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(shItemID);
+      softFocusNodes.push_back(std::make_pair(shItemID,softFocusNode));
+      }
     }
 
   int componentType = -1;
   int componentIndex = -1;
-  if (!softFocusNode && shItemID != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+  for (auto softFocusIdNode : softFocusNodes)
     {
-    vtkIdType parentId = d->SubjectHierarchyNode->GetItemParent(shItemID);
-    if (parentId != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
-      {
-      softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(parentId);
-      }
-    componentIndex = d->SubjectHierarchyNode->GetItemPositionUnderParent(shItemID);
-    }
+    vtkIdType softFocusID = softFocusIdNode.first;
+    vtkMRMLNode* softFocusNode = softFocusIdNode.second;
 
-  selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
-  if (softFocusNode)
-    {
-    selectionNode->SetSoftFocusComponent(softFocusNode->GetID(), componentType, componentIndex);
+    if (!softFocusNode && softFocusID != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+      {
+      vtkIdType parentId = d->SubjectHierarchyNode->GetItemParent(softFocusID);
+      if (parentId != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+        {
+        softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(parentId);
+        }
+      componentIndex = d->SubjectHierarchyNode->GetItemPositionUnderParent(softFocusID);
+      }
+
+    selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
+    if (softFocusNode)
+      {
+      selectionNode->SetSoftFocusComponent(softFocusNode->GetID(), componentType, componentIndex);
+      }
     }
 }
 
