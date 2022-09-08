@@ -399,8 +399,6 @@ protected slots:
 protected:
   QScopedPointer<qMRMLNodeComboBoxPrivate> d_ptr;
 
-  void mouseMoveEvent(QMouseEvent* e) override;
-
   void leaveEvent(QEvent* e) override;
 
 private:

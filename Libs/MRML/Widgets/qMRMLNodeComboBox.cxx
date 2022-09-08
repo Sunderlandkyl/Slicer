@@ -1363,39 +1363,6 @@ void qMRMLNodeComboBox::enterEvent(QEvent* evt)
 }
 
 //---------------------------------------------------------------------------
-void qMRMLNodeComboBox::mouseMoveEvent(QMouseEvent* e)
-{
-  Q_D(qMRMLNodeComboBox);
-  Superclass::mouseMoveEvent(e);
-  if (e->type() != QMouseEvent::MouseMove)
-    {
-    return;
-    }
-
-  vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetFirstNodeByName("Selection")) : nullptr;
-  if (!selectionNode)
-    {
-    return;
-    }
-
-  MRMLNodeModifyBlocker blocker(selectionNode);
-  selectionNode->RemoveAllSoftFocus();
-
-  QPoint globalPos = e->globalPos();
-  QPoint pos = d->ComboBox->view()->viewport()->mapFromGlobal(globalPos);
-
-  QModelIndex index = d->ComboBox->view()->currentIndex();
-  if (d->ComboBox->view()->indexAt(pos).isValid())
-    {
-    index = d->ComboBox->view()->indexAt(pos);
-    return;
-    }
-
-  vtkMRMLNode* softFocusNode = d->mrmlNode(index.row());
-  selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
-}
-
-//---------------------------------------------------------------------------
 void qMRMLNodeComboBox::leaveEvent(QEvent* e)
 {
   Q_D(qMRMLNodeComboBox);
@@ -1407,7 +1374,6 @@ void qMRMLNodeComboBox::leaveEvent(QEvent* e)
     // Don't change the selection
     return;
     }
-
 
   vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ? vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetFirstNodeByName("Selection")) : nullptr;
   if (!selectionNode)
