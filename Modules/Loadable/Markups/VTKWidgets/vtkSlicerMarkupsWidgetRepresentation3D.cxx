@@ -367,6 +367,11 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteract(
     return;
     }
 
+  vtkMRMLSelectionNode* selectionNode = markupsNode->GetScene() ?
+    vtkMRMLSelectionNode::SafeDownCast(markupsNode->GetScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  bool nodeSelected = selectionNode ? selectionNode->GetFocusNode() == markupsNode : false;
+  nodeSelected = nodeSelected && !markupsNode->GetAllowUnselectedEditing();
+
   double displayPosition3[3] = { 0.0, 0.0, 0.0 };
   // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
   // virtual reality, and then we expect a valid world position in the absence of display position.
@@ -429,6 +434,11 @@ void vtkSlicerMarkupsWidgetRepresentation3D::CanInteract(
   vtkIdType numberOfPoints = markupsNode->GetNumberOfControlPoints();
   for (int i = 0; i < numberOfPoints; i++)
     {
+    if (!nodeSelected)
+      {
+      break;
+      }
+
     if (!(markupsNode->GetNthControlPointPositionVisibility(i)
       && markupsNode->GetNthControlPointVisibility(i)))
       {

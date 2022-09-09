@@ -47,6 +47,7 @@
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
+#include <vtkMRMLScene.h>
 
 vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D::ControlPointsPipeline2D()
 {
@@ -181,7 +182,6 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetWorldToSliceCoordinates(const do
   slicePos[1] = sliceCoordinates[1];
 }
 
-#include <vtkMRMLScene.h>
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(double labelsOffset)
 {
@@ -199,7 +199,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
   bool hasFocus = false;
   if (selectionNode && markupsNode && selectionNode->GetFocusNodeID() && markupsNode->GetID())
     {
-    hasFocus = strcmp(selectionNode->GetFocusNodeID(), markupsNode->GetID()) == 0;
+    hasFocus = markupsNode->GetAllowUnselectedEditing() || strcmp(selectionNode->GetFocusNodeID(), markupsNode->GetID()) == 0;
     }
 
   // Use first active control point for jumping //TODO: Have an 'even more active' point concept
@@ -536,6 +536,11 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteract(
     return;
     }
 
+  vtkMRMLSelectionNode* selectionNode = markupsNode->GetScene() ?
+    vtkMRMLSelectionNode::SafeDownCast(markupsNode->GetScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  bool nodeSelected = selectionNode ? selectionNode->GetFocusNode() == markupsNode : false;
+  nodeSelected &= !markupsNode->GetAllowUnselectedEditing();
+
   const int* displayPosition = interactionEventData->GetDisplayPosition();
   double displayPosition3[3] = { static_cast<double>(displayPosition[0]), static_cast<double>(displayPosition[1]), 0.0 };
 
@@ -578,6 +583,11 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteract(
   sliceNode->GetXYToRAS()->Invert(sliceNode->GetXYToRAS(), rasToxyMatrix.GetPointer());
   for (int i = 0; i < numberOfPoints; i++)
     {
+    if (!nodeSelected)
+      {
+      break;
+      }
+
     if (!this->GetNthControlPointViewVisibility(i))
       {
       continue;
