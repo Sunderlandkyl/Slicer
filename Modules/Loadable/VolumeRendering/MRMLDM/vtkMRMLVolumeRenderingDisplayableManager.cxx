@@ -1779,7 +1779,7 @@ void vtkMRMLVolumeRenderingDisplayableManager::GetActorsByDisplayNode(vtkPropCol
   int vtkNotUsed(componentType), int vtkNotUsed(componentIndex))
 {
   vtkMRMLVolumeRenderingDisplayNode* volumeRenderingDisplayNode = vtkMRMLVolumeRenderingDisplayNode::SafeDownCast(displayNode);
-  if (!displayNode)
+  if (!volumeRenderingDisplayNode || !volumeRenderingDisplayNode->GetVisibility())
     {
     return;
     }
@@ -1790,11 +1790,11 @@ void vtkMRMLVolumeRenderingDisplayableManager::GetActorsByDisplayNode(vtkPropCol
     return;
     }
 
-  vtkVolume* actor = this->GetVolumeActor(volumeNode);
-  if (!actor)
+  for (auto pipeline : this->Internal->DisplayPipelines)
     {
-    return;
+    if (pipeline->VolumeActor && pipeline->DisplayNode->GetDisplayableNode() == volumeNode)
+      {
+      actors->AddItem(pipeline->VolumeActor);
+      }
     }
-
-  actors->AddItem(actor);
 }
