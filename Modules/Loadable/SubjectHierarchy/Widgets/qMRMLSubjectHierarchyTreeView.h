@@ -340,6 +340,9 @@ protected slots:
   /// Called when batch processing ends. Restores selection, which is lost when the hierarchy is rebuilt
   virtual void onMRMLSceneEndBatchProcess(vtkObject* sceneObject);
 
+  ///  TODO
+  virtual void onSelectionNodeModified();
+
   void onCustomContextMenu(const QPoint& point);
 
   virtual void onTransformActionSelected();

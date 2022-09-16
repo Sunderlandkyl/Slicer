@@ -647,11 +647,71 @@ void qMRMLSubjectHierarchyTreeView::setMRMLScene(vtkMRMLScene* scene)
 
   this->setSubjectHierarchyNode(scene ? vtkMRMLSubjectHierarchyNode::GetSubjectHierarchyNode(scene) : nullptr);
 
+  vtkMRMLSelectionNode* selectionNode = scene ? vtkMRMLSelectionNode::SafeDownCast(scene->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  qvtkReconnect(selectionNode, vtkCommand::ModifiedEvent, this, SLOT(onSelectionNodeModified()));
+
   // Connect scene close ended event so that subject hierarchy can be cleared
   qvtkReconnect( scene, vtkMRMLScene::StartCloseEvent, this, SLOT( onMRMLSceneStartClose(vtkObject*) ) );
   qvtkReconnect( scene, vtkMRMLScene::EndCloseEvent, this, SLOT( onMRMLSceneEndClose(vtkObject*) ) );
   qvtkReconnect( scene, vtkMRMLScene::StartBatchProcessEvent, this, SLOT( onMRMLSceneStartBatchProcess(vtkObject*) ) );
   qvtkReconnect( scene, vtkMRMLScene::EndBatchProcessEvent, this, SLOT( onMRMLSceneEndBatchProcess(vtkObject*) ) );
+}
+
+//------------------------------------------------------------------------------
+void qMRMLSubjectHierarchyTreeView::onSelectionNodeModified()
+{
+  Q_D(qMRMLSubjectHierarchyTreeView);
+
+  vtkMRMLSelectionNode* selectionNode = this->mrmlScene() ?
+    vtkMRMLSelectionNode::SafeDownCast(this->mrmlScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton")) : nullptr;
+  if (!selectionNode)
+    {
+    return;
+    }
+
+  QList<vtkIdType> selectedShItems;
+  QList<QModelIndex> selectedIndices = this->selectedIndexes();
+  foreach (QModelIndex index, selectedIndices)
+    {
+    // Only consider the first column to avoid duplicates
+    if (index.column() != 0)
+      {
+      continue;
+      }
+    vtkIdType itemID = this->sortFilterProxyModel()->subjectHierarchyItemFromIndex(index);
+    selectedShItems << itemID;
+    }
+
+  vtkMRMLNode* focusNode = selectionNode->GetFocusNode();
+  foreach(vtkIdType itemID, selectedShItems)
+    {
+    vtkMRMLNode* selectedNode = d->SubjectHierarchyNode->GetItemDataNode(itemID);
+    if (d->SubjectHierarchyNode->IsItemLevel(itemID, vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyLevelFolder()))
+      {
+      continue;
+      }
+
+    if (!selectedNode)
+      {
+      // If the current item isn't a MRML node, check the parent item.
+      selectedNode = d->SubjectHierarchyNode->GetItemDataNode(d->SubjectHierarchyNode->GetItemParent(itemID));
+      }
+
+    if (!focusNode && selectedNode)
+      {
+      this->clearSelection();
+      return;
+      }
+
+    if (focusNode == selectedNode)
+      {
+      // Already contained in selected items
+      return;
+      }
+    }
+
+  vtkIdType focusShID = d->SubjectHierarchyNode->GetItemByDataNode(focusNode);
+  this->setCurrentItem(focusShID);
 }
 
 //------------------------------------------------------------------------------
