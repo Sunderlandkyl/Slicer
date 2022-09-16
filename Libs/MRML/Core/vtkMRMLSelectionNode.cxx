@@ -667,7 +667,17 @@ void vtkMRMLSelectionNode::SetSoftFocusComponent(const char* nodeId, int type, i
     vtkErrorMacro("SetSoftFocusComponent: Invalid node ID");
     return;
     }
+
+  auto softFocusIt = this->SoftFocusComponents.find(nodeId);
+  if (softFocusIt != this->SoftFocusComponents.end()
+    && this->SoftFocusComponents[nodeId].first == type
+    && this->SoftFocusComponents[nodeId].second == index)
+    {
+    return;
+    }
+
   this->SoftFocusComponents[nodeId] = std::make_pair(type, index);
+  this->Modified();
 }
 
 //----------------------------------------------------------------------------
@@ -687,6 +697,7 @@ void vtkMRMLSelectionNode::GetSoftFocusComponent(const char* nodeId, int& type, 
 //----------------------------------------------------------------------------
 void vtkMRMLSelectionNode::RemoveAllSoftFocus()
 {
+  MRMLNodeModifyBlocker blocker(this);
   this->RemoveNodeReferenceIDs(SOFT_FOCUS_NODE_REFERENCE_ROLE);
   this->SoftFocusComponents.clear();
 }
