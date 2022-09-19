@@ -1775,6 +1775,13 @@ void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByDisplayNode(
     return;
     }
 
+  vtkMRMLSegmentationNode* segmentationNode = vtkMRMLSegmentationNode::SafeDownCast(segmentationDisplayNode->GetDisplayableNode());
+  vtkSegmentation* segmentation = segmentationNode ? segmentationNode->GetSegmentation() : nullptr;
+  if (!segmentationNode || !segmentation)
+    {
+    return;
+    }
+
   auto pipelineIt = this->Internal->DisplayPipelines.find(segmentationDisplayNode);
   if (pipelineIt == this->Internal->DisplayPipelines.end())
     {
@@ -1785,10 +1792,23 @@ void vtkMRMLSegmentationsDisplayableManager2D::GetActorsByDisplayNode(
     {
     vtkNew<vtkLookupTable> lookupTableFill;
     lookupTableFill->DeepCopy(pipeline.second->LookupTableFill);
+
+    double fillValue = componentIndex < 0 ? 1.0 : 0.0;
     for (int i = 0; i < lookupTableFill->GetNumberOfTableValues(); ++i)
       {
-      double v = componentIndex >= 0 && i == componentIndex+1 ? 1.0 : 0.0;
-      lookupTableFill->SetTableValue(i, v, v, v, v);
+      lookupTableFill->SetTableValue(i, fillValue, fillValue, fillValue, fillValue);
+      }
+
+    if (componentIndex >= 0)
+      {
+      int index = 0;
+      vtkSegment* segment = segmentation->GetNthSegment(componentIndex);
+      if (segment)
+        {
+        double labelValue = segment->GetLabelValue();
+        index = lookupTableFill->GetIndex(labelValue);
+        }
+      lookupTableFill->SetTableValue(index, 1.0, 1.0, 1.0, 1.0);
       }
 
     int index = lookupTableFill->GetIndex(0.0);
