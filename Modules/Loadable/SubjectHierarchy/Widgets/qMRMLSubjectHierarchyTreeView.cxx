@@ -1584,16 +1584,21 @@ void qMRMLSubjectHierarchyTreeView::onSelectionChanged(const QItemSelection& sel
       int componentIndex = -1;
       int componentType = -1;
 
+      qSlicerSubjectHierarchyAbstractPlugin* ownerPlugin =
+        qSlicerSubjectHierarchyPluginHandler::instance()->getOwnerPluginForSubjectHierarchyItem(shItem);
+      if (ownerPlugin)
+        {
+        componentIndex = ownerPlugin->componentIndex(shItem);
+        componentType = ownerPlugin->componentType(shItem);
+        }
+
+
       if (!focusNode && shItem != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
         {
         vtkIdType parentId = d->SubjectHierarchyNode->GetItemParent(shItem);
         if (parentId != vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
           {
           focusNode = d->SubjectHierarchyNode->GetItemDataNode(parentId);
-          }
-        if (focusNode)
-          {
-          componentIndex = d->SubjectHierarchyNode->GetItemPositionUnderParent(shItem);
           }
         }
 
@@ -2765,8 +2770,18 @@ void qMRMLSubjectHierarchyTreeView::mouseMoveEvent(QMouseEvent* e)
       }
     }
 
-  int componentType = -1;
   int componentIndex = -1;
+  int componentType = -1;
+
+  qSlicerSubjectHierarchyAbstractPlugin* ownerPlugin =
+    qSlicerSubjectHierarchyPluginHandler::instance()->getOwnerPluginForSubjectHierarchyItem(shItemID);
+  if (ownerPlugin)
+    {
+    componentIndex = ownerPlugin->componentIndex(shItemID);
+    componentType = ownerPlugin->componentType(shItemID);
+    }
+
+
   for (auto softFocusIdNode : softFocusNodes)
     {
     vtkIdType softFocusID = softFocusIdNode.first;
@@ -2779,7 +2794,6 @@ void qMRMLSubjectHierarchyTreeView::mouseMoveEvent(QMouseEvent* e)
         {
         softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(parentId);
         }
-      componentIndex = d->SubjectHierarchyNode->GetItemPositionUnderParent(softFocusID);
       }
 
     selectionNode->AddSoftFocusNodeID(softFocusNode ? softFocusNode->GetID() : nullptr);
