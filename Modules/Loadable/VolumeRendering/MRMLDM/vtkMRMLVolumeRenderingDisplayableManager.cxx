@@ -1790,9 +1790,25 @@ void vtkMRMLVolumeRenderingDisplayableManager::GetActorsByDisplayNode(vtkPropCol
     return;
     }
 
-  for (auto pipeline : this->Internal->DisplayPipelines)
+  vtkInternal::Pipeline* pipeline = this->Internal->GetPipeline(volumeRenderingDisplayNode);
+
+  vtkMRMLMultiVolumeRenderingDisplayNode* multiVolumeRenderingDisplayNode = vtkMRMLMultiVolumeRenderingDisplayNode::SafeDownCast(volumeRenderingDisplayNode);
+  if (multiVolumeRenderingDisplayNode)
     {
-    if (pipeline->VolumeActor && pipeline->DisplayNode->GetDisplayableNode() == volumeNode)
+    vtkInternal::PipelineMultiVolume* multiVolumePipeline = dynamic_cast<vtkInternal::PipelineMultiVolume*>(pipeline);
+    if (multiVolumePipeline)
+      {
+      vtkVolume* volume = this->Internal->MultiVolumeActor->GetVolume(multiVolumePipeline->ActorPortIndex);
+      if (volume)
+        {
+        actors->AddItem(volume);
+        }
+      }
+    actors->AddItem(this->Internal->MultiVolumeActor);
+    }
+  else
+    {
+    if (pipeline && pipeline->VolumeActor)
       {
       actors->AddItem(pipeline->VolumeActor);
       }
