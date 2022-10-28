@@ -67,6 +67,8 @@
 #include "vtkTransformPolyDataFilter.h"
 #include "vtkTubeFilter.h"
 
+#include <vtkLabeledDataMapper.h>
+
 class vtkMRMLInteractionEventData;
 
 class VTK_SLICER_MARKUPS_MODULE_VTKWIDGETS_EXPORT vtkSlicerMarkupsWidgetRepresentation : public vtkMRMLAbstractWidgetRepresentation
@@ -221,6 +223,10 @@ protected:
     vtkSmartPointer<vtkPolyDataMapper2D>                Mapper;
     vtkSmartPointer<vtkActor2D>                         Actor;
     vtkSmartPointer<vtkProperty2D>                      Property;
+
+    vtkNew<vtkTransformPolyDataFilter>                  LabelTransform;
+    vtkNew<vtkLabeledDataMapper>                        LabelMapper;
+    vtkNew<vtkActor2D>                                  LabelActor;
 
     double                                              StartFadeAngle{30};
     double                                              EndFadeAngle{20};

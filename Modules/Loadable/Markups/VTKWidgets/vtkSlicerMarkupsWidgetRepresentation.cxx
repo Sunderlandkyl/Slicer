@@ -817,6 +817,7 @@ void vtkSlicerMarkupsWidgetRepresentation::GetActors(vtkPropCollection* pc)
   if (this->InteractionPipeline)
     {
     this->InteractionPipeline->Actor->GetActors(pc);
+    this->InteractionPipeline->LabelActor->GetActors(pc);
     }
 }
 
@@ -826,6 +827,7 @@ void vtkSlicerMarkupsWidgetRepresentation::ReleaseGraphicsResources(vtkWindow* w
   if (this->InteractionPipeline)
     {
     this->InteractionPipeline->Actor->ReleaseGraphicsResources(window);
+    this->InteractionPipeline->LabelActor->ReleaseGraphicsResources(window);
     }
 }
 
@@ -836,6 +838,7 @@ int vtkSlicerMarkupsWidgetRepresentation::RenderOverlay(vtkViewport* viewport)
   if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility())
     {
     count += this->InteractionPipeline->Actor->RenderOverlay(viewport);
+    count += this->InteractionPipeline->LabelActor->RenderOverlay(viewport);
     }
   return count;
 }
@@ -853,6 +856,7 @@ int vtkSlicerMarkupsWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* view
       this->InteractionPipeline->SetWidgetScale(this->InteractionPipeline->InteractionHandleSize);
       }
     count += this->InteractionPipeline->Actor->RenderOpaqueGeometry(viewport);
+    count += this->InteractionPipeline->LabelActor->RenderOpaqueGeometry(viewport);
     }
   return count;
 }
@@ -865,6 +869,7 @@ int vtkSlicerMarkupsWidgetRepresentation::RenderTranslucentPolygonalGeometry(vtk
     {
     this->InteractionPipeline->Actor->SetPropertyKeys(this->GetPropertyKeys());
     count += this->InteractionPipeline->Actor->RenderTranslucentPolygonalGeometry(viewport);
+    count += this->InteractionPipeline->LabelActor->RenderTranslucentPolygonalGeometry(viewport);
     }
   return count;
 }
@@ -1021,6 +1026,12 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::CreateRot
   this->AxisRotationGlypher->ScalingOff();
   this->AxisRotationGlypher->ExtractEigenvaluesOff();
   this->AxisRotationGlypher->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
+
+  this->LabelTransform->SetInputConnection(this->RotationScaleTransform->GetOutputPort());
+  this->LabelTransform->SetTransform(this->HandleToWorldTransform);
+  this->LabelMapper->SetInputConnection(this->LabelTransform->GetOutputPort());
+  this->LabelMapper->SetLabelModeToLabelIds();
+  this->LabelActor->SetMapper(LabelMapper);
 
   vtkNew<vtkPoints> points;
 
