@@ -52,6 +52,7 @@
 #include "vtkArcSource.h"
 #include "vtkArrowSource.h"
 #include "vtkGlyph3D.h"
+#include "vtkLabeledDataMapper.h"
 #include "vtkLookupTable.h"
 #include "vtkMarkupsGlyphSource2D.h"
 #include "vtkPointPlacer.h"
@@ -222,6 +223,11 @@ protected:
     vtkSmartPointer<vtkActor2D>                         Actor;
     vtkSmartPointer<vtkProperty2D>                      Property;
 
+    vtkNew<vtkTransformPolyDataFilter>                  AxisLabelTransform;
+    vtkNew<vtkLabeledDataMapper>                        AxisLabelMapper;
+    vtkNew<vtkActor2D>                                  AxisLabelActor;
+    vtkNew<vtkStringArray>                              AxisLabelArray;
+
     double                                              StartFadeAngle{30};
     double                                              EndFadeAngle{20};
     double                                              InteractionHandleSize{1.0};
@@ -317,7 +323,7 @@ protected:
 
   vtkSmartPointer<vtkPointPlacer> PointPlacer;
 
-  vtkSmartPointer<vtkTextActor> TextActor;
+  vtkNew<vtkTextActor> TextActor;
 
   vtkTypeBool CurveClosed;
 

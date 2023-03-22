@@ -141,7 +141,6 @@ vtkSlicerMarkupsWidgetRepresentation::vtkSlicerMarkupsWidgetRepresentation()
   this->NeedToRender = false;
   this->CurveClosed = 0;
 
-  this->TextActor = vtkSmartPointer<vtkTextActor>::New();
   // hide by default, if a concrete class implements properties display, it will enable it
   this->TextActor->SetVisibility(false);
 
@@ -588,6 +587,7 @@ void vtkSlicerMarkupsWidgetRepresentation::UpdateInteractionPipeline()
   if (!this->MarkupsDisplayNode)
     {
     this->InteractionPipeline->Actor->SetVisibility(false);
+    this->InteractionPipeline->AxisLabelActor->SetVisibility(false);
     return;
     }
 
@@ -817,6 +817,7 @@ void vtkSlicerMarkupsWidgetRepresentation::GetActors(vtkPropCollection* pc)
   if (this->InteractionPipeline)
     {
     this->InteractionPipeline->Actor->GetActors(pc);
+    this->InteractionPipeline->AxisLabelActor->GetActors(pc);
     }
 }
 
@@ -826,6 +827,7 @@ void vtkSlicerMarkupsWidgetRepresentation::ReleaseGraphicsResources(vtkWindow* w
   if (this->InteractionPipeline)
     {
     this->InteractionPipeline->Actor->ReleaseGraphicsResources(window);
+    this->InteractionPipeline->AxisLabelActor->ReleaseGraphicsResources(window);
     }
 }
 
@@ -836,6 +838,7 @@ int vtkSlicerMarkupsWidgetRepresentation::RenderOverlay(vtkViewport* viewport)
   if (this->InteractionPipeline && this->InteractionPipeline->Actor->GetVisibility())
     {
     count += this->InteractionPipeline->Actor->RenderOverlay(viewport);
+    count += this->InteractionPipeline->AxisLabelActor->RenderOverlay(viewport);
     }
   return count;
 }
@@ -853,6 +856,7 @@ int vtkSlicerMarkupsWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* view
       this->InteractionPipeline->SetWidgetScale(this->InteractionPipeline->InteractionHandleSize);
       }
     count += this->InteractionPipeline->Actor->RenderOpaqueGeometry(viewport);
+    count += this->InteractionPipeline->AxisLabelActor->RenderOpaqueGeometry(viewport);
     }
   return count;
 }
@@ -865,6 +869,7 @@ int vtkSlicerMarkupsWidgetRepresentation::RenderTranslucentPolygonalGeometry(vtk
     {
     this->InteractionPipeline->Actor->SetPropertyKeys(this->GetPropertyKeys());
     count += this->InteractionPipeline->Actor->RenderTranslucentPolygonalGeometry(viewport);
+    count += this->InteractionPipeline->AxisLabelActor->RenderTranslucentPolygonalGeometry(viewport);
     }
   return count;
 }
@@ -1014,7 +1019,8 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::CreateRot
   this->AxisRotationGlyphSource = vtkSmartPointer <vtkAppendPolyData>::New();
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationHandleSource->GetOutputPort());
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationTubeFilter->GetOutputPort());
-  this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationInterorAngleTubeFilter->GetOutputPort());
+  // Disable the inner lines of the rotation handle (shown by default because it looks strange without translation)
+  //this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationInterorAngleTubeFilter->GetOutputPort());
   this->AxisRotationGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
   this->AxisRotationGlypher->SetInputConnection(this->RotationScaleTransform->GetOutputPort());
   this->AxisRotationGlypher->SetSourceConnection(this->AxisRotationGlyphSource->GetOutputPort());
@@ -1144,6 +1150,35 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::CreateTra
   visibilityArray->Fill(1);
   this->TranslationHandlePoints->GetPointData()->AddArray(visibilityArray);
 
+  vtkNew<vtkIntArray> typeArray; // Need for coloring the axis labels same as the handles
+  typeArray->SetName("type");
+  typeArray->SetNumberOfComponents(1);
+  typeArray->InsertNextTuple1(0);
+  typeArray->InsertNextTuple1(1);
+  typeArray->InsertNextTuple1(2);
+  typeArray->InsertNextTuple1(3);
+  this->TranslationHandlePoints->GetPointData()->AddArray(typeArray);
+
+  // Note: The array cannot be instantiated here and later accessed by GetArray because vtkStringArray
+  //       is not a subclass vtkDataArray and is casted to nullptr in vtkFieldData::GetArray
+  this->AxisLabelArray->SetName("label");
+  this->AxisLabelArray->SetNumberOfComponents(1);
+  this->AxisLabelArray->SetNumberOfValues(this->TranslationHandlePoints->GetNumberOfPoints());
+  this->TranslationHandlePoints->GetPointData()->AddArray(this->AxisLabelArray);
+
+  vtkNew<vtkTransformPolyDataFilter> axisLabelTransformFilter;
+  axisLabelTransformFilter->SetInputConnection(this->TranslationScaleTransform->GetOutputPort());
+  vtkNew<vtkTransform> axisLabelTransform;
+  axisLabelTransform->Scale(1.15, 1.12, 1.10);
+  axisLabelTransformFilter->SetTransform(axisLabelTransform);
+
+  this->AxisLabelTransform->SetInputConnection(axisLabelTransformFilter->GetOutputPort());
+  this->AxisLabelTransform->SetTransform(this->HandleToWorldTransform);
+  this->AxisLabelMapper->SetInputConnection(this->AxisLabelTransform->GetOutputPort());
+  this->AxisLabelMapper->SetLabelModeToLabelFieldData();
+  this->AxisLabelMapper->SetFieldDataName("label");
+  this->AxisLabelActor->SetMapper(AxisLabelMapper);
+
   this->Append->AddInputConnection(this->AxisTranslationGlypher->GetOutputPort());
 }
 
@@ -1217,6 +1252,15 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::UpdateHan
     translationVisibilityArray->SetValue(1, translationVisibility[1]);
     translationVisibilityArray->SetValue(2, translationVisibility[2]);
     translationVisibilityArray->SetValue(3, translationVisibility[3]);
+
+    std::string axisLabels[3];
+    displayNode->GetMarkupsNode()->GetAxisLabels(axisLabels[0], axisLabels[1], axisLabels[2]);
+    bool labelActorVisible = true;
+    for (int i = 0; i < 3; ++i)
+      {
+      this->AxisLabelArray->SetValue(i, (translationVisibility[i] ? axisLabels[i].c_str() : ""));
+      }
+    this->AxisLabelActor->SetVisibility(!axisLabels[0].empty() || !axisLabels[1].empty() || !axisLabels[2].empty());
     }
 }
 
@@ -1226,6 +1270,29 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::UpdateHan
   if (!this->ColorTable)
     {
     return;
+    }
+  vtkSlicerMarkupsWidgetRepresentation* markupsRepresentation = vtkSlicerMarkupsWidgetRepresentation::SafeDownCast(this->Representation);
+  vtkMRMLMarkupsDisplayNode* displayNode = nullptr;
+  std::string axisLabels[3];
+  if (markupsRepresentation)
+    {
+    displayNode = markupsRepresentation->GetMarkupsDisplayNode();
+    if (!displayNode)
+      {
+      vtkErrorWithObjectMacro(nullptr, "UpdateHandleColors failed: display node is null.");
+      return;
+      }
+
+    vtkMRMLMarkupsNode* markupsNode = displayNode->GetMarkupsNode();
+    if (!markupsNode)
+      {
+      // Quick fix to avoid crash in Certis Solution 1.3
+      // TODO: Understand why we go here when we follow these steps: https://certisworkspace.atlassian.net/browse/CTS-1971
+      vtkErrorWithObjectMacro(nullptr, "UpdateHandleColors failed: markupsNode is null.");
+      return;
+      }
+
+    markupsNode->GetAxisLabels(axisLabels[0], axisLabels[1], axisLabels[2]);
     }
 
   int numberOfHandles = this->RotationHandlePoints->GetNumberOfPoints()
@@ -1276,6 +1343,24 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::UpdateHan
     this->GetHandleColor(vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle, i, color);
     this->ColorTable->SetTableValue(colorIndex, color);
     translationColorArray->SetTuple1(i, colorIndex);
+    if (i < 3)
+      {
+      if (color[3] == 0.0)
+        {
+        this->AxisLabelArray->SetValue(i, "");
+        }
+      else
+        {
+        this->AxisLabelArray->SetValue(i, axisLabels[i]);
+        }
+      }
+    vtkSmartPointer<vtkTextProperty> textProperty = vtkSmartPointer<vtkTextProperty>::New();
+    textProperty->SetFontSize(static_cast<int>(displayNode->GetTextProperty()->GetFontSize() * displayNode->GetTextScale()));
+    textProperty->SetBold(1);
+    textProperty->SetShadow(2);
+    textProperty->SetFontFamilyToArial();
+    textProperty->SetColor(color);
+    this->AxisLabelMapper->SetLabelTextProperty(textProperty, i);
     ++colorIndex;
     }
 
