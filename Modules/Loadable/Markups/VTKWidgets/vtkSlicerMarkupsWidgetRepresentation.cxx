@@ -1172,9 +1172,9 @@ void vtkSlicerMarkupsWidgetRepresentation::MarkupsInteractionPipeline::CreateTra
   axisLabelTransform->Scale(1.15, 1.12, 1.10);
   axisLabelTransformFilter->SetTransform(axisLabelTransform);
 
-  this->AxisLabelTransform->SetInputConnection(axisLabelTransformFilter->GetOutputPort());
-  this->AxisLabelTransform->SetTransform(this->HandleToWorldTransform);
-  this->AxisLabelMapper->SetInputConnection(this->AxisLabelTransform->GetOutputPort());
+  this->AxisLabelTransformFilter->SetInputConnection(axisLabelTransformFilter->GetOutputPort());
+  this->AxisLabelTransformFilter->SetTransform(this->HandleToWorldTransform);
+  this->AxisLabelMapper->SetInputConnection(this->AxisLabelTransformFilter->GetOutputPort());
   this->AxisLabelMapper->SetLabelModeToLabelFieldData();
   this->AxisLabelMapper->SetFieldDataName("label");
   this->AxisLabelActor->SetMapper(AxisLabelMapper);

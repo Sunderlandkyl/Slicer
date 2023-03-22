@@ -184,6 +184,7 @@ protected:
     void GetViewPlaneNormal(double viewPlaneNormal[3]) override;
 
     vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
+    vtkSmartPointer<vtkTransformPolyDataFilter> AxisLabelSliceTransformFilter;
   };
 
 private:

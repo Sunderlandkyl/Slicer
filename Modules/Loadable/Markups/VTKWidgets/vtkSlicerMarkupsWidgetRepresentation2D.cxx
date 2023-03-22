@@ -772,6 +772,7 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderOpaqueGeometry(
     this->UpdateInteractionHandleSize();
     this->InteractionPipeline->SetWidgetScale(this->InteractionPipeline->InteractionHandleSize);
     count += this->InteractionPipeline->Actor->RenderOpaqueGeometry(viewport);
+    count += this->InteractionPipeline->AxisLabelActor->RenderOpaqueGeometry(viewport);
     }
   if (this->TextActor->GetVisibility())
     {
@@ -1325,6 +1326,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateInteractionPipeline()
     return;
     }
   interactionPipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
+  interactionPipeline->AxisLabelSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
   // Final visibility handled by superclass in vtkSlicerMarkupsWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
 }
@@ -1338,6 +1340,11 @@ vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::MarkupsInt
   this->WorldToSliceTransformFilter->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
   this->Mapper->SetInputConnection(this->WorldToSliceTransformFilter->GetOutputPort());
   this->Mapper->SetTransformCoordinate(nullptr);
+
+  this->AxisLabelSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->AxisLabelSliceTransformFilter->SetTransform(vtkNew<vtkTransform>());
+  this->AxisLabelSliceTransformFilter->SetInputConnection(this->AxisLabelTransformFilter->GetOutputPort());
+  this->AxisLabelMapper->SetInputConnection(this->AxisLabelSliceTransformFilter->GetOutputPort());
 }
 
 //----------------------------------------------------------------------

@@ -223,7 +223,7 @@ protected:
     vtkSmartPointer<vtkActor2D>                         Actor;
     vtkSmartPointer<vtkProperty2D>                      Property;
 
-    vtkNew<vtkTransformPolyDataFilter>                  AxisLabelTransform;
+    vtkNew<vtkTransformPolyDataFilter>                  AxisLabelTransformFilter;
     vtkNew<vtkLabeledDataMapper>                        AxisLabelMapper;
     vtkNew<vtkActor2D>                                  AxisLabelActor;
     vtkNew<vtkStringArray>                              AxisLabelArray;
