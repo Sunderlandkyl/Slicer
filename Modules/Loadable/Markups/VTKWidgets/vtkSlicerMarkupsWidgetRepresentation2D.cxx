@@ -1340,11 +1340,17 @@ vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::MarkupsInt
   this->WorldToSliceTransformFilter->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
   this->Mapper->SetInputConnection(this->WorldToSliceTransformFilter->GetOutputPort());
   this->Mapper->SetTransformCoordinate(nullptr);
+}
 
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::CreateTranslationHandles()
+{
+  MarkupsInteractionPipeline::CreateTranslationHandles();
   this->AxisLabelSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->AxisLabelSliceTransformFilter->SetTransform(vtkNew<vtkTransform>());
   this->AxisLabelSliceTransformFilter->SetInputConnection(this->AxisLabelTransformFilter->GetOutputPort());
   this->AxisLabelMapper->SetInputConnection(this->AxisLabelSliceTransformFilter->GetOutputPort());
+  this->AxisLabelMapper->CoordinateSystemDisplay();
 }
 
 //----------------------------------------------------------------------

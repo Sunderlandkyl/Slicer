@@ -179,7 +179,9 @@ protected:
   {
   public:
     MarkupsInteractionPipeline2D(vtkSlicerMarkupsWidgetRepresentation* representation);
-    ~MarkupsInteractionPipeline2D() override = default;;
+    ~MarkupsInteractionPipeline2D() override = default;
+
+    void CreateTranslationHandles() override;
 
     void GetViewPlaneNormal(double viewPlaneNormal[3]) override;
 
