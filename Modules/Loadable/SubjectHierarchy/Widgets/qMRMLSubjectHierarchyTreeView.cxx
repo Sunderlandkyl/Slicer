@@ -2752,9 +2752,17 @@ void qMRMLSubjectHierarchyTreeView::mouseMoveEvent(QMouseEvent* e)
     {
     vtkMRMLNode* softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(shItemID);
     if (softFocusNode)
-    {
+      {
       softFocusNodes.push_back(std::make_pair(shItemID, softFocusNode));
-    }
+      }
+    else if (d->SubjectHierarchyNode->IsItemLevel(shItemID, vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyVirtualBranchAttributeName()))
+      {
+      softFocusNode = d->SubjectHierarchyNode->GetItemDataNode(d->SubjectHierarchyNode->GetItemParent(shItemID));
+      if (softFocusNode)
+        {
+        softFocusNodes.push_back(std::make_pair(shItemID, softFocusNode));
+        }
+      }
 
     vtkNew<vtkIdList> children;
     d->SubjectHierarchyNode->GetItemChildren(shItemID, children, true);
