@@ -44,10 +44,10 @@ vtkMRMLInteractionWidget::vtkMRMLInteractionWidget()
   this->StartEventOffsetPosition[1] = 0.0;
 
   // Update active component
-  this->SetEventTranslation(WidgetStateIdle, vtkCommand::MouseMoveEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnWidget, vtkCommand::MouseMoveEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateIdle, vtkCommand::Move3DEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnWidget, vtkCommand::Move3DEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateIdle, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateOnWidget, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateIdle, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateOnWidget, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
 
   // Handle interactions
   this->SetEventTranslationClickAndDrag(WidgetStateOnTranslationHandle, vtkCommand::LeftButtonPressEvent, vtkEvent::NoModifier,
@@ -66,12 +66,12 @@ vtkMRMLInteractionWidget::vtkMRMLInteractionWidget()
   this->SetEventTranslation(WidgetStateOnScaleHandle, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::NoModifier, WidgetEventMenu);
 
   // Update active interaction handle component
-  this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkCommand::MouseMoveEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkCommand::Move3DEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnRotationHandle, vtkCommand::MouseMoveEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnRotationHandle, vtkCommand::Move3DEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkCommand::MouseMoveEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkCommand::Move3DEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateOnRotationHandle, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateOnRotationHandle, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
 }
 
 //----------------------------------------------------------------------

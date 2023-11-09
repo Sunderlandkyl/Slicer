@@ -18,34 +18,34 @@
 
 ==============================================================================*/
 
-
-#include "vtkMRMLTransformHandleWidget.h"
-#include "vtkMRMLTransformHandleWidgetRepresentation.h"
-
-#include "vtkMRMLApplicationLogic.h"
-#include "vtkMRMLInteractionEventData.h"
-#include "vtkMRMLInteractionNode.h"
-#include "vtkMRMLScene.h"
-#include "vtkMRMLSliceCompositeNode.h"
-#include "vtkMRMLSliceLogic.h"
-
 // VTK includes
 #include <vtkCamera.h>
 #include <vtkCommand.h>
 #include <vtkEvent.h>
+#include <vtkGeneralTransform.h>
 #include <vtkLine.h>
+#include <vtkObjectFactory.h>
 #include <vtkPlane.h>
 #include <vtkPointPlacer.h>
 #include <vtkRenderWindow.h>
 #include <vtkRenderer.h>
 #include <vtkTransform.h>
-#include <vtkObjectFactory.h>
 
 // MRML includes
 #include <vtkMRMLDisplayNode.h>
+#include "vtkMRMLScene.h"
 #include <vtkMRMLSliceNode.h>
 #include "vtkMRMLTransformNode.h"
 #include <vtkMRMLLinearTransformNode.h>
+
+// MRMLDM includes
+#include "vtkMRMLApplicationLogic.h"
+#include "vtkMRMLInteractionEventData.h"
+#include "vtkMRMLInteractionNode.h"
+#include "vtkMRMLSliceCompositeNode.h"
+#include "vtkMRMLSliceLogic.h"
+#include "vtkMRMLTransformHandleWidgetRepresentation.h"
+#include "vtkMRMLTransformHandleWidget.h"
 
 //---------------------------------------------------------------------------
 vtkStandardNewMacro(vtkMRMLTransformHandleWidget);
@@ -119,7 +119,6 @@ bool vtkMRMLTransformHandleWidget::CanProcessInteractionEvent(vtkMRMLInteraction
 
   return Superclass::CanProcessInteractionEvent(eventData, distance2);
 }
-
 
 //----------------------------------------------------------------------
 void vtkMRMLTransformHandleWidget::ApplyTransform(vtkTransform* transform)
@@ -230,7 +229,6 @@ bool vtkMRMLTransformHandleWidget::ProcessWidgetTranslateTransformCenterStart(vt
   return true;
 }
 
-
 //-------------------------------------------------------------------------
 bool vtkMRMLTransformHandleWidget::ProcessMouseMove(vtkMRMLInteractionEventData* eventData)
 {
@@ -268,7 +266,7 @@ bool vtkMRMLTransformHandleWidget::ProcessMouseMove(vtkMRMLInteractionEventData*
   this->LastEventPosition[1] = eventPos[1];
   return true;
 }
-#include <vtkGeneralTransform.h>
+
 //-------------------------------------------------------------------------
 void vtkMRMLTransformHandleWidget::TranslateTransformCenter(double eventPos[2])
 {
@@ -354,7 +352,6 @@ void vtkMRMLTransformHandleWidget::TranslateTransformCenter(double eventPos[2])
     translationVector_World[1] = distance * translationAxis_World[1];
     translationVector_World[2] = distance * translationAxis_World[2];
     }
-
 
   double origin_World[3] = { 0.0, 0.0, 0.0 };
   rep->GetInteractionHandleOriginWorld(origin_World);

@@ -102,6 +102,9 @@ public:
   bool UseDisplayableNode(vtkMRMLTransformNode* node);
   void ClearDisplayableNodes();
 
+  void UpdateInteractionPipeline(vtkMRMLTransformNode* transformNode, unsigned long event);
+  void UpdateInteractionPipeline(vtkMRMLTransformNode* transformNode, unsigned long event, vtkMRMLTransformDisplayNode* displayNode);
+
   vtkWeakPointer<vtkMRMLTransformHandleWidget> LastActiveWidget;
   vtkMRMLTransformHandleWidget* FindClosestWidget(vtkMRMLInteractionEventData* callData, double& closestDistance2);
 
@@ -212,7 +215,7 @@ void vtkMRMLTransformsDisplayableManager3D::vtkInternal::UpdateDisplayableTransf
   std::set< vtkMRMLTransformDisplayNode* >::iterator dnodesIter;
   for ( dnodesIter = displayNodes.begin(); dnodesIter != displayNodes.end(); dnodesIter++ )
     {
-    if ( ((pipelinesIter = this->DisplayPipelines.find(*dnodesIter)) != this->DisplayPipelines.end()) )
+    if ((pipelinesIter = this->DisplayPipelines.find(*dnodesIter)) != this->DisplayPipelines.end())
       {
       this->UpdateDisplayNodePipeline(pipelinesIter->first, pipelinesIter->second);
       }
@@ -268,10 +271,6 @@ void vtkMRMLTransformsDisplayableManager3D::vtkInternal::AddDisplayNode(vtkMRMLT
   // Add actor to Renderer and local cache
   this->External->GetRenderer()->AddActor( pipeline->Actor );
   this->DisplayPipelines.insert( std::make_pair(displayNode, pipeline) );
-
-  vtkNew<vtkMRMLTransformHandleWidget> interactionWidget;
-  interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLViewNode(), this->External->GetRenderer());
-  this->InteractionPipelines.insert(std::make_pair(displayNode, interactionWidget.GetPointer()));
 
   // Update cached matrices. Calls UpdateDisplayNodePipeline
   this->UpdateDisplayableTransforms(mNode);
@@ -475,6 +474,62 @@ void vtkMRMLTransformsDisplayableManager3D::vtkInternal::SetTransformDisplayProp
 }
 
 //---------------------------------------------------------------------------
+void vtkMRMLTransformsDisplayableManager3D::vtkInternal::UpdateInteractionPipeline(vtkMRMLTransformNode* displayableNode, unsigned long event)
+{
+  if (!displayableNode)
+    {
+    return;
+    }
+
+  auto displayNodesIt = this->TransformToDisplayNodes.find(displayableNode);
+  for (vtkMRMLTransformDisplayNode* displayNode : displayNodesIt->second)
+    {
+    this->UpdateInteractionPipeline(displayableNode, event, displayNode);
+    }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLTransformsDisplayableManager3D::vtkInternal::UpdateInteractionPipeline(
+  vtkMRMLTransformNode* displayableNode, unsigned long event, vtkMRMLTransformDisplayNode* displayNode)
+{
+  if (!displayableNode || !displayNode)
+    {
+    return;
+    }
+
+  vtkMRMLTransformHandleWidget* widget = nullptr;
+  auto pipelineIt = this->InteractionPipelines.find(displayNode);
+
+  if (displayNode->GetInteractionVisibility() && pipelineIt == this->InteractionPipelines.end())
+    {
+    // No pipeline, yet interaction visibility is on, create a new one
+
+    vtkNew<vtkMRMLTransformHandleWidget> interactionWidget;
+    interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLViewNode(), this->External->GetRenderer());
+    this->InteractionPipelines[displayNode] = interactionWidget;
+    widget = interactionWidget;
+    }
+  else if (!displayNode->GetInteractionVisibility() && pipelineIt != this->InteractionPipelines.end())
+    {
+    // Pipeline exists, but interaction visibility is off, remove it
+    this->InteractionPipelines.erase(pipelineIt);
+    }
+  else
+    {
+    widget = pipelineIt->second;
+    }
+
+  if (widget)
+    {
+    widget->UpdateFromMRML(displayableNode, event, displayNode);
+    if (widget->GetNeedToRender())
+      {
+      this->External->RequestRender();
+      }
+    }
+}
+
+//---------------------------------------------------------------------------
 // vtkMRMLTransformsDisplayableManager3D methods
 
 //---------------------------------------------------------------------------
@@ -557,11 +612,11 @@ void vtkMRMLTransformsDisplayableManager3D::ProcessMRMLNodesEvents(vtkObject* ca
     }
 
   vtkMRMLTransformNode* displayableNode = vtkMRMLTransformNode::SafeDownCast(caller);
-
+  vtkMRMLTransformDisplayNode* displayNode = nullptr;
   if ( displayableNode )
     {
     vtkMRMLNode* callDataNode = reinterpret_cast<vtkMRMLDisplayNode *> (callData);
-    vtkMRMLTransformDisplayNode* displayNode = vtkMRMLTransformDisplayNode::SafeDownCast(callDataNode);
+    displayNode = vtkMRMLTransformDisplayNode::SafeDownCast(callDataNode);
 
     if ( displayNode && (event == vtkMRMLDisplayableNode::DisplayModifiedEvent) )
       {
@@ -573,20 +628,21 @@ void vtkMRMLTransformsDisplayableManager3D::ProcessMRMLNodesEvents(vtkObject* ca
       this->Internal->UpdateDisplayableTransforms(displayableNode);
       this->RequestRender();
       }
-
-    for (auto interactionPipeline : this->Internal->InteractionPipelines)
-      {
-      interactionPipeline.second->UpdateFromMRML(displayableNode, event, callData);
-      if (interactionPipeline.second->GetNeedToRender())
-        {
-        this->RequestRender();
-        }
-      }
     }
   else
     {
     this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
     }
+
+  if (displayNode)
+    {
+    this->Internal->UpdateInteractionPipeline(displayableNode, event, displayNode);
+    }
+  else if (displayableNode)
+    {
+    this->Internal->UpdateInteractionPipeline(displayableNode, event);
+    }
+
 }
 
 //---------------------------------------------------------------------------

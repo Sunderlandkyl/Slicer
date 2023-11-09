@@ -117,6 +117,9 @@ public:
 
   virtual void UpdatePlaneFromSliceNode();
 
+  /// Update the interaction pipeline
+  virtual void UpdateInteractionPipeline();
+
   /// Get the axis for the handle specified by the index
   virtual void GetInteractionHandleAxisWorld(int type, int index, double axis[3]);
   /// Get the origin of the interaction handle widget
@@ -264,9 +267,6 @@ protected:
 
   virtual void SetupInteractionPipeline();
   InteractionPipeline* Pipeline;
-
-  /// Update the interaction pipeline
-  virtual void UpdateInteractionPipeline();
 
   double GetViewScaleFactorAtPosition(double positionWorld[3]);
 

@@ -393,12 +393,12 @@ bool vtkMRMLInteractionWidgetRepresentation::GetTransformationReferencePoint(dou
 void vtkMRMLInteractionWidgetRepresentation::UpdateFromMRML(
     vtkMRMLNode* vtkNotUsed(caller), unsigned long event, void *vtkNotUsed(callData))
 {
+  bool needToRender = false;
   if (!this->Pipeline)
     {
     this->SetupInteractionPipeline();
+    needToRender = true;
     }
-
-  this->NeedToRenderOn(); // TODO: to improve performance, call this only if it is actually needed
 
   if (this->GetSliceNode())
     {
@@ -409,22 +409,60 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateFromMRML(
     {
     this->UpdateInteractionPipeline();
     }
+
+  needToRender = true; // TODO: Improve update methods to return true if need to render.
+  if (needToRender)
+    {
+    this->NeedToRenderOn();
+    }
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::UpdateInteractionPipeline()
 {
+  bool currentVisibility = this->Pipeline->Actor->GetVisibility();
   if (!this->IsDisplayable())
     {
     this->Pipeline->Actor->SetVisibility(false);
+    if (currentVisibility)
+      {
+      // If we are changing visibility, we need to render.
+      this->NeedToRenderOn();
+      }
     return;
     }
 
+  bool needToRender = false;
+  double currentViewScaleFactorMmPerPixel = this->ViewScaleFactorMmPerPixel;
+  double currentScreenSizePixel = this->ScreenSizePixel;
   this->UpdateViewScaleFactor();
+  if (currentViewScaleFactorMmPerPixel != this->ViewScaleFactorMmPerPixel ||
+    currentScreenSizePixel != this->ScreenSizePixel)
+    {
+    needToRender = true;
+    }
+
+  double currentInteractionSize = this->InteractionSize;
   this->UpdateHandleSize();
+  if (currentInteractionSize != this->InteractionSize)
+    {
+    needToRender = true;
+    }
+
+  // TODO: need to set the render flag
   this->UpdateHandleColors();
 
+  if (!currentVisibility)
+    {
+    // If we are changing visibility, we need to render.
+    needToRender = true;
+    }
   this->Pipeline->Actor->SetVisibility(true);
+
+  if (needToRender)
+    {
+    this->NeedToRenderOn();
+    }
 }
 
 //----------------------------------------------------------------------
@@ -1205,9 +1243,21 @@ void vtkMRMLInteractionWidgetRepresentation::UpdatePlaneFromSliceNode()
     origin[i] = sliceXYToRAS->GetElement(i, 3);
   }
   vtkMath::Normalize(normal);
+
+  // Compare slice normal and new normal
+  double normalDifferenceAngle = vtkMath::AngleBetweenVectors(normal, this->SlicePlane->GetNormal());
+  double originDifferenceMm = vtkMath::Distance2BetweenPoints(origin, this->SlicePlane->GetOrigin());
+  double epsilon = 1e-6;
+  if (normalDifferenceAngle < epsilon && originDifferenceMm < epsilon)
+    {
+    // No change in slice plane
+    return;
+    }
+
   this->SlicePlane->SetNormal(normal);
   this->SlicePlane->SetOrigin(origin);
   this->SlicePlane->Modified();
+  this->NeedToRenderOn();
 }
 
 //----------------------------------------------------------------------
