@@ -121,7 +121,7 @@ bool vtkMRMLTransformHandleWidget::CanProcessInteractionEvent(vtkMRMLInteraction
 }
 
 //----------------------------------------------------------------------
-void vtkMRMLTransformHandleWidget::ApplyTransform(vtkTransform* transform)
+void vtkMRMLTransformHandleWidget::ApplyTransform(vtkTransform* transformToApply)
 {
   if (!this->GetTransformNode())
     {
@@ -130,12 +130,34 @@ void vtkMRMLTransformHandleWidget::ApplyTransform(vtkTransform* transform)
 
   MRMLNodeModifyBlocker transformBlocker(this->GetTransformNode());
 
-  vtkNew<vtkMatrix4x4> transformFromParent;
-  this->GetTransformNode()->GetMatrixTransformToParent(transformFromParent);
-  vtkNew<vtkTransform> t;
-  t->Concatenate(transform);
-  t->Concatenate(transformFromParent);
-  this->GetTransformNode()->SetMatrixTransformToParent(t->GetMatrix());
+  vtkNew<vtkTransform> newTransform;
+  newTransform->PostMultiply();
+
+  vtkNew<vtkMatrix4x4> transformToParent;
+  this->GetTransformNode()->GetMatrixTransformToParent(transformToParent);
+  newTransform->Concatenate(transformToParent);
+
+  vtkMRMLTransformNode* parentTransformNode = this->GetTransformNode()->GetParentTransformNode();
+  if (parentTransformNode)
+    {
+    // Perform the transformation in world coordinates
+    vtkNew<vtkMatrix4x4> transformToWorld;
+    parentTransformNode->GetMatrixTransformToWorld(transformToWorld);
+    newTransform->Concatenate(transformToWorld);
+    }
+
+  // Apply the transform
+  newTransform->Concatenate(transformToApply);
+
+  if (parentTransformNode)
+    {
+    // Transform back to local coordinates
+    vtkNew<vtkMatrix4x4> transformFromWorld;
+    parentTransformNode->GetMatrixTransformFromWorld(transformFromWorld);
+    newTransform->Concatenate(transformFromWorld);
+    }
+
+  this->GetTransformNode()->SetMatrixTransformToParent(newTransform->GetMatrix());
 }
 
 //----------------------------------------------------------------------

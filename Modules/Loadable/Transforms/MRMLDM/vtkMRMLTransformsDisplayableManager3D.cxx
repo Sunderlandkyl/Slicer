@@ -497,7 +497,7 @@ void vtkMRMLTransformsDisplayableManager3D::vtkInternal::UpdateInteractionPipeli
     return;
     }
 
-  vtkMRMLTransformHandleWidget* widget = nullptr;
+  vtkSmartPointer<vtkMRMLTransformHandleWidget> widget = nullptr;
   auto pipelineIt = this->InteractionPipelines.find(displayNode);
 
   if (displayNode->GetInteractionVisibility() && pipelineIt == this->InteractionPipelines.end())
