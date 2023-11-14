@@ -202,208 +202,208 @@ void vtkSlicerROIWidget::ScaleWidget(double eventPos[2])
 //----------------------------------------------------------------------
 void vtkSlicerROIWidget::ScaleWidget(double eventPos[2], bool symmetricScale)
 {
-  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
-  vtkMRMLMarkupsROINode* markupsNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
-  if (!markupsNode || !displayNode)
-    {
-    return;
-    }
+  //vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+  //vtkMRMLMarkupsROINode* markupsNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
+  //if (!markupsNode || !displayNode)
+  //  {
+  //  return;
+  //  }
 
-  MRMLNodeModifyBlocker blocker(markupsNode);
+  //MRMLNodeModifyBlocker blocker(markupsNode);
 
-  double lastEventPos_World[3] = { 0.0 };
-  double eventPos_World[3] = { 0.0 };
-  double orientation_World[9] = { 0.0 };
+  //double lastEventPos_World[3] = { 0.0 };
+  //double eventPos_World[3] = { 0.0 };
+  //double orientation_World[9] = { 0.0 };
 
-  vtkSlicerROIRepresentation2D* rep2d = vtkSlicerROIRepresentation2D::SafeDownCast(this->WidgetRep);
-  vtkSlicerROIRepresentation3D* rep3d = vtkSlicerROIRepresentation3D::SafeDownCast(this->WidgetRep);
-  if (rep2d)
-    {
-    // 2D view
-    double eventPos_Slice[3] = { 0. };
-    eventPos_Slice[0] = this->LastEventPosition[0];
-    eventPos_Slice[1] = this->LastEventPosition[1];
-    rep2d->GetSliceToWorldCoordinates(eventPos_Slice, lastEventPos_World);
+  //vtkSlicerROIRepresentation2D* rep2d = vtkSlicerROIRepresentation2D::SafeDownCast(this->WidgetRep);
+  //vtkSlicerROIRepresentation3D* rep3d = vtkSlicerROIRepresentation3D::SafeDownCast(this->WidgetRep);
+  //if (rep2d)
+  //  {
+  //  // 2D view
+  //  double eventPos_Slice[3] = { 0. };
+  //  eventPos_Slice[0] = this->LastEventPosition[0];
+  //  eventPos_Slice[1] = this->LastEventPosition[1];
+  //  rep2d->GetSliceToWorldCoordinates(eventPos_Slice, lastEventPos_World);
 
-    eventPos_Slice[0] = eventPos[0];
-    eventPos_Slice[1] = eventPos[1];
-    rep2d->GetSliceToWorldCoordinates(eventPos_Slice, eventPos_World);
-    }
-  else if (rep3d)
-    {
-    // 3D view
-    if (!rep3d->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
-      this->LastEventPosition, lastEventPos_World, orientation_World))
-      {
-      return;
-      }
+  //  eventPos_Slice[0] = eventPos[0];
+  //  eventPos_Slice[1] = eventPos[1];
+  //  rep2d->GetSliceToWorldCoordinates(eventPos_Slice, eventPos_World);
+  //  }
+  //else if (rep3d)
+  //  {
+  //  // 3D view
+  //  if (!rep3d->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
+  //    this->LastEventPosition, lastEventPos_World, orientation_World))
+  //    {
+  //    return;
+  //    }
 
-    if (!rep3d->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
-      eventPos, lastEventPos_World, eventPos_World, orientation_World))
-      {
-      return;
-      }
-    }
+  //  if (!rep3d->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
+  //    eventPos, lastEventPos_World, eventPos_World, orientation_World))
+  //    {
+  //    return;
+  //    }
+  //  }
 
-  if (this->GetActiveComponentType() == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
-    {
-    vtkNew<vtkMatrix4x4> worldToObjectMatrix;
-    worldToObjectMatrix->DeepCopy(markupsNode->GetObjectToWorldMatrix());
-    worldToObjectMatrix->Invert();
-    vtkNew<vtkTransform> worldToObjectTransform;
-    worldToObjectTransform->SetMatrix(worldToObjectMatrix);
+  //if (this->GetActiveComponentType() == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+  //  {
+  //  vtkNew<vtkMatrix4x4> worldToObjectMatrix;
+  //  worldToObjectMatrix->DeepCopy(markupsNode->GetObjectToWorldMatrix());
+  //  worldToObjectMatrix->Invert();
+  //  vtkNew<vtkTransform> worldToObjectTransform;
+  //  worldToObjectTransform->SetMatrix(worldToObjectMatrix);
 
-    int index = displayNode->GetActiveComponentIndex();
-    if (index < 6 && rep3d)
-      {
-      this->GetClosestPointOnInteractionAxis(
-        vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, this->LastEventPosition, lastEventPos_World);
-      this->GetClosestPointOnInteractionAxis(
-        vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, eventPos, eventPos_World);
-      }
+  //  int index = displayNode->GetActiveComponentIndex();
+  //  if (index < 6 && rep3d)
+  //    {
+  //    this->GetClosestPointOnInteractionAxis(
+  //      vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, this->LastEventPosition, lastEventPos_World);
+  //    this->GetClosestPointOnInteractionAxis(
+  //      vtkMRMLMarkupsDisplayNode::ComponentScaleHandle, index, eventPos, eventPos_World);
+  //    }
 
-    double scaleVector_World[3] = { 0.0, 0.0, 0.0 };
-    vtkMath::Subtract(eventPos_World, lastEventPos_World, scaleVector_World);
+  //  double scaleVector_World[3] = { 0.0, 0.0, 0.0 };
+  //  vtkMath::Subtract(eventPos_World, lastEventPos_World, scaleVector_World);
 
-    double scaleVector_ROI[3] = { 0.0, 0.0, 0.0 };
-    worldToObjectTransform->TransformVector(scaleVector_World, scaleVector_ROI);
+  //  double scaleVector_ROI[3] = { 0.0, 0.0, 0.0 };
+  //  worldToObjectTransform->TransformVector(scaleVector_World, scaleVector_ROI);
 
-    double radius_ROI[3] = { 0.0, 0.0, 0.0 };
-    markupsNode->GetSize(radius_ROI);
-    vtkMath::MultiplyScalar(radius_ROI, 0.5);
-    double bounds_ROI[6] = { -radius_ROI[0], radius_ROI[0], -radius_ROI[1], radius_ROI[1], -radius_ROI[2], radius_ROI[2] };
+  //  double radius_ROI[3] = { 0.0, 0.0, 0.0 };
+  //  markupsNode->GetSize(radius_ROI);
+  //  vtkMath::MultiplyScalar(radius_ROI, 0.5);
+  //  double bounds_ROI[6] = { -radius_ROI[0], radius_ROI[0], -radius_ROI[1], radius_ROI[1], -radius_ROI[2], radius_ROI[2] };
 
-    switch (index)
-      {
-      case vtkMRMLMarkupsROIDisplayNode::HandleLFace:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLPICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLAICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLPSCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLASCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLAEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLPEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLIEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLSEdge:
-        bounds_ROI[0] += scaleVector_ROI[0];
-        if (symmetricScale)
-          {
-          bounds_ROI[1] -= scaleVector_ROI[0];
-          }
-        break;
-      case vtkMRMLMarkupsROIDisplayNode::HandleRFace:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRPICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRAICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRPSCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRASCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRAEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRPEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRIEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRSEdge:
-        bounds_ROI[1] += scaleVector_ROI[0];
-        if (symmetricScale)
-          {
-          bounds_ROI[0] -= scaleVector_ROI[0];
-          }
-        break;
-      default:
-        break;
-      }
+  //  switch (index)
+  //    {
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLFace:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLPICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLAICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLPSCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLASCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLAEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLPEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLIEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLSEdge:
+  //      bounds_ROI[0] += scaleVector_ROI[0];
+  //      if (symmetricScale)
+  //        {
+  //        bounds_ROI[1] -= scaleVector_ROI[0];
+  //        }
+  //      break;
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRFace:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRPICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRAICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRPSCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRASCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRAEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRPEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRIEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRSEdge:
+  //      bounds_ROI[1] += scaleVector_ROI[0];
+  //      if (symmetricScale)
+  //        {
+  //        bounds_ROI[0] -= scaleVector_ROI[0];
+  //        }
+  //      break;
+  //    default:
+  //      break;
+  //    }
 
-    switch (index)
-      {
-      case vtkMRMLMarkupsROIDisplayNode::HandlePFace:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLPICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRPICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLPSCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRPSCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLPEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRPEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandlePIEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandlePSEdge:
-        bounds_ROI[2] += scaleVector_ROI[1];
-        if (symmetricScale)
-          {
-          bounds_ROI[3] -= scaleVector_ROI[1];
-          }
-        break;
-      case vtkMRMLMarkupsROIDisplayNode::HandleAFace:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLAICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRAICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLASCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRASCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLAEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRAEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleAIEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleASEdge:
-        bounds_ROI[3] += scaleVector_ROI[1];
-        if (symmetricScale)
-          {
-          bounds_ROI[2] -= scaleVector_ROI[1];
-          }
-        break;
-      default:
-        break;
-      }
+  //  switch (index)
+  //    {
+  //    case vtkMRMLMarkupsROIDisplayNode::HandlePFace:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLPICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRPICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLPSCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRPSCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLPEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRPEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandlePIEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandlePSEdge:
+  //      bounds_ROI[2] += scaleVector_ROI[1];
+  //      if (symmetricScale)
+  //        {
+  //        bounds_ROI[3] -= scaleVector_ROI[1];
+  //        }
+  //      break;
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleAFace:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLAICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRAICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLASCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRASCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLAEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRAEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleAIEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleASEdge:
+  //      bounds_ROI[3] += scaleVector_ROI[1];
+  //      if (symmetricScale)
+  //        {
+  //        bounds_ROI[2] -= scaleVector_ROI[1];
+  //        }
+  //      break;
+  //    default:
+  //      break;
+  //    }
 
-    switch (index)
-      {
-      case vtkMRMLMarkupsROIDisplayNode::HandleIFace:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLPICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRPICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLAICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRAICorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLIEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRIEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleAIEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandlePIEdge:
-        bounds_ROI[4] += scaleVector_ROI[2];
-        if (symmetricScale)
-          {
-          bounds_ROI[5] -= scaleVector_ROI[2];
-          }
-        break;
-      case vtkMRMLMarkupsROIDisplayNode::HandleSFace:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLPSCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRPSCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLASCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRASCorner:
-      case vtkMRMLMarkupsROIDisplayNode::HandleLSEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleRSEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandleASEdge:
-      case vtkMRMLMarkupsROIDisplayNode::HandlePSEdge:
-        bounds_ROI[5] += scaleVector_ROI[2];
-        if (symmetricScale)
-          {
-          bounds_ROI[4] -= scaleVector_ROI[2];
-          }
-        break;
-      default:
-        break;
-      }
+  //  switch (index)
+  //    {
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleIFace:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLPICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRPICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLAICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRAICorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLIEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRIEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleAIEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandlePIEdge:
+  //      bounds_ROI[4] += scaleVector_ROI[2];
+  //      if (symmetricScale)
+  //        {
+  //        bounds_ROI[5] -= scaleVector_ROI[2];
+  //        }
+  //      break;
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleSFace:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLPSCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRPSCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLASCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRASCorner:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleLSEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleRSEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandleASEdge:
+  //    case vtkMRMLMarkupsROIDisplayNode::HandlePSEdge:
+  //      bounds_ROI[5] += scaleVector_ROI[2];
+  //      if (symmetricScale)
+  //        {
+  //        bounds_ROI[4] -= scaleVector_ROI[2];
+  //        }
+  //      break;
+  //    default:
+  //      break;
+  //    }
 
-    double newSize[3] = { 0.0, 0.0, 0.0 };
-    double newOrigin_ROI[3] = { 0.0, 0.0, 0.0 };
-    for (int i = 0; i < 3; ++i)
-      {
-      newSize[i] = std::abs(bounds_ROI[2 * i + 1] - bounds_ROI[2 * i]);
-      newOrigin_ROI[i] = (bounds_ROI[2 * i + 1] + bounds_ROI[2 * i]) / 2.0;
-      }
+  //  double newSize[3] = { 0.0, 0.0, 0.0 };
+  //  double newOrigin_ROI[3] = { 0.0, 0.0, 0.0 };
+  //  for (int i = 0; i < 3; ++i)
+  //    {
+  //    newSize[i] = std::abs(bounds_ROI[2 * i + 1] - bounds_ROI[2 * i]);
+  //    newOrigin_ROI[i] = (bounds_ROI[2 * i + 1] + bounds_ROI[2 * i]) / 2.0;
+  //    }
 
-    vtkNew<vtkTransform> objectToWorldTransform;
-    objectToWorldTransform->SetMatrix(markupsNode->GetObjectToWorldMatrix());
-    double newOrigin_World[3] = { 0.0, 0.0, 0.0 };
-    objectToWorldTransform->TransformPoint(newOrigin_ROI, newOrigin_World);
-    markupsNode->SetCenterWorld(newOrigin_World);
-    markupsNode->SetSize(newSize);
+  //  vtkNew<vtkTransform> objectToWorldTransform;
+  //  objectToWorldTransform->SetMatrix(markupsNode->GetObjectToWorldMatrix());
+  //  double newOrigin_World[3] = { 0.0, 0.0, 0.0 };
+  //  objectToWorldTransform->TransformPoint(newOrigin_ROI, newOrigin_World);
+  //  markupsNode->SetCenterWorld(newOrigin_World);
+  //  markupsNode->SetSize(newSize);
 
-    bool flipLRHandle = bounds_ROI[1] < bounds_ROI[0];
-    bool flipPAHandle = bounds_ROI[3] < bounds_ROI[2];
-    bool flipISHandle = bounds_ROI[5] < bounds_ROI[4];
-    if (flipLRHandle || flipPAHandle || flipISHandle)
-      {
-      this->FlipROIHandles(flipLRHandle, flipPAHandle, flipISHandle);
-      }
-    }
+  //  bool flipLRHandle = bounds_ROI[1] < bounds_ROI[0];
+  //  bool flipPAHandle = bounds_ROI[3] < bounds_ROI[2];
+  //  bool flipISHandle = bounds_ROI[5] < bounds_ROI[4];
+  //  if (flipLRHandle || flipPAHandle || flipISHandle)
+  //    {
+  //    this->FlipROIHandles(flipLRHandle, flipPAHandle, flipISHandle);
+  //    }
+  //  }
 }
 
 //----------------------------------------------------------------------
