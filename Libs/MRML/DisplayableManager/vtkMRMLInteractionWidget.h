@@ -80,11 +80,11 @@ public:
     WidgetEvent_Last
     };
 
-  virtual int GetActiveComponentType() = 0;
-  virtual void SetActiveComponentType(int type) = 0;
+  virtual int GetActiveComponentType();
+  virtual void SetActiveComponentType(int type);
 
-  virtual int GetActiveComponentIndex() = 0;
-  virtual void SetActiveComponentIndex(int index) = 0;
+  virtual int GetActiveComponentIndex();
+  virtual void SetActiveComponentIndex(int index);
 
   /// Return true if the widget can process the event.
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double &distance2) override;
@@ -149,6 +149,10 @@ protected:
 private:
   vtkMRMLInteractionWidget(const vtkMRMLInteractionWidget&) = delete;
   void operator=(const vtkMRMLInteractionWidget&) = delete;
+
+  int TranslationHandleType{ InteractionTranslationHandle };
+  int RotationHandleType { InteractionRotationHandle };
+  int ScaleHandleType { InteractionScaleHandle };
 };
 
 #endif

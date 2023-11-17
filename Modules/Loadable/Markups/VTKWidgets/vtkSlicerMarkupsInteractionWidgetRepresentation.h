@@ -53,10 +53,14 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent) override;
   //@}
 
-  virtual int GetActiveComponentType() override;
-  virtual void SetActiveComponentType(int type) override;
-  virtual int GetActiveComponentIndex() override;
-  virtual void SetActiveComponentIndex(int type) override;
+  int GetActiveComponentType() override;
+  void SetActiveComponentType(int type) override;
+  int GetActiveComponentIndex() override;
+  void SetActiveComponentIndex(int type) override;
+  bool GetHandleVisibility(int type, int index) override;
+
+  virtual int InteractionComponentToMarkupsComponent(int);
+  virtual int MarkupsComponentToInteractionComponent(int);
 
   virtual vtkMRMLMarkupsDisplayNode* GetDisplayNode();
   virtual void SetDisplayNode(vtkMRMLMarkupsDisplayNode* displayNode);

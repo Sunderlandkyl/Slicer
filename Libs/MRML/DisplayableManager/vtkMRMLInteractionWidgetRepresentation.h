@@ -131,6 +131,7 @@ public:
     InteractionTranslationHandle,
     InteractionRotationHandle,
     InteractionScaleHandle,
+    Interaction_Last
   };
 
   virtual int GetActiveComponentType() = 0;
@@ -140,6 +141,11 @@ public:
   virtual void SetActiveComponentIndex(int index) = 0;
 
   virtual double GetMaximumHandlePickingDistance2();
+
+  virtual vtkTransform* GetHandleToWorldTransform();
+
+  virtual int GetNumberOfHandles(int type);
+  virtual int GetNumberOfHandles();
 
 protected:
   vtkMRMLInteractionWidgetRepresentation();
@@ -156,18 +162,18 @@ protected:
     vtkSmartPointer<vtkTubeFilter>              AxisRotationTubeFilter;
     vtkSmartPointer<vtkAppendPolyData>          AxisRotationGlyphSource;
     vtkSmartPointer<vtkPolyData>                RotationHandlePoints;
-    vtkSmartPointer<vtkTransformPolyDataFilter> RotationScaleTransform;
+    vtkSmartPointer<vtkTransformPolyDataFilter> RotationScaleTransformFilter;
     vtkSmartPointer<vtkTensorGlyph>             AxisRotationGlypher;
 
     vtkSmartPointer<vtkArrowSource>             AxisTranslationGlyphSource;
     vtkSmartPointer<vtkTransformPolyDataFilter> AxisTranslationGlyphTransformer;
     vtkSmartPointer<vtkPolyData>                TranslationHandlePoints;
-    vtkSmartPointer<vtkTransformPolyDataFilter> TranslationScaleTransform;
+    vtkSmartPointer<vtkTransformPolyDataFilter> TranslationScaleTransformFilter;
     vtkSmartPointer<vtkGlyph3D>                 AxisTranslationGlypher;
 
     vtkSmartPointer<vtkSphereSource>            AxisScaleHandleSource;
     vtkSmartPointer<vtkPolyData>                ScaleHandlePoints;
-    vtkSmartPointer<vtkTransformPolyDataFilter> ScaleScaleTransform;
+    vtkSmartPointer<vtkTransformPolyDataFilter> ScaleScaleTransformFilter;
     vtkSmartPointer<vtkGlyph3D>                 AxisScaleGlypher;
 
     vtkSmartPointer<vtkAppendPolyData>          Append;
@@ -217,12 +223,16 @@ protected:
   /// Get the list of info for all interaction handles
   typedef std::vector<HandleInfo> HandleInfoList;
   virtual HandleInfoList GetHandleInfoList();
+  virtual HandleInfo GetHandleInfo(int type, int index);
 
   virtual void InitializePipeline();
   virtual void CreateRotationHandles();
   virtual void CreateTranslationHandles();
   virtual void CreateScaleHandles();
   virtual void UpdateHandleColors();
+  virtual int UpdateHandleColors(int type, int startIndex);
+  virtual vtkPolyData* GetHandlePolydata(int type);
+  virtual vtkTransform* GetHandleScaleTransform(int type);
 
   /// Set the scale of the interaction handles in world coordinates
   virtual void SetWidgetScale(double scale);
@@ -231,9 +241,15 @@ protected:
   virtual void GetHandleColor(int type, int index, double color[4]);
   /// Get the opacity of the specified handle
   virtual double GetHandleOpacity(int type, int index);
+  /// Get the visibility of the specified handle
+  virtual bool GetHandleVisibility(int type, int index);
 
   /// Get the view plane normal for the widget in world coordinates
   virtual void GetViewPlaneNormal(double normal[3]);
+
+  /// Get the position of the interaction handle in local coordinates
+  /// Type is specified using vtkMRMLInteractionDisplayNode::ComponentType
+  virtual void GetInteractionHandlePositionLocal(int type, int index, double position[3]);
 
   /// Get the position of the interaction handle in world coordinates
   /// Type is specified using vtkMRMLInteractionDisplayNode::ComponentType

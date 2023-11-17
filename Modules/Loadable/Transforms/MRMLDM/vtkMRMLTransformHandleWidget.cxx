@@ -67,34 +67,6 @@ void vtkMRMLTransformHandleWidget::PrintSelf(ostream& os, vtkIndent indent)
   this->Superclass::PrintSelf(os, indent);
 }
 
-//----------------------------------------------------------------------
-int vtkMRMLTransformHandleWidget::GetActiveComponentType()
-{
-  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->WidgetRep);
-  return rep->GetActiveComponentType();
-}
-
-//----------------------------------------------------------------------
-void vtkMRMLTransformHandleWidget::SetActiveComponentType(int type)
-{
-  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->WidgetRep);
-  rep->SetActiveComponentType(type);
-}
-
-//----------------------------------------------------------------------
-int vtkMRMLTransformHandleWidget::GetActiveComponentIndex()
-{
-  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->WidgetRep);
-  return rep->GetActiveComponentIndex();
-}
-
-//----------------------------------------------------------------------
-void vtkMRMLTransformHandleWidget::SetActiveComponentIndex(int index)
-{
-  vtkSmartPointer<vtkMRMLTransformHandleWidgetRepresentation> rep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->WidgetRep);
-  rep->SetActiveComponentIndex(index);
-}
-
 //-----------------------------------------------------------------------------
 bool vtkMRMLTransformHandleWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double &distance2)
 {
@@ -128,7 +100,7 @@ void vtkMRMLTransformHandleWidget::ApplyTransform(vtkTransform* transformToApply
     return;
     }
 
-  MRMLNodeModifyBlocker transformBlocker(this->GetTransformNode());
+  MRMLNodeModifyBlocker blocker(this->GetTransformNode());
 
   vtkNew<vtkTransform> newTransform;
   newTransform->PostMultiply();

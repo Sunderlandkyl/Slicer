@@ -59,6 +59,12 @@ vtkSlicerMarkupsInteractionWidget::vtkSlicerMarkupsInteractionWidget()
 vtkSlicerMarkupsInteractionWidget::~vtkSlicerMarkupsInteractionWidget() = default;
 
 //----------------------------------------------------------------------
+vtkSlicerMarkupsInteractionWidget* vtkSlicerMarkupsInteractionWidget::CreateInstance() const
+{
+  vtkSlicerMarkupsInteractionWidgetCreateInstanceMacroBody(vtkSlicerMarkupsInteractionWidget);
+}
+
+//----------------------------------------------------------------------
 void vtkSlicerMarkupsInteractionWidget::PrintSelf(ostream& os, vtkIndent indent)
 {
   this->Superclass::PrintSelf(os, indent);

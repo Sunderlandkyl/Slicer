@@ -402,6 +402,7 @@ void vtkMRMLInteractionWidget::Leave(vtkMRMLInteractionEventData* eventData)
   Superclass::Leave(eventData);
   this->SetActiveComponentType(InteractionNone);
   this->SetActiveComponentType(-1);
+  this->WidgetRep->NeedToRenderOn();
 }
 
 //----------------------------------------------------------------------
@@ -592,7 +593,18 @@ void vtkMRMLInteractionWidget::ScaleWidget(double eventPos[2])
   double ratio = sqrt(d2 / r2);
 
   // TODO
-  /*this->ApplyTransform(scaleTransform);*/
+  vtkTransform* handleToWorldTransform = rep->GetHandleToWorldTransform();
+  vtkSmartPointer<vtkTransform> worldToHandleTransform = vtkTransform::SafeDownCast(handleToWorldTransform->GetInverse());
+
+  vtkNew<vtkTransform> scaleTransform;
+  scaleTransform->PostMultiply();
+  scaleTransform->Concatenate(worldToHandleTransform);
+  double scale[3] = { 1.0, 1.0, 1.0 };
+  scale[rep->GetActiveComponentIndex()] = ratio;
+  scaleTransform->Scale(scale);
+  scaleTransform->Concatenate(handleToWorldTransform);
+
+  this->ApplyTransform(scaleTransform);
 }
 
 //----------------------------------------------------------------------
@@ -853,12 +865,14 @@ bool vtkMRMLInteractionWidget::GetClosestPointOnInteractionAxis(int type, int in
 
     renderer->SetDisplayPoint(input_Display[0], input_Display[1], selectionZ);
     renderer->DisplayToWorld();
+
     double* input_World = renderer->GetWorldPoint();
     if (input_World[3] == 0.0)
       {
       vtkWarningMacro("Bad homogeneous coordinates");
       return false;
       }
+
     double pickPosition_World[3] = { 0 };
     for (int i = 0; i < 3; i++)
       {
@@ -905,6 +919,7 @@ bool vtkMRMLInteractionWidget::GetClosestPointOnInteractionAxis(int type, int in
     displayToWorldTransform->TransformPoint(inputPoint0_Display, inputPoint0_World);
     displayToWorldTransform->TransformPoint(inputPoint1_Display, inputPoint1_World);
     }
+
   double t1; // not used
   double t2; // not used
   double closestPointNotUsed[3] = { 0 };
@@ -941,4 +956,32 @@ int vtkMRMLInteractionWidget::GetMouseCursor()
     {
     return VTK_CURSOR_HAND;
     }
+}
+
+//----------------------------------------------------------------------
+int vtkMRMLInteractionWidget::GetActiveComponentType()
+{
+  vtkSmartPointer<vtkMRMLInteractionWidgetRepresentation> rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
+  return rep->GetActiveComponentType();
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidget::SetActiveComponentType(int type)
+{
+  vtkSmartPointer<vtkMRMLInteractionWidgetRepresentation> rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
+  rep->SetActiveComponentType(type);
+}
+
+//----------------------------------------------------------------------
+int vtkMRMLInteractionWidget::GetActiveComponentIndex()
+{
+  vtkSmartPointer<vtkMRMLInteractionWidgetRepresentation> rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
+  return rep->GetActiveComponentIndex();
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidget::SetActiveComponentIndex(int index)
+{
+  vtkSmartPointer<vtkMRMLInteractionWidgetRepresentation> rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
+  rep->SetActiveComponentIndex(index);
 }

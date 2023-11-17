@@ -91,7 +91,7 @@ protected:
   vtkMRMLMarkupsDisplayableManager();
   ~vtkMRMLMarkupsDisplayableManager() override;
 
-  vtkSlicerMarkupsWidget* FindClosestWidget(vtkMRMLInteractionEventData *callData, double &closestDistance2);
+  vtkMRMLAbstractWidget* FindClosestWidget(vtkMRMLInteractionEventData *callData, double &closestDistance2);
 
   void ProcessMRMLNodesEvents(vtkObject *caller, unsigned long event, void *callData) override;
 
@@ -114,6 +114,9 @@ protected:
 
   /// Create a widget.
   vtkSlicerMarkupsWidget* CreateWidget(vtkMRMLMarkupsDisplayNode* node);
+
+  /// Create an interaction widget.
+  vtkSlicerMarkupsInteractionWidget* CreateInteractionWidget(vtkMRMLMarkupsDisplayNode* node);
 
   /// Called after the corresponding MRML View container was modified
   void OnMRMLDisplayableNodeModifiedEvent(vtkObject* caller) override;
@@ -146,7 +149,7 @@ protected:
 
   double LastClickWorldCoordinates[4];
 
-  vtkWeakPointer<vtkSlicerMarkupsWidget> LastActiveWidget;
+  vtkWeakPointer<vtkMRMLAbstractWidget> LastActiveWidget;
 
 private:
   vtkMRMLMarkupsDisplayableManager(const vtkMRMLMarkupsDisplayableManager&) = delete;

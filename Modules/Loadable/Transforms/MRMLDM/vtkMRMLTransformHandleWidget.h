@@ -81,12 +81,6 @@ public:
   virtual vtkMRMLTransformDisplayNode* GetDisplayNode();
   virtual vtkMRMLTransformNode* GetTransformNode();
 
-  int GetActiveComponentType() override;
-  void SetActiveComponentType(int type) override;
-
-  int GetActiveComponentIndex() override;
-  void SetActiveComponentIndex(int type) override;
-
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& distance2) override;
   bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
 

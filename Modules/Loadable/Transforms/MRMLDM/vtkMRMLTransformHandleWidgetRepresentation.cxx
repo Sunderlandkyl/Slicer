@@ -30,6 +30,9 @@
 #include <vtkMRMLTransformNode.h>
 #include <vtkMRMLViewNode.h>
 
+// vtkAddon includes
+#include <vtkAddonMathUtilities.h>
+
 //---------------------------------------------------------------------------
 vtkStandardNewMacro(vtkMRMLTransformHandleWidgetRepresentation);
 
@@ -122,6 +125,10 @@ void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
 
   vtkNew<vtkMatrix4x4> nodeToWorld;
   vtkMRMLTransformNode::GetMatrixTransformBetweenNodes(this->GetTransformNode(), nullptr, nodeToWorld);
+
+  double scale[3] = { 1.0, 1.0, 1.0 };
+  vtkAddonMathUtilities::NormalizeOrientationMatrixColumns(nodeToWorld, scale);
+
   this->Pipeline->HandleToWorldTransform->Concatenate(nodeToWorld);
 
   double centerOfTransformation[3] = { 0.0, 0.0, 0.0 };

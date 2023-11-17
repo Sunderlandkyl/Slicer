@@ -51,6 +51,7 @@ class vtkMRMLTableNode;
 class vtkPlane;
 class vtkPoints;
 class vtkPolyData;
+class vtkSlicerMarkupsInteractionWidget;
 class vtkSlicerMarkupsWidget;
 
 /// \ingroup Slicer_QtModules_Markups
@@ -287,7 +288,8 @@ public:
   /// \param markupsWidget vtkSlicerWidget associated to the MRMLMarkups node registered.
   void RegisterMarkupsNode(vtkMRMLMarkupsNode* markupsNode,
                            vtkSlicerMarkupsWidget* markupsWidget,
-                           bool createPushButton=true);
+                           bool createPushButton=true,
+                           vtkSlicerMarkupsInteractionWidget* interactionWidget=nullptr);
 
   /// Unregister a markup and its corresponding widget. This will trigger the
   /// vtkSlicerMarkupsLogic::MarkupUnregistered event.
@@ -304,6 +306,9 @@ public:
   /// \return pointer to associated vtkSlicerMarkupsWidget or nullptr if the MRML node
   /// class is not registered.
   vtkSlicerMarkupsWidget* GetWidgetByMarkupsType(const char* markupsType) const;
+
+  /// TODO
+  vtkSlicerMarkupsInteractionWidget* GetInteractionWidgetByMarkupsType(const char* markupsType) const;
 
   /// This returns an instance to a corresponding vtkMRMLMarkupsNode associated
   /// to the indicated markups name.

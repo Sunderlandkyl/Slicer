@@ -78,6 +78,8 @@ public:
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& distance2) override;
   bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
 
+  virtual vtkSlicerMarkupsInteractionWidget* CreateInstance() const;
+
 protected:
   vtkSlicerMarkupsInteractionWidget();
   ~vtkSlicerMarkupsInteractionWidget() override;
@@ -88,5 +90,34 @@ private:
   vtkSlicerMarkupsInteractionWidget(const vtkSlicerMarkupsInteractionWidget&) = delete;
   void operator=(const vtkSlicerMarkupsInteractionWidget&) = delete;
 };
+
+//----------------------------------------------------------------------
+// CREATE INSTANCE MACRO
+
+#ifdef VTK_HAS_INITIALIZE_OBJECT_BASE
+#define vtkSlicerMarkupsInteractionWidgetCreateInstanceMacroBody(type) \
+  vtkObject* ret = vtkObjectFactory::CreateInstance(#type); \
+  if(ret) \
+    { \
+    return static_cast<type *>(ret); \
+    } \
+  type* result = new type; \
+  result->InitializeObjectBase(); \
+  return result;
+#else
+#define vtkSlicerMarkupsInteractionWidgetCreateInstanceMacroBody(type) \
+  vtkObject* ret = vtkObjectFactory::CreateInstance(#type); \
+  if (ret) \
+    { \
+  return static_cast<type*>(ret); \
+    } \
+return new type;
+#endif
+
+#define vtkSlicerMarkupsInteractionWidgetCreateInstanceMacro(type) \
+vtkSlicerMarkupsInteractionWidget* CreateInstance() const override\
+{ \
+  vtkSlicerMarkupsInteractionWidgetCreateInstanceMacroBody(type) \
+}
 
 #endif

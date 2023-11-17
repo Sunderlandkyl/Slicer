@@ -324,7 +324,6 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
 
 }
 
-
 //----------------------------------------------------------------------
 double vtkMRMLInteractionWidgetRepresentation::GetViewScaleFactorAtPosition(double positionWorld[3])
 {
@@ -381,7 +380,6 @@ double vtkMRMLInteractionWidgetRepresentation::GetViewScaleFactorAtPosition(doub
     }
   return viewScaleFactorMmPerPixel;
 }
-
 
 //----------------------------------------------------------------------
 bool vtkMRMLInteractionWidgetRepresentation::GetTransformationReferencePoint(double referencePointWorld[3])
@@ -450,6 +448,7 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateInteractionPipeline()
     }
 
   // TODO: need to set the render flag
+  needToRender = true;
   this->UpdateHandleColors();
 
   if (!currentVisibility)
@@ -565,15 +564,15 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   this->AxisRotationTubeFilter->SetNumberOfSides(16);
   this->AxisRotationTubeFilter->SetCapping(true);
 
-  this->RotationScaleTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->RotationScaleTransform->SetInputData(this->RotationHandlePoints);
-  this->RotationScaleTransform->SetTransform(vtkNew<vtkTransform>());
+  this->RotationScaleTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->RotationScaleTransformFilter->SetInputData(this->RotationHandlePoints);
+  this->RotationScaleTransformFilter->SetTransform(vtkNew<vtkTransform>());
 
   this->AxisRotationGlyphSource = vtkSmartPointer <vtkAppendPolyData>::New();
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationHandleSource->GetOutputPort());
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationTubeFilter->GetOutputPort());
   this->AxisRotationGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
-  this->AxisRotationGlypher->SetInputConnection(this->RotationScaleTransform->GetOutputPort());
+  this->AxisRotationGlypher->SetInputConnection(this->RotationScaleTransformFilter->GetOutputPort());
   this->AxisRotationGlypher->SetSourceConnection(this->AxisRotationGlyphSource->GetOutputPort());
   this->AxisRotationGlypher->ScalingOff();
   this->AxisRotationGlypher->ExtractEigenvaluesOff();
@@ -598,12 +597,12 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   /// Translation pipeline
   this->TranslationHandlePoints = vtkSmartPointer<vtkPolyData>::New();
 
-  this->TranslationScaleTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->TranslationScaleTransform->SetInputData(this->TranslationHandlePoints);
-  this->TranslationScaleTransform->SetTransform(vtkNew<vtkTransform>());
+  this->TranslationScaleTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->TranslationScaleTransformFilter->SetInputData(this->TranslationHandlePoints);
+  this->TranslationScaleTransformFilter->SetTransform(vtkNew<vtkTransform>());
 
   this->AxisTranslationGlypher = vtkSmartPointer<vtkGlyph3D>::New();
-  this->AxisTranslationGlypher->SetInputConnection(this->TranslationScaleTransform->GetOutputPort());
+  this->AxisTranslationGlypher->SetInputConnection(this->TranslationScaleTransformFilter->GetOutputPort());
   this->AxisTranslationGlypher->SetSourceConnection(0, this->AxisTranslationGlyphTransformer->GetOutputPort());
   this->AxisTranslationGlypher->SetSourceConnection(1, this->AxisRotationHandleSource->GetOutputPort());
   this->AxisTranslationGlypher->ScalingOn();
@@ -622,12 +621,12 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   /// Scale pipeline
   this->ScaleHandlePoints = vtkSmartPointer<vtkPolyData>::New();
 
-  this->ScaleScaleTransform = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->ScaleScaleTransform->SetInputData(this->ScaleHandlePoints);
-  this->ScaleScaleTransform->SetTransform(vtkNew<vtkTransform>());
+  this->ScaleScaleTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->ScaleScaleTransformFilter->SetInputData(this->ScaleHandlePoints);
+  this->ScaleScaleTransformFilter->SetTransform(vtkNew<vtkTransform>());
 
   this->AxisScaleGlypher = vtkSmartPointer<vtkGlyph3D>::New();
-  this->AxisScaleGlypher->SetInputConnection(this->ScaleScaleTransform->GetOutputPort());
+  this->AxisScaleGlypher->SetInputConnection(this->ScaleScaleTransformFilter->GetOutputPort());
   this->AxisScaleGlypher->SetSourceConnection(this->AxisRotationHandleSource->GetOutputPort());
   this->AxisScaleGlypher->ScalingOn();
   this->AxisScaleGlypher->SetScaleModeToDataScalingOff();
@@ -729,39 +728,38 @@ void vtkMRMLInteractionWidgetRepresentation::CreateRotationHandles()
 void vtkMRMLInteractionWidgetRepresentation::CreateTranslationHandles()
 {
   vtkNew<vtkPoints> points;
-  points->InsertNextPoint(1, 0, 0); // X-axis
-  points->InsertNextPoint(0, 1, 0); // Y-axis
-  points->InsertNextPoint(0, 0, 1); // Z-axis
-  points->InsertNextPoint(0, 0, 0); // Free translation
+  points->InsertNextPoint(1.0, 0.0, 0.0); // X-axis
+  points->InsertNextPoint(0.0, 1.0, 0.0); // Y-axis
+  points->InsertNextPoint(0.0, 0.0, 1.0); // Z-axis
+  points->InsertNextPoint(0.0, 0.0, 0.0); // Free translation
   this->Pipeline->TranslationHandlePoints->SetPoints(points);
 
   vtkNew<vtkDoubleArray> orientationArray;
   orientationArray->SetName("orientation");
   orientationArray->SetNumberOfComponents(3);
-  orientationArray->InsertNextTuple3(1, 0, 0);
-  orientationArray->InsertNextTuple3(0, 1, 0);
-  orientationArray->InsertNextTuple3(0, 0, 1);
-  orientationArray->InsertNextTuple3(1, 0, 0); // Free translation
+  orientationArray->InsertNextTuple3(1.0, 0.0, 0.0);
+  orientationArray->InsertNextTuple3(0.0, 1.0, 0.0);
+  orientationArray->InsertNextTuple3(0.0, 0.0, 1.0);
+  orientationArray->InsertNextTuple3(0.0, 0.0, 0.0); // Free translation
   this->Pipeline->TranslationHandlePoints->GetPointData()->AddArray(orientationArray);
 
   vtkNew<vtkDoubleArray> glyphIndexArray;
   glyphIndexArray->SetName("glyphIndex");
   glyphIndexArray->SetNumberOfComponents(1);
+  glyphIndexArray->InsertNextTuple1(0); // Arrow
   glyphIndexArray->InsertNextTuple1(0);
   glyphIndexArray->InsertNextTuple1(0);
-  glyphIndexArray->InsertNextTuple1(0);
-  glyphIndexArray->InsertNextTuple1(1);
+  glyphIndexArray->InsertNextTuple1(1); // Point
   this->Pipeline->TranslationHandlePoints->GetPointData()->AddArray(glyphIndexArray);
-
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::CreateScaleHandles()
 {
   vtkNew<vtkPoints> points; // Currently not enabled by default
-  //points->InsertNextPoint(1.5, 0.0, 0.0); // X-axis
-  //points->InsertNextPoint(0.0, 1.5, 0.0); // Y-axis
-  //points->InsertNextPoint(0.0, 0.0, 1.5); // Z-axis
+  points->InsertNextPoint(1.5, 0.0, 0.0); // X-axis
+  points->InsertNextPoint(0.0, 1.5, 0.0); // Y-axis
+  points->InsertNextPoint(0.0, 0.0, 1.5); // Z-axis
   this->Pipeline->ScaleHandlePoints->SetPoints(points);
 
   vtkNew<vtkIdTypeArray> visibilityArray;
@@ -773,79 +771,110 @@ void vtkMRMLInteractionWidgetRepresentation::CreateScaleHandles()
 }
 
 //----------------------------------------------------------------------
+int vtkMRMLInteractionWidgetRepresentation::GetNumberOfHandles()
+{
+  int numberOfHandles = 0;
+  for (int type = InteractionNone+1; type < Interaction_Last; ++type)
+    {
+    numberOfHandles += this->GetNumberOfHandles(type);
+    }
+  return numberOfHandles;
+}
+
+//----------------------------------------------------------------------
+int vtkMRMLInteractionWidgetRepresentation::GetNumberOfHandles(int type)
+{
+  vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
+  if (!handlePolyData)
+    {
+    vtkErrorMacro( << "GetNumberOfHandles: Invalid handle type: " << type);
+    return 0;
+    }
+  return handlePolyData->GetNumberOfPoints();
+}
+
+//----------------------------------------------------------------------
+vtkPolyData* vtkMRMLInteractionWidgetRepresentation::GetHandlePolydata(int type)
+{
+  if (type == InteractionRotationHandle)
+    {
+    return this->Pipeline->RotationHandlePoints;
+    }
+  else if (type == InteractionTranslationHandle)
+    {
+    return this->Pipeline->TranslationHandlePoints;
+    }
+  else if (type == InteractionScaleHandle)
+    {
+    return this->Pipeline->ScaleHandlePoints;
+    }
+  return nullptr;
+}
+
+//----------------------------------------------------------------------
+vtkTransform* vtkMRMLInteractionWidgetRepresentation::GetHandleScaleTransform(int type)
+{
+  vtkAbstractTransform* scaleTransform = nullptr;
+  if (type == InteractionRotationHandle)
+    {
+    scaleTransform = this->Pipeline->RotationScaleTransformFilter->GetTransform();
+    }
+  else if (type == InteractionTranslationHandle)
+    {
+    scaleTransform = this->Pipeline->TranslationScaleTransformFilter->GetTransform();
+    }
+  else if (type == InteractionScaleHandle)
+    {
+    scaleTransform = this->Pipeline->ScaleScaleTransformFilter->GetTransform();
+    }
+  return vtkTransform::SafeDownCast(scaleTransform);
+}
+
+//----------------------------------------------------------------------
+int vtkMRMLInteractionWidgetRepresentation::UpdateHandleColors(int type, int colorIndex)
+{
+  vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
+  if (!handlePolyData)
+    {
+    return colorIndex;
+    }
+
+  vtkSmartPointer<vtkFloatArray> colorArray = vtkFloatArray::SafeDownCast(
+    handlePolyData->GetPointData()->GetAbstractArray("colorIndex"));
+  if (!colorArray)
+    {
+    colorArray = vtkSmartPointer<vtkFloatArray>::New();
+    colorArray->SetName("colorIndex");
+    colorArray->SetNumberOfComponents(1);
+    handlePolyData->GetPointData()->AddArray(colorArray);
+    handlePolyData->GetPointData()->SetActiveScalars("colorIndex");
+    }
+  colorArray->Initialize();
+  colorArray->SetNumberOfTuples(handlePolyData->GetNumberOfPoints());
+
+  double color[4] = { 0.0, 0.0, 0.0, 0.0 };
+  for (int i = 0; i < handlePolyData->GetNumberOfPoints(); ++i)
+    {
+    this->GetHandleColor(type, i, color);
+    this->Pipeline->ColorTable->SetTableValue(colorIndex, color);
+    colorArray->SetTuple1(i, colorIndex);
+    ++colorIndex;
+    }
+
+  return colorIndex;
+}
+
+//----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::UpdateHandleColors()
 {
-  int numberOfHandles = this->Pipeline->RotationHandlePoints->GetNumberOfPoints()
-    + this->Pipeline->TranslationHandlePoints->GetNumberOfPoints()
-    + this->Pipeline->ScaleHandlePoints->GetNumberOfPoints();
+  int numberOfHandles = this->GetNumberOfHandles();
   this->Pipeline->ColorTable->SetNumberOfTableValues(numberOfHandles);
   this->Pipeline->ColorTable->SetTableRange(0, double(numberOfHandles) - 1);
 
   int colorIndex = 0;
-  double color[4] = { 0.0, 0.0, 0.0, 0.0 };
-
-  // Rotation handles
-  vtkSmartPointer<vtkFloatArray> rotationColorArray = vtkFloatArray::SafeDownCast(
-    this->Pipeline->RotationHandlePoints->GetPointData()->GetAbstractArray("colorIndex"));
-  if (!rotationColorArray)
-    {
-    rotationColorArray = vtkSmartPointer<vtkFloatArray>::New();
-    rotationColorArray->SetName("colorIndex");
-    rotationColorArray->SetNumberOfComponents(1);
-    this->Pipeline->RotationHandlePoints->GetPointData()->AddArray(rotationColorArray);
-    this->Pipeline->RotationHandlePoints->GetPointData()->SetActiveScalars("colorIndex");
-    }
-  rotationColorArray->Initialize();
-  rotationColorArray->SetNumberOfTuples(this->Pipeline->RotationHandlePoints->GetNumberOfPoints());
-  for (int i = 0; i < this->Pipeline->RotationHandlePoints->GetNumberOfPoints(); ++i)
-    {
-    this->GetHandleColor(InteractionRotationHandle, i, color);
-    this->Pipeline->ColorTable->SetTableValue(colorIndex, color);
-    rotationColorArray->SetTuple1(i, colorIndex);
-    ++colorIndex;
-    }
-
-  // Translation handles
-  vtkSmartPointer<vtkFloatArray> translationColorArray = vtkFloatArray::SafeDownCast(
-    this->Pipeline->TranslationHandlePoints->GetPointData()->GetAbstractArray("colorIndex"));
-  if (!translationColorArray)
-    {
-    translationColorArray = vtkSmartPointer<vtkFloatArray>::New();
-    translationColorArray->SetName("colorIndex");
-    translationColorArray->SetNumberOfComponents(1);
-    this->Pipeline->TranslationHandlePoints->GetPointData()->AddArray(translationColorArray);
-    this->Pipeline->TranslationHandlePoints->GetPointData()->SetActiveScalars("colorIndex");
-    }
-  translationColorArray->Initialize();
-  translationColorArray->SetNumberOfTuples(this->Pipeline->TranslationHandlePoints->GetNumberOfPoints());
-  for (int i = 0; i < this->Pipeline->TranslationHandlePoints->GetNumberOfPoints(); ++i)
-    {
-    this->GetHandleColor(InteractionTranslationHandle, i, color);
-    this->Pipeline->ColorTable->SetTableValue(colorIndex, color);
-    translationColorArray->SetTuple1(i, colorIndex);
-    ++colorIndex;
-    }
-
-  // Rotation handles
-  vtkSmartPointer<vtkFloatArray> scaleColorArray = vtkFloatArray::SafeDownCast(
-    this->Pipeline->ScaleHandlePoints->GetPointData()->GetAbstractArray("colorIndex"));
-  if (!scaleColorArray)
-    {
-    scaleColorArray = vtkSmartPointer<vtkFloatArray>::New();
-    scaleColorArray->SetName("colorIndex");
-    scaleColorArray->SetNumberOfComponents(1);
-    this->Pipeline->ScaleHandlePoints->GetPointData()->AddArray(scaleColorArray);
-    this->Pipeline->ScaleHandlePoints->GetPointData()->SetActiveScalars("colorIndex");
-    }
-  scaleColorArray->Initialize();
-  scaleColorArray->SetNumberOfTuples(this->Pipeline->ScaleHandlePoints->GetNumberOfPoints());
-  for (int i = 0; i < this->Pipeline->ScaleHandlePoints->GetNumberOfPoints(); ++i)
-    {
-    this->GetHandleColor(InteractionScaleHandle, i, color);
-    this->Pipeline->ColorTable->SetTableValue(colorIndex, color);
-    scaleColorArray->SetTuple1(i, colorIndex);
-    ++colorIndex;
-    }
+  colorIndex = this->UpdateHandleColors(InteractionRotationHandle, colorIndex);
+  colorIndex = this->UpdateHandleColors(InteractionTranslationHandle, colorIndex);
+  colorIndex = this->UpdateHandleColors(InteractionScaleHandle, colorIndex);
 
   this->Pipeline->ColorTable->Build();
 }
@@ -897,24 +926,11 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
     color[i] = currentColor[i];
     }
 
-  vtkPolyData* handlePoints = nullptr;
-  if (type == InteractionTranslationHandle)
-    {
-    handlePoints = this->Pipeline->TranslationHandlePoints;
-    }
-  else if (type == InteractionRotationHandle)
-    {
-    handlePoints = this->Pipeline->RotationHandlePoints;
-    }
-  else if (type == InteractionScaleHandle)
-    {
-    handlePoints = this->Pipeline->ScaleHandlePoints;
-    }
-
+  vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
   vtkIdTypeArray* visibilityArray = nullptr;
-  if (handlePoints)
+  if (handlePolyData)
     {
-    visibilityArray = vtkIdTypeArray::SafeDownCast(handlePoints->GetPointData()->GetArray("visibility"));
+    visibilityArray = vtkIdTypeArray::SafeDownCast(handlePolyData->GetPointData()->GetArray("visibility"));
     }
 
   if (visibilityArray)
@@ -925,16 +941,16 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
 }
 
 //----------------------------------------------------------------------
+bool vtkMRMLInteractionWidgetRepresentation::GetHandleVisibility(int type, int index)
+{
+  return true;
+}
+
+//----------------------------------------------------------------------
 double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int index)
 {
   // Determine if the handle should be displayed
-  bool handleVisible = true;
-
-  if (false/*TODO. Add function to toggle handle display visibility*/)
-    {
-    //TODO: Add handle visiblity toggle
-    /*handleVisible = displayNode->GetHandleVisibility(type);*/
-    }
+  bool handleVisible = this->GetHandleVisibility(type, index);
   if (!handleVisible)
     {
     return 0.0;
@@ -1020,9 +1036,9 @@ void vtkMRMLInteractionWidgetRepresentation::SetWidgetScale(double scale)
 {
   vtkNew<vtkTransform> scaleTransform;
   scaleTransform->Scale(scale, scale, scale);
-  this->Pipeline->RotationScaleTransform->SetTransform(scaleTransform);
-  this->Pipeline->TranslationScaleTransform->SetTransform(scaleTransform);
-  this->Pipeline->ScaleScaleTransform->SetTransform(scaleTransform);
+  this->Pipeline->RotationScaleTransformFilter->SetTransform(scaleTransform);
+  this->Pipeline->TranslationScaleTransformFilter->SetTransform(scaleTransform);
+  this->Pipeline->ScaleScaleTransformFilter->SetTransform(scaleTransform);
   this->Pipeline->AxisRotationGlypher->SetScaleFactor(scale);
   this->Pipeline->AxisTranslationGlypher->SetScaleFactor(scale);
   this->Pipeline->AxisScaleGlypher->SetScaleFactor(scale);
@@ -1045,35 +1061,15 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int t
 {
   if (!axisWorld)
     {
-    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument!");
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument");
     return;
     }
 
   axisWorld[0] = 0.0;
   axisWorld[1] = 0.0;
   axisWorld[2] = 0.0;
-
-  if (type == InteractionTranslationHandle)
+  switch (index)
     {
-    switch (index)
-      {
-      case 0:
-        axisWorld[0] = 1.0;
-        break;
-      case 1:
-        axisWorld[1] = 1.0;
-        break;
-      case 2:
-        axisWorld[2] = 1.0;
-        break;
-      default:
-        break;
-      }
-    }
-  else if (type == InteractionRotationHandle)
-    {
-    switch (index)
-      {
     case 0:
       axisWorld[0] = 1.0;
       break;
@@ -1082,30 +1078,36 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int t
       break;
     case 2:
       axisWorld[2] = 1.0;
-        break;
-      default:
-        break;
-      }
+      break;
+    default:
+      break;
     }
-  else if (type == InteractionScaleHandle)
-    {
-    switch (index)
-      {
-      case 0:
-        axisWorld[0] = 1.0;
-        break;
-      case 1:
-        axisWorld[1] = 1.0;
-        break;
-      case 2:
-        axisWorld[2] = 1.0;
-        break;
-      default:
-        break;
-      }
-    }
+
   double origin[3] = { 0.0, 0.0, 0.0 };
   this->Pipeline->HandleToWorldTransform->TransformVectorAtPoint(origin, axisWorld, axisWorld);
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandlePositionLocal(int type, int index, double positionLocal[3])
+{
+  if (!positionLocal)
+    {
+    vtkErrorMacro("GetInteractionHandlePositionLocal: Invalid position argument");
+    return;
+    }
+
+  vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
+  if (!handlePolyData)
+    {
+    return;
+    }
+
+  if (index < 0 || index >= handlePolyData->GetNumberOfPoints())
+    {
+    return;
+    }
+
+  handlePolyData->GetPoint(index, positionLocal);
 }
 
 //----------------------------------------------------------------------
@@ -1113,70 +1115,58 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandlePositionWorld(i
 {
   if (!positionWorld)
     {
-    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandlePositionWorld: Invalid position argument!");
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandlePositionWorld: Invalid position argument");
     }
 
-  if (type == InteractionRotationHandle)
+  vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
+  if (!handlePolyData)
     {
-    this->Pipeline->RotationHandlePoints->GetPoint(index, positionWorld);
-    this->Pipeline->RotationScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
-    this->Pipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
+    return;
     }
-  else if (type == InteractionTranslationHandle)
+  handlePolyData->GetPoint(index, positionWorld);
+
+  vtkTransform* handleScaleTransform = this->GetHandleScaleTransform(type);
+  if (handleScaleTransform)
     {
-    this->Pipeline->TranslationHandlePoints->GetPoint(index, positionWorld);
-    this->Pipeline->TranslationScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
-    this->Pipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
+    handleScaleTransform->TransformPoint(positionWorld, positionWorld);
     }
-  else if (type == InteractionScaleHandle)
-    {
-    this->Pipeline->ScaleHandlePoints->GetPoint(index, positionWorld);
-    this->Pipeline->ScaleScaleTransform->GetTransform()->TransformPoint(positionWorld, positionWorld);
-    this->Pipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
-    }
+
+  this->Pipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
+}
+
+//----------------------------------------------------------------------
+vtkMRMLInteractionWidgetRepresentation::HandleInfo vtkMRMLInteractionWidgetRepresentation::GetHandleInfo(int type, int index)
+{
+  double handlePositionLocal[3] = { 0.0, 0.0, 0.0 };
+  this->GetInteractionHandlePositionLocal(type, index, handlePositionLocal);
+
+  double handlePositionWorld[3] = { 0.0, 0.0, 0.0 };
+  this->GetInteractionHandlePositionWorld(type, index, handlePositionWorld);
+
+  double color[4] = { 0.0, 0.0, 0.0, 0.0 };
+  this->GetHandleColor(type, index, color);
+
+  return HandleInfo(index, type, handlePositionWorld, handlePositionLocal, color);
 }
 
 //----------------------------------------------------------------------
 vtkMRMLInteractionWidgetRepresentation::HandleInfoList vtkMRMLInteractionWidgetRepresentation::GetHandleInfoList()
 {
   HandleInfoList handleInfoList;
-  for (int i = 0; i < this->Pipeline->RotationHandlePoints->GetNumberOfPoints(); ++i)
+
+  for (int index = 0; index < this->GetNumberOfHandles(InteractionRotationHandle); ++index)
     {
-    double handlePositionLocal[3] = { 0 };
-    double handlePositionWorld[3] = { 0 };
-    this->Pipeline->RotationHandlePoints->GetPoint(i, handlePositionLocal);
-    this->Pipeline->RotationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
-    this->Pipeline->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
-    double color[4] = { 0 };
-    this->GetHandleColor(InteractionRotationHandle, i, color);
-    HandleInfo info(i, InteractionRotationHandle, handlePositionWorld, handlePositionLocal, color);
-    handleInfoList.push_back(info);
+    handleInfoList.push_back(this->GetHandleInfo(InteractionRotationHandle, index));
     }
 
-  for (int i = 0; i < this->Pipeline->TranslationHandlePoints->GetNumberOfPoints(); ++i)
+  for (int index = 0; index < this->GetNumberOfHandles(InteractionTranslationHandle); ++index)
     {
-    double handlePositionLocal[3] = { 0 };
-    double handlePositionWorld[3] = { 0 };
-    this->Pipeline->TranslationHandlePoints->GetPoint(i, handlePositionLocal);
-    this->Pipeline->TranslationScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
-    this->Pipeline->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
-    double color[4] = { 0 };
-    this->GetHandleColor(InteractionTranslationHandle, i, color);
-    HandleInfo info(i, InteractionTranslationHandle, handlePositionWorld, handlePositionLocal, color);
-    handleInfoList.push_back(info);
+    handleInfoList.push_back(this->GetHandleInfo(InteractionTranslationHandle, index));
     }
 
-  for (int i = 0; i < this->Pipeline->ScaleHandlePoints->GetNumberOfPoints(); ++i)
+  for (int index = 0; index < this->GetNumberOfHandles(InteractionScaleHandle); ++index)
     {
-    double handlePositionLocal[3] = { 0 };
-    double handlePositionWorld[3] = { 0 };
-    this->Pipeline->ScaleHandlePoints->GetPoint(i, handlePositionLocal);
-    this->Pipeline->ScaleScaleTransform->GetTransform()->TransformPoint(handlePositionLocal, handlePositionWorld);
-    this->Pipeline->HandleToWorldTransform->TransformPoint(handlePositionWorld, handlePositionWorld);
-    double color[4] = { 0 };
-    this->GetHandleColor(InteractionScaleHandle, i, color);
-    HandleInfo info(i, InteractionScaleHandle, handlePositionWorld, handlePositionLocal, color);
-    handleInfoList.push_back(info);
+    handleInfoList.push_back(this->GetHandleInfo(InteractionScaleHandle, index));
     }
 
   return handleInfoList;
@@ -1324,4 +1314,10 @@ double vtkMRMLInteractionWidgetRepresentation::GetInteractionSize()
 bool vtkMRMLInteractionWidgetRepresentation::GetInteractionSizeAbsolute()
 {
   return false;
+}
+
+//----------------------------------------------------------------------
+vtkTransform* vtkMRMLInteractionWidgetRepresentation::GetHandleToWorldTransform()
+{
+   return this->Pipeline->HandleToWorldTransform;
 }

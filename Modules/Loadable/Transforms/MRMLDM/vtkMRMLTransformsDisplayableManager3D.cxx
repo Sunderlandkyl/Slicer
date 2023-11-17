@@ -493,30 +493,33 @@ void vtkMRMLTransformsDisplayableManager3D::vtkInternal::UpdateInteractionPipeli
   vtkMRMLTransformNode* displayableNode, unsigned long event, vtkMRMLTransformDisplayNode* displayNode)
 {
   if (!displayableNode || !displayNode)
-    {
+  {
     return;
-    }
+  }
 
   vtkSmartPointer<vtkMRMLTransformHandleWidget> widget = nullptr;
   auto pipelineIt = this->InteractionPipelines.find(displayNode);
 
-  if (displayNode->GetInteractionVisibility() && pipelineIt == this->InteractionPipelines.end())
+  if (displayNode->GetInteractionVisibility())
     {
-    // No pipeline, yet interaction visibility is on, create a new one
+    if (pipelineIt == this->InteractionPipelines.end())
+      {
+      // No pipeline, yet interaction visibility is on, create a new one
 
-    vtkNew<vtkMRMLTransformHandleWidget> interactionWidget;
-    interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLViewNode(), this->External->GetRenderer());
-    this->InteractionPipelines[displayNode] = interactionWidget;
-    widget = interactionWidget;
-    }
-  else if (!displayNode->GetInteractionVisibility() && pipelineIt != this->InteractionPipelines.end())
-    {
-    // Pipeline exists, but interaction visibility is off, remove it
-    this->InteractionPipelines.erase(pipelineIt);
-    }
-  else
-    {
-    widget = pipelineIt->second;
+      vtkNew<vtkMRMLTransformHandleWidget> interactionWidget;
+      interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLViewNode(), this->External->GetRenderer());
+      this->InteractionPipelines[displayNode] = interactionWidget;
+      widget = interactionWidget;
+      }
+    else if (!displayNode->GetInteractionVisibility() && pipelineIt != this->InteractionPipelines.end())
+      {
+      // Pipeline exists, but interaction visibility is off, remove it
+      this->InteractionPipelines.erase(pipelineIt);
+      }
+    else
+      {
+      widget = pipelineIt->second;
+      }
     }
 
   if (widget)

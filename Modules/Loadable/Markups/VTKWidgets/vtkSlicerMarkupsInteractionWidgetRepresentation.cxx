@@ -18,17 +18,8 @@
 
 ==============================================================================*/
 
-// VTK includes
-#include "vtkMatrix4x4.h"
-
 // Transform MRMLDM includes
 #include "vtkSlicerMarkupsInteractionWidgetRepresentation.h"
-
-// MRML includes
-#include <vtkMRMLFolderDisplayNode.h>
-#include <vtkMRMLInteractionEventData.h>
-#include <vtkMRMLTransformNode.h>
-#include <vtkMRMLViewNode.h>
 
 //---------------------------------------------------------------------------
 vtkStandardNewMacro(vtkSlicerMarkupsInteractionWidgetRepresentation);
@@ -70,16 +61,55 @@ vtkMRMLMarkupsNode* vtkSlicerMarkupsInteractionWidgetRepresentation::GetMarkupsN
 }
 
 //----------------------------------------------------------------------
+int vtkSlicerMarkupsInteractionWidgetRepresentation::InteractionComponentToMarkupsComponent(int interactionComponentType)
+{
+  int markupsComponentType = vtkMRMLMarkupsDisplayNode::ComponentNone;
+  if (interactionComponentType == InteractionRotationHandle)
+    {
+    markupsComponentType = vtkMRMLMarkupsDisplayNode::ComponentRotationHandle;
+    }
+  else if (interactionComponentType == InteractionScaleHandle)
+    {
+    markupsComponentType = vtkMRMLMarkupsDisplayNode::ComponentScaleHandle;
+    }
+  else if (interactionComponentType == InteractionTranslationHandle)
+    {
+    markupsComponentType = vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle;
+    }
+  return markupsComponentType;
+}
+
+//----------------------------------------------------------------------
+int vtkSlicerMarkupsInteractionWidgetRepresentation::MarkupsComponentToInteractionComponent(int markupsComponentType)
+{
+  int interactionComponentType = InteractionNone;
+  if (markupsComponentType == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
+    {
+    interactionComponentType = InteractionRotationHandle;
+    }
+  else if (markupsComponentType == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+    {
+    interactionComponentType = InteractionScaleHandle;
+    }
+  else if (markupsComponentType == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+    {
+    interactionComponentType = InteractionTranslationHandle;
+    }
+  return interactionComponentType;
+}
+
+//----------------------------------------------------------------------
 int vtkSlicerMarkupsInteractionWidgetRepresentation::GetActiveComponentType()
 {
-  return this->DisplayNode->GetActiveComponentType();
+  int activeComponentType = this->DisplayNode->GetActiveComponentType();
+  return this->MarkupsComponentToInteractionComponent(activeComponentType);
 }
 
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsInteractionWidgetRepresentation::SetActiveComponentType(int type)
 {
-  //this->DisplayNode->SetActiveComponent(type);
-  // TODO
+  int markupsComponentType = this->InteractionComponentToMarkupsComponent(type);
+  this->DisplayNode->SetActiveComponent(markupsComponentType, this->GetActiveComponentIndex());
 }
 
 //----------------------------------------------------------------------
@@ -91,8 +121,7 @@ int vtkSlicerMarkupsInteractionWidgetRepresentation::GetActiveComponentIndex()
 //----------------------------------------------------------------------
 void vtkSlicerMarkupsInteractionWidgetRepresentation::SetActiveComponentIndex(int index)
 {
-  //this->DisplayNode->SetActiveComponentIndex(index);
-  // TODO
+  this->DisplayNode->SetActiveComponent(this->DisplayNode->GetActiveComponentType(), index);
 }
 
 //----------------------------------------------------------------------
@@ -119,32 +148,59 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateInteractionPipeline(
   Superclass::UpdateInteractionPipeline();
 
   this->Pipeline->HandleToWorldTransform->Identity();
-
-  vtkMRMLDisplayableNode* displayableNode = this->DisplayNode->GetDisplayableNode();
-
-  vtkNew<vtkMatrix4x4> nodeToWorld;
-  vtkMRMLTransformNode::GetMatrixTransformBetweenNodes(this->GetMarkupsNode()->GetParentTransformNode(), nullptr, nodeToWorld);
-  this->Pipeline->HandleToWorldTransform->Concatenate(nodeToWorld);
-
-  //double centerOfTransformation[3] = { 0.0, 0.0, 0.0 };
-  //this->GetMarkupsNode()->GetCenterOfTransformation(centerOfTransformation);
-  //this->Pipeline->HandleToWorldTransform->Translate(centerOfTransformation);
+  this->Pipeline->HandleToWorldTransform->Concatenate(this->GetMarkupsNode()->GetInteractionHandleToWorldMatrix());
 }
 
 //----------------------------------------------------------------------
 double vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionScale()
 {
-  return this->GetDisplayNode()->GetGlyphScale();
+  return this->GetDisplayNode()->GetGlyphScale() * 5.0;
 }
 
 //----------------------------------------------------------------------
 double vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionSize()
 {
-  return this->GetDisplayNode()->GetGlyphSize();
+  return this->GetDisplayNode()->GetGlyphSize() * 5.0;
 }
 
 //----------------------------------------------------------------------
 bool vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionSizeAbsolute()
 {
   return !this->GetDisplayNode()->GetUseGlyphScale();
+}
+
+//----------------------------------------------------------------------
+bool vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleVisibility(int type, int index)
+{
+  if (!this->GetDisplayNode())
+    {
+    return false;
+    }
+
+  int markupsComponentType = this->InteractionComponentToMarkupsComponent(type);
+  if (!this->GetDisplayNode()->GetHandleVisibility(markupsComponentType))
+    {
+    return false;
+    }
+
+  bool handleVisibility[4] = { false, false, false, false };
+  if (markupsComponentType == vtkMRMLMarkupsDisplayNode::ComponentRotationHandle)
+    {
+    this->GetDisplayNode()->GetRotationHandleComponentVisibility(handleVisibility);
+    }
+  else if (markupsComponentType == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
+    {
+    this->GetDisplayNode()->GetScaleHandleComponentVisibility(handleVisibility);
+    }
+  else if (markupsComponentType == vtkMRMLMarkupsDisplayNode::ComponentTranslationHandle)
+    {
+    this->GetDisplayNode()->GetTranslationHandleComponentVisibility(handleVisibility);
+    }
+
+  if (index < 0 || index > 3)
+    {
+    return false;
+    }
+
+  return handleVisibility[index];
 }
