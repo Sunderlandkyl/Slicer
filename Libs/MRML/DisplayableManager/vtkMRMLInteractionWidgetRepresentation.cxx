@@ -458,10 +458,72 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateInteractionPipeline()
     }
   this->Pipeline->Actor->SetVisibility(true);
 
+  this->UpdateHandleToWorldTransform();
+
   if (needToRender)
     {
     this->NeedToRenderOn();
     }
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::UpdateHandleToWorldTransform()
+{
+  vtkTransform* handleToWorldTransform = this->GetHandleToWorldTransform();
+  this->UpdateHandleToWorldTransform(handleToWorldTransform);
+  this->OrthoganalizeTransform(handleToWorldTransform);
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::OrthoganalizeTransform(vtkTransform* transform)
+{
+  double x[3] = { 1.0, 0.0, 0.0 };
+  double y[3] = { 0.0, 1.0, 0.0 };
+  double z[3] = { 0.0, 0.0, 1.0 };
+
+  transform->TransformVector(x, x);
+  transform->TransformVector(y, y);
+  transform->TransformVector(z, z);
+
+
+  vtkMath::Normalize(x);
+  vtkMath::Normalize(y);
+  vtkMath::Normalize(z);
+
+
+  double xOrthogonal[3] = { 1.0, 0.0, 0.0 };
+  double yOrthogonal[3] = { 0.0, 1.0, 0.0 };
+  double zOrthogonal[3] = { z[0], z[1], z[2] };
+
+  vtkMath::Cross(zOrthogonal, x, yOrthogonal);
+  vtkMath::Normalize(yOrthogonal);
+  vtkMath::Cross(yOrthogonal, zOrthogonal, xOrthogonal);
+  vtkMath::Normalize(xOrthogonal);
+
+  //// Gram-Schmidt orthogonalization
+  //double dotXY = vtkMath::Dot(x, y);
+  //double dotXZ = vtkMath::Dot(x, z);
+  //double dotYZ = vtkMath::Dot(y, z);
+
+  //double xOrthogonal[3] = { x[0] - dotXY * y[0] - dotXZ * z[0], x[1] - dotXY * y[1] - dotXZ * z[1], x[2] - dotXY * y[2] - dotXZ * z[2] };
+  //double yOrthogonal[3] = { y[0] - dotXY * x[0] - dotYZ * z[0], y[1] - dotXY * x[1] - dotYZ * z[1], y[2] - dotXY * x[2] - dotYZ * z[2] };
+  //double zOrthogonal[3] = { z[0] - dotXZ * x[0] - dotYZ * y[0], z[1] - dotXZ * x[1] - dotYZ * y[1], z[2] - dotXZ * x[2] - dotYZ * y[2] };
+
+  vtkMath::Normalize(xOrthogonal);
+  vtkMath::Normalize(yOrthogonal);
+  vtkMath::Normalize(zOrthogonal);
+
+  vtkNew<vtkMatrix4x4> orthogonalMatrix;
+  orthogonalMatrix->DeepCopy(transform->GetMatrix());
+  for (int i = 0; i < 3; ++i)
+    {
+    orthogonalMatrix->SetElement(i, 0, xOrthogonal[i]);
+    orthogonalMatrix->SetElement(i, 1, yOrthogonal[i]);
+    orthogonalMatrix->SetElement(i, 2, zOrthogonal[i]);
+    }
+
+  transform->Identity();
+  transform->Concatenate(orthogonalMatrix);
 }
 
 //----------------------------------------------------------------------
@@ -1319,5 +1381,9 @@ bool vtkMRMLInteractionWidgetRepresentation::GetInteractionSizeAbsolute()
 //----------------------------------------------------------------------
 vtkTransform* vtkMRMLInteractionWidgetRepresentation::GetHandleToWorldTransform()
 {
-   return this->Pipeline->HandleToWorldTransform;
+  if (!this->Pipeline)
+    {
+    return nullptr;
+    }
+  return this->Pipeline->HandleToWorldTransform;
 }

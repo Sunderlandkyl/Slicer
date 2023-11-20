@@ -146,9 +146,13 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateInteractionPipeline(
 
   // Final visibility handled by superclass in vtkMRMLInteractionWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
+}
 
-  this->Pipeline->HandleToWorldTransform->Identity();
-  this->Pipeline->HandleToWorldTransform->Concatenate(this->GetMarkupsNode()->GetInteractionHandleToWorldMatrix());
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateHandleToWorldTransform(vtkTransform* handleToWorldTransform)
+{
+  handleToWorldTransform->Identity();
+  handleToWorldTransform->Concatenate(this->GetMarkupsNode()->GetInteractionHandleToWorldMatrix());
 }
 
 //----------------------------------------------------------------------

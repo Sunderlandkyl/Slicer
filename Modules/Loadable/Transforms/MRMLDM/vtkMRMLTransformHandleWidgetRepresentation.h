@@ -65,6 +65,8 @@ public:
 
   void UpdateInteractionPipeline() override;
 
+  void UpdateHandleToWorldTransform(vtkTransform* handleToWorldTransform) override;
+
   double GetInteractionScale() override; // Size relative to screen
   double GetInteractionSize() override; // Size in mm
   bool GetInteractionSizeAbsolute() override; // True -> size in mm; false -> relative to screen

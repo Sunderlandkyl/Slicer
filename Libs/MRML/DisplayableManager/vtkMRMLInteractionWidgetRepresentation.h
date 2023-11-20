@@ -255,6 +255,11 @@ protected:
   /// Type is specified using vtkMRMLInteractionDisplayNode::ComponentType
   virtual void GetInteractionHandlePositionWorld(int type, int index, double position[3]);
 
+  /// Update HandleToWorldTransform
+  virtual void UpdateHandleToWorldTransform();
+  virtual void UpdateHandleToWorldTransform(vtkTransform* handleToWorldTransform) = 0;
+  virtual void OrthoganalizeTransform(vtkTransform* transform);
+
   // Calculate view size and scale factor
   virtual void UpdateViewScaleFactor();
 

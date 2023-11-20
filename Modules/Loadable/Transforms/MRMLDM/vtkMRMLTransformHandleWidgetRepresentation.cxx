@@ -119,21 +119,23 @@ void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
   // Final visibility handled by superclass in vtkMRMLInteractionWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
 
-  this->Pipeline->HandleToWorldTransform->Identity();
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLTransformHandleWidgetRepresentation::UpdateHandleToWorldTransform(vtkTransform* handleToWorldTransform)
+{
+  handleToWorldTransform->Identity();
+  handleToWorldTransform->PostMultiply();
 
   vtkMRMLDisplayableNode* displayableNode = this->DisplayNode->GetDisplayableNode();
 
   vtkNew<vtkMatrix4x4> nodeToWorld;
   vtkMRMLTransformNode::GetMatrixTransformBetweenNodes(this->GetTransformNode(), nullptr, nodeToWorld);
 
-  double scale[3] = { 1.0, 1.0, 1.0 };
-  vtkAddonMathUtilities::NormalizeOrientationMatrixColumns(nodeToWorld, scale);
-
-  this->Pipeline->HandleToWorldTransform->Concatenate(nodeToWorld);
-
   double centerOfTransformation[3] = { 0.0, 0.0, 0.0 };
   this->GetTransformNode()->GetCenterOfTransformation(centerOfTransformation);
-  this->Pipeline->HandleToWorldTransform->Translate(centerOfTransformation);
+  handleToWorldTransform->Translate(centerOfTransformation);
+  handleToWorldTransform->Concatenate(nodeToWorld);
 }
 
 //----------------------------------------------------------------------

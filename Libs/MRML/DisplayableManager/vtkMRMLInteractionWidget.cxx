@@ -592,16 +592,16 @@ void vtkMRMLInteractionWidget::ScaleWidget(double eventPos[2])
 
   double ratio = sqrt(d2 / r2);
 
-  // TODO
   vtkTransform* handleToWorldTransform = rep->GetHandleToWorldTransform();
   vtkSmartPointer<vtkTransform> worldToHandleTransform = vtkTransform::SafeDownCast(handleToWorldTransform->GetInverse());
+
+  double scaleVector[3] = { 1.0, 1.0, 1.0 };
+  scaleVector[rep->GetActiveComponentIndex()] = ratio;
 
   vtkNew<vtkTransform> scaleTransform;
   scaleTransform->PostMultiply();
   scaleTransform->Concatenate(worldToHandleTransform);
-  double scale[3] = { 1.0, 1.0, 1.0 };
-  scale[rep->GetActiveComponentIndex()] = ratio;
-  scaleTransform->Scale(scale);
+  scaleTransform->Scale(scaleVector);
   scaleTransform->Concatenate(handleToWorldTransform);
 
   this->ApplyTransform(scaleTransform);

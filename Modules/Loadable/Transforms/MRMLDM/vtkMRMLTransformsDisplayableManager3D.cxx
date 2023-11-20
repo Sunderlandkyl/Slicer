@@ -482,9 +482,12 @@ void vtkMRMLTransformsDisplayableManager3D::vtkInternal::UpdateInteractionPipeli
     }
 
   auto displayNodesIt = this->TransformToDisplayNodes.find(displayableNode);
-  for (vtkMRMLTransformDisplayNode* displayNode : displayNodesIt->second)
+  if (displayNodesIt != this->TransformToDisplayNodes.end())
     {
-    this->UpdateInteractionPipeline(displayableNode, event, displayNode);
+    for (vtkMRMLTransformDisplayNode* displayNode : displayNodesIt->second)
+      {
+      this->UpdateInteractionPipeline(displayableNode, event, displayNode);
+      }
     }
 }
 
