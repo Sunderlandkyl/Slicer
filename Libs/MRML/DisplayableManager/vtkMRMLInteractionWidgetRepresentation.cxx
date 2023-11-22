@@ -95,6 +95,7 @@ void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
     }
 
   this->InitializePipeline();
+  this->NeedToRenderOn();
 }
 
 //----------------------------------------------------------------------
@@ -391,27 +392,19 @@ bool vtkMRMLInteractionWidgetRepresentation::GetTransformationReferencePoint(dou
 void vtkMRMLInteractionWidgetRepresentation::UpdateFromMRML(
     vtkMRMLNode* vtkNotUsed(caller), unsigned long event, void *vtkNotUsed(callData))
 {
-  bool needToRender = false;
   if (!this->Pipeline)
     {
     this->SetupInteractionPipeline();
-    needToRender = true;
     }
 
   if (this->GetSliceNode())
     {
-    this->UpdatePlaneFromSliceNode();
+    this->UpdateSlicePlaneFromSliceNode();
     }
 
   if (this->Pipeline)
     {
     this->UpdateInteractionPipeline();
-    }
-
-  needToRender = true; // TODO: Improve update methods to return true if need to render.
-  if (needToRender)
-    {
-    this->NeedToRenderOn();
     }
 }
 
@@ -1267,7 +1260,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetSliceToWorldCoordinates(const do
 }
 
 //----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::UpdatePlaneFromSliceNode()
+void vtkMRMLInteractionWidgetRepresentation::UpdateSlicePlaneFromSliceNode()
 {
   if (!this->GetSliceNode())
     {

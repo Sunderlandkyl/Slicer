@@ -115,7 +115,7 @@ public:
   virtual vtkMRMLSliceNode* GetSliceNode();
   virtual void GetSliceToWorldCoordinates(const double slicePos[2], double worldPos[3]);
 
-  virtual void UpdatePlaneFromSliceNode();
+  virtual void UpdateSlicePlaneFromSliceNode();
 
   /// Update the interaction pipeline
   virtual void UpdateInteractionPipeline();
@@ -255,9 +255,11 @@ protected:
   /// Type is specified using vtkMRMLInteractionDisplayNode::ComponentType
   virtual void GetInteractionHandlePositionWorld(int type, int index, double position[3]);
 
-  /// Update HandleToWorldTransform
+  /// Update HandleToWorldTransform. This controls the position and orientation of the interaction handles.
   virtual void UpdateHandleToWorldTransform();
   virtual void UpdateHandleToWorldTransform(vtkTransform* handleToWorldTransform) = 0;
+
+  // Orthogonalize the transform axes. The Z-axis will not be changed.
   virtual void OrthoganalizeTransform(vtkTransform* transform);
 
   // Calculate view size and scale factor
