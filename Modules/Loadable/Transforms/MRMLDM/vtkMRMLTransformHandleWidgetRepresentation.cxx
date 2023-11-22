@@ -19,7 +19,8 @@
 ==============================================================================*/
 
 // VTK includes
-#include "vtkMatrix4x4.h"
+#include <vtkGeneralTransform.h>
+#include <vtkMatrix4x4.h>
 
 // Transform MRMLDM includes
 #include "vtkMRMLTransformHandleWidgetRepresentation.h"
@@ -124,18 +125,39 @@ void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
 //----------------------------------------------------------------------
 void vtkMRMLTransformHandleWidgetRepresentation::UpdateHandleToWorldTransform(vtkTransform* handleToWorldTransform)
 {
+  vtkNew<vtkGeneralTransform> nodeToWorldTransform;
+  vtkMRMLTransformNode::GetTransformBetweenNodes(this->GetTransformNode(), nullptr, nodeToWorldTransform);
+
+  double centerOfTransformationNode[4] = { 0.0, 0.0, 0.0, 1.0 };
+  this->GetTransformNode()->GetCenterOfTransformation(centerOfTransformationNode);
+  double centerOfTransformationWorld[4] = { 0.0, 0.0, 0.0, 1.0 };
+  nodeToWorldTransform->TransformPoint(centerOfTransformationNode, centerOfTransformationWorld);
+
+  double xDirectionNode[4] = { 1.0, 0.0, 0.0, 0.0 };
+  double xDirectionWorld[4] = { 1.0, 0.0, 0.0, 0.0 };
+  nodeToWorldTransform->TransformVectorAtPoint(centerOfTransformationNode, xDirectionNode, xDirectionWorld);
+
+  double yDirectionNode[4] = { 0.0, 1.0, 0.0, 0.0 };
+  double yDirectionWorld[4] = { 0.0, 1.0, 0.0, 0.0 };
+  nodeToWorldTransform->TransformVectorAtPoint(centerOfTransformationNode, yDirectionNode, yDirectionWorld);
+
+  double zDirectionNode[4] = { 0.0, 0.0, 1.0, 0.0 };
+  double zDirectionWorld[4] = { 0.0, 0.0, 1.0, 0.0 };
+  nodeToWorldTransform->TransformVectorAtPoint(centerOfTransformationNode, zDirectionNode, zDirectionWorld);
+
+  vtkNew<vtkMatrix4x4> nodeToWorldMatrix;
+  for (int i = 0; i < 3; i++)
+    {
+    nodeToWorldMatrix->SetElement(i, 0, xDirectionWorld[i]);
+    nodeToWorldMatrix->SetElement(i, 1, yDirectionWorld[i]);
+    nodeToWorldMatrix->SetElement(i, 2, zDirectionWorld[i]);
+    nodeToWorldMatrix->SetElement(i, 3, centerOfTransformationWorld[i]);
+    }
+
+  // The vtkMRMLInteractionWidgetRepresentation::UpdateHandleToWorldTransform() method will orthogonalize the matrix.
   handleToWorldTransform->Identity();
   handleToWorldTransform->PostMultiply();
-
-  vtkMRMLDisplayableNode* displayableNode = this->DisplayNode->GetDisplayableNode();
-
-  vtkNew<vtkMatrix4x4> nodeToWorld;
-  vtkMRMLTransformNode::GetMatrixTransformBetweenNodes(this->GetTransformNode(), nullptr, nodeToWorld);
-
-  double centerOfTransformation[3] = { 0.0, 0.0, 0.0 };
-  this->GetTransformNode()->GetCenterOfTransformation(centerOfTransformation);
-  handleToWorldTransform->Translate(centerOfTransformation);
-  handleToWorldTransform->Concatenate(nodeToWorld);
+  handleToWorldTransform->Concatenate(nodeToWorldMatrix);
 }
 
 //----------------------------------------------------------------------

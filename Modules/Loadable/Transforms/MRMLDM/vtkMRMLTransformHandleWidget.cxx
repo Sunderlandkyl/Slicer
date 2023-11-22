@@ -102,34 +102,51 @@ void vtkMRMLTransformHandleWidget::ApplyTransform(vtkTransform* transformToApply
 
   MRMLNodeModifyBlocker blocker(this->GetTransformNode());
 
-  vtkNew<vtkTransform> newTransform;
-  newTransform->PostMultiply();
+  vtkNew<vtkGeneralTransform> newTransformToParent;
+  newTransformToParent->PostMultiply();
 
   vtkNew<vtkMatrix4x4> transformToParent;
   this->GetTransformNode()->GetMatrixTransformToParent(transformToParent);
-  newTransform->Concatenate(transformToParent);
+  newTransformToParent->Concatenate(transformToParent);
 
   vtkMRMLTransformNode* parentTransformNode = this->GetTransformNode()->GetParentTransformNode();
   if (parentTransformNode)
     {
     // Perform the transformation in world coordinates
-    vtkNew<vtkMatrix4x4> transformToWorld;
-    parentTransformNode->GetMatrixTransformToWorld(transformToWorld);
-    newTransform->Concatenate(transformToWorld);
+    vtkNew<vtkGeneralTransform> transformToWorld;
+    parentTransformNode->GetTransformToWorld(transformToWorld);
+    newTransformToParent->Concatenate(transformToWorld);
     }
 
   // Apply the transform
-  newTransform->Concatenate(transformToApply);
+  newTransformToParent->Concatenate(transformToApply);
 
   if (parentTransformNode)
     {
     // Transform back to local coordinates
-    vtkNew<vtkMatrix4x4> transformFromWorld;
-    parentTransformNode->GetMatrixTransformFromWorld(transformFromWorld);
-    newTransform->Concatenate(transformFromWorld);
+    vtkNew<vtkGeneralTransform> transformFromWorld;
+    parentTransformNode->GetTransformFromWorld(transformFromWorld);
+    newTransformToParent->Concatenate(transformFromWorld);
     }
 
-  this->GetTransformNode()->SetMatrixTransformToParent(newTransform->GetMatrix());
+  vtkNew<vtkMatrix4x4> newTransformToParentMatrix;
+  double origin[3] = { 0.0, 0.0, 0.0 };
+  double x[3] = { 1.0, 0.0, 0.0 };
+  newTransformToParent->TransformVectorAtPoint(origin, x, x);
+  double y[3] = { 0.0, 1.0, 0.0 };
+  newTransformToParent->TransformVectorAtPoint(origin, y, y);
+  double z[3] = { 0.0, 0.0, 1.0 };
+  newTransformToParent->TransformVectorAtPoint(origin, z, z);
+  newTransformToParent->TransformPoint(origin, origin);
+
+  for (int i = 0; i < 3; ++i)
+    {
+    newTransformToParentMatrix->SetElement(i, 0, x[i]);
+    newTransformToParentMatrix->SetElement(i, 1, y[i]);
+    newTransformToParentMatrix->SetElement(i, 2, z[i]);
+    newTransformToParentMatrix->SetElement(i, 3, origin[i]);
+    }
+  this->GetTransformNode()->SetMatrixTransformToParent(newTransformToParentMatrix);
 }
 
 //----------------------------------------------------------------------
@@ -160,9 +177,9 @@ vtkMRMLTransformNode* vtkMRMLTransformHandleWidget::GetTransformNode()
 {
   vtkMRMLTransformHandleWidgetRepresentation* widgetRep = vtkMRMLTransformHandleWidgetRepresentation::SafeDownCast(this->GetRepresentation());
   if (!widgetRep)
-  {
+    {
     return nullptr;
-  }
+    }
   return widgetRep->GetTransformNode();
 }
 

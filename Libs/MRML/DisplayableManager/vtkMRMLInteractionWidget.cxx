@@ -436,9 +436,9 @@ void vtkMRMLInteractionWidget::EndWidgetInteraction()
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidget::TranslateWidget(double eventPos[2])
 {
-  double lastEventPos_World[3] = { 0.0 };
-  double eventPos_World[3] = { 0.0 };
-  double orientation_World[9] = { 0.0 };
+  double lastEventPos_World[3] = { 0.0, 0.0, 0.0 };
+  double eventPos_World[3] = { 0.0, 0.0, 0.0 };
+  double orientation_World[9] = { 0.0, 0.0, 0.0 };
 
   vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
   if (!rep)
@@ -449,7 +449,7 @@ void vtkMRMLInteractionWidget::TranslateWidget(double eventPos[2])
   if (rep->GetSliceNode())
     {
     // 2D view
-    double eventPos_Slice[3] = { 0. };
+    double eventPos_Slice[3] = { 0.0, 0.0, 0.0 };
     eventPos_Slice[0] = this->LastEventPosition[0];
     eventPos_Slice[1] = this->LastEventPosition[1];
     rep->GetSliceToWorldCoordinates(eventPos_Slice, lastEventPos_World);
@@ -461,7 +461,7 @@ void vtkMRMLInteractionWidget::TranslateWidget(double eventPos[2])
   else
     {
     // 3D view
-    double eventPos_Display[2] = { 0. };
+    double eventPos_Display[2] = { 0.0, 0.0 };
 
     eventPos_Display[0] = this->LastEventPosition[0];
     eventPos_Display[1] = this->LastEventPosition[1];
@@ -494,7 +494,7 @@ void vtkMRMLInteractionWidget::TranslateWidget(double eventPos[2])
 
   int index = this->GetActiveComponentIndex();
 
-  double translationAxis_World[3] = { 0 };
+  double translationAxis_World[3] = { 0.0, 0.0, 0.0 };
   rep->GetInteractionHandleAxisWorld(InteractionTranslationHandle, index, translationAxis_World);
 
   // Only perform constrained translation if the length of the axis is non-zero.
@@ -527,8 +527,8 @@ void vtkMRMLInteractionWidget::TranslateWidget(double eventPos[2])
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidget::ScaleWidget(double eventPos[2])
 {
-  double center[3] = { 0. };
-  double ref[3] = { 0. };
+  double center[3] = { 0.0, 0.0, 0.0 };
+  double ref[3] = { 0.0, 0.0, 0.0 };
   double worldPos[3], worldOrient[9];
 
   vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
@@ -540,7 +540,7 @@ void vtkMRMLInteractionWidget::ScaleWidget(double eventPos[2])
   if (rep->GetSliceNode())
     {
     // 2D view
-    double slicePos[3] = { 0. };
+    double slicePos[3] = { 0.0, 0.0, 0.0 };
     slicePos[0] = this->LastEventPosition[0];
     slicePos[1] = this->LastEventPosition[1];
     rep->GetSliceToWorldCoordinates(slicePos, ref);
@@ -747,9 +747,9 @@ bool vtkMRMLInteractionWidget::GetIntersectionOnAxisPlane(int type, int index, c
     return false;
     }
 
-  double rotationAxis[3] = { 0 };
+  double rotationAxis[3] = { 0.0, 0.0, 0.0 };
   rep->GetInteractionHandleAxisWorld(type, index, rotationAxis); // Axis of rotation
-  double origin[3] = { 0, 0, 0 };
+  double origin[3] = { 0.0, 0.0, 0.0 };
   rep->GetInteractionHandleOriginWorld(origin);
 
   vtkNew<vtkPlane> axisPlaneWorld;
@@ -758,7 +758,7 @@ bool vtkMRMLInteractionWidget::GetIntersectionOnAxisPlane(int type, int index, c
 
   double inputPoint0_World[3] = { 0.0, 0.0, 0.0 };
   double inputPoint1_World[3] = { 0.0, 0.0, 1.0 };
-  double projectionVector_World[3] = { 0 };
+  double projectionVector_World[3] = { 0.0, 0.0, 0.0 };
   if (!rep->GetSliceNode())
     {
     // 3D view
@@ -766,7 +766,7 @@ bool vtkMRMLInteractionWidget::GetIntersectionOnAxisPlane(int type, int index, c
     vtkCamera* camera = renderer->GetActiveCamera();
 
     // Focal point position
-    double cameraFP_World[4] = { 0 };
+    double cameraFP_World[4] = { 0.0, 0.0, 0.0 };
     camera->GetFocalPoint(cameraFP_World);
 
     renderer->SetWorldPoint(cameraFP_World[0], cameraFP_World[1], cameraFP_World[2], cameraFP_World[3]);
@@ -782,7 +782,7 @@ bool vtkMRMLInteractionWidget::GetIntersectionOnAxisPlane(int type, int index, c
       vtkWarningMacro("Bad homogeneous coordinates");
       return false;
       }
-    double pickPosition_World[3] = { 0.0 };
+    double pickPosition_World[3] = { 0.0, 0.0, 0.0 };
     for (int i = 0; i < 3; i++)
       {
       pickPosition_World[i] = input_World[i] / input_World[3];
@@ -798,7 +798,7 @@ bool vtkMRMLInteractionWidget::GetIntersectionOnAxisPlane(int type, int index, c
     else
       {
       // Camera position
-      double cameraPosition_World[4] = { 0.0 };
+      double cameraPosition_World[4] = { 0.0, 0.0, 0.0, 0.0 };
       camera->GetPosition(cameraPosition_World);
 
       //  Compute the ray endpoints.  The ray is along the line running from
@@ -841,9 +841,9 @@ bool vtkMRMLInteractionWidget::GetClosestPointOnInteractionAxis(int type, int in
     return false;
     }
 
-  double translationAxis_World[3] = { 0 };
+  double translationAxis_World[3] = { 0.0, 0.0, 0.0 };
   rep->GetInteractionHandleAxisWorld(type, index, translationAxis_World); // Axis of rotation
-  double origin_World[3] = { 0, 0, 0 };
+  double origin_World[3] = { 0.0, 0.0, 0.0 };
   rep->GetInteractionHandleOriginWorld(origin_World);
 
   double inputPoint0_World[3] = { 0.0, 0.0, 0.0 };
@@ -855,7 +855,7 @@ bool vtkMRMLInteractionWidget::GetClosestPointOnInteractionAxis(int type, int in
     vtkCamera* camera = renderer->GetActiveCamera();
 
     // Focal point position
-    double cameraFP_World[4] = { 0 };
+    double cameraFP_World[4] = { 0.0, 0.0, 0.0, 0.0 };
     camera->GetFocalPoint(cameraFP_World);
 
     renderer->SetWorldPoint(cameraFP_World[0], cameraFP_World[1], cameraFP_World[2], cameraFP_World[3]);
@@ -873,13 +873,13 @@ bool vtkMRMLInteractionWidget::GetClosestPointOnInteractionAxis(int type, int in
       return false;
       }
 
-    double pickPosition_World[3] = { 0 };
+    double pickPosition_World[3] = { 0.0, 0.0, 0.0 };
     for (int i = 0; i < 3; i++)
       {
       pickPosition_World[i] = input_World[i] / input_World[3];
       }
 
-    double projectionVector_World[3] = { 0 };
+    double projectionVector_World[3] = { 0.0, 0.0, 0.0 };
     if (camera->GetParallelProjection())
       {
       camera->GetDirectionOfProjection(projectionVector_World);
@@ -891,7 +891,7 @@ bool vtkMRMLInteractionWidget::GetClosestPointOnInteractionAxis(int type, int in
     else
       {
       // Camera position
-      double cameraPosition_World[4] = { 0 };
+      double cameraPosition_World[4] = { 0.0, 0.0, 0.0, 0.0 };
       camera->GetPosition(cameraPosition_World);
 
       //  Compute the ray endpoints.  The ray is along the line running from
@@ -922,8 +922,8 @@ bool vtkMRMLInteractionWidget::GetClosestPointOnInteractionAxis(int type, int in
 
   double t1; // not used
   double t2; // not used
-  double closestPointNotUsed[3] = { 0 };
-  double translationVectorPoint[3] = { 0 };
+  double closestPointNotUsed[3] = { 0.0, 0.0, 0.0 };
+  double translationVectorPoint[3] = { 0.0, 0.0, 0.0 };
   vtkMath::Add(origin_World, translationAxis_World, translationVectorPoint);
   vtkLine::DistanceBetweenLines(origin_World, translationVectorPoint,
     inputPoint0_World, inputPoint1_World, outputClosestPoint_World, closestPointNotUsed, t1, t2);
