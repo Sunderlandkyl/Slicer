@@ -385,6 +385,8 @@ double vtkMRMLInteractionWidgetRepresentation::GetViewScaleFactorAtPosition(doub
 //----------------------------------------------------------------------
 bool vtkMRMLInteractionWidgetRepresentation::GetTransformationReferencePoint(double referencePointWorld[3])
 {
+  double origin[3] = { 0.0, 0.0, 0.0 };
+  this->GetHandleToWorldTransform()->TransformPoint(origin, referencePointWorld);
   return true;
 }
 
@@ -760,6 +762,13 @@ void vtkMRMLInteractionWidgetRepresentation::CreateRotationHandles()
                                      zRotationMatrix->GetElement(0, 1), zRotationMatrix->GetElement(1, 1), zRotationMatrix->GetElement(2, 1),
                                      zRotationMatrix->GetElement(0, 2), zRotationMatrix->GetElement(1, 2), zRotationMatrix->GetElement(2, 2));
   this->Pipeline->RotationHandlePoints->GetPointData()->AddArray(orientationArray);
+
+  vtkNew<vtkIdTypeArray> visibilityArray;
+  visibilityArray->SetName("visibility");
+  visibilityArray->SetNumberOfComponents(1);
+  visibilityArray->SetNumberOfValues(this->Pipeline->RotationHandlePoints->GetNumberOfPoints());
+  visibilityArray->Fill(1);
+  this->Pipeline->RotationHandlePoints->GetPointData()->AddArray(visibilityArray);
 }
 
 //----------------------------------------------------------------------
@@ -789,12 +798,19 @@ void vtkMRMLInteractionWidgetRepresentation::CreateTranslationHandles()
   glyphIndexArray->InsertNextTuple1(0);
   glyphIndexArray->InsertNextTuple1(1); // Point
   this->Pipeline->TranslationHandlePoints->GetPointData()->AddArray(glyphIndexArray);
+
+  vtkNew<vtkIdTypeArray> visibilityArray;
+  visibilityArray->SetName("visibility");
+  visibilityArray->SetNumberOfComponents(1);
+  visibilityArray->SetNumberOfValues(this->Pipeline->TranslationHandlePoints->GetNumberOfPoints());
+  visibilityArray->Fill(1);
+  this->Pipeline->TranslationHandlePoints->GetPointData()->AddArray(visibilityArray);
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::CreateScaleHandles()
 {
-  vtkNew<vtkPoints> points; // Currently not enabled by default
+  vtkNew<vtkPoints> points;
   points->InsertNextPoint(1.5, 0.0, 0.0); // X-axis
   points->InsertNextPoint(0.0, 1.5, 0.0); // Y-axis
   points->InsertNextPoint(0.0, 0.0, 1.5); // Z-axis
@@ -963,25 +979,23 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
     {
     color[i] = currentColor[i];
     }
-
-  vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
-  vtkIdTypeArray* visibilityArray = nullptr;
-  if (handlePolyData)
-    {
-    visibilityArray = vtkIdTypeArray::SafeDownCast(handlePolyData->GetPointData()->GetArray("visibility"));
-    }
-
-  if (visibilityArray)
-    {
-    opacity = visibilityArray->GetValue(index) ? opacity : 0.0;
-    }
   color[3] = opacity;
 }
 
 //----------------------------------------------------------------------
 bool vtkMRMLInteractionWidgetRepresentation::GetHandleVisibility(int type, int index)
 {
-  return true;
+  vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
+  vtkIdTypeArray* visibilityArray = nullptr;
+  if (handlePolyData)
+    {
+    visibilityArray = vtkIdTypeArray::SafeDownCast(handlePolyData->GetPointData()->GetArray("visibility"));
+    }
+  if (visibilityArray && index < visibilityArray->GetNumberOfValues())
+    {
+     return visibilityArray->GetValue(index) != 0;
+    }
+  return false;
 }
 
 //----------------------------------------------------------------------
@@ -995,48 +1009,46 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
     }
 
   double opacity = 1.0;
-  if (type == InteractionTranslationHandle && index == 3)
-    {
-    // Free transform handle is always visible regardless of angle
-    return opacity;
-    }
 
-  double viewNormal[3] = { 0.0, 0.0, 0.0 };
-  this->GetViewPlaneNormal(viewNormal);
 
-  double axis[3] = { 0.0, 0.0, 0.0 };
-  this->GetInteractionHandleAxisWorld(type, index, axis);
-  if (vtkMath::Dot(viewNormal, axis) < 0)
+  double axis_World[3] = { 0.0, 0.0, 0.0 };
+  this->GetInteractionHandleAxisWorld(type, index, axis_World);
+  if (axis_World[0] > 0.0 || axis_World[1] > 0.0 || axis_World[2] > 0.0)
     {
-    vtkMath::MultiplyScalar(axis, -1);
-    }
+    double viewNormal_World[3] = { 0.0, 0.0, 0.0 };
+    this->GetViewPlaneNormal(viewNormal_World);
+    if (vtkMath::Dot(viewNormal_World, axis_World) < 0)
+      {
+      vtkMath::MultiplyScalar(axis_World, -1);
+      }
 
-  double fadeAngleRange = this->StartFadeAngle - this->EndFadeAngle;
-  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal, axis));
-  if (type == InteractionRotationHandle)
-    {
-    // Fade happens when the axis approaches 90 degrees from the view normal
-    if (angle > 90 - this->EndFadeAngle)
+    double fadeAngleRange = this->StartFadeAngle - this->EndFadeAngle;
+    double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal_World, axis_World));
+    if (type == InteractionRotationHandle)
       {
-      opacity = 0.0;
+      // Fade happens when the axis approaches 90 degrees from the view normal
+      if (angle > 90 - this->EndFadeAngle)
+        {
+        opacity = 0.0;
+        }
+      else if (angle > 90 - this->StartFadeAngle)
+        {
+        double difference = angle - (90 - this->StartFadeAngle);
+        opacity = 1.0 - (difference / fadeAngleRange);
+        }
       }
-    else if (angle > 90 - this->StartFadeAngle)
+    else if (type == InteractionTranslationHandle || type == InteractionScaleHandle)
       {
-      double difference = angle - (90 - this->StartFadeAngle);
-      opacity = 1.0 - (difference / fadeAngleRange);
-      }
-    }
-  else if (type == InteractionTranslationHandle || type == InteractionScaleHandle)
-    {
-    // Fade happens when the axis approaches 0 degrees from the view normal
-    if (angle < this->EndFadeAngle)
-      {
-      opacity = 0.0;
-      }
-    else if (angle < this->StartFadeAngle)
-      {
-      double difference = angle - this->EndFadeAngle;
-      opacity = (difference / fadeAngleRange);
+      // Fade happens when the axis approaches 0 degrees from the view normal
+      if (angle < this->EndFadeAngle)
+        {
+        opacity = 0.0;
+        }
+      else if (angle < this->StartFadeAngle)
+        {
+        double difference = angle - this->EndFadeAngle;
+        opacity = (difference / fadeAngleRange);
+        }
       }
     }
   return opacity;

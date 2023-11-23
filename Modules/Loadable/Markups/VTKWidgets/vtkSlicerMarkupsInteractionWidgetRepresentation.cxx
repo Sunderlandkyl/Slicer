@@ -21,6 +21,13 @@
 // Transform MRMLDM includes
 #include "vtkSlicerMarkupsInteractionWidgetRepresentation.h"
 
+// VTK includes
+#include <vtkPointData.h>
+
+// Markups MRML includes
+#include <vtkMRMLMarkupsPlaneNode.h>
+#include <vtkMRMLMarkupsROINode.h>
+
 //---------------------------------------------------------------------------
 vtkStandardNewMacro(vtkSlicerMarkupsInteractionWidgetRepresentation);
 
@@ -181,6 +188,8 @@ bool vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleVisibility(int ty
     return false;
     }
 
+  return Superclass::GetHandleVisibility(type, index);
+
   int markupsComponentType = this->InteractionComponentToMarkupsComponent(type);
   if (!this->GetDisplayNode()->GetHandleVisibility(markupsComponentType))
     {
@@ -207,4 +216,149 @@ bool vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleVisibility(int ty
     }
 
   return handleVisibility[index];
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsInteractionWidgetRepresentation::CreateScaleHandles()
+{
+  double distance = 1.5;
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
+  if (planeNode || roiNode)
+    {
+    vtkNew<vtkPoints> points;
+    points->InsertNextPoint(distance, 0.0, 0.0); // X-axis +ve
+    points->InsertNextPoint(0.0, distance, 0.0); // Y-axis +ve
+    points->InsertNextPoint(0.0, 0.0, distance); // Z-axis +ve
+    points->InsertNextPoint(-distance, 0.0, 0.0); // X-axis -ve
+    points->InsertNextPoint(0.0, -distance, 0.0); // Y-axis -ve
+    points->InsertNextPoint(0.0, 0.0, -distance); // Z-axis -ve
+
+    if (roiNode)
+      {
+      points->InsertNextPoint(distance, distance, distance);
+      points->InsertNextPoint(distance, distance, -distance);
+      points->InsertNextPoint(distance, -distance, distance);
+      points->InsertNextPoint(distance, -distance, -distance);
+      points->InsertNextPoint(-distance, distance, distance);
+      points->InsertNextPoint(-distance, distance, -distance);
+      points->InsertNextPoint(-distance, -distance, distance);
+      points->InsertNextPoint(-distance, -distance, -distance);
+      }
+    else if (planeNode)
+      {
+      points->InsertNextPoint(distance, distance, 0.0);
+      points->InsertNextPoint(-distance, distance, 0.0);
+      points->InsertNextPoint(-distance, -distance, 0.0);
+      points->InsertNextPoint(distance, -distance, 0.0);
+      }
+
+    this->Pipeline->ScaleHandlePoints->SetPoints(points);
+
+    vtkNew<vtkIdTypeArray> visibilityArray;
+    visibilityArray->SetName("visibility");
+    visibilityArray->SetNumberOfComponents(1);
+    visibilityArray->SetNumberOfValues(points->GetNumberOfPoints());
+    visibilityArray->Fill(1.0);
+    this->Pipeline->ScaleHandlePoints->GetPointData()->AddArray(visibilityArray);
+    }
+  else
+    {
+    Superclass::CreateScaleHandles();
+    }
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int type, int index, double axisWorld[3])
+{
+  if (!axisWorld)
+    {
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument");
+    return;
+    }
+
+  if (type != InteractionScaleHandle)
+    {
+    Superclass::GetInteractionHandleAxisWorld(type, index, axisWorld);
+    return;
+    }
+
+  axisWorld[0] = 0.0;
+  axisWorld[1] = 0.0;
+  axisWorld[2] = 0.0;
+  switch (index)
+    {
+    case 0:
+    case 3:
+      axisWorld[0] = 1.0;
+      break;
+    case 1:
+    case 4:
+      axisWorld[1] = 1.0;
+      break;
+    case 2:
+    case 5:
+      axisWorld[2] = 1.0;
+      break;
+    default:
+      break;
+    }
+
+  double origin[3] = { 0.0, 0.0, 0.0 };
+  this->Pipeline->HandleToWorldTransform->TransformVectorAtPoint(origin, axisWorld, axisWorld);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, int index, double color[4])
+{
+  if (!color)
+    {
+    return;
+    }
+  if (type != InteractionScaleHandle)
+    {
+    Superclass::GetHandleColor(type, index, color);
+    return;
+    }
+
+  double red[4]    = { 1.00, 0.00, 0.00, 1.00 };
+  double green[4]  = { 0.00, 1.00, 0.00, 1.00 };
+  double blue[4]   = { 0.00, 0.00, 1.00, 1.00 };
+  double orange[4] = { 1.00, 0.50, 0.00, 1.00 };
+  double white[4]  = { 1.00, 1.00, 1.00, 1.00 };
+  double yellow[4] = { 1.00, 1.00, 0.00, 1.00 };
+
+  double* currentColor = white;
+  switch (index)
+    {
+    case 0:
+    case 3:
+      currentColor = red;
+      break;
+    case 1:
+    case 4:
+      currentColor = green;
+      break;
+    case 2:
+    case 5:
+      currentColor = blue;
+      break;
+    }
+  if (index > 5)
+    {
+    currentColor = white;
+    }
+
+  double opacity = this->GetHandleOpacity(type, index);
+  if (this->GetActiveComponentType() == type && this->GetActiveComponentIndex() == index)
+    {
+    currentColor = yellow;
+    opacity = 1.0;
+    }
+
+  for (int i = 0; i < 3; ++i)
+    {
+    color[i] = currentColor[i];
+    }
+  color[3] = opacity;
 }

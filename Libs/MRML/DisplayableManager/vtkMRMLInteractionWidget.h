@@ -112,14 +112,6 @@ protected:
   virtual void RotateWidget(double eventPos[2]);
   virtual void ApplyTransform(vtkTransform* transform) = 0;
 
-  // Get accurate world position.
-  // World position that comes in the event data may be inaccurate, this method computes a more reliable position.
-  // Returns true on success.
-  // refWorldPos is an optional reference position: if point distance from camera cannot be determined then
-  // depth of this reference position is used.
-  bool ConvertDisplayPositionToWorld(const int displayPos[2], double worldPos[3], double worldOrientationMatrix[9],
-    double* refWorldPos = nullptr);
-
   /// Index of the control point that is currently being previewed (follows the mouse pointer).
   /// If <0 it means that there is currently no point being previewed.
   int PreviewPointIndex;

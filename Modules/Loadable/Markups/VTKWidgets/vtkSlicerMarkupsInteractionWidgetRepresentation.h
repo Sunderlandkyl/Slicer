@@ -76,6 +76,11 @@ public:
 
   bool IsDisplayable() override;
 
+  void CreateScaleHandles() override;
+
+  void GetInteractionHandleAxisWorld(int type, int index, double axisWorld[3]) override;
+  void GetHandleColor(int type, int index, double color[4]) override;
+
 protected:
   vtkSlicerMarkupsInteractionWidgetRepresentation();
   ~vtkSlicerMarkupsInteractionWidgetRepresentation() override;

@@ -84,7 +84,6 @@ bool vtkMRMLInteractionWidget::ProcessWidgetRotateStart(vtkMRMLInteractionEventD
     {
     return false;
     }
-
   this->SetWidgetState(WidgetStateRotate);
   this->StartWidgetInteraction(eventData);
   return true;
@@ -97,7 +96,6 @@ bool vtkMRMLInteractionWidget::ProcessWidgetScaleStart(vtkMRMLInteractionEventDa
     {
     return false;
     }
-
   this->SetWidgetState(WidgetStateScale);
   this->StartWidgetInteraction(eventData);
   return true;
@@ -110,7 +108,6 @@ bool vtkMRMLInteractionWidget::ProcessWidgetTranslateStart(vtkMRMLInteractionEve
     {
     return false;
     }
-
   this->SetWidgetState(WidgetStateTranslate);
   this->StartWidgetInteraction(eventData);
   return true;
@@ -126,7 +123,6 @@ bool vtkMRMLInteractionWidget::ProcessMouseMove(vtkMRMLInteractionEventData* eve
     }
 
   int state = this->WidgetState;
-
   if (state == WidgetStateIdle
     || state == WidgetStateOnWidget
     || state == WidgetStateOnTranslationHandle
@@ -192,76 +188,6 @@ bool vtkMRMLInteractionWidget::ProcessMouseMove(vtkMRMLInteractionEventData* eve
     this->LastEventPosition[0] = eventPos[0];
     this->LastEventPosition[1] = eventPos[1];
     }
-}
-
-//-------------------------------------------------------------------------
-bool vtkMRMLInteractionWidget::ConvertDisplayPositionToWorld(const int displayPos[2],
-  double worldPos[3], double worldOrientationMatrix[9], double* refWorldPos/*=nullptr*/)
-{
-  vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
-  double doubleDisplayPos[3] = { static_cast<double>(displayPos[0]), static_cast<double>(displayPos[1]), 0.0 };
-  if (rep)
-    {
-    // 2D view
-    rep->GetSliceToWorldCoordinates(doubleDisplayPos, worldPos);
-    return true;
-    }
-  else
-    {
-    // 3D view
-    bool preferPickOnSurface = true;
-    if (refWorldPos != nullptr)
-      {
-      // TODO
-      //// If reference position is provided then we may use that instead of picking on visible surface.
-      //vtkMRMLDisplayNode* displayNode = this->GetDisplayNode();
-      //if (displayNode)
-      //  {
-      //  preferPickOnSurface = (displayNode->GetSnapMode() == vtkMRMLDisplayNode::SnapModeToVisibleSurface);
-      //  }
-      }
-    if (preferPickOnSurface)
-      {
-      // SnapModeToVisibleSurface
-      // Try to pick on surface and pick on camera plane if nothing is found.
-      //if (rep3d->AccuratePick(displayPos[0], displayPos[1], worldPos))
-      //  {
-      //  return true;
-      //  }
-      if (refWorldPos)
-        {
-        // Reference position is available (most likely, moving the point).
-        return (rep->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
-          doubleDisplayPos, refWorldPos, worldPos, worldOrientationMatrix));
-        }
-      }
-    else
-      {
-      // SnapModeUnconstrained
-      // Move the point relative to reference position, not restricted to surfaces if possible.
-      if (refWorldPos)
-        {
-        // Reference position is available (most likely, moving the point).
-        return (rep->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
-          doubleDisplayPos, refWorldPos, worldPos, worldOrientationMatrix));
-        }
-      else
-        {
-        // Reference position is unavailable (e.g., not moving of an existing point but first placement)
-        // Even if the constraining on the surface is no preferred, it is still better to
-        // place it on a visible surface in 3D views rather on the .
-        //if (rep3d->AccuratePick(displayPos[0], displayPos[1], worldPos))
-        //  {
-        //  return true;
-        //  }
-        }
-      }
-    // Last resort: place a point on the camera plane
-    // (no reference position is available and no surface is visible there)
-    return (rep->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
-      doubleDisplayPos, worldPos, worldOrientationMatrix));
-    }
-  return false;
 }
 
 //----------------------------------------------------------------------
@@ -493,13 +419,12 @@ void vtkMRMLInteractionWidget::TranslateWidget(double eventPos[2])
   translationVector_World[2] = eventPos_World[2] - lastEventPos_World[2];
 
   int index = this->GetActiveComponentIndex();
-
   double translationAxis_World[3] = { 0.0, 0.0, 0.0 };
   rep->GetInteractionHandleAxisWorld(InteractionTranslationHandle, index, translationAxis_World);
-
-  // Only perform constrained translation if the length of the axis is non-zero.
-  if (vtkMath::Norm(translationAxis_World) > 0)
+  if (translationAxis_World[0] != 0.0 || translationAxis_World[1] != 0.0 || translationAxis_World[2] != 0)
     {
+    // Only perform constrained translation if the length of the axis is non-zero.
+
     double lastEventPositionOnAxis_World[3] = { 0.0, 0.0, 0.0 };
     this->GetClosestPointOnInteractionAxis(
       InteractionTranslationHandle, index, this->LastEventPosition, lastEventPositionOnAxis_World);
