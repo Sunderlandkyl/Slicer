@@ -100,6 +100,7 @@ public:
   void RemoveDisplayNode(vtkMRMLMarkupsDisplayNode* displayNode);
 
   void DeleteWidget(vtkSlicerMarkupsWidget* widget);
+  void DeleteInteractionWidget(vtkSlicerMarkupsInteractionWidget* widget);
 
   void AddObservations(vtkMRMLMarkupsNode* node);
   void RemoveObservations(vtkMRMLMarkupsNode* node);

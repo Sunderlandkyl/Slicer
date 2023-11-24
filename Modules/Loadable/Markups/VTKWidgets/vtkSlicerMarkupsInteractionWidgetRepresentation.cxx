@@ -25,7 +25,9 @@
 #include <vtkPointData.h>
 
 // Markups MRML includes
+#include <vtkMRMLMarkupsPlaneDisplayNode.h>
 #include <vtkMRMLMarkupsPlaneNode.h>
+#include <vtkMRMLMarkupsROIDisplayNode.h>
 #include <vtkMRMLMarkupsROINode.h>
 
 //---------------------------------------------------------------------------
@@ -138,7 +140,7 @@ bool vtkSlicerMarkupsInteractionWidgetRepresentation::IsDisplayable()
     {
     return false;
     }
-  return this->GetDisplayNode()->GetHandlesInteractive();
+  return this->GetDisplayNode()->GetVisibility() && this->GetDisplayNode()->GetHandlesInteractive();
 }
 
 //----------------------------------------------------------------------
@@ -151,8 +153,97 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateInteractionPipeline(
     return;
     }
 
+  // We are specifying the position of the handles manually.
+  this->Pipeline->AxisScaleGlypher->SetInputData(this->Pipeline->ScaleHandlePoints);
+
   // Final visibility handled by superclass in vtkMRMLInteractionWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
+
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  if (planeNode)
+    {
+    vtkNew<vtkPoints> planeCornerPoints_World;
+    planeNode->GetPlaneCornerPointsWorld(planeCornerPoints_World);
+
+    double lpCorner_World[3] = { 0.0, 0.0, 0.0 };
+    planeCornerPoints_World->GetPoint(0, lpCorner_World);
+
+    double laCorner_World[3] = { 0.0, 0.0, 0.0 };
+    planeCornerPoints_World->GetPoint(1, laCorner_World);
+
+    double raCorner_World[3] = { 0.0, 0.0, 0.0 };
+    planeCornerPoints_World->GetPoint(2, raCorner_World);
+
+    double rpCorner_World[3] = { 0.0, 0.0, 0.0 };
+    planeCornerPoints_World->GetPoint(3, rpCorner_World);
+
+    double lEdge_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(laCorner_World, lpCorner_World, lEdge_World);
+    vtkMath::MultiplyScalar(lEdge_World, 0.5);
+
+    double rEdge_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(raCorner_World, rpCorner_World, rEdge_World);
+    vtkMath::MultiplyScalar(rEdge_World, 0.5);
+
+    double aEdge_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(laCorner_World, raCorner_World, aEdge_World);
+    vtkMath::MultiplyScalar(aEdge_World, 0.5);
+
+    double pEdge_World[3] = { 0.0, 0.0, 0.0 };
+    vtkMath::Add(lpCorner_World, rpCorner_World, pEdge_World);
+    vtkMath::MultiplyScalar(pEdge_World, 0.5);
+
+    vtkNew<vtkPoints> scaleHandlePoints;
+    scaleHandlePoints->SetNumberOfPoints(8);
+    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleLEdge, lEdge_World);
+    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleREdge, rEdge_World);
+    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleAEdge, aEdge_World);
+    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandlePEdge, pEdge_World);
+
+    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleLPCorner, lpCorner_World);
+    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleLACorner, laCorner_World);
+    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleRACorner, raCorner_World);
+    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleRPCorner, rpCorner_World);
+
+    vtkNew<vtkTransform> worldToHandleTransform;
+    worldToHandleTransform->DeepCopy(this->GetHandleToWorldTransform());
+    worldToHandleTransform->Inverse();
+
+    // Scale handles are expected in the handle coordinate system
+    for (int i = 0; i < scaleHandlePoints->GetNumberOfPoints(); ++i)
+      {
+      double scaleHandlePoint[3] = { 0.0, 0.0, 0.0 };
+      worldToHandleTransform->TransformPoint(scaleHandlePoints->GetPoint(i), scaleHandlePoint);
+      scaleHandlePoints->SetPoint(i, scaleHandlePoint);
+      }
+    this->Pipeline->ScaleHandlePoints->SetPoints(scaleHandlePoints);
+    }
+
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
+  if (roiNode)
+    {
+    double sideLengths[3] = { 0.0,  0.0, 0.0 };
+    roiNode->GetSizeWorld(sideLengths);
+    vtkMath::MultiplyScalar(sideLengths, 0.5);
+
+    vtkNew<vtkPoints> roiPoints;
+    roiPoints->SetNumberOfPoints(14);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLFace, -sideLengths[0], 0.0, 0.0);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRFace, sideLengths[0], 0.0, 0.0);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandlePFace, 0.0, -sideLengths[1], 0.0);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleAFace, 0.0, sideLengths[1], 0.0);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleIFace, 0.0, 0.0, -sideLengths[2]);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleSFace, 0.0, 0.0, sideLengths[2]);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLPICorner, -sideLengths[0], -sideLengths[1], -sideLengths[2]);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRPICorner, sideLengths[0], -sideLengths[1], -sideLengths[2]);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLAICorner, -sideLengths[0], sideLengths[1], -sideLengths[2]);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRAICorner, sideLengths[0], sideLengths[1], -sideLengths[2]);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLPSCorner, -sideLengths[0], -sideLengths[1], sideLengths[2]);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRPSCorner, sideLengths[0], -sideLengths[1], sideLengths[2]);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLASCorner, -sideLengths[0], sideLengths[1], sideLengths[2]);
+    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRASCorner, sideLengths[0], sideLengths[1], sideLengths[2]);
+    this->Pipeline->ScaleHandlePoints->SetPoints(roiPoints);
+    }
 }
 
 //----------------------------------------------------------------------
@@ -188,8 +279,6 @@ bool vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleVisibility(int ty
     return false;
     }
 
-  return Superclass::GetHandleVisibility(type, index);
-
   int markupsComponentType = this->InteractionComponentToMarkupsComponent(type);
   if (!this->GetDisplayNode()->GetHandleVisibility(markupsComponentType))
     {
@@ -212,7 +301,7 @@ bool vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleVisibility(int ty
 
   if (index < 0 || index > 3)
     {
-    return false;
+    return true;
     }
 
   return handleVisibility[index];
@@ -269,9 +358,9 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::CreateScaleHandles()
 }
 
 //----------------------------------------------------------------------
-void vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int type, int index, double axisWorld[3])
+void vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionHandleAxisLocal(int type, int index, double axis_Local[3])
 {
-  if (!axisWorld)
+  if (!axis_Local)
     {
     vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument");
     return;
@@ -279,33 +368,39 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionHandleAxisWo
 
   if (type != InteractionScaleHandle)
     {
-    Superclass::GetInteractionHandleAxisWorld(type, index, axisWorld);
+    Superclass::GetInteractionHandleAxisLocal(type, index, axis_Local);
     return;
     }
 
-  axisWorld[0] = 0.0;
-  axisWorld[1] = 0.0;
-  axisWorld[2] = 0.0;
+  axis_Local[0] = 0.0;
+  axis_Local[1] = 0.0;
+  axis_Local[2] = 0.0;
   switch (index)
     {
     case 0:
-    case 3:
-      axisWorld[0] = 1.0;
-      break;
     case 1:
-    case 4:
-      axisWorld[1] = 1.0;
+      axis_Local[0] = 1.0;
       break;
     case 2:
-    case 5:
-      axisWorld[2] = 1.0;
+    case 3:
+      axis_Local[1] = 1.0;
       break;
     default:
       break;
     }
 
-  double origin[3] = { 0.0, 0.0, 0.0 };
-  this->Pipeline->HandleToWorldTransform->TransformVectorAtPoint(origin, axisWorld, axisWorld);
+  if (vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode()))
+    {
+    switch (index)
+      {
+      case 4:
+      case 5:
+        axis_Local[2] = 1.0;
+        break;
+      default:
+        break;
+      }
+    }
 }
 
 //----------------------------------------------------------------------
@@ -329,24 +424,42 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
   double yellow[4] = { 1.00, 1.00, 0.00, 1.00 };
 
   double* currentColor = white;
-  switch (index)
+
+  if (vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode()))
     {
-    case 0:
-    case 3:
-      currentColor = red;
-      break;
-    case 1:
-    case 4:
-      currentColor = green;
-      break;
-    case 2:
-    case 5:
-      currentColor = blue;
-      break;
+    switch (index)
+      {
+      case 0:
+      case 1:
+        currentColor = red;
+        break;
+      case 2:
+      case 3:
+        currentColor = green;
+        break;
+      default:
+        break;
+      }
     }
-  if (index > 5)
+  else if (vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode()))
     {
-    currentColor = white;
+    switch (index)
+      {
+      case 0:
+      case 1:
+        currentColor = red;
+        break;
+      case 2:
+      case 3:
+        currentColor = green;
+        break;
+      case 4:
+      case 5:
+        currentColor = blue;
+        break;
+      default:
+        break;
+      }
     }
 
   double opacity = this->GetHandleOpacity(type, index);
@@ -361,4 +474,27 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
     color[i] = currentColor[i];
     }
   color[3] = opacity;
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionHandlePositionWorld(int type, int index, double positionWorld[3])
+{
+  if (!positionWorld)
+    {
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandlePositionWorld: Invalid position argument");
+    }
+
+  if (type != InteractionScaleHandle)
+    {
+    Superclass::GetInteractionHandlePositionWorld(type, index, positionWorld);
+    return;
+    }
+
+  vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
+  if (!handlePolyData)
+    {
+    return;
+    }
+  handlePolyData->GetPoint(index, positionWorld);
+  this->Pipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
 }

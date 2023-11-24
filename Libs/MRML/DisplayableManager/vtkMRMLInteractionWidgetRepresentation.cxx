@@ -134,7 +134,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
 {
   foundComponentType = InteractionNone;
   vtkMRMLAbstractViewNode* viewNode = this->GetViewNode();
-  if (!viewNode || !this->GetVisibility() || !interactionEventData)
+  if (!viewNode || !this->IsDisplayable() || !interactionEventData)
     {
     return;
     }
@@ -604,6 +604,27 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   this->AxisRotationTubeFilter->SetNumberOfSides(16);
   this->AxisRotationTubeFilter->SetCapping(true);
 
+  vtkNew<vtkPoints> rotationGlyphInteriorAnglePoints;
+  rotationGlyphInteriorAnglePoints->InsertNextPoint(this->AxisRotationArcSource->GetPoint1());
+  rotationGlyphInteriorAnglePoints->InsertNextPoint(-INTERACTION_HANDLE_ROTATION_ARC_RADIUS, 0, 0);
+  rotationGlyphInteriorAnglePoints->InsertNextPoint(this->AxisRotationArcSource->GetPoint2());
+
+  vtkNew<vtkIdList> rotationGlyphInteriorAngleLine;
+  rotationGlyphInteriorAngleLine->SetNumberOfIds(3);
+  rotationGlyphInteriorAngleLine->SetId(0, 0);
+  rotationGlyphInteriorAngleLine->SetId(1, 1);
+  rotationGlyphInteriorAngleLine->SetId(2, 2);
+
+  this->AxisRotationInteriorAnglePolyData = vtkSmartPointer<vtkPolyData>::New();
+  this->AxisRotationInteriorAnglePolyData->SetPoints(rotationGlyphInteriorAnglePoints);
+  this->AxisRotationInteriorAnglePolyData->SetLines(vtkNew<vtkCellArray>());
+  this->AxisRotationInteriorAnglePolyData->InsertNextCell(VTK_LINE, rotationGlyphInteriorAngleLine);
+
+  this->AxisRotationInteriorAngleTubeFilter = vtkSmartPointer<vtkTubeFilter>::New();
+  this->AxisRotationInteriorAngleTubeFilter->SetInputData(this->AxisRotationInteriorAnglePolyData);
+  this->AxisRotationInteriorAngleTubeFilter->SetRadius(INTERACTION_HANDLE_ROTATION_ARC_TUBE_RADIUS);
+  this->AxisRotationInteriorAngleTubeFilter->SetNumberOfSides(16);
+
   this->RotationScaleTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->RotationScaleTransformFilter->SetInputData(this->RotationHandlePoints);
   this->RotationScaleTransformFilter->SetTransform(vtkNew<vtkTransform>());
@@ -611,6 +632,7 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   this->AxisRotationGlyphSource = vtkSmartPointer <vtkAppendPolyData>::New();
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationHandleSource->GetOutputPort());
   this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationTubeFilter->GetOutputPort());
+  this->AxisRotationGlyphSource->AddInputConnection(this->AxisRotationInteriorAngleTubeFilter->GetOutputPort());
   this->AxisRotationGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
   this->AxisRotationGlypher->SetInputConnection(this->RotationScaleTransformFilter->GetOutputPort());
   this->AxisRotationGlypher->SetSourceConnection(this->AxisRotationGlyphSource->GetOutputPort());
@@ -1107,6 +1129,36 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleOriginWorld(dou
 }
 
 //----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisLocal(int type, int index, double axisLocal[3])
+{
+  if (!axisLocal)
+    {
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument");
+    return;
+    }
+
+  axisLocal[0] = 0.0;
+  axisLocal[1] = 0.0;
+  axisLocal[2] = 0.0;
+
+  switch (index)
+    {
+    case 0:
+      axisLocal[0] = 1.0;
+      break;
+    case 1:
+      axisLocal[1] = 1.0;
+      break;
+    case 2:
+      axisLocal[2] = 1.0;
+      break;
+    default:
+      break;
+    }
+}
+
+
+//----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int type, int index, double axisWorld[3])
 {
   if (!axisWorld)
@@ -1115,25 +1167,8 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int t
     return;
     }
 
-  axisWorld[0] = 0.0;
-  axisWorld[1] = 0.0;
-  axisWorld[2] = 0.0;
-  switch (index)
-    {
-    case 0:
-      axisWorld[0] = 1.0;
-      break;
-    case 1:
-      axisWorld[1] = 1.0;
-      break;
-    case 2:
-      axisWorld[2] = 1.0;
-      break;
-    default:
-      break;
-    }
-
   double origin[3] = { 0.0, 0.0, 0.0 };
+  this->GetInteractionHandleAxisLocal(type, index, axisWorld);
   this->Pipeline->HandleToWorldTransform->TransformVectorAtPoint(origin, axisWorld, axisWorld);
 }
 

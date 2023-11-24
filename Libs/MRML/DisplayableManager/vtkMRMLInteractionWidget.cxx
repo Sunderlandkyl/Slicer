@@ -520,13 +520,24 @@ void vtkMRMLInteractionWidget::ScaleWidget(double eventPos[2])
   vtkTransform* handleToWorldTransform = rep->GetHandleToWorldTransform();
   vtkSmartPointer<vtkTransform> worldToHandleTransform = vtkTransform::SafeDownCast(handleToWorldTransform->GetInverse());
 
-  double scaleVector[3] = { 1.0, 1.0, 1.0 };
-  scaleVector[rep->GetActiveComponentIndex()] = ratio;
+  double scaleVector_Local[3] = { 1.0, 1.0, 1.0 };
+  rep->GetInteractionHandleAxisLocal(InteractionScaleHandle, this->GetActiveComponentIndex(), scaleVector_Local);
+  for (int i = 0; i < 3; ++i)
+    {
+    if (scaleVector_Local[i] == 0.0)
+      {
+      scaleVector_Local[i] = 1.0;
+      }
+    else
+      {
+      scaleVector_Local[i] = ratio;
+      }
+    }
 
   vtkNew<vtkTransform> scaleTransform;
   scaleTransform->PostMultiply();
   scaleTransform->Concatenate(worldToHandleTransform);
-  scaleTransform->Scale(scaleVector);
+  scaleTransform->Scale(scaleVector_Local);
   scaleTransform->Concatenate(handleToWorldTransform);
 
   this->ApplyTransform(scaleTransform);

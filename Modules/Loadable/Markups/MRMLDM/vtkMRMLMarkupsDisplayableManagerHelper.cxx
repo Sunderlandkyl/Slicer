@@ -169,6 +169,15 @@ void vtkMRMLMarkupsDisplayableManagerHelper::RemoveAllWidgetsAndNodes()
     }
   this->MarkupsDisplayNodesToWidgets.clear();
 
+  DisplayNodeToInteractionWidgetIt interactionWidgetIterator = this->MarkupsDisplayNodesToInteractionWidgets.begin();
+  for (interactionWidgetIterator = this->MarkupsDisplayNodesToInteractionWidgets.begin();
+    interactionWidgetIterator != this->MarkupsDisplayNodesToInteractionWidgets.end();
+    ++interactionWidgetIterator)
+    {
+    interactionWidgetIterator->second->Delete();
+    }
+  this->MarkupsDisplayNodesToInteractionWidgets.clear();
+
   MarkupsNodesIt markupsIterator = this->MarkupsNodes.begin();
   for (markupsIterator = this->MarkupsNodes.begin();
     markupsIterator != this->MarkupsNodes.end();
@@ -255,6 +264,27 @@ void vtkMRMLMarkupsDisplayableManagerHelper::RemoveMarkupsNode(vtkMRMLMarkupsNod
       vtkSlicerMarkupsWidget* widgetToRemove = widgetIteratorToRemove->second;
       this->DeleteWidget(widgetToRemove);
       this->MarkupsDisplayNodesToWidgets.erase(widgetIteratorToRemove);
+      }
+    }
+
+  // Remove interaction widgets corresponding to this markups node
+  for (vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToInteractionWidgetIt widgetIterator = this->MarkupsDisplayNodesToInteractionWidgets.begin();
+    widgetIterator != this->MarkupsDisplayNodesToInteractionWidgets.end();
+    /*upon deletion the increment is done already, so don't increment here*/)
+    {
+    vtkMRMLMarkupsDisplayNode *markupsDisplayNode = widgetIterator->first;
+    if (markupsDisplayNode->GetDisplayableNode() != node)
+      {
+      ++widgetIterator;
+      }
+    else
+      {
+      // display node of the node that is being removed
+      vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToInteractionWidgetIt widgetIteratorToRemove = widgetIterator;
+      ++widgetIterator;
+      vtkSlicerMarkupsInteractionWidget* interactionWidgetToRemove = widgetIteratorToRemove->second;
+      this->DeleteInteractionWidget(interactionWidgetToRemove);
+      this->MarkupsDisplayNodesToInteractionWidgets.erase(widgetIteratorToRemove);
       }
     }
 
@@ -383,20 +413,37 @@ void vtkMRMLMarkupsDisplayableManagerHelper::RemoveDisplayNode(vtkMRMLMarkupsDis
 
   vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToWidgetIt displayNodeIt
     = this->MarkupsDisplayNodesToWidgets.find(markupsDisplayNode);
-  if (displayNodeIt == this->MarkupsDisplayNodesToWidgets.end())
+  if (displayNodeIt != this->MarkupsDisplayNodesToWidgets.end())
     {
-    // no widget found for this display node
-    return;
+    vtkSlicerMarkupsWidget* widget = (displayNodeIt->second);
+    this->DeleteWidget(widget);
+    this->MarkupsDisplayNodesToWidgets.erase(markupsDisplayNode);
     }
 
-  vtkSlicerMarkupsWidget* widget = (displayNodeIt->second);
-  this->DeleteWidget(widget);
-
-  this->MarkupsDisplayNodesToWidgets.erase(markupsDisplayNode);
+  vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToInteractionWidgetIt displayNodeInteractionIt
+    = this->MarkupsDisplayNodesToInteractionWidgets.find(markupsDisplayNode);
+  if (displayNodeInteractionIt != this->MarkupsDisplayNodesToInteractionWidgets.end())
+    {
+    vtkSlicerMarkupsInteractionWidget* interactionWidget = (displayNodeInteractionIt->second);
+    this->DeleteInteractionWidget(interactionWidget);
+    this->MarkupsDisplayNodesToInteractionWidgets.erase(markupsDisplayNode);
+    }
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsDisplayableManagerHelper::DeleteWidget(vtkSlicerMarkupsWidget* widget)
+{
+  if (!widget)
+    {
+    return;
+    }
+  widget->SetRenderer(nullptr);
+  widget->SetRepresentation(nullptr);
+  widget->Delete();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManagerHelper::DeleteInteractionWidget(vtkSlicerMarkupsInteractionWidget* widget)
 {
   if (!widget)
     {

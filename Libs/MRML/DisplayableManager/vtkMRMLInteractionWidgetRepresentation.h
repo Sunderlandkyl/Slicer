@@ -120,6 +120,9 @@ public:
   /// Update the interaction pipeline
   virtual void UpdateInteractionPipeline();
 
+  /// Get the axis for the handle specified by the index in local coordinates
+  virtual void GetInteractionHandleAxisLocal(int type, int index, double axis[3]);
+
   /// Get the axis for the handle specified by the index
   virtual void GetInteractionHandleAxisWorld(int type, int index, double axis[3]);
   /// Get the origin of the interaction handle widget
@@ -160,6 +163,8 @@ protected:
     vtkSmartPointer<vtkSphereSource>            AxisRotationHandleSource;
     vtkSmartPointer<vtkArcSource>               AxisRotationArcSource;
     vtkSmartPointer<vtkTubeFilter>              AxisRotationTubeFilter;
+    vtkSmartPointer<vtkPolyData>                AxisRotationInteriorAnglePolyData;
+    vtkSmartPointer<vtkTubeFilter>              AxisRotationInteriorAngleTubeFilter;
     vtkSmartPointer<vtkAppendPolyData>          AxisRotationGlyphSource;
     vtkSmartPointer<vtkPolyData>                RotationHandlePoints;
     vtkSmartPointer<vtkTransformPolyDataFilter> RotationScaleTransformFilter;

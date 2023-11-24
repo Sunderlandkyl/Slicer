@@ -74,11 +74,13 @@ public:
   double GetInteractionSize() override; // Size in mm
   bool GetInteractionSizeAbsolute() override; // True -> size in mm; false -> relative to screen
 
+  void GetInteractionHandlePositionWorld(int type, int index, double positionWorld[3]) override;
+
   bool IsDisplayable() override;
 
   void CreateScaleHandles() override;
 
-  void GetInteractionHandleAxisWorld(int type, int index, double axisWorld[3]) override;
+  void GetInteractionHandleAxisLocal(int type, int index, double axis_Local[3]) override;
   void GetHandleColor(int type, int index, double color[4]) override;
 
 protected:
