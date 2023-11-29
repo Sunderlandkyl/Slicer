@@ -689,7 +689,7 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
 
   this->AxisScaleGlypher = vtkSmartPointer<vtkGlyph3D>::New();
   this->AxisScaleGlypher->SetInputConnection(this->ScaleScaleTransformFilter->GetOutputPort());
-  this->AxisScaleGlypher->SetSourceConnection(this->AxisRotationHandleSource->GetOutputPort());
+  this->AxisScaleGlypher->SetSourceConnection(this->AxisScaleHandleSource->GetOutputPort());
   this->AxisScaleGlypher->ScalingOn();
   this->AxisScaleGlypher->SetScaleModeToDataScalingOff();
   this->AxisScaleGlypher->SetIndexModeToScalar();
@@ -1023,7 +1023,6 @@ bool vtkMRMLInteractionWidgetRepresentation::GetHandleVisibility(int type, int i
 //----------------------------------------------------------------------
 double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int index)
 {
-  return 1.0;
   // Determine if the handle should be displayed
   bool handleVisible = this->GetHandleVisibility(type, index);
   if (!handleVisible)
@@ -1039,7 +1038,7 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
   if (axis_World[0] > 0.0 || axis_World[1] > 0.0 || axis_World[2] > 0.0)
     {
     double viewNormal_World[3] = { 0.0, 0.0, 0.0 };
-    this->GetViewPlaneNormal(viewNormal_World);
+    this->GetHandleToCameraVector(viewNormal_World);
     if (vtkMath::Dot(viewNormal_World, axis_World) < 0)
       {
       vtkMath::MultiplyScalar(axis_World, -1);
@@ -1078,7 +1077,7 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
 }
 
 //----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::GetViewPlaneNormal(double normal[3])
+void vtkMRMLInteractionWidgetRepresentation::GetHandleToCameraVector(double normal[3])
 {
   if (!normal)
     {
@@ -1100,7 +1099,16 @@ void vtkMRMLInteractionWidgetRepresentation::GetViewPlaneNormal(double normal[3]
   else if (this->GetRenderer() && this->GetRenderer()->GetActiveCamera())
     {
     vtkCamera* camera = this->GetRenderer()->GetActiveCamera();
-    camera->GetViewPlaneNormal(normal);
+    if (camera->GetParallelProjection())
+      {
+      camera->GetViewPlaneNormal(normal);
+      }
+    else
+      {
+      camera->GetPosition(normal);
+      vtkMath::Subtract(normal, this->GetHandleToWorldTransform()->TransformPoint(0, 0, 0), normal);
+      vtkMath::Normalize(normal);
+      }
     }
 }
 

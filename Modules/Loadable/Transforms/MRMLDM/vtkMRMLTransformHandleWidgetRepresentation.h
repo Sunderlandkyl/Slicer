@@ -77,30 +77,13 @@ public:
 
   bool IsDisplayable() override;
 
-  void SetupInteractionPipeline() override;
-
   void UpdateHandleColors() override;
-
-  /// Update the representation from display node
-  void UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void* callData = nullptr) override;
 
 protected:
   vtkMRMLTransformHandleWidgetRepresentation();
   ~vtkMRMLTransformHandleWidgetRepresentation() override;
 
   vtkSmartPointer<vtkMRMLTransformDisplayNode> DisplayNode{ nullptr };
-
-  class VTK_SLICER_TRANSFORMS_MODULE_MRMLDISPLAYABLEMANAGER_EXPORT TransformInteractionPipeline : public InteractionPipeline
-  {
-    public:
-      TransformInteractionPipeline();
-      virtual ~TransformInteractionPipeline();
-
-      vtkSmartPointer<vtkTransform> NodeToHandleTransform{ nullptr };
-      vtkSmartPointer<vtkTransformPolyDataFilter> OutlineTransformFilter{ nullptr };
-      vtkSmartPointer<vtkOutlineSource> OutlineSource{ nullptr };
-      vtkSmartPointer<vtkArrayCalculator> ArrayCalculator{ nullptr };
-  };
 
 private:
   vtkMRMLTransformHandleWidgetRepresentation(const vtkMRMLTransformHandleWidgetRepresentation&) = delete;

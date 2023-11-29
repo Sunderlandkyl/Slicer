@@ -23,12 +23,7 @@
 
 // MRMLDisplayableManager includes
 #include "vtkMRMLTransformsDisplayableManager2D.h"
-#include <vtkMRMLTransformHandleWidget.h>
 
-// MRMLDM includes
-#include <vtkMRMLInteractionEventData.h>
-
-// Logic includes
 #include "vtkSlicerTransformLogic.h"
 
 // MRML includes
@@ -64,7 +59,7 @@
 #include <map>
 
 //---------------------------------------------------------------------------
-vtkStandardNewMacro(vtkMRMLTransformsDisplayableManager2D);
+vtkStandardNewMacro(vtkMRMLTransformsDisplayableManager2D );
 
 //---------------------------------------------------------------------------
 class vtkMRMLTransformsDisplayableManager2D::vtkInternal
@@ -85,9 +80,6 @@ public:
 
   typedef std::map < vtkMRMLTransformNode*, std::set< vtkMRMLTransformDisplayNode* > > TransformToDisplayCacheType;
   TransformToDisplayCacheType TransformToDisplayNodes;
-
-  typedef std::map < vtkMRMLTransformDisplayNode*, vtkSmartPointer<vtkMRMLTransformHandleWidget> > InteractionPipelinesCacheType;
-  InteractionPipelinesCacheType InteractionPipelines;
 
   // Transforms
   void AddTransformNode(vtkMRMLTransformNode* displayableNode);
@@ -114,9 +106,6 @@ public:
   bool UseDisplayNode(vtkMRMLTransformDisplayNode* displayNode);
   bool UseDisplayableNode(vtkMRMLTransformNode* node);
   void ClearDisplayableNodes();
-
-  vtkWeakPointer<vtkMRMLTransformHandleWidget> LastActiveWidget;
-  vtkMRMLTransformHandleWidget* FindClosestWidget(vtkMRMLInteractionEventData* callData, double& closestDistance2);
 
 private:
   vtkMRMLTransformsDisplayableManager2D* External;
@@ -269,8 +258,6 @@ void vtkMRMLTransformsDisplayableManager2D::vtkInternal::RemoveDisplayNode(vtkMR
   this->External->GetRenderer()->RemoveActor(pipeline->Actor);
   delete pipeline;
   this->DisplayPipelines.erase(actorsIt);
-
-  this->InteractionPipelines.erase(displayNode);
 }
 
 //---------------------------------------------------------------------------
@@ -311,10 +298,6 @@ void vtkMRMLTransformsDisplayableManager2D::vtkInternal::AddDisplayNode(vtkMRMLT
   // Add actor to Renderer and local cache
   this->External->GetRenderer()->AddActor( pipeline->Actor );
   this->DisplayPipelines.insert( std::make_pair(displayNode, pipeline) );
-
-  vtkNew<vtkMRMLTransformHandleWidget> interactionWidget;
-  interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLSliceNode(), this->External->GetRenderer());
-  this->InteractionPipelines.insert(std::make_pair(displayNode, interactionWidget.GetPointer()));
 
   // Update cached matrices. Calls UpdateDisplayNodePipeline
   this->UpdateDisplayableTransforms(mNode);
@@ -425,10 +408,6 @@ void vtkMRMLTransformsDisplayableManager2D::vtkInternal::AddObservations(vtkMRML
     {
     broker->AddObservation(node, vtkMRMLTransformableNode::TransformModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() );
     }
-  if (!broker->GetObservationExist(node, vtkCommand::ModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() ))
-    {
-    broker->AddObservation(node, vtkCommand::ModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() );
-    }
 }
 
 //---------------------------------------------------------------------------
@@ -439,8 +418,6 @@ void vtkMRMLTransformsDisplayableManager2D::vtkInternal::RemoveObservations(vtkM
   observations = broker->GetObservations(node, vtkMRMLTransformableNode::TransformModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() );
   broker->RemoveObservations(observations);
   observations = broker->GetObservations(node, vtkMRMLDisplayableNode::DisplayModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand() );
-  broker->RemoveObservations(observations);
-  observations = broker->GetObservations(node, vtkCommand::ModifiedEvent, this->External, this->External->GetMRMLNodesCallbackCommand());
   broker->RemoveObservations(observations);
 }
 
@@ -574,25 +551,11 @@ void vtkMRMLTransformsDisplayableManager2D::ProcessMRMLNodesEvents(vtkObject* ca
       this->Internal->UpdateDisplayableTransforms(displayableNode);
       this->RequestRender();
       }
-
-    for (auto interactionPipeline : this->Internal->InteractionPipelines)
-      {
-      interactionPipeline.second->UpdateFromMRML(displayableNode, event, callData);
-      if (interactionPipeline.second->GetNeedToRender())
-        {
-        this->RequestRender();
-        }
-      }
     }
   else if ( vtkMRMLSliceNode::SafeDownCast(caller) )
       {
       this->Internal->UpdateSliceNode();
       this->RequestRender();
-
-      for (auto interactionPipeline : this->Internal->InteractionPipelines)
-        {
-        interactionPipeline.second->UpdateFromMRML(this->GetMRMLSliceNode(), event, callData);
-        }
       }
   else
     {
@@ -656,102 +619,4 @@ void vtkMRMLTransformsDisplayableManager2D::Create()
 {
   this->Internal->SetSliceNode(this->GetMRMLSliceNode());
   this->SetUpdateFromMRMLRequested(true);
-}
-
-//---------------------------------------------------------------------------
-vtkMRMLTransformHandleWidget* vtkMRMLTransformsDisplayableManager2D::vtkInternal::FindClosestWidget(vtkMRMLInteractionEventData* callData,
-  double& closestDistance2)
-{
-  vtkMRMLTransformHandleWidget* closestWidget = nullptr;
-  closestDistance2 = VTK_DOUBLE_MAX;
-
-  for (auto widgetIterator : this->InteractionPipelines)
-    {
-    vtkMRMLTransformHandleWidget* widget = widgetIterator.second;
-    if (!widget)
-      {
-      continue;
-      }
-    double distance2FromWidget = VTK_DOUBLE_MAX;
-    if (widget->CanProcessInteractionEvent(callData, distance2FromWidget))
-      {
-      if (!closestWidget || distance2FromWidget < closestDistance2)
-        {
-        closestDistance2 = distance2FromWidget;
-        closestWidget = widget;
-        }
-      }
-    }
-  return closestWidget;
-}
-
-//---------------------------------------------------------------------------
-bool vtkMRMLTransformsDisplayableManager2D::CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double &closestDistance2)
-{
-  // New point can be placed anywhere
-  int eventid = eventData->GetType();
-
-  if (eventid == vtkCommand::LeaveEvent && this->Internal->LastActiveWidget != nullptr)
-    {
-    if (this->Internal->LastActiveWidget->GetDisplayNode()
-      && this->Internal->LastActiveWidget->GetDisplayNode()->GetActiveInteractionType() > vtkMRMLTransformHandleWidget::InteractionNone)
-      {
-      // this widget has active component, therefore leave event is relevant
-      closestDistance2 = 0.0;
-      return this->Internal->LastActiveWidget;
-      }
-    }
-
-  // Other interactions
-  bool canProcess = (this->Internal->FindClosestWidget(eventData, closestDistance2) != nullptr);
-
-  if (!canProcess && this->Internal->LastActiveWidget != nullptr
-    && (eventid == vtkCommand::MouseMoveEvent || eventid == vtkCommand::Move3DEvent) )
-    {
-    // TODO: handle multiple contexts
-    this->Internal->LastActiveWidget->Leave(eventData);
-    this->Internal->LastActiveWidget = nullptr;
-    }
-
-  return canProcess;
-}
-
-//---------------------------------------------------------------------------
-bool vtkMRMLTransformsDisplayableManager2D::ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData)
-{
-  int eventid = eventData->GetType();
-
-  if (eventid == vtkCommand::LeaveEvent)
-    {
-    if (this->Internal->LastActiveWidget != nullptr)
-      {
-      this->Internal->LastActiveWidget->Leave(eventData);
-      this->Internal->LastActiveWidget = nullptr;
-      }
-    }
-
-  // Find/create active widget
-  vtkMRMLTransformHandleWidget* activeWidget = nullptr;
-  double closestDistance2 = VTK_DOUBLE_MAX;
-  activeWidget = this->Internal->FindClosestWidget(eventData, closestDistance2);
-
-  // Deactivate previous widget
-  if (this->Internal->LastActiveWidget != nullptr && this->Internal->LastActiveWidget != activeWidget)
-    {
-    this->Internal->LastActiveWidget->Leave(eventData);
-    }
-  this->Internal->LastActiveWidget = activeWidget;
-  if (!activeWidget)
-    {
-    // deactivate widget if we move far from it
-    if (eventid == vtkCommand::MouseMoveEvent && this->Internal->LastActiveWidget != nullptr)
-      {
-      this->Internal->LastActiveWidget->Leave(eventData);
-      this->Internal->LastActiveWidget = nullptr;
-      }
-    return false;
-    }
-
-  // Pass on the interaction event to the active widget
-  return activeWidget->ProcessInteractionEvent(eventData);
 }

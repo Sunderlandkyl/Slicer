@@ -20,8 +20,8 @@
 
 ==============================================================================*/
 
-#ifndef __vtkMRMLTransformsDisplayableManager2D_h
-#define __vtkMRMLTransformsDisplayableManager2D_h
+#ifndef __vtkMRMLLinearTransformsDisplayableManager2D_h
+#define __vtkMRMLLinearTransformsDisplayableManager2D_h
 
 // MRMLDisplayableManager includes
 #include "vtkMRMLAbstractSliceViewDisplayableManager.h"
@@ -32,20 +32,20 @@
 /// Displays transforms in slice viewers as glyphs, deformed grid, or
 /// contour lines
 ///
-class VTK_SLICER_TRANSFORMS_MODULE_MRMLDISPLAYABLEMANAGER_EXPORT vtkMRMLTransformsDisplayableManager2D
+class VTK_SLICER_TRANSFORMS_MODULE_MRMLDISPLAYABLEMANAGER_EXPORT vtkMRMLLinearTransformsDisplayableManager2D
   : public vtkMRMLAbstractSliceViewDisplayableManager
 {
 
 public:
 
-  static vtkMRMLTransformsDisplayableManager2D* New();
-  vtkTypeMacro(vtkMRMLTransformsDisplayableManager2D, vtkMRMLAbstractSliceViewDisplayableManager);
+  static vtkMRMLLinearTransformsDisplayableManager2D* New();
+  vtkTypeMacro(vtkMRMLLinearTransformsDisplayableManager2D, vtkMRMLAbstractSliceViewDisplayableManager);
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
 protected:
 
-  vtkMRMLTransformsDisplayableManager2D();
-  ~vtkMRMLTransformsDisplayableManager2D() override;
+  vtkMRMLLinearTransformsDisplayableManager2D();
+  ~vtkMRMLLinearTransformsDisplayableManager2D() override;
 
   void UnobserveMRMLScene() override;
   void OnMRMLSceneNodeAdded(vtkMRMLNode* node) override;
@@ -64,10 +64,13 @@ protected:
   /// vtkMRMLSliceNode
   void Create() override;
 
+  bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2) override;
+  bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
+
 private:
 
-  vtkMRMLTransformsDisplayableManager2D(const vtkMRMLTransformsDisplayableManager2D&) = delete;
-  void operator=(const vtkMRMLTransformsDisplayableManager2D&) = delete;
+  vtkMRMLLinearTransformsDisplayableManager2D(const vtkMRMLLinearTransformsDisplayableManager2D&) = delete;
+  void operator=(const vtkMRMLLinearTransformsDisplayableManager2D&) = delete;
 
   class vtkInternal;
   vtkInternal * Internal;

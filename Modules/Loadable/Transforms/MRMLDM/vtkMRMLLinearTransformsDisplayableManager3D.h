@@ -28,10 +28,6 @@
 
 #include "vtkSlicerTransformsModuleMRMLDisplayableManagerExport.h"
 
-class vtkAbstractWidget;
-class vtkMRMLTransformDisplayNode;
-
-
 /// \brief Display transforms in 3D views
 ///
 /// Displays transforms in 3D viewers as glyphs, deformed grid, or
@@ -46,11 +42,6 @@ public:
   vtkTypeMacro(vtkMRMLLinearTransformsDisplayableManager3D,vtkMRMLAbstractThreeDViewDisplayableManager);
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
-  /// \internal
-  /// For testing purposes only:
-  /// Return the widget associated with the given transform, if any.
-  vtkAbstractWidget* GetWidget(vtkMRMLTransformDisplayNode* displayNode);
-
 protected:
 
   vtkMRMLLinearTransformsDisplayableManager3D();
@@ -60,6 +51,9 @@ protected:
   void OnMRMLSceneNodeAdded(vtkMRMLNode* node) override;
   void OnMRMLSceneNodeRemoved(vtkMRMLNode* node) override;
   void ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData) override;
+
+  bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& closestDistance2) override;
+  bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
 
   /// Update Actors based on transforms in the scene
   void UpdateFromMRML() override;
@@ -71,8 +65,6 @@ protected:
 
   /// Initialize the displayable manager
   void Create() override;
-
-  void ProcessWidgetsEvents(vtkObject* caller, unsigned long event, void* callData) override;
 
 private:
 

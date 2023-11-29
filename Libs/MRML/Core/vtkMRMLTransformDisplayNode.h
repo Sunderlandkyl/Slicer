@@ -199,10 +199,14 @@ class VTK_MRML_EXPORT vtkMRMLTransformDisplayNode : public vtkMRMLDisplayNode
   void SetColorMap(vtkColorTransferFunction* newColorMap);
 
   /// TODO
-  vtkSetMacro(InteractionVisibility, bool);
-  /// TODO
-  vtkGetMacro(InteractionVisibility, bool);
-  /// TODO
+  void SetInteractionVisibility(bool visibility)
+  {
+    this->SetVisibility(visibility);
+  };
+  bool GetInteractionVisibility()
+  {
+    return this->GetVisibility();
+  };
   vtkBooleanMacro(InteractionVisibility, bool);
 
   // TODO
@@ -267,8 +271,6 @@ protected:
   bool EditorRotationEnabled;
   bool EditorScalingEnabled;
 
-  /// TODO
-  bool InteractionVisibility{ false };
   int ActiveInteractionType{ -1 };
   int ActiveInteractionIndex{ -1 };
   bool InteractionSizeAbsolute{ false };

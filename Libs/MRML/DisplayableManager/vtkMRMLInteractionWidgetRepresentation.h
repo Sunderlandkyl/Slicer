@@ -43,29 +43,33 @@
 #ifndef vtkSlicerInteractionRepresentation_h
 #define vtkSlicerInteractionRepresentation_h
 
+// MRMLDM includes
 #include "vtkMRMLDisplayableManagerExport.h"
-
 #include "vtkMRMLAbstractWidgetRepresentation.h"
 
-#include "vtkActor2D.h"
-#include "vtkAppendPolyData.h"
-#include "vtkArcSource.h"
-#include "vtkArrowSource.h"
-#include "vtkGlyph3D.h"
-#include "vtkLookupTable.h"
-#include "vtkPointPlacer.h"
-#include "vtkPointSetToLabelHierarchy.h"
-#include "vtkPolyDataMapper2D.h"
-#include "vtkProperty2D.h"
-#include "vtkSmartPointer.h"
-#include "vtkSphereSource.h"
-#include "vtkTextActor.h"
-#include "vtkTextProperty.h"
-#include "vtkTensorGlyph.h"
-#include "vtkTransform.h"
-#include "vtkTransformPolyDataFilter.h"
-#include "vtkTubeFilter.h"
+// MRML includes
 #include <vtkMRMLSliceNode.h>
+
+// VTK includes
+#include <vtkActor2D.h>
+#include <vtkAppendPolyData.h>
+#include <vtkArcSource.h>
+#include <vtkArrowSource.h>
+#include <vtkGlyph3D.h>
+#include <vtkLookupTable.h>
+#include <vtkPointPlacer.h>
+#include <vtkPointSetToLabelHierarchy.h>
+#include <vtkPolyDataMapper2D.h>
+#include <vtkProperty2D.h>
+#include <vtkSmartPointer.h>
+#include <vtkSphereSource.h>
+#include <vtkTextActor.h>
+#include <vtkTextProperty.h>
+#include <vtkTensorGlyph.h>
+#include <vtkTransform.h>
+#include <vtkTransformPolyDataFilter.h>
+#include <vtkTubeFilter.h>
+
 class vtkMRMLInteractionEventData;
 class vtkMRMLDisplayNode;
 class vtkMRMLDisplayableNode;
@@ -253,8 +257,9 @@ protected:
   /// Get the visibility of the specified handle
   virtual bool GetHandleVisibility(int type, int index);
 
-  /// Get the view plane normal for the widget in world coordinates
-  virtual void GetViewPlaneNormal(double normal[3]);
+  /// Get the vector from the interaction handle to the camera in world coordinates.
+  /// In slice views and in 3D with parallel projection this is the same as the camera view direction.
+  virtual void GetHandleToCameraVector(double normal[3]);
 
   /// Get the position of the interaction handle in local coordinates
   /// Type is specified using vtkMRMLInteractionDisplayNode::ComponentType
