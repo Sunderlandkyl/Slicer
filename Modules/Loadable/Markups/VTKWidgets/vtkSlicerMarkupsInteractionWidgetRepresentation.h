@@ -68,6 +68,10 @@ public:
   virtual vtkMRMLMarkupsNode* GetMarkupsNode();
 
   void UpdateInteractionPipeline() override;
+
+  virtual void UpdatePlaneScaleHandles();
+  virtual void UpdateROIScaleHandles();
+
   void UpdateHandleToWorldTransform(vtkTransform* handleToWorldTransform) override;
 
   double GetInteractionScale() override; // Size relative to screen

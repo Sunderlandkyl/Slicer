@@ -140,6 +140,13 @@ bool vtkSlicerMarkupsInteractionWidgetRepresentation::IsDisplayable()
     {
     return false;
     }
+
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  if (planeNode && !planeNode->GetIsPlaneValid())
+    {
+    return false;
+    }
+
   return this->GetDisplayNode()->GetVisibility() && this->GetDisplayNode()->GetHandlesInteractive();
 }
 
@@ -159,91 +166,112 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateInteractionPipeline(
   // Final visibility handled by superclass in vtkMRMLInteractionWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
 
+  if (vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode()))
+    {
+    this->UpdatePlaneScaleHandles();
+    }
+  else if (vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode()))
+    {
+    this->UpdateROIScaleHandles();
+    }
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdatePlaneScaleHandles()
+{
   vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
-  if (planeNode)
+  if (!planeNode)
     {
-    vtkNew<vtkPoints> planeCornerPoints_World;
-    planeNode->GetPlaneCornerPointsWorld(planeCornerPoints_World);
-
-    double lpCorner_World[3] = { 0.0, 0.0, 0.0 };
-    planeCornerPoints_World->GetPoint(0, lpCorner_World);
-
-    double laCorner_World[3] = { 0.0, 0.0, 0.0 };
-    planeCornerPoints_World->GetPoint(1, laCorner_World);
-
-    double raCorner_World[3] = { 0.0, 0.0, 0.0 };
-    planeCornerPoints_World->GetPoint(2, raCorner_World);
-
-    double rpCorner_World[3] = { 0.0, 0.0, 0.0 };
-    planeCornerPoints_World->GetPoint(3, rpCorner_World);
-
-    double lEdge_World[3] = { 0.0, 0.0, 0.0 };
-    vtkMath::Add(laCorner_World, lpCorner_World, lEdge_World);
-    vtkMath::MultiplyScalar(lEdge_World, 0.5);
-
-    double rEdge_World[3] = { 0.0, 0.0, 0.0 };
-    vtkMath::Add(raCorner_World, rpCorner_World, rEdge_World);
-    vtkMath::MultiplyScalar(rEdge_World, 0.5);
-
-    double aEdge_World[3] = { 0.0, 0.0, 0.0 };
-    vtkMath::Add(laCorner_World, raCorner_World, aEdge_World);
-    vtkMath::MultiplyScalar(aEdge_World, 0.5);
-
-    double pEdge_World[3] = { 0.0, 0.0, 0.0 };
-    vtkMath::Add(lpCorner_World, rpCorner_World, pEdge_World);
-    vtkMath::MultiplyScalar(pEdge_World, 0.5);
-
-    vtkNew<vtkPoints> scaleHandlePoints;
-    scaleHandlePoints->SetNumberOfPoints(8);
-    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleLEdge, lEdge_World);
-    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleREdge, rEdge_World);
-    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleAEdge, aEdge_World);
-    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandlePEdge, pEdge_World);
-
-    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleLPCorner, lpCorner_World);
-    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleLACorner, laCorner_World);
-    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleRACorner, raCorner_World);
-    scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleRPCorner, rpCorner_World);
-
-    vtkNew<vtkTransform> worldToHandleTransform;
-    worldToHandleTransform->DeepCopy(this->GetHandleToWorldTransform());
-    worldToHandleTransform->Inverse();
-
-    // Scale handles are expected in the handle coordinate system
-    for (int i = 0; i < scaleHandlePoints->GetNumberOfPoints(); ++i)
-      {
-      double scaleHandlePoint[3] = { 0.0, 0.0, 0.0 };
-      worldToHandleTransform->TransformPoint(scaleHandlePoints->GetPoint(i), scaleHandlePoint);
-      scaleHandlePoints->SetPoint(i, scaleHandlePoint);
-      }
-    this->Pipeline->ScaleHandlePoints->SetPoints(scaleHandlePoints);
+    return;
     }
 
+  vtkNew<vtkPoints> planeCornerPoints_World;
+  planeNode->GetPlaneCornerPointsWorld(planeCornerPoints_World);
+
+  double lpCorner_World[3] = { 0.0, 0.0, 0.0 };
+  planeCornerPoints_World->GetPoint(0, lpCorner_World);
+
+  double laCorner_World[3] = { 0.0, 0.0, 0.0 };
+  planeCornerPoints_World->GetPoint(1, laCorner_World);
+
+  double raCorner_World[3] = { 0.0, 0.0, 0.0 };
+  planeCornerPoints_World->GetPoint(2, raCorner_World);
+
+  double rpCorner_World[3] = { 0.0, 0.0, 0.0 };
+  planeCornerPoints_World->GetPoint(3, rpCorner_World);
+
+  double lEdge_World[3] = { 0.0, 0.0, 0.0 };
+  vtkMath::Add(laCorner_World, lpCorner_World, lEdge_World);
+  vtkMath::MultiplyScalar(lEdge_World, 0.5);
+
+  double rEdge_World[3] = { 0.0, 0.0, 0.0 };
+  vtkMath::Add(raCorner_World, rpCorner_World, rEdge_World);
+  vtkMath::MultiplyScalar(rEdge_World, 0.5);
+
+  double aEdge_World[3] = { 0.0, 0.0, 0.0 };
+  vtkMath::Add(laCorner_World, raCorner_World, aEdge_World);
+  vtkMath::MultiplyScalar(aEdge_World, 0.5);
+
+  double pEdge_World[3] = { 0.0, 0.0, 0.0 };
+  vtkMath::Add(lpCorner_World, rpCorner_World, pEdge_World);
+  vtkMath::MultiplyScalar(pEdge_World, 0.5);
+
+  vtkNew<vtkPoints> scaleHandlePoints;
+  scaleHandlePoints->SetNumberOfPoints(8);
+  scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleLEdge, lEdge_World);
+  scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleREdge, rEdge_World);
+  scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleAEdge, aEdge_World);
+  scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandlePEdge, pEdge_World);
+
+  scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleLPCorner, lpCorner_World);
+  scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleLACorner, laCorner_World);
+  scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleRACorner, raCorner_World);
+  scaleHandlePoints->SetPoint(vtkMRMLMarkupsPlaneDisplayNode::HandleRPCorner, rpCorner_World);
+
+  vtkNew<vtkTransform> worldToHandleTransform;
+  worldToHandleTransform->DeepCopy(this->GetHandleToWorldTransform());
+  worldToHandleTransform->Inverse();
+
+  // Scale handles are expected in the handle coordinate system
+  for (int i = 0; i < scaleHandlePoints->GetNumberOfPoints(); ++i)
+    {
+    double scaleHandlePoint[3] = { 0.0, 0.0, 0.0 };
+    worldToHandleTransform->TransformPoint(scaleHandlePoints->GetPoint(i), scaleHandlePoint);
+    scaleHandlePoints->SetPoint(i, scaleHandlePoint);
+    }
+  this->Pipeline->ScaleHandlePoints->SetPoints(scaleHandlePoints);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateROIScaleHandles()
+{
   vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
-  if (roiNode)
+  if (!roiNode)
     {
-    double sideLengths[3] = { 0.0,  0.0, 0.0 };
-    roiNode->GetSizeWorld(sideLengths);
-    vtkMath::MultiplyScalar(sideLengths, 0.5);
-
-    vtkNew<vtkPoints> roiPoints;
-    roiPoints->SetNumberOfPoints(14);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLFace, -sideLengths[0], 0.0, 0.0);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRFace, sideLengths[0], 0.0, 0.0);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandlePFace, 0.0, -sideLengths[1], 0.0);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleAFace, 0.0, sideLengths[1], 0.0);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleIFace, 0.0, 0.0, -sideLengths[2]);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleSFace, 0.0, 0.0, sideLengths[2]);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLPICorner, -sideLengths[0], -sideLengths[1], -sideLengths[2]);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRPICorner, sideLengths[0], -sideLengths[1], -sideLengths[2]);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLAICorner, -sideLengths[0], sideLengths[1], -sideLengths[2]);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRAICorner, sideLengths[0], sideLengths[1], -sideLengths[2]);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLPSCorner, -sideLengths[0], -sideLengths[1], sideLengths[2]);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRPSCorner, sideLengths[0], -sideLengths[1], sideLengths[2]);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLASCorner, -sideLengths[0], sideLengths[1], sideLengths[2]);
-    roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRASCorner, sideLengths[0], sideLengths[1], sideLengths[2]);
-    this->Pipeline->ScaleHandlePoints->SetPoints(roiPoints);
+    return;
     }
+
+  double sideLengths[3] = { 0.0,  0.0, 0.0 };
+  roiNode->GetSizeWorld(sideLengths);
+  vtkMath::MultiplyScalar(sideLengths, 0.5);
+
+  vtkNew<vtkPoints> roiPoints;
+  roiPoints->SetNumberOfPoints(14);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLFace, -sideLengths[0], 0.0, 0.0);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRFace, sideLengths[0], 0.0, 0.0);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandlePFace, 0.0, -sideLengths[1], 0.0);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleAFace, 0.0, sideLengths[1], 0.0);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleIFace, 0.0, 0.0, -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleSFace, 0.0, 0.0, sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLPICorner, -sideLengths[0], -sideLengths[1], -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRPICorner, sideLengths[0], -sideLengths[1], -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLAICorner, -sideLengths[0], sideLengths[1], -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRAICorner, sideLengths[0], sideLengths[1], -sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLPSCorner, -sideLengths[0], -sideLengths[1], sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRPSCorner, sideLengths[0], -sideLengths[1], sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleLASCorner, -sideLengths[0], sideLengths[1], sideLengths[2]);
+  roiPoints->SetPoint(vtkMRMLMarkupsROIDisplayNode::HandleRASCorner, sideLengths[0], sideLengths[1], sideLengths[2]);
+  this->Pipeline->ScaleHandlePoints->SetPoints(roiPoints);
 }
 
 //----------------------------------------------------------------------

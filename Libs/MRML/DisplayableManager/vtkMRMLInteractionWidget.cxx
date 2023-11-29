@@ -339,6 +339,7 @@ void vtkMRMLInteractionWidget::StartWidgetInteraction(vtkMRMLInteractionEventDat
     {
     return;
     }
+  rep->InteractingOn();
 
   double startEventPos[2]
     {
@@ -357,6 +358,12 @@ void vtkMRMLInteractionWidget::StartWidgetInteraction(vtkMRMLInteractionEventDat
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidget::EndWidgetInteraction()
 {
+  vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->GetRepresentation());
+  if (!rep)
+    {
+    return;
+    }
+  rep->InteractingOff();
 }
 
 //----------------------------------------------------------------------

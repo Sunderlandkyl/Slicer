@@ -721,7 +721,7 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
 
   this->Property = vtkSmartPointer<vtkProperty2D>::New();
   this->Property->SetPointSize(0.0);
-  this->Property->SetLineWidth(0.0);
+  this->Property->SetLineWidth(2.0);
 
   this->Actor = vtkSmartPointer<vtkActor2D>::New();
   this->Actor->SetProperty(this->Property);
@@ -1023,6 +1023,7 @@ bool vtkMRMLInteractionWidgetRepresentation::GetHandleVisibility(int type, int i
 //----------------------------------------------------------------------
 double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int index)
 {
+  return 1.0;
   // Determine if the handle should be displayed
   bool handleVisible = this->GetHandleVisibility(type, index);
   if (!handleVisible)

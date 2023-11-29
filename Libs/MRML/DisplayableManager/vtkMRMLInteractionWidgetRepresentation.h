@@ -150,6 +150,10 @@ public:
   virtual int GetNumberOfHandles(int type);
   virtual int GetNumberOfHandles();
 
+  vtkSetMacro(Interacting, bool);
+  vtkGetMacro(Interacting, bool);
+  vtkBooleanMacro(Interacting, bool);
+
 protected:
   vtkMRMLInteractionWidgetRepresentation();
   ~vtkMRMLInteractionWidgetRepresentation() override;
@@ -290,6 +294,8 @@ protected:
   // For 3D views, renderer world coordinate system is the Slicer world coordinate system, so it is measured in the
   // scene length unit (typically millimeters).
   double InteractionSize{ 3.0 };
+
+  bool Interacting{ false };
 
   vtkSmartPointer<vtkPointPlacer> PointPlacer;
 

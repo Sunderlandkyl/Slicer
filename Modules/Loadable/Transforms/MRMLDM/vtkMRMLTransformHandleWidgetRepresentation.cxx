@@ -25,6 +25,8 @@
 // Transform MRMLDM includes
 #include "vtkMRMLTransformHandleWidgetRepresentation.h"
 
+#include "vtkSlicerTransformLogic.h"
+
 // MRML includes
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
@@ -55,6 +57,68 @@ void vtkMRMLTransformHandleWidgetRepresentation::PrintSelf(ostream& os, vtkInden
 vtkMRMLTransformDisplayNode* vtkMRMLTransformHandleWidgetRepresentation::GetDisplayNode()
 {
   return this->DisplayNode;
+}
+
+//----------------------------------------------------------------------
+vtkMRMLTransformHandleWidgetRepresentation::TransformInteractionPipeline::TransformInteractionPipeline()
+{
+  this->NodeToHandleTransform = vtkSmartPointer<vtkTransform>::New();
+
+  this->OutlineSource = vtkSmartPointer<vtkOutlineSource>::New();
+
+  this->OutlineTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+  this->OutlineTransformFilter->SetTransform(this->NodeToHandleTransform);
+  this->OutlineTransformFilter->SetInputConnection(this->OutlineSource->GetOutputPort());
+
+  this->ArrayCalculator = vtkSmartPointer<vtkArrayCalculator>::New();
+  this->ArrayCalculator->SetInputConnection(this->OutlineTransformFilter->GetOutputPort());
+  this->ArrayCalculator->SetAttributeTypeToPointData();
+  this->ArrayCalculator->SetResultArrayName("colorIndex");
+  this->ArrayCalculator->SetResultArrayType(VTK_FLOAT);
+  this->ArrayCalculator->SetFunction("0");
+}
+
+//----------------------------------------------------------------------
+vtkMRMLTransformHandleWidgetRepresentation::TransformInteractionPipeline::~TransformInteractionPipeline() = default;
+
+//----------------------------------------------------------------------
+void vtkMRMLTransformHandleWidgetRepresentation::SetupInteractionPipeline()
+{
+  this->Pipeline = new TransformInteractionPipeline();
+  if (this->GetSliceNode())
+    {
+    this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
+    this->Pipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
+    this->Pipeline->Mapper->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
+    this->Pipeline->Mapper->SetTransformCoordinate(nullptr);
+    }
+
+  TransformInteractionPipeline* pipeline = dynamic_cast<TransformInteractionPipeline*>(this->Pipeline);
+  pipeline->Append->AddInputConnection(pipeline->ArrayCalculator->GetOutputPort());
+
+  this->InitializePipeline();
+  this->NeedToRenderOn();
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLTransformHandleWidgetRepresentation::UpdateHandleColors()
+{
+  int numberOfHandles = this->GetNumberOfHandles();
+  this->Pipeline->ColorTable->SetNumberOfTableValues(numberOfHandles + 1);
+  this->Pipeline->ColorTable->SetTableRange(0, double(numberOfHandles));
+
+  int colorIndex = 0;
+
+  // Outline color
+  double outlineColor[4] = { 1.00, 1.00, 1.00, 1.00 };
+  this->Pipeline->ColorTable->SetTableValue(colorIndex, outlineColor);
+
+  colorIndex++;
+  colorIndex = Superclass::UpdateHandleColors(InteractionRotationHandle, colorIndex);
+  colorIndex = Superclass::UpdateHandleColors(InteractionTranslationHandle, colorIndex);
+  colorIndex = Superclass::UpdateHandleColors(InteractionScaleHandle, colorIndex);
+
+  this->Pipeline->ColorTable->Build();
 }
 
 //----------------------------------------------------------------------
@@ -117,9 +181,11 @@ void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
     return;
     }
 
+  // We are specifying the position of the handles manually.
+  this->Pipeline->AxisScaleGlypher->SetInputData(this->Pipeline->ScaleHandlePoints);
+
   // Final visibility handled by superclass in vtkMRMLInteractionWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
-
 }
 
 //----------------------------------------------------------------------
@@ -176,4 +242,65 @@ double vtkMRMLTransformHandleWidgetRepresentation::GetInteractionSize()
 bool vtkMRMLTransformHandleWidgetRepresentation::GetInteractionSizeAbsolute()
 {
   return this->GetDisplayNode()->GetInteractionSizeAbsolute();
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLTransformHandleWidgetRepresentation::UpdateFromMRML(vtkMRMLNode* caller, unsigned long event, void* callData/*=nullptr*/)
+{
+  Superclass::UpdateFromMRML(caller, event, callData);
+
+  TransformInteractionPipeline* pipeline = dynamic_cast<TransformInteractionPipeline*>(this->Pipeline);
+  if (!pipeline)
+    {
+    return;
+    }
+
+  std::vector<vtkMRMLDisplayableNode*> transformedNodes;
+  vtkMRMLTransformNode* transformNode = this->GetTransformNode();
+  if (transformNode)
+    {
+    vtkSlicerTransformLogic::GetTransformedNodes(transformNode->GetScene(), transformNode, transformedNodes, true);
+    }
+
+  if (pipeline)
+    {
+    pipeline->NodeToHandleTransform->Identity();
+    //pipeline->NodeToHandleTransform->PostMultiply();
+    vtkNew<vtkMatrix4x4> worldToHandleTransform;
+    pipeline->HandleToWorldTransform->GetInverse(worldToHandleTransform);
+    vtkNew<vtkMatrix4x4> nodeToWorldTransform;
+    transformNode->GetMatrixTransformToWorld(nodeToWorldTransform);
+    pipeline->NodeToHandleTransform->Concatenate(worldToHandleTransform);
+    pipeline->NodeToHandleTransform->Concatenate(nodeToWorldTransform);
+    }
+
+  bool validBounds = false;
+  double bounds[6];
+  if (transformedNodes.size() > 0)
+    {
+    vtkSlicerTransformLogic::GetNodesBounds(transformedNodes, bounds);
+    validBounds =
+      (bounds[0] <= bounds[1] || bounds[2] <= bounds[3] || bounds[4] <= bounds[5]);
+    }
+
+  pipeline->OutlineSource->SetBounds(bounds);
+
+  vtkNew<vtkPoints> roiPoints;
+  roiPoints->SetNumberOfPoints(14);
+  int handleIndex = 0;
+  roiPoints->SetPoint(handleIndex++, bounds[0], 0.0, 0.0);
+  roiPoints->SetPoint(handleIndex++, bounds[1], 0.0, 0.0);
+  roiPoints->SetPoint(handleIndex++, 0.0, bounds[2], 0.0);
+  roiPoints->SetPoint(handleIndex++, 0.0, bounds[3], 0.0);
+  roiPoints->SetPoint(handleIndex++, 0.0, 0.0, bounds[4]);
+  roiPoints->SetPoint(handleIndex++, 0.0, 0.0, bounds[5]);
+  roiPoints->SetPoint(handleIndex++, bounds[0], bounds[2], bounds[4]);
+  roiPoints->SetPoint(handleIndex++, bounds[1], bounds[2], bounds[4]);
+  roiPoints->SetPoint(handleIndex++, bounds[0], bounds[3], bounds[4]);
+  roiPoints->SetPoint(handleIndex++, bounds[1], bounds[3], bounds[4]);
+  roiPoints->SetPoint(handleIndex++, bounds[0], bounds[2], bounds[5]);
+  roiPoints->SetPoint(handleIndex++, bounds[1], bounds[2], bounds[5]);
+  roiPoints->SetPoint(handleIndex++, bounds[0], bounds[3], bounds[5]);
+  roiPoints->SetPoint(handleIndex++, bounds[1], bounds[3], bounds[5]);
+  this->Pipeline->ScaleHandlePoints->SetPoints(roiPoints);
 }
