@@ -36,7 +36,9 @@
 #include "vtkPointData.h"
 #include "vtkPointSetToLabelHierarchy.h"
 #include "vtkPolyDataMapper2D.h"
+#include "vtkPolyDataMapper.h"
 #include "vtkProperty2D.h"
+#include "vtkProperty.h"
 #include "vtkRenderer.h"
 #include <vtkRenderWindow.h>
 #include "vtkSphereSource.h"
@@ -85,13 +87,18 @@ vtkMRMLInteractionWidgetRepresentation::vtkMRMLInteractionWidgetRepresentation()
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
 {
-  this->Pipeline = new InteractionPipeline();
+  this->Pipeline = new InteractionPipeline(this);
   if (this->GetSliceNode())
     {
     this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
     this->Pipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
     this->Pipeline->Mapper->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
-    this->Pipeline->Mapper->SetTransformCoordinate(nullptr);
+    auto mapper2D = vtkPolyDataMapper2D::SafeDownCast(this->Pipeline->Mapper);
+    if (mapper2D)
+      {
+      mapper2D->SetTransformCoordinate(nullptr);
+      }
+
     }
 
   this->InitializePipeline();
@@ -577,8 +584,10 @@ vtkTypeBool vtkMRMLInteractionWidgetRepresentation::HasTranslucentPolygonalGeome
 }
 
 //----------------------------------------------------------------------
-vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline()
+vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline(vtkMRMLInteractionWidgetRepresentation* rep)
 {
+  this->Representation = rep;
+
   /// Rotation pipeline
   this->RotationHandlePoints = vtkSmartPointer<vtkPolyData>::New();
 
@@ -710,22 +719,48 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   vtkNew<vtkCoordinate> coordinate;
   coordinate->SetCoordinateSystemToWorld();
 
-  this->Mapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-  this->Mapper->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
-  this->Mapper->SetColorModeToMapScalars();
-  this->Mapper->ColorByArrayComponent("colorIndex", 0);
-  this->Mapper->SetLookupTable(this->ColorTable);
-  this->Mapper->ScalarVisibilityOn();
-  this->Mapper->UseLookupTableScalarRangeOn();
-  this->Mapper->SetTransformCoordinate(coordinate);
+  if (this->Representation->GetSliceNode())
+    {
+    vtkSmartPointer<vtkPolyDataMapper2D> mapper2D = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+    mapper2D->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
+    mapper2D->SetColorModeToMapScalars();
+    mapper2D->ColorByArrayComponent("colorIndex", 0);
+    mapper2D->SetLookupTable(this->ColorTable);
+    mapper2D->ScalarVisibilityOn();
+    mapper2D->UseLookupTableScalarRangeOn();
+    mapper2D->SetTransformCoordinate(coordinate);
+    this->Mapper = mapper2D;
 
-  this->Property = vtkSmartPointer<vtkProperty2D>::New();
-  this->Property->SetPointSize(0.0);
-  this->Property->SetLineWidth(2.0);
+    vtkNew<vtkProperty2D> property2D;
+    property2D->SetPointSize(0.0);
+    property2D->SetLineWidth(2.0);
+    this->Property = property2D;
 
-  this->Actor = vtkSmartPointer<vtkActor2D>::New();
-  this->Actor->SetProperty(this->Property);
-  this->Actor->SetMapper(this->Mapper);
+    vtkNew<vtkActor2D> actor2D;
+    actor2D->SetProperty(property2D);
+    actor2D->SetMapper(mapper2D);
+    this->Actor = actor2D;
+    }
+  else
+    {
+    vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+    mapper->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
+    mapper->SetColorModeToMapScalars();
+    mapper->ColorByArrayComponent("colorIndex", 0);
+    mapper->SetLookupTable(this->ColorTable);
+    mapper->ScalarVisibilityOn();
+    mapper->UseLookupTableScalarRangeOn();
+    this->Mapper = mapper;
+
+    vtkNew<vtkProperty> property3D;
+    property3D->SetPointSize(0.0);
+    property3D->SetLineWidth(2.0);
+
+    vtkNew<vtkActor> actor;
+    actor->SetProperty(property3D);
+    actor->SetMapper(mapper);
+    this->Actor = actor;
+    }
 
   this->WorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->WorldToSliceTransformFilter->SetTransform(vtkNew<vtkTransform>());

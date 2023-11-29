@@ -93,7 +93,7 @@ protected:
   class VTK_SLICER_TRANSFORMS_MODULE_MRMLDISPLAYABLEMANAGER_EXPORT TransformInteractionPipeline : public InteractionPipeline
   {
     public:
-      TransformInteractionPipeline();
+      TransformInteractionPipeline(vtkMRMLInteractionWidgetRepresentation*);
       virtual ~TransformInteractionPipeline();
 
       vtkSmartPointer<vtkTransform> NodeToHandleTransform{ nullptr };

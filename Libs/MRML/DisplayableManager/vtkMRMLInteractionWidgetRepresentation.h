@@ -161,7 +161,7 @@ protected:
   class VTK_MRML_DISPLAYABLEMANAGER_EXPORT InteractionPipeline
   {
   public:
-    InteractionPipeline();
+    InteractionPipeline(vtkMRMLInteractionWidgetRepresentation*);
     virtual ~InteractionPipeline();
 
     vtkSmartPointer<vtkSphereSource>            AxisRotationHandleSource;
@@ -189,9 +189,12 @@ protected:
     vtkSmartPointer<vtkTransformPolyDataFilter> HandleToWorldTransformFilter;
     vtkSmartPointer<vtkTransform>               HandleToWorldTransform;
     vtkSmartPointer<vtkLookupTable>             ColorTable;
-    vtkSmartPointer<vtkPolyDataMapper2D>        Mapper;
-    vtkSmartPointer<vtkActor2D>                 Actor;
-    vtkSmartPointer<vtkProperty2D>              Property;
+
+    vtkSmartPointer<vtkAbstractMapper>        Mapper;
+    vtkSmartPointer<vtkProp>                 Actor;
+    vtkSmartPointer<vtkObject>              Property;
+
+    vtkSmartPointer<vtkMRMLInteractionWidgetRepresentation> Representation;
 
     vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
   };

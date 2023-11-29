@@ -60,8 +60,11 @@ vtkMRMLTransformDisplayNode* vtkMRMLTransformHandleWidgetRepresentation::GetDisp
 }
 
 //----------------------------------------------------------------------
-vtkMRMLTransformHandleWidgetRepresentation::TransformInteractionPipeline::TransformInteractionPipeline()
+vtkMRMLTransformHandleWidgetRepresentation::TransformInteractionPipeline::TransformInteractionPipeline(vtkMRMLInteractionWidgetRepresentation* rep)
+  : vtkMRMLInteractionWidgetRepresentation::InteractionPipeline(rep)
 {
+  this->Representation = rep;
+
   this->NodeToHandleTransform = vtkSmartPointer<vtkTransform>::New();
 
   this->OutlineSource = vtkSmartPointer<vtkOutlineSource>::New();
@@ -84,13 +87,17 @@ vtkMRMLTransformHandleWidgetRepresentation::TransformInteractionPipeline::~Trans
 //----------------------------------------------------------------------
 void vtkMRMLTransformHandleWidgetRepresentation::SetupInteractionPipeline()
 {
-  this->Pipeline = new TransformInteractionPipeline();
+  this->Pipeline = new TransformInteractionPipeline(this);
   if (this->GetSliceNode())
     {
     this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
     this->Pipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
     this->Pipeline->Mapper->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
-    this->Pipeline->Mapper->SetTransformCoordinate(nullptr);
+    auto mapper2D = vtkPolyDataMapper2D::SafeDownCast(this->Pipeline->Mapper);
+    if (mapper2D)
+      {
+      mapper2D->SetTransformCoordinate(nullptr);
+      }
     }
 
   TransformInteractionPipeline* pipeline = dynamic_cast<TransformInteractionPipeline*>(this->Pipeline);
