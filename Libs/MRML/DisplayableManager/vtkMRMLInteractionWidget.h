@@ -72,14 +72,14 @@ public:
     WidgetStateOnTranslationHandle = WidgetStateUser, // hovering over a translation interaction handle
     WidgetStateOnRotationHandle, // hovering over a rotation interaction handle
     WidgetStateOnScaleHandle, // hovering over a scale interaction handle
-    WidgetEventReserved,  // this events is only to prevent other widgets from processing an event
     WidgetStateInteraction_Last
   };
 
   /// Widget events
   enum
     {
-    WidgetEvent_Last
+    WidgetEventReserved = WidgetEventUser,  // this events is only to prevent other widgets from processing an event
+    WidgetEventInteraction_Last
     };
 
   virtual int GetActiveComponentType();

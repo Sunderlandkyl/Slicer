@@ -116,9 +116,11 @@ public:
 protected slots:
   /// Invert selected transform
   void invert();
+  void invertCurrentItem();
 
   /// Set transform to identity (only available for linear transforms)
   void identity();
+  void identityCurrentItem();
 
   /// Toggle interaction box
   void toggleInteractionBox(bool);

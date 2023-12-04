@@ -195,14 +195,20 @@ bool vtkMRMLInteractionWidget::CanProcessInteractionEvent(vtkMRMLInteractionEven
   unsigned long widgetEvent = this->TranslateInteractionEventToWidgetEvent(eventData);
   if (widgetEvent == WidgetEventNone)
     {
+    // If this event is not recognized then give a chance to process it as a click event.
+    return this->CanProcessButtonClickEvent(eventData, distance2);
+    }
+
+  if (widgetEvent == WidgetEventNone)
+    {
     return false;
     }
+
   vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->GetRepresentation());
   if (!rep)
     {
     return false;
     }
-  int eventid = eventData->GetType();
 
   // Currently interacting
   if (this->WidgetState == WidgetStateTranslate
@@ -386,6 +392,10 @@ bool vtkMRMLInteractionWidget::ProcessInteractionEvent(vtkMRMLInteractionEventDa
       break;
     }
 
+  if (!processedEvent)
+    {
+    processedEvent = this->ProcessButtonClickEvent(eventData);
+    }
   return processedEvent;
 }
 

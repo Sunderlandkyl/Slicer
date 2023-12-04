@@ -206,7 +206,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
         rasToxyMatrix->MultiplyPoint(originWorldPos, originDisplayPos);
         originDisplayPos[2] = displayPosition3[2]; // Handles are always projected
 
-        double t = 0.0;
+        double t = 0.0; // Not used
         double lineDistance = vtkLine::DistanceToLine(displayPosition3, originDisplayPos, handleDisplayPos, t);
         double lineDistance2 = lineDistance * lineDistance;
         if (lineDistance2 < maxPickingDistanceFromControlPoint2 / 2.0 && lineDistance2 < closestDistance2)
@@ -293,7 +293,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
           this->Renderer->WorldToDisplay();
           this->Renderer->GetDisplayPoint(originDisplayPos);
           originDisplayPos[2] = displayPosition3[2]; // Handles are always projected
-          double t = 0.0;
+          double t = 0.0; // Not used
           double lineDistance = vtkLine::DistanceToLine(displayPosition3, originDisplayPos, handleDisplayPos, t);
           double lineDistance2 = lineDistance * lineDistance;
           if (lineDistance < pixelTolerance && lineDistance2 < closestDistance2)
@@ -310,7 +310,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
             this->PickingTolerance / interactionEventData->GetWorldToPhysicalScale();
           double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
           this->GetInteractionHandleOriginWorld(originWorldPos);
-          double t = 0.0;
+          double t = 0.0; // Not used
           double lineDistance = vtkLine::DistanceToLine(worldPosition, originWorldPos, handleWorldPos, t);
           if (lineDistance < worldTolerance && lineDistance < closestDistance2)
             {
@@ -322,7 +322,6 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
         }
       }
     }
-
 }
 
 //----------------------------------------------------------------------

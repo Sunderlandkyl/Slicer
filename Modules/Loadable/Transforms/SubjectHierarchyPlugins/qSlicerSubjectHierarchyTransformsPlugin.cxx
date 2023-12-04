@@ -67,11 +67,15 @@ public:
   QIcon TransformIcon;
 
   QAction* InvertAction;
+  QAction* InvertCurrentItemAction;
   QAction* IdentityAction;
+  QAction* IdentityCurrentItemAction;
 
   QAction* ToggleInteractionBoxAction;
 
   QVariantMap ViewContextMenuEventData;
+
+  vtkMRMLTransformNode* transformNodeFromViewContextMenuEventData();
 };
 
 //-----------------------------------------------------------------------------
@@ -84,7 +88,9 @@ qSlicerSubjectHierarchyTransformsPluginPrivate::qSlicerSubjectHierarchyTransform
   this->TransformIcon = QIcon(":Icons/Transform.png");
   this->ToggleInteractionBoxAction = nullptr;
   this->InvertAction = nullptr;
+  this->InvertCurrentItemAction = nullptr;
   this->IdentityAction = nullptr;
+  this->IdentityCurrentItemAction = nullptr;
 }
 
 //------------------------------------------------------------------------------
@@ -94,9 +100,13 @@ void qSlicerSubjectHierarchyTransformsPluginPrivate::init()
 
   this->InvertAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Invert transform"), q);
   QObject::connect(this->InvertAction, SIGNAL(triggered()), q, SLOT(invert()));
+  this->InvertCurrentItemAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Invert transform"), q);
+  QObject::connect(this->InvertCurrentItemAction, SIGNAL(triggered()), q, SLOT(invertCurrentItem()));
 
   this->IdentityAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Reset transform to identity"), q);
   QObject::connect(this->IdentityAction, SIGNAL(triggered()), q, SLOT(identity()));
+  this->IdentityCurrentItemAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Reset transform to identity"), q);
+  QObject::connect(this->IdentityCurrentItemAction, SIGNAL(triggered()), q, SLOT(identityCurrentItem()));
 
   this->ToggleInteractionBoxAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Interaction in 3D view"), q);
   QObject::connect(this->ToggleInteractionBoxAction, SIGNAL(toggled(bool)), q, SLOT(toggleInteractionBox(bool)));
@@ -106,6 +116,27 @@ void qSlicerSubjectHierarchyTransformsPluginPrivate::init()
 
 //-----------------------------------------------------------------------------
 qSlicerSubjectHierarchyTransformsPluginPrivate::~qSlicerSubjectHierarchyTransformsPluginPrivate() = default;
+
+//-----------------------------------------------------------------------------
+vtkMRMLTransformNode* qSlicerSubjectHierarchyTransformsPluginPrivate::transformNodeFromViewContextMenuEventData()
+{
+  Q_Q(qSlicerSubjectHierarchyTransformsPlugin);
+  if (this->ViewContextMenuEventData.find("NodeID") == this->ViewContextMenuEventData.end())
+    {
+    return nullptr;
+    }
+  vtkMRMLScene* scene = qSlicerSubjectHierarchyPluginHandler::instance()->mrmlScene();
+  if (!scene)
+  {
+    return nullptr;
+  }
+
+  // Get markups node
+  QString nodeID = this->ViewContextMenuEventData["NodeID"].toString();
+  vtkMRMLNode* node = scene->GetNodeByID(nodeID.toUtf8().constData());
+  vtkMRMLTransformNode* transformNode = vtkMRMLTransformNode::SafeDownCast(node);
+  return transformNode;
+}
 
 //-----------------------------------------------------------------------------
 // qSlicerSubjectHierarchyTransformsPlugin methods
@@ -313,7 +344,7 @@ QList<QAction*> qSlicerSubjectHierarchyTransformsPlugin::itemContextMenuActions(
   Q_D(const qSlicerSubjectHierarchyTransformsPlugin);
 
   QList<QAction*> actions;
-  actions << d->InvertAction << d->IdentityAction;
+  actions << d->InvertCurrentItemAction << d->IdentityCurrentItemAction;
   return actions;
 }
 
@@ -446,21 +477,8 @@ void qSlicerSubjectHierarchyTransformsPlugin::showViewContextMenuActionsForItem(
 //---------------------------------------------------------------------------
 void qSlicerSubjectHierarchyTransformsPlugin::invert()
 {
-  vtkMRMLSubjectHierarchyNode* shNode = qSlicerSubjectHierarchyPluginHandler::instance()->subjectHierarchyNode();
-  if (!shNode)
-    {
-    qCritical() << Q_FUNC_INFO << ": Failed to access subject hierarchy node";
-    return;
-    }
-  vtkIdType currentItemID = qSlicerSubjectHierarchyPluginHandler::instance()->currentItem();
-  if (currentItemID == vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
-    {
-    qCritical() << Q_FUNC_INFO << ": Invalid current item";
-    return;
-    }
-
-  vtkMRMLTransformNode* transformNode = vtkMRMLTransformNode::SafeDownCast(
-    shNode->GetItemDataNode(currentItemID) );
+  Q_D(qSlicerSubjectHierarchyTransformsPlugin);
+  vtkMRMLTransformNode* transformNode = d->transformNodeFromViewContextMenuEventData();
   if (transformNode)
     {
     MRMLNodeModifyBlocker blocker(transformNode);
@@ -470,7 +488,46 @@ void qSlicerSubjectHierarchyTransformsPlugin::invert()
 }
 
 //---------------------------------------------------------------------------
+void qSlicerSubjectHierarchyTransformsPlugin::invertCurrentItem()
+{
+  vtkMRMLSubjectHierarchyNode* shNode = qSlicerSubjectHierarchyPluginHandler::instance()->subjectHierarchyNode();
+  if (!shNode)
+  {
+    qCritical() << Q_FUNC_INFO << ": Failed to access subject hierarchy node";
+    return;
+  }
+  vtkIdType currentItemID = qSlicerSubjectHierarchyPluginHandler::instance()->currentItem();
+  if (currentItemID == vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+  {
+    qCritical() << Q_FUNC_INFO << ": Invalid current item";
+    return;
+  }
+
+  vtkMRMLTransformNode* transformNode = vtkMRMLTransformNode::SafeDownCast(
+    shNode->GetItemDataNode(currentItemID));
+  if (transformNode)
+  {
+    MRMLNodeModifyBlocker blocker(transformNode);
+    transformNode->Inverse();
+    transformNode->InverseName();
+  }
+}
+
+//---------------------------------------------------------------------------
 void qSlicerSubjectHierarchyTransformsPlugin::identity()
+{
+  Q_D(qSlicerSubjectHierarchyTransformsPlugin);
+
+  vtkMRMLTransformNode* transformNode = d->transformNodeFromViewContextMenuEventData();
+  if (transformNode && transformNode->IsLinear())
+    {
+    vtkNew<vtkMatrix4x4> matrix; // initialized to identity by default
+    transformNode->SetMatrixTransformToParent(matrix.GetPointer());
+    }
+}
+
+//---------------------------------------------------------------------------
+void qSlicerSubjectHierarchyTransformsPlugin::identityCurrentItem()
 {
   vtkMRMLSubjectHierarchyNode* shNode = qSlicerSubjectHierarchyPluginHandler::instance()->subjectHierarchyNode();
   if (!shNode)
@@ -493,6 +550,7 @@ void qSlicerSubjectHierarchyTransformsPlugin::identity()
     transformNode->SetMatrixTransformToParent(matrix.GetPointer());
     }
 }
+
 
 //---------------------------------------------------------------------------
 void qSlicerSubjectHierarchyTransformsPlugin::toggleInteractionBox(bool visible)

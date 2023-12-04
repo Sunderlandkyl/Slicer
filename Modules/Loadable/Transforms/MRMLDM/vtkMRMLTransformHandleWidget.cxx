@@ -70,11 +70,18 @@ void vtkMRMLTransformHandleWidget::PrintSelf(ostream& os, vtkIndent indent)
 //-----------------------------------------------------------------------------
 bool vtkMRMLTransformHandleWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double &distance2)
 {
+  bool canProcess = Superclass::CanProcessInteractionEvent(eventData, distance2);
+  if (canProcess)
+    {
+    return true;
+    }
+
   unsigned long widgetEvent = this->TranslateInteractionEventToWidgetEvent(eventData);
   if (widgetEvent == WidgetEventNone)
     {
     return false;
     }
+
   vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->GetRepresentation());
   if (!rep)
     {
@@ -88,8 +95,6 @@ bool vtkMRMLTransformHandleWidget::CanProcessInteractionEvent(vtkMRMLInteraction
     distance2 = 0.0;
     return true;
     }
-
-  return Superclass::CanProcessInteractionEvent(eventData, distance2);
 }
 
 //----------------------------------------------------------------------
