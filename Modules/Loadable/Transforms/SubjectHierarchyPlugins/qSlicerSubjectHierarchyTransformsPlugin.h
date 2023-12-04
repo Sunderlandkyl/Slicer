@@ -122,6 +122,9 @@ protected slots:
   void identity();
   void identityCurrentItem();
 
+  void resetCenterOfTransformation();
+  void resetCenterOfTransformationCurrentItem();
+
   /// Toggle interaction box
   void toggleInteractionBox(bool);
 

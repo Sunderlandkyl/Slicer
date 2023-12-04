@@ -58,10 +58,10 @@ vtkMRMLInteractionWidget::vtkMRMLInteractionWidget()
   this->SetEventTranslationClickAndDrag(WidgetStateOnScaleHandle, vtkCommand::LeftButtonPressEvent, vtkEvent::NoModifier,
     WidgetStateScale, WidgetEventScaleStart, WidgetEventScaleEnd);
 
-  // Context menu events
   unsigned int interactionHandleStates[] = { WidgetStateOnTranslationHandle, WidgetStateOnRotationHandle, WidgetStateOnScaleHandle };
   for (unsigned int interactionHandleState : interactionHandleStates)
     {
+    // Context menu events
     this->SetEventTranslation(interactionHandleState, vtkCommand::RightButtonPressEvent, vtkEvent::AnyModifier, WidgetEventReserved);
     this->SetEventTranslation(interactionHandleState, vtkCommand::RightButtonReleaseEvent, vtkEvent::AnyModifier, WidgetEventReserved);
     this->SetEventTranslation(interactionHandleState, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::AnyModifier, WidgetEventMenu);
@@ -254,7 +254,7 @@ bool vtkMRMLInteractionWidget::ProcessWidgetMenuDisplayNodeTypeAndIndex(
     }
 
   // Copy/compute world position
-  double worldPos[3] = { 0.0 };
+  double worldPos[3] = { 0.0, 0.0, 0.0 };
   if (eventData->IsWorldPositionValid())
     {
     eventData->GetWorldPosition(worldPos);
@@ -262,8 +262,12 @@ bool vtkMRMLInteractionWidget::ProcessWidgetMenuDisplayNodeTypeAndIndex(
     }
   else if (eventData->IsDisplayPositionValid())
     {
-    double worldOrientationMatrix[9] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
-    int displayPos[2] = { 0 };
+    double worldOrientationMatrix[9] = {
+      1.0, 0.0, 0.0,
+      0.0, 1.0, 0.0,
+      0.0, 0.0, 1.0
+      };
+    int displayPos[2] = { 0, 0 };
     eventData->GetDisplayPosition(displayPos);
     if (this->ConvertDisplayPositionToWorld(displayPos, worldPos, worldOrientationMatrix))
       {
@@ -448,7 +452,11 @@ void vtkMRMLInteractionWidget::TranslateWidget(double eventPos[2])
 {
   double lastEventPos_World[3] = { 0.0, 0.0, 0.0 };
   double eventPos_World[3] = { 0.0, 0.0, 0.0 };
-  double orientation_World[9] = { 0.0, 0.0, 0.0 };
+  double orientation_World[9] = {
+    0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0
+    };
 
   vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
   if (!rep)
@@ -538,7 +546,12 @@ void vtkMRMLInteractionWidget::ScaleWidget(double eventPos[2])
 {
   double center[3] = { 0.0, 0.0, 0.0 };
   double ref[3] = { 0.0, 0.0, 0.0 };
-  double worldPos[3], worldOrient[9];
+  double worldPos[3] = { 0.0, 0.0, 0.0 };
+  double worldOrient[9] = {
+    0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0
+    };
 
   vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
   if (!rep)
@@ -563,7 +576,7 @@ void vtkMRMLInteractionWidget::ScaleWidget(double eventPos[2])
   else
     {
     // 3D view
-    double displayPos[2] = { 0. };
+    double displayPos[2] = { 0.0, 0.0 };
     displayPos[0] = this->LastEventPosition[0];
     displayPos[1] = this->LastEventPosition[1];
     if (rep->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
@@ -632,7 +645,11 @@ void vtkMRMLInteractionWidget::RotateWidget(double eventPos[2])
 {
   double eventPos_World[3] = { 0.0, 0.0, 0.0 };
   double lastEventPos_World[3] = { 0.0, 0.0, 0.0 };
-  double orientation_World[9] = { 0.0, 0.0, 0.0 };
+  double orientation_World[9] = {
+    0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0
+    };
   double eventPos_Display[2] = { 0.0, 0.0 };
 
   vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
