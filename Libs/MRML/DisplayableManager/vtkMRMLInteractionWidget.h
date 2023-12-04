@@ -38,6 +38,7 @@
 
 class vtkMRMLAbstractViewNode;
 class vtkMRMLApplicationLogic;
+class vtkMRMLDisplayNode;
 class vtkMRMLDisplayableNode;
 class vtkMRMLInteractionEventData;
 class vtkMRMLInteractionNode;
@@ -71,6 +72,7 @@ public:
     WidgetStateOnTranslationHandle = WidgetStateUser, // hovering over a translation interaction handle
     WidgetStateOnRotationHandle, // hovering over a rotation interaction handle
     WidgetStateOnScaleHandle, // hovering over a scale interaction handle
+    WidgetEventReserved,  // this events is only to prevent other widgets from processing an event
     WidgetStateInteraction_Last
   };
 
@@ -120,7 +122,8 @@ protected:
   // placing the widget.
   // Return true if the event is processed.
   virtual bool ProcessMouseMove(vtkMRMLInteractionEventData* eventData);
-  virtual bool ProcessWidgetMenu(vtkMRMLInteractionEventData* eventData);
+  virtual bool ProcessWidgetMenu(vtkMRMLInteractionEventData* eventData) = 0;
+  virtual bool ProcessWidgetMenuDisplayNodeTypeAndIndex(vtkMRMLInteractionEventData* eventData, vtkMRMLDisplayNode* displayNode, int type, int index);
   virtual bool ProcessWidgetTranslateStart(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetRotateStart(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetScaleStart(vtkMRMLInteractionEventData* eventData);
@@ -137,6 +140,10 @@ protected:
   // Variables for translate/rotate/scale
   double LastEventPosition[2];
   double StartEventOffsetPosition[2];
+
+
+  bool ConvertDisplayPositionToWorld(const int displayPos[2],
+    double worldPos[3], double worldOrientationMatrix[9], double* refWorldPos = nullptr);
 
 private:
   vtkMRMLInteractionWidget(const vtkMRMLInteractionWidget&) = delete;

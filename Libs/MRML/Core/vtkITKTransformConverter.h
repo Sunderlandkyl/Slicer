@@ -76,7 +76,7 @@ public:
   /// Initialization takes a long time for kernel transforms with many points,
   /// If a transform is created only to write it to file, initialization can be turned off to improve performance.
   static itk::Object::Pointer CreateITKTransformFromVTK(vtkObject* loggerObject, vtkAbstractTransform* transformVtk,
-    itk::Object::Pointer& secondaryTransformItk, int preferITKv3CompatibleTransforms, bool initialize = true);
+    itk::Object::Pointer& secondaryTransformItk, int preferITKv3CompatibleTransforms, bool initialize = true, double center[3] = nullptr);
 
   template <typename T> static bool SetVTKBSplineFromITKv3Generic(vtkObject* loggerObject, vtkOrientedBSplineTransform* bsplineVtk,
     typename itk::TransformBaseTemplate<T>::Pointer warpTransformItk, typename itk::TransformBaseTemplate<T>::Pointer bulkTransformItk);
@@ -91,8 +91,9 @@ protected:
 
   template<typename T>
   static bool SetVTKLinearTransformFromITK(vtkObject* loggerObject, vtkMatrix4x4* transformVtk_RAS,
-    typename itk::TransformBaseTemplate<T>::Pointer transformItk_LPS);
-  static bool SetITKLinearTransformFromVTK(vtkObject* loggerObject, itk::Object::Pointer& transformItk_LPS, vtkMatrix4x4* transformVtk_RAS);
+    typename itk::TransformBaseTemplate<T>::Pointer transformItk_LPS, double center[3]=nullptr);
+  static bool SetITKLinearTransformFromVTK(vtkObject* loggerObject, itk::Object::Pointer& transformItk_LPS, vtkMatrix4x4* transformVtk_RAS,
+    double center[3]=nullptr);
 
   template<typename T>
   static bool SetVTKOrientedGridTransformFromITK(vtkObject* loggerObject, vtkOrientedGridTransform* transformVtk_RAS,
@@ -155,7 +156,8 @@ template<typename T>
 bool vtkITKTransformConverter::SetVTKLinearTransformFromITK(
     vtkObject* /*loggerObject*/,
     vtkMatrix4x4* transformVtk_RAS,
-    typename itk::TransformBaseTemplate<T>::Pointer transformItk_LPS)
+    typename itk::TransformBaseTemplate<T>::Pointer transformItk_LPS,
+    double center[3] /*=nullptr*/)
 {
   static const unsigned int D = VTKDimension;
   typedef itk::MatrixOffsetTransformBase<T,D,D> LinearTransformType;
@@ -256,11 +258,17 @@ bool vtkITKTransformConverter::SetVTKLinearTransformFromITK(
   vtkMatrix4x4::Multiply4x4(lps2ras, transformVtk_LPS, transformVtk_LPS);
   vtkMatrix4x4::Multiply4x4(transformVtk_LPS, ras2lps, transformVtk_RAS);
 
+  if (center)
+    {
+
+    }
+
   return convertedToVtkMatrix;
 }
 
 //----------------------------------------------------------------------------
-bool vtkITKTransformConverter::SetITKLinearTransformFromVTK(vtkObject* loggerObject, itk::Object::Pointer& transformItk_LPS, vtkMatrix4x4* transformVtk_RAS)
+bool vtkITKTransformConverter::SetITKLinearTransformFromVTK(vtkObject* loggerObject, itk::Object::Pointer& transformItk_LPS, vtkMatrix4x4* transformVtk_RAS,
+  double center[3] /*=nullptr*/)
 {
   typedef itk::AffineTransform<double, VTKDimension> AffineTransformType;
 
@@ -302,6 +310,10 @@ bool vtkITKTransformConverter::SetITKLinearTransformFromVTK(vtkObject* loggerObj
   AffineTransformType::Pointer affine = AffineTransformType::New();
   affine->SetMatrix(itkmat);
   affine->SetOffset(itkoffset);
+  if (center)
+    {
+    affine->SetCenter(center);
+    }
 
   transformItk_LPS = affine;
   return true;
@@ -1341,7 +1353,8 @@ vtkAbstractTransform* vtkITKTransformConverter::CreateVTKTransformFromITK(
 
 //----------------------------------------------------------------------------
 itk::Object::Pointer vtkITKTransformConverter::CreateITKTransformFromVTK(vtkObject* loggerObject,
-  vtkAbstractTransform* transformVtk, itk::Object::Pointer& secondaryTransformItk, int preferITKv3CompatibleTransforms, bool initialize /*= true*/)
+  vtkAbstractTransform* transformVtk, itk::Object::Pointer& secondaryTransformItk, int preferITKv3CompatibleTransforms, bool initialize /*= true*/,
+  double center[3] /*=nullptr*/)
 {
   typedef itk::CompositeTransform< double > CompositeTransformType;
 

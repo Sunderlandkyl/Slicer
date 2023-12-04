@@ -71,7 +71,7 @@ public:
 
   enum
   {
-    WidgetEventTranslateTransformCenterStart = WidgetEventUser,
+    WidgetEventTranslateTransformCenterStart = WidgetStateInteraction_Last,
     WidgetEventTranslateTransformCenterEnd,
   };
 
@@ -88,11 +88,12 @@ protected:
   vtkMRMLTransformHandleWidget();
   ~vtkMRMLTransformHandleWidget() override;
 
-  bool ProcessWidgetTranslateTransformCenterStart(vtkMRMLInteractionEventData* eventData);
-  bool ProcessMouseMove(vtkMRMLInteractionEventData* eventData);
-  bool ProcessEndMouseDrag(vtkMRMLInteractionEventData* eventData);
+  virtual bool ProcessWidgetTranslateTransformCenterStart(vtkMRMLInteractionEventData* eventData);
+  bool ProcessMouseMove(vtkMRMLInteractionEventData* eventData) override;
+  bool ProcessEndMouseDrag(vtkMRMLInteractionEventData* eventData) override;
+  bool ProcessWidgetMenu(vtkMRMLInteractionEventData* eventData) override;
 
-  void TranslateTransformCenter(double eventPos[2]);
+  virtual void TranslateTransformCenter(double eventPos[2]);
 
   void ApplyTransform(vtkTransform* transform) override;
 

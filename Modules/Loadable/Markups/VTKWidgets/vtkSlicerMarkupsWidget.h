@@ -60,9 +60,6 @@ public:
   {
     WidgetStateDefine = WidgetStateUser, // click in empty area will place a new point
     WidgetStateTranslateControlPoint, // translating the active point by mouse move
-    WidgetStateOnTranslationHandle, // hovering over a translation interaction handle
-    WidgetStateOnRotationHandle, // hovering over a rotation interaction handle
-    WidgetStateOnScaleHandle, // hovering over a scale interaction handle
     WidgetStateMarkups_Last
   };
 
@@ -141,8 +138,6 @@ protected:
 
   virtual void TranslatePoint(double eventPos[2], bool snapToSlice = false);
   virtual void TranslateWidget(double eventPos[2]);
-  virtual void ScaleWidget(double eventPos[2]);
-  virtual void RotateWidget(double eventPos[2]);
 
   bool IsAnyControlPointLocked();
 
@@ -170,13 +165,11 @@ protected:
   virtual bool ProcessControlPointInsert(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessControlPointMoveStart(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetTranslateStart(vtkMRMLInteractionEventData* eventData);
-  virtual bool ProcessWidgetRotateStart(vtkMRMLInteractionEventData* eventData);
-  virtual bool ProcessWidgetScaleStart(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessEndMouseDrag(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetReset(vtkMRMLInteractionEventData* eventData);
   virtual bool ProcessWidgetJumpCursor(vtkMRMLInteractionEventData* eventData);
 
-  // Variables for translate/rotate/scale
+  // Variables for translate
   double LastEventPosition[2];
   double StartEventOffsetPosition[2];
 

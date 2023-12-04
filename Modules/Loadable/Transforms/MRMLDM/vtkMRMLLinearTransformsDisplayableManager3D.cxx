@@ -436,12 +436,12 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::UpdateInteraction
   vtkMRMLTransformNode* displayableNode, unsigned long event, vtkMRMLTransformDisplayNode* displayNode)
 {
   if (!displayableNode || !displayNode)
-  {
+    {
     return;
-  }
+    }
 
   vtkSmartPointer<vtkMRMLTransformHandleWidget> widget = nullptr;
-  auto pipelineIt = this->InteractionPipelines.find(displayNode);
+  InteractionPipelinesCacheType::iterator pipelineIt = this->InteractionPipelines.find(displayNode);
 
   if (displayNode->GetInteractionVisibility())
     {
@@ -657,7 +657,7 @@ vtkMRMLTransformHandleWidget* vtkMRMLLinearTransformsDisplayableManager3D::vtkIn
   vtkMRMLTransformHandleWidget* closestWidget = nullptr;
   closestDistance2 = VTK_DOUBLE_MAX;
 
-  for (auto widgetIterator : this->InteractionPipelines)
+  for (std::pair<vtkMRMLTransformDisplayNode*, vtkMRMLTransformHandleWidget*> widgetIterator : this->InteractionPipelines)
     {
     vtkMRMLTransformHandleWidget* widget = widgetIterator.second;
     if (!widget)

@@ -48,8 +48,6 @@ vtkSlicerPlaneWidget::vtkSlicerPlaneWidget()
 
   this->SetEventTranslationClickAndDrag(WidgetStateOnWidget, vtkCommand::LeftButtonPressEvent, vtkEvent::ShiftModifier,
     WidgetStateTranslatePlane, WidgetEventPlaneMoveStart, WidgetEventPlaneMoveEnd);
-  this->SetEventTranslationClickAndDrag(WidgetStateOnScaleHandle, vtkCommand::LeftButtonPressEvent, vtkEvent::AltModifier,
-    WidgetStateSymmetricScale, WidgetEventSymmetricScaleStart, WidgetEventSymmetricScaleEnd);
 }
 
 //----------------------------------------------------------------------
@@ -279,7 +277,7 @@ bool vtkSlicerPlaneWidget::ProcessUpdatePlaneFromViewNormal(vtkMRMLInteractionEv
 //-------------------------------------------------------------------------
 bool vtkSlicerPlaneWidget::ProcessWidgetSymmetricScaleStart(vtkMRMLInteractionEventData* eventData)
 {
-  if ((this->WidgetState != vtkSlicerMarkupsWidget::WidgetStateOnWidget && this->WidgetState != vtkSlicerMarkupsWidget::WidgetStateOnScaleHandle)
+  if ((this->WidgetState != vtkSlicerMarkupsWidget::WidgetStateOnWidget)
     || this->IsAnyControlPointLocked())
     {
     return false;
@@ -434,15 +432,7 @@ bool vtkSlicerPlaneWidget::ProcessEndMouseDrag(vtkMRMLInteractionEventData* even
 
   if (this->WidgetState == vtkSlicerPlaneWidget::WidgetStateSymmetricScale)
     {
-    int activeComponentType = this->GetActiveComponentType();
-    if (activeComponentType == vtkMRMLMarkupsDisplayNode::ComponentScaleHandle)
-      {
-      this->SetWidgetState(WidgetStateOnScaleHandle);
-      }
-    else
-      {
-      this->SetWidgetState(WidgetStateOnWidget);
-      }
+    this->SetWidgetState(WidgetStateOnWidget);
     this->EndWidgetInteraction();
     }
 

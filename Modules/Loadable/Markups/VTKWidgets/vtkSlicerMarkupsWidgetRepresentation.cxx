@@ -52,19 +52,6 @@
 #include <vtkMRMLTransformNode.h>
 
 //----------------------------------------------------------------------
-static const double INTERACTION_HANDLE_RADIUS = 0.5; // Size of the sphere models used for handles
-static const double INTERACTION_ROTATION_ARC_TUBE_RADIUS = INTERACTION_HANDLE_RADIUS * 0.4; // Radius of the tube connecting the rotation arc.
-
-static const double INTERACTION_WIDGET_RADIUS = INTERACTION_HANDLE_RADIUS * 12.8; // Radius of the entire interaction handle widget.
-
-static const double INTERACTION_ROTATION_ARC_RADIUS = INTERACTION_WIDGET_RADIUS * 0.8; // Radius of the rotation arc.
-
-static const double INTERACTION_TRANSLATION_TIP_RADIUS = INTERACTION_HANDLE_RADIUS * 0.75; // Radius of the arrow tip of the translation handle.
-static const double INTERACTION_TRANSLATION_TIP_LENGTH = INTERACTION_TRANSLATION_TIP_RADIUS * 2.0;
-static const double INTERACTION_TRANSLATION_HANDLE_SHAFT_RADIUS = INTERACTION_TRANSLATION_TIP_RADIUS * 0.5; // Size of the tube
-static const double INTERACTION_TRANSLATION_HANDLE_SHAFT_LENGTH = INTERACTION_HANDLE_RADIUS * 12.8; // Length of the translation handle
-
-//----------------------------------------------------------------------
 vtkSlicerMarkupsWidgetRepresentation::ControlPointsPipeline::ControlPointsPipeline()
 {
   this->TextProperty = vtkSmartPointer<vtkTextProperty>::New();

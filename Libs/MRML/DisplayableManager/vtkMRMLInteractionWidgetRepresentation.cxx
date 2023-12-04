@@ -202,11 +202,11 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
 
         double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
         this->GetInteractionHandleOriginWorld(originWorldPos);
-        double originDisplayPos[4] = { 0.0 };
+        double originDisplayPos[4] = { 0.0, 0.0, 0.0, 0.0 };
         rasToxyMatrix->MultiplyPoint(originWorldPos, originDisplayPos);
         originDisplayPos[2] = displayPosition3[2]; // Handles are always projected
 
-        double t = 0;
+        double t = 0.0;
         double lineDistance = vtkLine::DistanceToLine(displayPosition3, originDisplayPos, handleDisplayPos, t);
         double lineDistance2 = lineDistance * lineDistance;
         if (lineDistance2 < maxPickingDistanceFromControlPoint2 / 2.0 && lineDistance2 < closestDistance2)
@@ -231,7 +231,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
         }
 
       double* handleWorldPos = handleInfo.PositionWorld;
-      double handleDisplayPos[3] = { 0 };
+      double handleDisplayPos[3] = { 0.0, 0.0, 0.0 };
 
       if (interactionEventData->IsDisplayPositionValid())
         {
@@ -275,7 +275,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
           continue;
           }
         double* handleWorldPos = handleInfo.PositionWorld;
-        double handleDisplayPos[3] = { 0 };
+        double handleDisplayPos[3] = { 0.0, 0.0, 0.0 };
 
         if (interactionEventData->IsDisplayPositionValid())
           {
@@ -288,12 +288,12 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
 
           double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
           this->GetInteractionHandleOriginWorld(originWorldPos);
-          double originDisplayPos[4] = { 0.0 };
+          double originDisplayPos[4] = { 0.0, 0.0, 0.0, 0.0 };
           this->Renderer->SetWorldPoint(originWorldPos);
           this->Renderer->WorldToDisplay();
           this->Renderer->GetDisplayPoint(originDisplayPos);
           originDisplayPos[2] = displayPosition3[2]; // Handles are always projected
-          double t = 0;
+          double t = 0.0;
           double lineDistance = vtkLine::DistanceToLine(displayPosition3, originDisplayPos, handleDisplayPos, t);
           double lineDistance2 = lineDistance * lineDistance;
           if (lineDistance < pixelTolerance && lineDistance2 < closestDistance2)
@@ -310,7 +310,7 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
             this->PickingTolerance / interactionEventData->GetWorldToPhysicalScale();
           double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
           this->GetInteractionHandleOriginWorld(originWorldPos);
-          double t;
+          double t = 0.0;
           double lineDistance = vtkLine::DistanceToLine(worldPosition, originWorldPos, handleWorldPos, t);
           if (lineDistance < worldTolerance && lineDistance < closestDistance2)
             {
@@ -354,19 +354,19 @@ double vtkMRMLInteractionWidgetRepresentation::GetViewScaleFactorAtPosition(doub
     {
     double cameraFP[4] = { positionWorld[0], positionWorld[1], positionWorld[2], 1.0 };
 
-    double cameraViewUp[3] = { 0 };
+    double cameraViewUp[3] = { 0.0, 0.0, 0.0 };
     cam->GetViewUp(cameraViewUp);
     vtkMath::Normalize(cameraViewUp);
 
     // Get distance in pixels between two points at unit distance above and below the focal point
     this->Renderer->SetWorldPoint(cameraFP[0] + cameraViewUp[0], cameraFP[1] + cameraViewUp[1], cameraFP[2] + cameraViewUp[2], cameraFP[3]);
     this->Renderer->WorldToDisplay();
-    double topCenter[3] = { 0 };
+    double topCenter[3] = { 0.0, 0.0, 0.0 };
     this->Renderer->GetDisplayPoint(topCenter);
     topCenter[2] = 0.0;
     this->Renderer->SetWorldPoint(cameraFP[0] - cameraViewUp[0], cameraFP[1] - cameraViewUp[1], cameraFP[2] - cameraViewUp[2], cameraFP[3]);
     this->Renderer->WorldToDisplay();
-    double bottomCenter[3] = { 0 };
+    double bottomCenter[3] = { 0.0, 0.0, 0.0 };
     this->Renderer->GetDisplayPoint(bottomCenter);
     bottomCenter[2] = 0.0;
     double distInPixels = sqrt(vtkMath::Distance2BetweenPoints(topCenter, bottomCenter));
@@ -1044,31 +1044,31 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
       vtkMath::MultiplyScalar(axis_World, -1);
       }
 
-    double fadeAngleRange = this->StartFadeAngle - this->EndFadeAngle;
+    double fadeAngleRange = this->StartFadeAngleDegrees - this->EndFadeAngleDegrees;
     double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal_World, axis_World));
     if (type == InteractionRotationHandle)
       {
       // Fade happens when the axis approaches 90 degrees from the view normal
-      if (angle > 90 - this->EndFadeAngle)
+      if (angle > 90 - this->EndFadeAngleDegrees)
         {
         opacity = 0.0;
         }
-      else if (angle > 90 - this->StartFadeAngle)
+      else if (angle > 90 - this->StartFadeAngleDegrees)
         {
-        double difference = angle - (90 - this->StartFadeAngle);
+        double difference = angle - (90 - this->StartFadeAngleDegrees);
         opacity = 1.0 - (difference / fadeAngleRange);
         }
       }
     else if (type == InteractionTranslationHandle || type == InteractionScaleHandle)
       {
       // Fade happens when the axis approaches 0 degrees from the view normal
-      if (angle < this->EndFadeAngle)
+      if (angle < this->EndFadeAngleDegrees)
         {
         opacity = 0.0;
         }
-      else if (angle < this->StartFadeAngle)
+      else if (angle < this->StartFadeAngleDegrees)
         {
-        double difference = angle - this->EndFadeAngle;
+        double difference = angle - this->EndFadeAngleDegrees;
         opacity = (difference / fadeAngleRange);
         }
       }
@@ -1318,14 +1318,14 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateSlicePlaneFromSliceNode()
   this->WorldToSliceTransform->SetMatrix(rasToSliceXY.GetPointer());
 
   // Update slice plane (for distance computation)
-  double normal[3];
-  double origin[3];
+  double normal[3] = { 0.0, 0.0, 0.0 };
+  double origin[3] = { 0.0, 0.0, 0.0 };
   const double planeOrientation = 1.0; // +/-1: orientation of the normal
   for (int i = 0; i < 3; i++)
-  {
+    {
     normal[i] = planeOrientation * sliceXYToRAS->GetElement(i, 2);
     origin[i] = sliceXYToRAS->GetElement(i, 3);
-  }
+    }
   vtkMath::Normalize(normal);
 
   // Compare slice normal and new normal
@@ -1371,7 +1371,7 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateViewScaleFactor()
     }
   else
     {
-    double cameraFP[3] = { 0.0 };
+    double cameraFP[3] = { 0.0, 0.0, 0.0 };
     this->Renderer->GetActiveCamera()->GetFocalPoint(cameraFP);
     this->ViewScaleFactorMmPerPixel = this->GetViewScaleFactorAtPosition(cameraFP);
     }

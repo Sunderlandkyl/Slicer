@@ -447,7 +447,7 @@ void vtkMRMLLinearTransformsDisplayableManager2D::ProcessMRMLNodesEvents(vtkObje
       this->RequestRender();
       }
 
-    for (auto interactionWidget : this->Internal->InteractionWidgets)
+    for (std::pair<vtkMRMLTransformDisplayNode*, vtkMRMLTransformHandleWidget*> interactionWidget : this->Internal->InteractionWidgets)
       {
       interactionWidget.second->UpdateFromMRML(displayableNode, event, callData);
       if (interactionWidget.second->GetNeedToRender())

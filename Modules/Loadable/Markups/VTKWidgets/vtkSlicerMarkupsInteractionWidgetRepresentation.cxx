@@ -160,8 +160,13 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateInteractionPipeline(
     return;
     }
 
-  // We are specifying the position of the handles manually.
-  this->Pipeline->AxisScaleGlypher->SetInputData(this->Pipeline->ScaleHandlePoints);
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
+  if (planeNode || roiNode)
+    {
+    // We are specifying the position of the handles manually.
+    this->Pipeline->AxisScaleGlypher->SetInputData(this->Pipeline->ScaleHandlePoints);
+    }
 
   // Final visibility handled by superclass in vtkMRMLInteractionWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
@@ -390,7 +395,7 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionHandleAxisLo
 {
   if (!axis_Local)
     {
-    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument");
+    vtkErrorMacro("GetInteractionHandleAxisLocal: Invalid axis argument");
     return;
     }
 
@@ -403,29 +408,51 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionHandleAxisLo
   axis_Local[0] = 0.0;
   axis_Local[1] = 0.0;
   axis_Local[2] = 0.0;
-  switch (index)
-    {
-    case 0:
-    case 1:
-      axis_Local[0] = 1.0;
-      break;
-    case 2:
-    case 3:
-      axis_Local[1] = 1.0;
-      break;
-    default:
-      break;
-    }
 
-  if (vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode()))
+  if (vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode()))
     {
     switch (index)
       {
-      case 4:
-      case 5:
+      case vtkMRMLMarkupsPlaneDisplayNode::HandleLEdge:
+        axis_Local[0] = 1.0;
+        break;
+      case vtkMRMLMarkupsPlaneDisplayNode::HandleREdge:
+        axis_Local[0] = -1.0;
+        break;
+      case vtkMRMLMarkupsPlaneDisplayNode::HandleAEdge:
+        axis_Local[1] = 1.0;
+        break;
+      case vtkMRMLMarkupsPlaneDisplayNode::HandlePEdge:
+        axis_Local[1] = -1.0;
+        break;
+      default:
+        break;
+      }
+    }
+  else if (vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode()))
+    {
+    switch (index)
+      {
+      case vtkMRMLMarkupsROIDisplayNode::HandleLFace:
+        axis_Local[0] = -1.0;
+        break;
+      case  vtkMRMLMarkupsROIDisplayNode::HandleRFace:
+        axis_Local[0] = 1.0;
+        break;
+      case vtkMRMLMarkupsROIDisplayNode::HandlePFace:
+        axis_Local[1] = -1.0;
+        break;
+      case  vtkMRMLMarkupsROIDisplayNode::HandleAFace:
+        axis_Local[1] = 1.0;
+        break;
+      case vtkMRMLMarkupsROIDisplayNode::HandleIFace:
+        axis_Local[2] = -1.0;
+        break;
+      case  vtkMRMLMarkupsROIDisplayNode::HandleSFace:
         axis_Local[2] = 1.0;
         break;
       default:
+        // Other handles scaling are not restricted to a single axis
         break;
       }
     }
@@ -438,7 +465,16 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
     {
     return;
     }
+
   if (type != InteractionScaleHandle)
+    {
+    Superclass::GetHandleColor(type, index, color);
+    return;
+    }
+
+  vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
+  vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
+  if (!planeNode && !roiNode)
     {
     Superclass::GetHandleColor(type, index, color);
     return;
@@ -453,7 +489,7 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
 
   double* currentColor = white;
 
-  if (vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode()))
+  if (planeNode)
     {
     switch (index)
       {
@@ -469,7 +505,7 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
         break;
       }
     }
-  else if (vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode()))
+  else if (roiNode)
     {
     switch (index)
       {
@@ -509,7 +545,7 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetInteractionHandlePositi
 {
   if (!positionWorld)
     {
-    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandlePositionWorld: Invalid position argument");
+    vtkErrorMacro("GetInteractionHandlePositionWorld: Invalid position argument");
     }
 
   if (type != InteractionScaleHandle)

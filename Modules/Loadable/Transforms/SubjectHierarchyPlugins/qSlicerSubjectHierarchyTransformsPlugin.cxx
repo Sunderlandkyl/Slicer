@@ -70,6 +70,8 @@ public:
   QAction* IdentityAction;
 
   QAction* ToggleInteractionBoxAction;
+
+  QVariantMap ViewContextMenuEventData;
 };
 
 //-----------------------------------------------------------------------------
@@ -388,6 +390,56 @@ void qSlicerSubjectHierarchyTransformsPlugin::showVisibilityContextMenuActionsFo
         d->ToggleInteractionBoxAction->blockSignals(wasBlocked);
         }
       }
+    }
+}
+
+
+//-----------------------------------------------------------------------------
+QList<QAction*> qSlicerSubjectHierarchyTransformsPlugin::viewContextMenuActions()const
+{
+  Q_D(const qSlicerSubjectHierarchyTransformsPlugin);
+
+  QList<QAction*> actions;
+  actions << actions << d->InvertAction << d->IdentityAction << d->ToggleInteractionBoxAction;
+  return actions;
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSubjectHierarchyTransformsPlugin::showViewContextMenuActionsForItem(vtkIdType itemID, QVariantMap eventData)
+{
+  Q_D(qSlicerSubjectHierarchyTransformsPlugin);
+  // make sure we don't use metadata from some previous view context menu calls
+  d->ViewContextMenuEventData.clear();
+  if (itemID == vtkMRMLSubjectHierarchyNode::INVALID_ITEM_ID)
+    {
+    qCritical() << Q_FUNC_INFO << ": Invalid input item";
+    return;
+    }
+  vtkMRMLSubjectHierarchyNode* shNode = qSlicerSubjectHierarchyPluginHandler::instance()->subjectHierarchyNode();
+  if (!shNode)
+    {
+    qCritical() << Q_FUNC_INFO << ": Failed to access subject hierarchy node";
+    return;
+    }
+
+  // Markup
+  vtkMRMLTransformNode* associatedNode = vtkMRMLTransformNode::SafeDownCast(shNode->GetItemDataNode(itemID));
+  if (!associatedNode)
+    {
+    return;
+    }
+
+  d->ViewContextMenuEventData = eventData;
+  d->ViewContextMenuEventData["NodeID"] = QVariant(associatedNode->GetID());
+
+  d->InvertAction->setVisible(true);
+  d->IdentityAction->setVisible(true);
+  d->ToggleInteractionBoxAction->setVisible(true);
+
+  vtkMRMLTransformDisplayNode* displayNode = vtkMRMLTransformDisplayNode::SafeDownCast(associatedNode->GetDisplayNode());
+  if (displayNode)
+    {
+    d->ToggleInteractionBoxAction->setChecked(displayNode->GetVisibility());
     }
 }
 

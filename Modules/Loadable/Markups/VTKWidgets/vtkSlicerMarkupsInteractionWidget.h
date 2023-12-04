@@ -78,7 +78,15 @@ public:
   bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& distance2) override;
   bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
 
+  void ScaleWidget(double eventPos[2]) override;
+  virtual void ScaleWidgetPlane(double eventPos[2], bool symmetricScale);
+  virtual void FlipPlaneHandles(bool flipLRHandle, bool flipPAHandle);
+  virtual void ScaleWidgetROI(double eventPos[2], bool symmetricScale);
+  virtual void FlipROIHandles(bool flipLRHandle, bool flipPAHandle, bool flipISHandle);
+
   virtual vtkSlicerMarkupsInteractionWidget* CreateInstance() const;
+
+  bool ProcessWidgetMenu(vtkMRMLInteractionEventData* eventData) override;
 
 protected:
   vtkSlicerMarkupsInteractionWidget();

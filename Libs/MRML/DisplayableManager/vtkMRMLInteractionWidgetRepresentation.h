@@ -14,7 +14,7 @@
 
   This file was originally developed by Kyle Sunderland, PerkLab, Queen's University
   and was supported through CANARIE's Research Software Program, Cancer
-  Care Ontario, OpenAnatomy, and Brigham and Women’s Hospital through NIH grant R01MH112748.
+  Care Ontario, OpenAnatomy, and Brigham and Womenï¿½s Hospital through NIH grant R01MH112748.
 
 ==============================================================================*/
 
@@ -284,8 +284,10 @@ protected:
   virtual double GetInteractionSize();
   virtual bool GetInteractionSizeAbsolute();
 
-  double StartFadeAngle{ 30 };
-  double EndFadeAngle{ 20 };
+  // The angle between the camera and the interaction axis at which point the interaction handle starts to fade out.
+  double StartFadeAngleDegrees{ 30 };
+  // The angle between the camera and the interaction axis at which point the interaction handle is completely faded out.
+  double EndFadeAngleDegrees{ 20 };
   double InteractionHandleScaleFactor{ 7.0 };
 
   double ViewScaleFactorMmPerPixel;
@@ -298,7 +300,7 @@ protected:
   // For slice views, renderer world coordinate system is the display coordinate system, so it is measured in pixels.
   // For 3D views, renderer world coordinate system is the Slicer world coordinate system, so it is measured in the
   // scene length unit (typically millimeters).
-  double InteractionSize{ 3.0 };
+  double InteractionSize{ 1.0 };
 
   bool Interacting{ false };
 

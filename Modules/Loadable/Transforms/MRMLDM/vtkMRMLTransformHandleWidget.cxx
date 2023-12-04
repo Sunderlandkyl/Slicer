@@ -197,11 +197,27 @@ bool vtkMRMLTransformHandleWidget::ProcessInteractionEvent(vtkMRMLInteractionEve
     case WidgetEventTranslateTransformCenterEnd:
       processedEvent = ProcessEndMouseDrag(eventData);
       break;
+    case WidgetEventMenu:
+      processedEvent = ProcessWidgetMenu(eventData);
+      break;
     default:
       processedEvent = Superclass::ProcessInteractionEvent(eventData);
       break;
     }
   return processedEvent;
+}
+
+//-------------------------------------------------------------------------
+bool vtkMRMLTransformHandleWidget::ProcessWidgetMenu(vtkMRMLInteractionEventData* eventData)
+{
+  vtkMRMLTransformNode* transformNode = this->GetTransformNode();
+  vtkMRMLTransformDisplayNode* displayNode = this->GetDisplayNode();
+  if (!transformNode || !displayNode)
+    {
+    return false;
+    }
+
+  this->ProcessWidgetMenuDisplayNodeTypeAndIndex(eventData, displayNode, displayNode->GetActiveInteractionType(), displayNode->GetActiveInteractionIndex());
 }
 
 //-------------------------------------------------------------------------
@@ -231,9 +247,9 @@ bool vtkMRMLTransformHandleWidget::ProcessEndMouseDrag(vtkMRMLInteractionEventDa
 bool vtkMRMLTransformHandleWidget::ProcessWidgetTranslateTransformCenterStart(vtkMRMLInteractionEventData* eventData)
 {
   if ((this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnWidget && this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnTranslationHandle))
-  {
+    {
     return false;
-  }
+    }
 
   this->SetWidgetState(WidgetStateTranslateTransformCenter);
   this->StartWidgetInteraction(eventData);

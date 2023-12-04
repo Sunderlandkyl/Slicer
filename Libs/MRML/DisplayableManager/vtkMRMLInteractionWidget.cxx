@@ -33,6 +33,7 @@
 #include <vtkRenderer.h>
 
 // MRML includes
+#include <vtkMRMLDisplayNode.h>
 #include <vtkMRMLSliceNode.h>
 
 //----------------------------------------------------------------------
@@ -45,33 +46,30 @@ vtkMRMLInteractionWidget::vtkMRMLInteractionWidget()
 
   // Update active component
   this->SetEventTranslation(WidgetStateIdle, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnWidget, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
   this->SetEventTranslation(WidgetStateIdle, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnWidget, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
 
   // Handle interactions
   this->SetEventTranslationClickAndDrag(WidgetStateOnTranslationHandle, vtkCommand::LeftButtonPressEvent, vtkEvent::NoModifier,
     WidgetStateTranslate, WidgetEventTranslateStart, WidgetEventTranslateEnd);
-  this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkCommand::RightButtonPressEvent, vtkEvent::NoModifier, WidgetEventPick);
-  this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::NoModifier, WidgetEventMenu);
 
   this->SetEventTranslationClickAndDrag(WidgetStateOnRotationHandle, vtkCommand::LeftButtonPressEvent, vtkEvent::NoModifier,
     WidgetStateRotate, WidgetEventRotateStart, WidgetEventRotateEnd);
-  this->SetEventTranslation(WidgetStateOnRotationHandle, vtkCommand::RightButtonPressEvent, vtkEvent::NoModifier, WidgetEventPick);
-  this->SetEventTranslation(WidgetStateOnRotationHandle, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::NoModifier, WidgetEventMenu);
 
   this->SetEventTranslationClickAndDrag(WidgetStateOnScaleHandle, vtkCommand::LeftButtonPressEvent, vtkEvent::NoModifier,
     WidgetStateScale, WidgetEventScaleStart, WidgetEventScaleEnd);
-  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkCommand::RightButtonPressEvent, vtkEvent::NoModifier, WidgetEventPick);
-  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::NoModifier, WidgetEventMenu);
 
-  // Update active interaction handle component
-  this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnTranslationHandle, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnRotationHandle, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnRotationHandle, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
-  this->SetEventTranslation(WidgetStateOnScaleHandle, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+  // Context menu events
+  unsigned int interactionHandleStates[] = { WidgetStateOnTranslationHandle, WidgetStateOnRotationHandle, WidgetStateOnScaleHandle };
+  for (unsigned int interactionHandleState : interactionHandleStates)
+    {
+    this->SetEventTranslation(interactionHandleState, vtkCommand::RightButtonPressEvent, vtkEvent::AnyModifier, WidgetEventReserved);
+    this->SetEventTranslation(interactionHandleState, vtkCommand::RightButtonReleaseEvent, vtkEvent::AnyModifier, WidgetEventReserved);
+    this->SetEventTranslation(interactionHandleState, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::AnyModifier, WidgetEventMenu);
+
+    // Update active interaction handle component
+    this->SetEventTranslation(interactionHandleState, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+    this->SetEventTranslation(interactionHandleState, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+    }
 }
 
 //----------------------------------------------------------------------
@@ -80,7 +78,7 @@ vtkMRMLInteractionWidget::~vtkMRMLInteractionWidget() = default;
 //----------------------------------------------------------------------
 bool vtkMRMLInteractionWidget::ProcessWidgetRotateStart(vtkMRMLInteractionEventData* eventData)
 {
-  if ((this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnWidget && this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnRotationHandle))
+  if (this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnRotationHandle)
     {
     return false;
     }
@@ -92,7 +90,7 @@ bool vtkMRMLInteractionWidget::ProcessWidgetRotateStart(vtkMRMLInteractionEventD
 //-------------------------------------------------------------------------
 bool vtkMRMLInteractionWidget::ProcessWidgetScaleStart(vtkMRMLInteractionEventData* eventData)
 {
-  if ((this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnWidget && this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnScaleHandle))
+  if (this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnScaleHandle)
     {
     return false;
     }
@@ -104,7 +102,7 @@ bool vtkMRMLInteractionWidget::ProcessWidgetScaleStart(vtkMRMLInteractionEventDa
 //-------------------------------------------------------------------------
 bool vtkMRMLInteractionWidget::ProcessWidgetTranslateStart(vtkMRMLInteractionEventData* eventData)
 {
-  if ((this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnWidget && this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnTranslationHandle))
+  if (this->WidgetState != vtkMRMLInteractionWidget::WidgetStateOnTranslationHandle)
     {
     return false;
     }
@@ -124,7 +122,6 @@ bool vtkMRMLInteractionWidget::ProcessMouseMove(vtkMRMLInteractionEventData* eve
 
   int state = this->WidgetState;
   if (state == WidgetStateIdle
-    || state == WidgetStateOnWidget
     || state == WidgetStateOnTranslationHandle
     || state == WidgetStateOnRotationHandle
     || state == WidgetStateOnScaleHandle)
@@ -149,10 +146,6 @@ bool vtkMRMLInteractionWidget::ProcessMouseMove(vtkMRMLInteractionEventData* eve
     else if (foundComponentType == InteractionScaleHandle)
       {
       this->SetWidgetState(WidgetStateOnScaleHandle);
-      }
-    else
-      {
-      this->SetWidgetState(WidgetStateOnWidget);
       }
 
     this->SetActiveComponentIndex(foundComponentIndex);
@@ -234,18 +227,96 @@ bool vtkMRMLInteractionWidget::CanProcessInteractionEvent(vtkMRMLInteractionEven
 }
 
 //-------------------------------------------------------------------------
-bool vtkMRMLInteractionWidget::ProcessWidgetMenu(vtkMRMLInteractionEventData* eventData)
+bool vtkMRMLInteractionWidget::ProcessWidgetMenuDisplayNodeTypeAndIndex(
+  vtkMRMLInteractionEventData* eventData, vtkMRMLDisplayNode* displayNode, int type, int index)
 {
-  if ((this->WidgetState != WidgetStateOnWidget &&
-       this->WidgetState != WidgetStateOnTranslationHandle &&
-       this->WidgetState != WidgetStateOnRotationHandle &&
-       this->WidgetState != WidgetStateOnScaleHandle))
+  if (!displayNode)
     {
     return false;
     }
 
+  vtkNew<vtkMRMLInteractionEventData> menuEventData;
+  menuEventData->SetType(vtkMRMLDisplayNode::MenuEvent);
+  menuEventData->SetComponentType(type);
+  menuEventData->SetComponentIndex(index);
+  menuEventData->SetViewNode(this->WidgetRep->GetViewNode());
+
+  // Copy display position
+  if (eventData->IsDisplayPositionValid())
+    {
+    menuEventData->SetDisplayPosition(eventData->GetDisplayPosition());
+    }
+
+  // Copy/compute world position
+  double worldPos[3] = { 0.0 };
+  if (eventData->IsWorldPositionValid())
+    {
+    eventData->GetWorldPosition(worldPos);
+    menuEventData->SetWorldPosition(worldPos, eventData->IsWorldPositionAccurate());
+    }
+  else if (eventData->IsDisplayPositionValid())
+    {
+    double worldOrientationMatrix[9] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
+    int displayPos[2] = { 0 };
+    eventData->GetDisplayPosition(displayPos);
+    if (this->ConvertDisplayPositionToWorld(displayPos, worldPos, worldOrientationMatrix))
+      {
+      menuEventData->SetWorldPosition(worldPos);
+      }
+    }
+
+  displayNode->InvokeEvent(vtkMRMLDisplayNode::MenuEvent, menuEventData);
   return true;
 }
+
+//-------------------------------------------------------------------------
+bool vtkMRMLInteractionWidget::ConvertDisplayPositionToWorld(const int displayPos[2],
+  double worldPos[3], double worldOrientationMatrix[9], double* refWorldPos/*=nullptr*/)
+{
+  vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->GetRepresentation());
+  double doubleDisplayPos[3] = { static_cast<double>(displayPos[0]), static_cast<double>(displayPos[1]), 0.0 };
+  if (!rep)
+    {
+    return false;
+    }
+
+  // 2D view
+  if (rep->GetSliceNode())
+    {
+    rep->GetSliceToWorldCoordinates(doubleDisplayPos, worldPos);
+    return true;
+    }
+  else
+    {
+    // 3D view
+    bool preferPickOnSurface = true;
+    // SnapModeUnconstrained
+    // Move the point relative to reference position, not restricted to surfaces if possible.
+    if (refWorldPos)
+      {
+      // Reference position is available (most likely, moving the point).
+      return (rep->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
+        doubleDisplayPos, refWorldPos, worldPos, worldOrientationMatrix));
+      }
+    else
+      {
+      // Reference position is unavailable (e.g., not moving of an existing point but first placement)
+      // Even if the constraining on the surface is no preferred, it is still better to
+      // place it on a visible surface in 3D views rather on the .
+      //if (rep->AccuratePick(displayPos[0], displayPos[1], worldPos))
+      //    {
+      //    return true;
+      //    }
+      // TODO
+      }
+    // Last resort: place a point on the camera plane
+    // (no reference position is available and no surface is visible there)
+    return (rep->GetPointPlacer()->ComputeWorldPosition(this->Renderer,
+      doubleDisplayPos, worldPos, worldOrientationMatrix));
+    }
+  return false;
+}
+
 
 //-------------------------------------------------------------------------
 bool vtkMRMLInteractionWidget::ProcessEndMouseDrag(vtkMRMLInteractionEventData* vtkNotUsed(eventData))
@@ -275,10 +346,6 @@ bool vtkMRMLInteractionWidget::ProcessEndMouseDrag(vtkMRMLInteractionEventData* 
   else if (activeComponentType == InteractionScaleHandle)
     {
     this->SetWidgetState(WidgetStateOnScaleHandle);
-    }
-  else
-    {
-    this->SetWidgetState(WidgetStateOnWidget);
     }
 
   this->EndWidgetInteraction();
@@ -420,7 +487,7 @@ void vtkMRMLInteractionWidget::TranslateWidget(double eventPos[2])
       }
     }
 
-  double translationVector_World[3];
+  double translationVector_World[3] = { 0.0, 0.0, 0.0 };
   translationVector_World[0] = eventPos_World[0] - lastEventPos_World[0];
   translationVector_World[1] = eventPos_World[1] - lastEventPos_World[1];
   translationVector_World[2] = eventPos_World[2] - lastEventPos_World[2];
@@ -709,7 +776,7 @@ bool vtkMRMLInteractionWidget::GetIntersectionOnAxisPlane(int type, int index, c
     vtkCamera* camera = renderer->GetActiveCamera();
 
     // Focal point position
-    double cameraFP_World[4] = { 0.0, 0.0, 0.0 };
+    double cameraFP_World[4] = { 0.0, 0.0, 0.0, 0.0 };
     camera->GetFocalPoint(cameraFP_World);
 
     renderer->SetWorldPoint(cameraFP_World[0], cameraFP_World[1], cameraFP_World[2], cameraFP_World[3]);
