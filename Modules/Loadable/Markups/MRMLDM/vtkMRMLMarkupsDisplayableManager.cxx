@@ -493,6 +493,21 @@ void vtkMRMLMarkupsDisplayableManager::OnMRMLSliceNodeModifiedEvent()
     ++it;
     }
 
+  vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToInteractionWidgetType::iterator interactionIt
+   = this->Helper->MarkupsDisplayNodesToInteractionWidgets.begin();
+  while (interactionIt != this->Helper->MarkupsDisplayNodesToInteractionWidgets.end())
+    {
+    // we loop through all widgets
+    vtkSlicerMarkupsInteractionWidget* interactionWidget = (interactionIt->second);
+    interactionWidget->UpdateFromMRML(this->SliceNode, vtkCommand::ModifiedEvent);
+    if (interactionWidget->GetNeedToRender())
+      {
+      renderRequested = true;
+      interactionWidget->NeedToRenderOff();
+      }
+    ++interactionIt;
+    }
+
   if (renderRequested)
   {
     this->RequestRender();

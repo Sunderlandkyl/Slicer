@@ -1016,7 +1016,7 @@ bool vtkMRMLInteractionWidgetRepresentation::GetHandleVisibility(int type, int i
     {
      return visibilityArray->GetValue(index) != 0;
     }
-  return false;
+  return true;
 }
 
 //----------------------------------------------------------------------
