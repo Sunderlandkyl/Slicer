@@ -215,16 +215,10 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::UpdateDisplayable
 //---------------------------------------------------------------------------
 void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::RemoveDisplayNode(vtkMRMLTransformDisplayNode* displayNode)
 {
-  //PipelinesCacheType::iterator actorsIt = this->DisplayPipelines.find(displayNode);
-  //if(actorsIt == this->DisplayPipelines.end())
-  //  {
-  //  return;
-  //  }
-  //const Pipeline* pipeline = actorsIt->second;
-  //this->External->GetRenderer()->RemoveActor(pipeline->Actor);
-  //delete pipeline;
-  //this->DisplayPipelines.erase(actorsIt);
-
+  if (!displayNode)
+    {
+    return;
+    }
   this->InteractionPipelines.erase(displayNode);
 }
 

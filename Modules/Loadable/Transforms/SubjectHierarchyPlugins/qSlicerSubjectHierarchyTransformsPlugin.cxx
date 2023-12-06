@@ -104,16 +104,19 @@ void qSlicerSubjectHierarchyTransformsPluginPrivate::init()
 
   this->InvertAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Invert transform"), q);
   QObject::connect(this->InvertAction, SIGNAL(triggered()), q, SLOT(invert()));
+  this->InvertAction->setObjectName("InvertTransform");
   this->InvertCurrentItemAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Invert transform"), q);
   QObject::connect(this->InvertCurrentItemAction, SIGNAL(triggered()), q, SLOT(invertCurrentItem()));
 
   this->IdentityAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Reset transform to identity"), q);
   QObject::connect(this->IdentityAction, SIGNAL(triggered()), q, SLOT(identity()));
+  this->IdentityAction->setObjectName("ResetToIdentity");
   this->IdentityCurrentItemAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Reset transform to identity"), q);
   QObject::connect(this->IdentityCurrentItemAction, SIGNAL(triggered()), q, SLOT(identityCurrentItem()));
 
   this->ResetCenterOfTransformAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Reset center of transformation"), q);
   QObject::connect(this->ResetCenterOfTransformAction, SIGNAL(triggered()), q, SLOT(resetCenterOfTransformation()));
+  this->ResetCenterOfTransformAction->setObjectName("ResetCenterOfTransformation");
   this->ResetCenterOfTransformCurrentItemAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Reset center of transformation"), q);
   QObject::connect(this->ResetCenterOfTransformCurrentItemAction, SIGNAL(triggered()), q, SLOT(resetCenterOfTransformationCurrentItem()));
 
@@ -462,7 +465,6 @@ void qSlicerSubjectHierarchyTransformsPlugin::showViewContextMenuActionsForItem(
     return;
     }
 
-  // Markup
   vtkMRMLTransformNode* associatedNode = vtkMRMLTransformNode::SafeDownCast(shNode->GetItemDataNode(itemID));
   if (!associatedNode)
     {
@@ -476,12 +478,6 @@ void qSlicerSubjectHierarchyTransformsPlugin::showViewContextMenuActionsForItem(
   d->IdentityAction->setVisible(true);
   d->ResetCenterOfTransformAction->setVisible(true);
   d->ToggleInteractionBoxAction->setVisible(true);
-
-  vtkMRMLTransformDisplayNode* displayNode = vtkMRMLTransformDisplayNode::SafeDownCast(associatedNode->GetDisplayNode());
-  if (displayNode)
-    {
-    d->ToggleInteractionBoxAction->setChecked(displayNode->GetVisibility());
-    }
 }
 
 //---------------------------------------------------------------------------

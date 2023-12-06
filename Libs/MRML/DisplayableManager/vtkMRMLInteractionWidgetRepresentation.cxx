@@ -969,7 +969,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
   double white[4]  = { 1.00, 1.00, 1.00, 1.00 };
   double yellow[4] = { 1.00, 1.00, 0.00, 1.00 };
 
-  double* currentColor = red;
+  double* currentColor = white;
   switch (index)
     {
     case 0:
@@ -1029,47 +1029,49 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
     return 0.0;
     }
 
-  double opacity = 1.0;
-
-
   double axis_World[3] = { 0.0, 0.0, 0.0 };
   this->GetInteractionHandleAxisWorld(type, index, axis_World);
-  if (axis_World[0] > 0.0 || axis_World[1] > 0.0 || axis_World[2] > 0.0)
+  if (axis_World[0] == 0.0 && axis_World[1] == 0.0 && axis_World[2] == 0.0)
     {
-    double viewNormal_World[3] = { 0.0, 0.0, 0.0 };
-    this->GetHandleToCameraVector(viewNormal_World);
-    if (vtkMath::Dot(viewNormal_World, axis_World) < 0)
-      {
-      vtkMath::MultiplyScalar(axis_World, -1);
-      }
+    // No axis specified. The handle should be viewable from any direction.
+    return 1.0;
+    }
 
-    double fadeAngleRange = this->StartFadeAngleDegrees - this->EndFadeAngleDegrees;
-    double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal_World, axis_World));
-    if (type == InteractionRotationHandle)
+  double opacity = 1.0;
+
+  double viewNormal_World[3] = { 0.0, 0.0, 0.0 };
+  this->GetHandleToCameraVector(viewNormal_World);
+  if (vtkMath::Dot(viewNormal_World, axis_World) < 0.0)
+    {
+    vtkMath::MultiplyScalar(axis_World, -1.0);
+    }
+
+  double fadeAngleRange = this->StartFadeAngleDegrees - this->EndFadeAngleDegrees;
+  double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal_World, axis_World));
+  if (type == InteractionRotationHandle)
+    {
+    // Fade happens when the axis approaches 90 degrees from the view normal
+    if (angle > 90.0 - this->EndFadeAngleDegrees)
       {
-      // Fade happens when the axis approaches 90 degrees from the view normal
-      if (angle > 90 - this->EndFadeAngleDegrees)
-        {
-        opacity = 0.0;
-        }
-      else if (angle > 90 - this->StartFadeAngleDegrees)
-        {
-        double difference = angle - (90 - this->StartFadeAngleDegrees);
-        opacity = 1.0 - (difference / fadeAngleRange);
-        }
+      opacity = 0.0;
       }
-    else if (type == InteractionTranslationHandle || type == InteractionScaleHandle)
+    else if (angle > 90.0 - this->StartFadeAngleDegrees)
       {
-      // Fade happens when the axis approaches 0 degrees from the view normal
-      if (angle < this->EndFadeAngleDegrees)
-        {
-        opacity = 0.0;
-        }
-      else if (angle < this->StartFadeAngleDegrees)
-        {
-        double difference = angle - this->EndFadeAngleDegrees;
-        opacity = (difference / fadeAngleRange);
-        }
+      double difference = angle - (90.0 - this->StartFadeAngleDegrees);
+      opacity = 1.0 - (difference / fadeAngleRange);
+      }
+    }
+  else if (type == InteractionTranslationHandle || type == InteractionScaleHandle)
+    {
+    // Fade happens when the axis approaches 0 degrees from the view normal
+    if (angle < this->EndFadeAngleDegrees)
+      {
+      opacity = 0.0;
+      }
+    else if (angle < this->StartFadeAngleDegrees)
+      {
+      double difference = angle - this->EndFadeAngleDegrees;
+      opacity = (difference / fadeAngleRange);
       }
     }
   return opacity;
