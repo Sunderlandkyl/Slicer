@@ -61,14 +61,16 @@ vtkMRMLInteractionWidget::vtkMRMLInteractionWidget()
   unsigned int interactionHandleStates[] = { WidgetStateOnTranslationHandle, WidgetStateOnRotationHandle, WidgetStateOnScaleHandle };
   for (unsigned int interactionHandleState : interactionHandleStates)
     {
+    this->SetEventTranslation(interactionHandleState, vtkMRMLInteractionEventData::LeftButtonClickEvent, vtkEvent::NoModifier, WidgetEventJumpCursor);
+
     // Context menu events
-    this->SetEventTranslation(interactionHandleState, vtkCommand::RightButtonPressEvent, vtkEvent::AnyModifier, WidgetEventReserved);
-    this->SetEventTranslation(interactionHandleState, vtkCommand::RightButtonReleaseEvent, vtkEvent::AnyModifier, WidgetEventReserved);
-    this->SetEventTranslation(interactionHandleState, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::AnyModifier, WidgetEventMenu);
+    this->SetEventTranslation(interactionHandleState, vtkCommand::RightButtonPressEvent, vtkEvent::NoModifier, WidgetEventReserved);
+    this->SetEventTranslation(interactionHandleState, vtkCommand::RightButtonReleaseEvent, vtkEvent::NoModifier, WidgetEventReserved);
+    this->SetEventTranslation(interactionHandleState, vtkMRMLInteractionEventData::RightButtonClickEvent, vtkEvent::NoModifier, WidgetEventMenu);
 
     // Update active interaction handle component
-    this->SetEventTranslation(interactionHandleState, vtkCommand::MouseMoveEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
-    this->SetEventTranslation(interactionHandleState, vtkCommand::Move3DEvent, vtkEvent::AnyModifier, WidgetEventMouseMove);
+    this->SetEventTranslation(interactionHandleState, vtkCommand::MouseMoveEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
+    this->SetEventTranslation(interactionHandleState, vtkCommand::Move3DEvent, vtkEvent::NoModifier, WidgetEventMouseMove);
     }
 }
 
@@ -199,11 +201,6 @@ bool vtkMRMLInteractionWidget::CanProcessInteractionEvent(vtkMRMLInteractionEven
     return this->CanProcessButtonClickEvent(eventData, distance2);
     }
 
-  if (widgetEvent == WidgetEventNone)
-    {
-    return false;
-    }
-
   vtkMRMLInteractionWidgetRepresentation* rep = vtkMRMLInteractionWidgetRepresentation::SafeDownCast(this->GetRepresentation());
   if (!rep)
     {
@@ -213,7 +210,10 @@ bool vtkMRMLInteractionWidget::CanProcessInteractionEvent(vtkMRMLInteractionEven
   // Currently interacting
   if (this->WidgetState == WidgetStateTranslate
     || this->WidgetState == WidgetStateRotate
-    || this->WidgetState == WidgetStateScale)
+    || this->WidgetState == WidgetStateScale
+    /*|| this->WidgetState == WidgetStateOnScaleHandle
+    || this->WidgetState == WidgetStateOnRotationHandle
+    || this->WidgetState == WidgetStateOnTranslationHandle*/)
     {
     distance2 = 0.0;
     return true;

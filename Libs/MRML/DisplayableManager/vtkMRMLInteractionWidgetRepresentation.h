@@ -54,6 +54,7 @@
 #include <vtkActor2D.h>
 #include <vtkAppendPolyData.h>
 #include <vtkArcSource.h>
+#include <vtkArrayCalculator.h>
 #include <vtkArrowSource.h>
 #include <vtkGlyph3D.h>
 #include <vtkLookupTable.h>
@@ -173,7 +174,7 @@ protected:
     vtkSmartPointer<vtkTubeFilter>              AxisRotationTubeFilter;
     vtkSmartPointer<vtkPolyData>                AxisRotationInteriorAnglePolyData;
     vtkSmartPointer<vtkTubeFilter>              AxisRotationInteriorAngleTubeFilter;
-    vtkSmartPointer<vtkAppendPolyData>          AxisRotationGlyphSource;
+    vtkSmartPointer<vtkPolyData>                AxisRotationPolyData;
     vtkSmartPointer<vtkPolyData>                RotationHandlePoints;
     vtkSmartPointer<vtkTransformPolyDataFilter> RotationScaleTransformFilter;
     vtkSmartPointer<vtkTensorGlyph>             AxisRotationGlypher;
@@ -182,7 +183,7 @@ protected:
     vtkSmartPointer<vtkTransformPolyDataFilter> AxisTranslationGlyphTransformer;
     vtkSmartPointer<vtkPolyData>                TranslationHandlePoints;
     vtkSmartPointer<vtkTransformPolyDataFilter> TranslationScaleTransformFilter;
-    vtkSmartPointer<vtkGlyph3D>                 AxisTranslationGlypher;
+    vtkSmartPointer<vtkTensorGlyph>             AxisTranslationGlypher;
 
     vtkSmartPointer<vtkSphereSource>            AxisScaleHandleSource;
     vtkSmartPointer<vtkPolyData>                ScaleHandlePoints;
@@ -194,8 +195,8 @@ protected:
     vtkSmartPointer<vtkTransform>               HandleToWorldTransform;
     vtkSmartPointer<vtkLookupTable>             ColorTable;
     vtkSmartPointer<vtkPolyDataMapper2D>        Mapper;
-    vtkSmartPointer<vtkActor2D>                 Actor;
     vtkSmartPointer<vtkProperty2D>              Property;
+    vtkSmartPointer<vtkActor2D>                 Actor;
 
     vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
   };
@@ -246,6 +247,8 @@ protected:
   virtual int UpdateHandleColors(int type, int startIndex);
   virtual vtkPolyData* GetHandlePolydata(int type);
   virtual vtkTransform* GetHandleScaleTransform(int type);
+
+  virtual void UpdateTranslationHandleOrientation();
 
   /// Set the scale of the interaction handles in world coordinates
   virtual void SetWidgetScale(double scale);
