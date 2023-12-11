@@ -14,7 +14,7 @@
 
   This file was originally developed by Kyle Sunderland, PerkLab, Queen's University
   and was supported through CANARIE's Research Software Program, Cancer
-  Care Ontario, OpenAnatomy, and Brigham and Women’s Hospital through NIH grant R01MH112748.
+  Care Ontario, OpenAnatomy, and Brigham and Womenï¿½s Hospital through NIH grant R01MH112748.
 
 ==============================================================================*/
 
@@ -378,7 +378,7 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateROIScaleHandles2D()
   visibilityArray->SetNumberOfValues(scaleHandlePoints_Object->GetNumberOfPoints());
   visibilityArray->Fill(displayNode ? displayNode->GetScaleHandleVisibility() : 1);
 
-  // Corner handles are not visibile in 2D
+  // Corner handles are not visible in 2D
   for (int i = vtkMRMLMarkupsROIDisplayNode::HandleLPICorner; i <= vtkMRMLMarkupsROIDisplayNode::HandleRASCorner; ++i)
     {
     visibilityArray->SetValue(i, 0);

@@ -51,6 +51,7 @@
 #include <vtkMRMLSliceNode.h>
 
 // VTK includes
+#include <vtkActor.h>
 #include <vtkActor2D.h>
 #include <vtkAppendPolyData.h>
 #include <vtkArrayCalculator.h>
@@ -58,7 +59,9 @@
 #include <vtkLookupTable.h>
 #include <vtkPointPlacer.h>
 #include <vtkPointSetToLabelHierarchy.h>
+#include <vtkPolyDataMapper.h>
 #include <vtkPolyDataMapper2D.h>
+#include <vtkProperty.h>
 #include <vtkProperty2D.h>
 #include <vtkSmartPointer.h>
 #include <vtkSphereSource.h>
@@ -105,6 +108,9 @@ public:
     int &foundComponentType, int &foundComponentIndex, double &closestDistance2);
 
   virtual vtkPointPlacer* GetPointPlacer();
+
+  /// TODO
+  vtkProp* GetInteractionActor();
 
   //@{
   /**
@@ -195,9 +201,14 @@ protected:
     vtkSmartPointer<vtkTransformPolyDataFilter> HandleToWorldTransformFilter;
     vtkSmartPointer<vtkTransform>               HandleToWorldTransform;
     vtkSmartPointer<vtkLookupTable>             ColorTable;
-    vtkSmartPointer<vtkPolyDataMapper2D>        Mapper;
-    vtkSmartPointer<vtkProperty2D>              Property;
-    vtkSmartPointer<vtkActor2D>                 Actor;
+
+    vtkSmartPointer<vtkPolyDataMapper>          Mapper3D;
+    vtkSmartPointer<vtkProperty>                Property3D;
+    vtkSmartPointer<vtkActor>                   Actor3D;
+
+    vtkSmartPointer<vtkPolyDataMapper2D>        Mapper2D;
+    vtkSmartPointer<vtkProperty2D>              Property2D;
+    vtkSmartPointer<vtkActor2D>                 Actor2D;
 
     vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
   };

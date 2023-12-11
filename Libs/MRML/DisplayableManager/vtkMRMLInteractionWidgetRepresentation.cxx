@@ -96,8 +96,8 @@ void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
     {
     this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
     this->Pipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
-    this->Pipeline->Mapper->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
-    this->Pipeline->Mapper->SetTransformCoordinate(nullptr);
+    this->Pipeline->Mapper2D->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
+    this->Pipeline->Mapper2D->SetTransformCoordinate(nullptr);
     }
 
   this->InitializePipeline();
@@ -518,18 +518,20 @@ vtkPointPlacer* vtkMRMLInteractionWidgetRepresentation::GetPointPlacer()
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::GetActors(vtkPropCollection* pc)
 {
-  if (this->Pipeline)
+  vtkProp* actor = this->GetInteractionActor();
+  if (actor)
     {
-    this->Pipeline->Actor->GetActors(pc);
+    actor->GetActors(pc);
     }
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::ReleaseGraphicsResources(vtkWindow* window)
 {
-  if (this->Pipeline)
+  vtkProp* actor = this->GetInteractionActor();
+  if (actor)
     {
-    this->Pipeline->Actor->ReleaseGraphicsResources(window);
+    actor->ReleaseGraphicsResources(window);
     }
 }
 
@@ -537,9 +539,10 @@ void vtkMRMLInteractionWidgetRepresentation::ReleaseGraphicsResources(vtkWindow*
 int vtkMRMLInteractionWidgetRepresentation::RenderOverlay(vtkViewport* viewport)
 {
   int count = 0;
-  if (this->Pipeline && this->Pipeline->Actor->GetVisibility())
+  vtkProp* actor = this->GetInteractionActor();
+  if (this->Pipeline && actor->GetVisibility())
     {
-    count += this->Pipeline->Actor->RenderOverlay(viewport);
+    count += actor->RenderOverlay(viewport);
     }
   return count;
 }
@@ -548,14 +551,15 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOverlay(vtkViewport* viewport)
 int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* viewport)
 {
   int count = 0;
-  if (this->Pipeline && this->Pipeline->Actor->GetVisibility())
+  vtkProp* actor = this->GetInteractionActor();
+  if (actor && actor->GetVisibility())
     {
     this->UpdateHandleColors();
     this->UpdateViewScaleFactor();
     this->UpdateTranslationHandleOrientation();
     this->UpdateScaleHandleOrientation();
     this->UpdateHandleSize();
-    count += this->Pipeline->Actor->RenderOpaqueGeometry(viewport);
+    count += actor->RenderOpaqueGeometry(viewport);
     }
   return count;
 }
@@ -564,10 +568,11 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
 int vtkMRMLInteractionWidgetRepresentation::RenderTranslucentPolygonalGeometry(vtkViewport* viewport)
 {
   int count = 0;
-  if (this->Pipeline && this->Pipeline->Actor->GetVisibility())
+  vtkProp* actor = this->GetInteractionActor();
+  if (actor && actor->GetVisibility())
     {
-    this->Pipeline->Actor->SetPropertyKeys(this->GetPropertyKeys());
-    count += this->Pipeline->Actor->RenderTranslucentPolygonalGeometry(viewport);
+    actor->SetPropertyKeys(this->GetPropertyKeys());
+    count += actor->RenderTranslucentPolygonalGeometry(viewport);
     }
   return count;
 }
@@ -575,8 +580,9 @@ int vtkMRMLInteractionWidgetRepresentation::RenderTranslucentPolygonalGeometry(v
 //----------------------------------------------------------------------
 vtkTypeBool vtkMRMLInteractionWidgetRepresentation::HasTranslucentPolygonalGeometry()
 {
-  if (this->Pipeline && this->Pipeline->Actor->GetVisibility() &&
-    this->Pipeline->Actor->HasTranslucentPolygonalGeometry())
+  vtkProp* actor = this->GetInteractionActor();
+  if (actor && actor->GetVisibility() &&
+    actor->HasTranslucentPolygonalGeometry())
     {
     return true;
     }
@@ -864,25 +870,45 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
 
   this->ColorTable = vtkSmartPointer<vtkLookupTable>::New();
 
+  this->Mapper3D = vtkSmartPointer<vtkPolyDataMapper>::New();
+  this->Mapper3D->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
+  this->Mapper3D->SetColorModeToMapScalars();
+  this->Mapper3D->ColorByArrayComponent("colorIndex", 0);
+  this->Mapper3D->SetLookupTable(this->ColorTable);
+  this->Mapper3D->ScalarVisibilityOn();
+  this->Mapper3D->UseLookupTableScalarRangeOn();
+
+  this->Property3D = vtkSmartPointer<vtkProperty>::New();
+  this->Property3D->SetPointSize(0.0);
+  this->Property3D->SetLineWidth(2.0);
+  this->Property3D->SetDiffuse(0.0);
+  this->Property3D->SetAmbient(1.0);
+  this->Property3D->SetMetallic(0.0);
+  this->Property3D->SetSpecular(0.0);
+
+  this->Actor3D = vtkSmartPointer<vtkActor>::New();
+  this->Actor3D->SetProperty(this->Property3D);
+  this->Actor3D->SetMapper(this->Mapper3D);
+
   vtkNew<vtkCoordinate> coordinate;
   coordinate->SetCoordinateSystemToWorld();
 
-  this->Mapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-  this->Mapper->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
-  this->Mapper->SetColorModeToMapScalars();
-  this->Mapper->ColorByArrayComponent("colorIndex", 0);
-  this->Mapper->SetLookupTable(this->ColorTable);
-  this->Mapper->ScalarVisibilityOn();
-  this->Mapper->UseLookupTableScalarRangeOn();
-  this->Mapper->SetTransformCoordinate(coordinate);
+  this->Mapper2D = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+  this->Mapper2D->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
+  this->Mapper2D->SetColorModeToMapScalars();
+  this->Mapper2D->ColorByArrayComponent("colorIndex", 0);
+  this->Mapper2D->SetLookupTable(this->ColorTable);
+  this->Mapper2D->ScalarVisibilityOn();
+  this->Mapper2D->UseLookupTableScalarRangeOn();
+  this->Mapper2D->SetTransformCoordinate(coordinate);
 
-  this->Property = vtkSmartPointer<vtkProperty2D>::New();
-  this->Property->SetPointSize(0.0);
-  this->Property->SetLineWidth(2.0);
+  this->Property2D = vtkSmartPointer<vtkProperty2D>::New();
+  this->Property2D->SetPointSize(0.0);
+  this->Property2D->SetLineWidth(2.0);
 
-  this->Actor = vtkSmartPointer<vtkActor2D>::New();
-  this->Actor->SetProperty(this->Property);
-  this->Actor->SetMapper(this->Mapper);
+  this->Actor2D = vtkSmartPointer<vtkActor2D>::New();
+  this->Actor2D->SetProperty(this->Property2D);
+  this->Actor2D->SetMapper(this->Mapper2D);
 
   this->WorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->WorldToSliceTransformFilter->SetTransform(vtkNew<vtkTransform>());
@@ -992,6 +1018,23 @@ void vtkMRMLInteractionWidgetRepresentation::CreateTranslationHandles()
   visibilityArray->SetNumberOfValues(this->Pipeline->TranslationHandlePoints->GetNumberOfPoints());
   visibilityArray->Fill(1);
   this->Pipeline->TranslationHandlePoints->GetPointData()->AddArray(visibilityArray);
+}
+
+//----------------------------------------------------------------------
+vtkProp* vtkMRMLInteractionWidgetRepresentation::GetInteractionActor()
+{
+  if (!this->Pipeline)
+    {
+    return nullptr;
+    }
+  if (this->GetSliceNode())
+    {
+    return this->Pipeline->Actor2D;
+    }
+  else
+    {
+    return this->Pipeline->Actor3D;
+    }
 }
 
 //----------------------------------------------------------------------

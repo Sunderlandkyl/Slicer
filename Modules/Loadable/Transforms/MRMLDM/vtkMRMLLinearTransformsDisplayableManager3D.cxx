@@ -45,6 +45,7 @@
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper.h>
 #include <vtkProperty.h>
+#include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
 #include <vtkRenderer.h>
 #include <vtkSmartPointer.h>
@@ -52,6 +53,8 @@
 // MRMLDM includes
 #include <vtkMRMLInteractionEventData.h>
 #include <vtkMRMLTransformHandleWidget.h>
+
+static const int RENDERER_LAYER = 1;
 
 //---------------------------------------------------------------------------
 vtkStandardNewMacro ( vtkMRMLLinearTransformsDisplayableManager3D );
@@ -94,6 +97,10 @@ public:
 
   void UpdateInteractionPipeline(vtkMRMLTransformNode* transformNode, unsigned long event);
   void UpdateInteractionPipeline(vtkMRMLTransformNode* transformNode, unsigned long event, vtkMRMLTransformDisplayNode* displayNode);
+
+  void SetupRenderer();
+
+  vtkSmartPointer<vtkRenderer> InteractionRenderer;
 
   vtkWeakPointer<vtkMRMLTransformHandleWidget> LastActiveWidget;
   vtkMRMLTransformHandleWidget* FindClosestWidget(vtkMRMLInteractionEventData* callData, double& closestDistance2);
@@ -444,7 +451,7 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::UpdateInteraction
       // No pipeline, yet interaction visibility is on, create a new one
 
       vtkNew<vtkMRMLTransformHandleWidget> interactionWidget;
-      interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLViewNode(), this->External->GetRenderer());
+      interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLViewNode(), this->InteractionRenderer);
       this->InteractionPipelines[displayNode] = interactionWidget;
       widget = interactionWidget;
       }
@@ -641,6 +648,7 @@ void vtkMRMLLinearTransformsDisplayableManager3D::OnMRMLSceneEndBatchProcess()
 void vtkMRMLLinearTransformsDisplayableManager3D::Create()
 {
   Superclass::Create();
+  this->Internal->SetupRenderer();
   this->SetUpdateFromMRMLRequested(true);
 }
 
@@ -669,6 +677,37 @@ vtkMRMLTransformHandleWidget* vtkMRMLLinearTransformsDisplayableManager3D::vtkIn
       }
     }
   return closestWidget;
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::SetupRenderer()
+{
+  this->InteractionRenderer = vtkSmartPointer<vtkRenderer>::New();
+
+  vtkRenderer* renderer = this->External->GetRenderer();
+  if (renderer==nullptr)
+    {
+    vtkErrorWithObjectMacro(this->External, "vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::SetupRenderer() failed: renderer is invalid");
+    return;
+    }
+
+  this->InteractionRenderer->SetUseDepthPeeling(renderer->GetUseDepthPeeling());
+  //this->InteractionRenderer->SetUseFXAA(renderer->GetUseFXAA());
+  this->InteractionRenderer->SetUseFXAA(true);
+  this->InteractionRenderer->SetFXAAOptions(renderer->GetFXAAOptions());
+  // Prevent erasing Z-buffer (important for quick picking and markup label visibility assessment)
+  this->InteractionRenderer->EraseOn(); // TODO
+  this->InteractionRenderer->InteractiveOff();
+
+  this->InteractionRenderer->SetActiveCamera(renderer->GetActiveCamera());
+
+  vtkRenderWindow* renderWindow = renderer->GetRenderWindow();
+  if (renderWindow->GetNumberOfLayers() < RENDERER_LAYER+1)
+    {
+    renderWindow->SetNumberOfLayers( RENDERER_LAYER+1 );
+    }
+  this->InteractionRenderer->SetLayer(RENDERER_LAYER);
+  renderWindow->AddRenderer(this->InteractionRenderer);
 }
 
 //---------------------------------------------------------------------------

@@ -113,9 +113,10 @@ bool vtkMRMLTransformHandleWidgetRepresentation::IsDisplayable()
 void vtkMRMLTransformHandleWidgetRepresentation::UpdateInteractionPipeline()
 {
   vtkMRMLAbstractViewNode* viewNode = vtkMRMLAbstractViewNode::SafeDownCast(this->ViewNode);
+  vtkProp* actor = this->GetInteractionActor();
   if (!viewNode || !this->GetTransformNode())
     {
-    this->Pipeline->Actor->SetVisibility(false);
+    actor->SetVisibility(false);
     return;
     }
 
