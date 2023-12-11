@@ -57,17 +57,15 @@
 #include <vtkMRMLInteractionWidgetRepresentation.h>
 
 //----------------------------------------------------------------------
-static const double INTERACTION_HANDLE_RADIUS = 0.0625;
-static const double INTERACTION_HANDLE_DIAMETER = INTERACTION_HANDLE_RADIUS * 2.0;
-static const double INTERACTION_HANDLE_ROTATION_ARC_TUBE_RADIUS = INTERACTION_HANDLE_RADIUS * 0.4;
+static const double INTERACTION_HANDLE_SCALE_RADIUS = 0.1;
 
 static const double INTERACTION_HANDLE_ROTATION_ARC_OUTER_RADIUS = 1.2;
 static const double INTERACTION_HANDLE_ROTATION_ARC_INNER_RADIUS = 1.1;
 static const double INTERACTION_HANDLE_ROTATION_ARC_DEGREES = 360.0;
-static const int INTERACTION_HANDLE_ROTATION_ARC_RESOLUTION = static_cast<int>(INTERACTION_HANDLE_ROTATION_ARC_DEGREES);
+static const int    INTERACTION_HANDLE_ROTATION_ARC_RESOLUTION = 30;
 
 static const double INTERACTION_TRANSLATION_HANDLE_LENGTH= 0.75;
-static const double INTERACTION_TRANSLATION_HANDLE_TIP_RADIUS = 0.10;
+static const double INTERACTION_TRANSLATION_HANDLE_TIP_RADIUS = 0.15;
 static const double INTERACTION_TRANSLATION_HANDLE_SHAFT_RADIUS = 0.05;
 
 //----------------------------------------------------------------------
@@ -796,7 +794,7 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
 
   /// Scale pipeline
   vtkNew<vtkEllipseArcSource> scaleArcSource;
-  scaleArcSource->SetMajorRadiusVector(INTERACTION_HANDLE_RADIUS, 0.0, 0.0);
+  scaleArcSource->SetMajorRadiusVector(INTERACTION_HANDLE_SCALE_RADIUS, 0.0, 0.0);
   scaleArcSource->SetResolution(100);
   scaleArcSource->SetCenter(0.0, 0.0, 0.0);
   scaleArcSource->SetNormal(0, 0, 1);
