@@ -63,8 +63,8 @@ static const double INTERACTION_HANDLE_ROTATION_ARC_TUBE_RADIUS = INTERACTION_HA
 
 static const double INTERACTION_HANDLE_ROTATION_ARC_OUTER_RADIUS = 1.2;
 static const double INTERACTION_HANDLE_ROTATION_ARC_INNER_RADIUS = 1.1;
-static const double INTERACTION_HANDLE_ROTATION_ARC_DEGREES = 45.0;
-static const int INTERACTION_HANDLE_ROTATION_ARC_RESOLUTION = 45;
+static const double INTERACTION_HANDLE_ROTATION_ARC_DEGREES = 360.0;
+static const int INTERACTION_HANDLE_ROTATION_ARC_RESOLUTION = static_cast<int>(INTERACTION_HANDLE_ROTATION_ARC_DEGREES);
 
 static const double INTERACTION_TRANSLATION_HANDLE_LENGTH= 0.75;
 static const double INTERACTION_TRANSLATION_HANDLE_TIP_RADIUS = 0.10;
@@ -593,10 +593,6 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   this->RotationScaleTransformFilter->SetInputData(this->RotationHandlePoints);
   this->RotationScaleTransformFilter->SetTransform(vtkNew<vtkTransform>());
 
-  vtkNew<vtkPoints> rotationPts;
-  vtkNew<vtkIdList> rotationPoly;
-  vtkNew<vtkIdList> rotationLine;
-
   vtkNew<vtkEllipseArcSource> outerArcSource;
   outerArcSource->SetMajorRadiusVector(-INTERACTION_HANDLE_ROTATION_ARC_OUTER_RADIUS, 0.0, 0.0);
   outerArcSource->SetResolution(INTERACTION_HANDLE_ROTATION_ARC_RESOLUTION);
@@ -606,14 +602,6 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   outerArcSource->SetStartAngle(180 - INTERACTION_HANDLE_ROTATION_ARC_DEGREES / 2.0);
   outerArcSource->SetSegmentAngle(INTERACTION_HANDLE_ROTATION_ARC_DEGREES);
   outerArcSource->Update();
-  for (int i = 0; i < outerArcSource->GetOutput()->GetNumberOfPoints(); ++i)
-    {
-    double point[3];
-    outerArcSource->GetOutput()->GetPoint(i, point);
-    vtkIdType id = rotationPts->InsertNextPoint(point);
-    rotationPoly->InsertNextId(id);
-    rotationLine->InsertNextId(id);
-    }
 
   vtkNew<vtkEllipseArcSource> innerArcSource;
   innerArcSource->SetMajorRadiusVector(-INTERACTION_HANDLE_ROTATION_ARC_INNER_RADIUS, 0.0, 0.0);
@@ -624,22 +612,99 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   innerArcSource->SetStartAngle(180 - INTERACTION_HANDLE_ROTATION_ARC_DEGREES / 2.0);
   innerArcSource->SetSegmentAngle(INTERACTION_HANDLE_ROTATION_ARC_DEGREES);
   innerArcSource->Update();
-  for (int i = innerArcSource->GetOutput()->GetNumberOfPoints() - 1; i >= 0; --i)
-    {
-    double point[3];
-    innerArcSource->GetOutput()->GetPoint(i, point);
-    vtkIdType id = rotationPts->InsertNextPoint(point);
-    rotationPoly->InsertNextId(id);
-    rotationLine->InsertNextId(id);
-    }
 
-  rotationLine->InsertNextId(0);
+  vtkNew<vtkPoints> rotationPts;
 
+  this->AxisRotationOutlinePolyData = vtkSmartPointer <vtkPolyData>::New();
+  this->AxisRotationOutlinePolyData->SetPoints(rotationPts);
+  this->AxisRotationOutlinePolyData->SetLines(vtkNew<vtkCellArray>());
 
   this->AxisRotationPolyData = vtkSmartPointer <vtkPolyData>::New();
   this->AxisRotationPolyData->SetPoints(rotationPts);
   this->AxisRotationPolyData->SetPolys(vtkNew<vtkCellArray>());
-  this->AxisRotationPolyData->InsertNextCell(VTK_POLYGON, rotationPoly);
+
+  if (INTERACTION_HANDLE_ROTATION_ARC_DEGREES < 360.0)
+    {
+    vtkNew<vtkIdList> rotationPoly;
+    vtkNew<vtkIdList> rotationLine;
+
+    for (int i = 0; i < outerArcSource->GetOutput()->GetNumberOfPoints(); ++i)
+      {
+      double point[3];
+      outerArcSource->GetOutput()->GetPoint(i, point);
+      vtkIdType id = rotationPts->InsertNextPoint(point);
+      rotationPoly->InsertNextId(id);
+      rotationLine->InsertNextId(id);
+      }
+    for (int i = innerArcSource->GetOutput()->GetNumberOfPoints() - 1; i >= 0; --i)
+      {
+      double point[3];
+      innerArcSource->GetOutput()->GetPoint(i, point);
+      vtkIdType id = rotationPts->InsertNextPoint(point);
+      rotationPoly->InsertNextId(id);
+      rotationLine->InsertNextId(id);
+      }
+      rotationLine->InsertNextId(0);
+      this->AxisRotationOutlinePolyData->InsertNextCell(VTK_POLY_LINE, rotationLine);
+      this->AxisRotationPolyData->InsertNextCell(VTK_POLYGON, rotationPoly);
+    }
+  else
+    {
+    vtkNew<vtkCellArray> rotationTriangles;
+    vtkNew<vtkIdList> outerLine;
+    vtkNew<vtkIdList> innerLine;
+
+    vtkIdType previousInnerPoint = -1;
+    vtkIdType previousOuterPoint = -1;
+    for (int index = 0; index < outerArcSource->GetOutput()->GetNumberOfPoints(); ++index)
+      {
+      double outerLinePoint[3] = { 0.0, 0.0, 0.0 };
+      outerArcSource->GetOutput()->GetPoint(index, outerLinePoint);
+      vtkIdType outerPointId = rotationPts->InsertNextPoint(outerLinePoint);
+      outerLine->InsertNextId(outerPointId);
+
+      double innerLinePoint[3] = { 0.0, 0.0, 0.0 };
+      innerArcSource->GetOutput()->GetPoint(index, innerLinePoint);
+      vtkIdType innerPointId = rotationPts->InsertNextPoint(innerLinePoint);
+      innerLine->InsertNextId(innerPointId);
+
+      if (previousInnerPoint >= 0 && previousOuterPoint >= 0)
+        {
+        vtkNew<vtkIdList> rotationTriangleA;
+        rotationTriangleA->InsertNextId(previousInnerPoint);
+        rotationTriangleA->InsertNextId(previousOuterPoint);
+        rotationTriangleA->InsertNextId(outerPointId);
+        rotationTriangles->InsertNextCell(rotationTriangleA);
+
+        vtkNew<vtkIdList> rotationTriangleB;
+        rotationTriangleB->InsertNextId(previousInnerPoint);
+        rotationTriangleB->InsertNextId(outerPointId);
+        rotationTriangleB->InsertNextId(innerPointId);
+        rotationTriangles->InsertNextCell(rotationTriangleB);
+        }
+      previousInnerPoint = innerPointId;
+      previousOuterPoint = outerPointId;
+      }
+
+    if (previousInnerPoint > 0 && previousOuterPoint > 0)
+      {
+      vtkNew<vtkIdList> rotationTriangleA;
+      rotationTriangleA->InsertNextId(previousInnerPoint);
+      rotationTriangleA->InsertNextId(previousOuterPoint);
+      rotationTriangleA->InsertNextId(0);
+      rotationTriangles->InsertNextCell(rotationTriangleA);
+
+      vtkNew<vtkIdList> rotationTriangleB;
+      rotationTriangleB->InsertNextId(previousInnerPoint);
+      rotationTriangleB->InsertNextId(0);
+      rotationTriangleB->InsertNextId(1);
+      rotationTriangles->InsertNextCell(rotationTriangleB);
+      }
+
+    this->AxisRotationOutlinePolyData->InsertNextCell(VTK_POLY_LINE, outerLine);
+    this->AxisRotationOutlinePolyData->InsertNextCell(VTK_POLY_LINE, innerLine);
+    this->AxisRotationPolyData->SetPolys(rotationTriangles);
+    }
 
   vtkNew<vtkTriangleFilter> triangleFilter;
   triangleFilter->SetInputData(this->AxisRotationPolyData);
@@ -650,11 +715,6 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   this->AxisRotationGlypher->ScalingOff();
   this->AxisRotationGlypher->ExtractEigenvaluesOff();
   this->AxisRotationGlypher->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
-
-  this->AxisRotationOutlinePolyData = vtkSmartPointer <vtkPolyData>::New();
-  this->AxisRotationOutlinePolyData->SetPoints(rotationPts);
-  this->AxisRotationOutlinePolyData->SetLines(vtkNew<vtkCellArray>());
-  this->AxisRotationOutlinePolyData->InsertNextCell(VTK_POLY_LINE, rotationLine);
 
   this->AxisRotationOutlineCalculator = vtkSmartPointer<vtkArrayCalculator>::New();
   this->AxisRotationOutlineCalculator->SetInputConnection(this->RotationScaleTransformFilter->GetOutputPort());
