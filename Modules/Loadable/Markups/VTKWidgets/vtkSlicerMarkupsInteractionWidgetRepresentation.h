@@ -57,7 +57,7 @@ public:
   void SetActiveComponentType(int type) override;
   int GetActiveComponentIndex() override;
   void SetActiveComponentIndex(int type) override;
-  /*bool GetHandleVisibility(int type, int index) override;*/
+  bool GetHandleVisibility(int type, int index) override;
 
   virtual int InteractionComponentToMarkupsComponent(int);
   virtual int MarkupsComponentToInteractionComponent(int);
@@ -89,7 +89,7 @@ public:
   void GetInteractionHandleAxisLocal(int type, int index, double axis_Local[3]) override;
   void GetHandleColor(int type, int index, double color[4]) override;
 
-  void AddScaleEdgeIntersection(int pointIndex, vtkIdTypeArray* visibilityArray, vtkPoints* scaleHandleArray,
+  bool AddScaleEdgeIntersection(int pointIndex, vtkIdTypeArray* visibilityArray, vtkPoints* scaleHandleArray,
     double sliceNormal[3], double sliceOrigin[3], double edgePoint[3], double edgeVector[3]);
 
 protected:

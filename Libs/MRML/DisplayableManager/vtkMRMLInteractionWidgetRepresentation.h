@@ -53,9 +53,7 @@
 // VTK includes
 #include <vtkActor2D.h>
 #include <vtkAppendPolyData.h>
-#include <vtkArcSource.h>
 #include <vtkArrayCalculator.h>
-#include <vtkArrowSource.h>
 #include <vtkGlyph3D.h>
 #include <vtkLookupTable.h>
 #include <vtkPointPlacer.h>
@@ -69,7 +67,6 @@
 #include <vtkTensorGlyph.h>
 #include <vtkTransform.h>
 #include <vtkTransformPolyDataFilter.h>
-#include <vtkTubeFilter.h>
 
 class vtkMRMLInteractionEventData;
 class vtkMRMLDisplayNode;
@@ -169,26 +166,30 @@ protected:
     InteractionPipeline();
     virtual ~InteractionPipeline();
 
-    vtkSmartPointer<vtkSphereSource>            AxisRotationHandleSource;
-    vtkSmartPointer<vtkArcSource>               AxisRotationArcSource;
-    vtkSmartPointer<vtkTubeFilter>              AxisRotationTubeFilter;
-    vtkSmartPointer<vtkPolyData>                AxisRotationInteriorAnglePolyData;
-    vtkSmartPointer<vtkTubeFilter>              AxisRotationInteriorAngleTubeFilter;
     vtkSmartPointer<vtkPolyData>                AxisRotationPolyData;
+    vtkSmartPointer<vtkPolyData>                AxisRotationOutlinePolyData;
     vtkSmartPointer<vtkPolyData>                RotationHandlePoints;
     vtkSmartPointer<vtkTransformPolyDataFilter> RotationScaleTransformFilter;
     vtkSmartPointer<vtkTensorGlyph>             AxisRotationGlypher;
+    vtkSmartPointer<vtkArrayCalculator>         AxisRotationOutlineCalculator;
+    vtkSmartPointer<vtkTensorGlyph>             AxisRotationOutlineGlypher;
 
-    vtkSmartPointer<vtkArrowSource>             AxisTranslationGlyphSource;
+    vtkSmartPointer<vtkPolyData>                AxisTranslationPolyData;
+    vtkSmartPointer<vtkPolyData>                AxisTranslationOutlinePolyData;
     vtkSmartPointer<vtkTransformPolyDataFilter> AxisTranslationGlyphTransformer;
     vtkSmartPointer<vtkPolyData>                TranslationHandlePoints;
     vtkSmartPointer<vtkTransformPolyDataFilter> TranslationScaleTransformFilter;
     vtkSmartPointer<vtkTensorGlyph>             AxisTranslationGlypher;
+    vtkSmartPointer<vtkArrayCalculator>         AxisTranslationOutlineCalculator;
+    vtkSmartPointer<vtkTensorGlyph>             AxisTranslationOutlineGlypher;
 
-    vtkSmartPointer<vtkSphereSource>            AxisScaleHandleSource;
+    vtkSmartPointer<vtkPolyData>                AxisScalePolyData;
+    vtkSmartPointer<vtkPolyData>                AxisScaleOutlinePolyData;
     vtkSmartPointer<vtkPolyData>                ScaleHandlePoints;
     vtkSmartPointer<vtkTransformPolyDataFilter> ScaleScaleTransformFilter;
-    vtkSmartPointer<vtkGlyph3D>                 AxisScaleGlypher;
+    vtkSmartPointer<vtkTensorGlyph>             AxisScaleGlypher;
+    vtkSmartPointer<vtkArrayCalculator>         AxisScaleOutlineCalculator;
+    vtkSmartPointer<vtkTensorGlyph>             AxisScaleOutlineGlypher;
 
     vtkSmartPointer<vtkAppendPolyData>          Append;
     vtkSmartPointer<vtkTransformPolyDataFilter> HandleToWorldTransformFilter;
@@ -249,6 +250,8 @@ protected:
   virtual vtkTransform* GetHandleScaleTransform(int type);
 
   virtual void UpdateTranslationHandleOrientation();
+  virtual void UpdateScaleHandleOrientation();
+  virtual void UpdateHandlesFacingCamera(int type);
 
   /// Set the scale of the interaction handles in world coordinates
   virtual void SetWidgetScale(double scale);

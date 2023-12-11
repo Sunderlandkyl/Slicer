@@ -63,6 +63,13 @@ public:
   void PrintSelf(ostream& os, vtkIndent indent) override;
   //@}
 
+  /// Widget events
+  //enum
+  //  {
+  //  WidgetEventJumpCursor = WidgetEventInteraction_Last,  // this events is only to prevent other widgets from processing an event
+  //  WidgetEventMarkupsInteraction_Last
+  //  };
+
   /// Create the default widget representation and initializes the widget and representation.
   virtual void CreateDefaultRepresentation(vtkMRMLMarkupsDisplayNode* displayNode, vtkMRMLAbstractViewNode* viewNode, vtkRenderer* renderer);
 
@@ -75,7 +82,6 @@ public:
   int GetActiveComponentIndex() override;
   void SetActiveComponentIndex(int type) override;
 
-  bool CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& distance2) override;
   bool ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData) override;
 
   void ScaleWidget(double eventPos[2]) override;
@@ -85,6 +91,8 @@ public:
   virtual void FlipROIHandles(bool flipLRHandle, bool flipPAHandle, bool flipISHandle);
 
   virtual vtkSlicerMarkupsInteractionWidget* CreateInstance() const;
+
+  bool ProcessWidgetJumpCursor(vtkMRMLInteractionEventData* eventData);
 
   bool ProcessWidgetMenu(vtkMRMLInteractionEventData* eventData) override;
 

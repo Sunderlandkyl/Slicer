@@ -60,27 +60,6 @@ vtkMRMLTransformDisplayNode* vtkMRMLTransformHandleWidgetRepresentation::GetDisp
 }
 
 //----------------------------------------------------------------------
-void vtkMRMLTransformHandleWidgetRepresentation::UpdateHandleColors()
-{
-  int numberOfHandles = this->GetNumberOfHandles();
-  this->Pipeline->ColorTable->SetNumberOfTableValues(numberOfHandles + 1);
-  this->Pipeline->ColorTable->SetTableRange(0, double(numberOfHandles));
-
-  int colorIndex = 0;
-
-  // Outline color
-  double outlineColor[4] = { 1.00, 1.00, 1.00, 1.00 };
-  this->Pipeline->ColorTable->SetTableValue(colorIndex, outlineColor);
-
-  colorIndex++;
-  colorIndex = Superclass::UpdateHandleColors(InteractionRotationHandle, colorIndex);
-  colorIndex = Superclass::UpdateHandleColors(InteractionTranslationHandle, colorIndex);
-  colorIndex = Superclass::UpdateHandleColors(InteractionScaleHandle, colorIndex);
-
-  this->Pipeline->ColorTable->Build();
-}
-
-//----------------------------------------------------------------------
 void vtkMRMLTransformHandleWidgetRepresentation::SetDisplayNode(vtkMRMLTransformDisplayNode* displayNode)
 {
   this->DisplayNode = displayNode;

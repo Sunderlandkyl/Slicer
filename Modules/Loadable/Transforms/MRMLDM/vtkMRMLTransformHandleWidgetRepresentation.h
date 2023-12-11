@@ -77,8 +77,6 @@ public:
 
   bool IsDisplayable() override;
 
-  void UpdateHandleColors() override;
-
 protected:
   vtkMRMLTransformHandleWidgetRepresentation();
   ~vtkMRMLTransformHandleWidgetRepresentation() override;

@@ -57,9 +57,7 @@
 vtkStandardNewMacro(vtkSlicerMarkupsInteractionWidget);
 
 //----------------------------------------------------------------------
-vtkSlicerMarkupsInteractionWidget::vtkSlicerMarkupsInteractionWidget()
-{
-}
+vtkSlicerMarkupsInteractionWidget::vtkSlicerMarkupsInteractionWidget() = default;
 
 //----------------------------------------------------------------------
 vtkSlicerMarkupsInteractionWidget::~vtkSlicerMarkupsInteractionWidget() = default;
@@ -102,12 +100,6 @@ void vtkSlicerMarkupsInteractionWidget::SetActiveComponentIndex(int index)
 {
   vtkSmartPointer<vtkSlicerMarkupsInteractionWidgetRepresentation> rep = vtkSlicerMarkupsInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
   rep->SetActiveComponentIndex(index);
-}
-
-//-----------------------------------------------------------------------------
-bool vtkSlicerMarkupsInteractionWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double& distance2)
-{
-  return Superclass::CanProcessInteractionEvent(eventData, distance2);
 }
 
 //-------------------------------------------------------------------------
@@ -183,9 +175,53 @@ vtkMRMLMarkupsNode* vtkSlicerMarkupsInteractionWidget::GetMarkupsNode()
 //-----------------------------------------------------------------------------
 bool vtkSlicerMarkupsInteractionWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData* eventData)
 {
+  unsigned long widgetEvent = this->TranslateInteractionEventToWidgetEvent(eventData);
   bool processedEvent = false;
+  switch (widgetEvent)
+    {
+    case WidgetEventJumpCursor:
+      processedEvent = ProcessWidgetJumpCursor(eventData);
+      break;
+    default:
+      break;
+    }
   processedEvent = Superclass::ProcessInteractionEvent(eventData);
   return processedEvent;
+}
+
+//-------------------------------------------------------------------------
+bool vtkSlicerMarkupsInteractionWidget::ProcessWidgetJumpCursor(vtkMRMLInteractionEventData* vtkNotUsed(eventData))
+{
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  vtkMRMLMarkupsDisplayNode* markupsDisplayNode = this->GetDisplayNode();
+  if (!markupsNode || !markupsDisplayNode)
+    {
+    return false;
+    }
+
+  int componentIndex = markupsDisplayNode->GetActiveComponentIndex();
+  int componentType = markupsDisplayNode->GetActiveComponentType();
+
+  markupsNode->GetScene()->SaveStateForUndo();
+
+  vtkNew<vtkMRMLInteractionEventData> jumpToPointEventData;
+  jumpToPointEventData->SetType(vtkMRMLMarkupsDisplayNode::JumpToPointEvent);
+  jumpToPointEventData->SetComponentType(componentType);
+  jumpToPointEventData->SetComponentIndex(componentIndex);
+  jumpToPointEventData->SetViewNode(this->WidgetRep->GetViewNode());
+
+  // For interaction handle, send the position of the handle as well.
+  // The position of the handle may be different in each view, so we need to get the position from the representation.
+  vtkSlicerMarkupsInteractionWidgetRepresentation* rep = vtkSlicerMarkupsInteractionWidgetRepresentation::SafeDownCast(this->WidgetRep);
+  if (rep)
+    {
+    double position_World[3] = { 0.0, 0.0, 0.0 };
+    rep->GetInteractionHandlePositionWorld(rep->GetActiveComponentType(), rep->GetActiveComponentIndex(), position_World);
+    jumpToPointEventData->SetWorldPosition(position_World);
+    }
+
+  markupsDisplayNode->InvokeEvent(vtkMRMLMarkupsDisplayNode::JumpToPointEvent, jumpToPointEventData);
+  return true;
 }
 
 //----------------------------------------------------------------------
