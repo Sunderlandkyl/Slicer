@@ -172,7 +172,8 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateInteractionPipeline(
   if (planeNode || roiNode)
     {
     // We are specifying the position of the handles manually.
-    this->Pipeline->AxisScaleGlypher->SetInputData(this->Pipeline->ScaleHandlePoints);
+    //TODO
+    //this->Pipeline->AxisScaleGlypher->SetInputData(this->Pipeline->ScaleHandlePoints);
     }
 
   // Final visibility handled by superclass in vtkMRMLInteractionWidgetRepresentation

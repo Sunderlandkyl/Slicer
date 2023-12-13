@@ -14,7 +14,7 @@
 
   This file was originally developed by Kyle Sunderland, PerkLab, Queen's University
   and was supported through CANARIE's Research Software Program, Cancer
-  Care Ontario, OpenAnatomy, and Brigham and Women’s Hospital through NIH grant R01MH112748.
+  Care Ontario, OpenAnatomy, and Brigham and Womenâ€™s Hospital through NIH grant R01MH112748.
 
 ==============================================================================*/
 
@@ -94,8 +94,7 @@ void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
     {
     this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
     this->Pipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
-    this->Pipeline->Mapper2D->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
-    this->Pipeline->Mapper2D->SetTransformCoordinate(nullptr);
+    this->Pipeline->Mapper3D->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
     }
 
   this->InitializePipeline();
@@ -402,66 +401,18 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateFromMRML(
     this->SetupInteractionPipeline();
     }
 
-  if (this->GetSliceNode())
-    {
-    this->UpdateSlicePlaneFromSliceNode();
-    }
-
   if (this->Pipeline)
     {
     this->UpdateInteractionPipeline();
     }
+
+  this->NeedToRenderOn();
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::UpdateInteractionPipeline()
 {
-  bool currentVisibility = this->GetVisibility();
-  if (!this->IsDisplayable())
-    {
-    this->SetVisibility(false);
-    if (currentVisibility)
-      {
-      // If we are changing visibility, we need to render.
-      this->NeedToRenderOn();
-      }
-    return;
-    }
-
-  bool needToRender = false;
-  double currentViewScaleFactorMmPerPixel = this->ViewScaleFactorMmPerPixel;
-  double currentScreenSizePixel = this->ScreenSizePixel;
-  this->UpdateViewScaleFactor();
-  if (currentViewScaleFactorMmPerPixel != this->ViewScaleFactorMmPerPixel ||
-    currentScreenSizePixel != this->ScreenSizePixel)
-    {
-    needToRender = true;
-    }
-
-  double currentInteractionSize = this->InteractionSize;
-  this->UpdateHandleSize();
-  if (currentInteractionSize != this->InteractionSize)
-    {
-    needToRender = true;
-    }
-
-  // TODO: need to set the render flag
-  needToRender = true;
-  this->UpdateHandleColors();
-
-  if (!currentVisibility)
-    {
-    // If we are changing visibility, we need to render.
-    needToRender = true;
-    }
-  this->SetVisibility(true);
-
-  this->UpdateHandleToWorldTransform();
-
-  if (needToRender)
-    {
-    this->NeedToRenderOn();
-    }
+  this->NeedToRenderOn();
 }
 
 //----------------------------------------------------------------------
@@ -505,6 +456,177 @@ void vtkMRMLInteractionWidgetRepresentation::OrthoganalizeTransform(vtkTransform
 
   transform->Identity();
   transform->Concatenate(orthogonalMatrix);
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::UpdateHandlePolyData()
+{
+  this->Pipeline->Append->RemoveAllInputs();
+
+  vtkNew<vtkPolyData> arrowPoints;
+  vtkNew<vtkPolyData> arrowOutlinePoints;
+  vtkNew<vtkPolyData> circlePoints;
+  vtkNew<vtkPolyData> circleOutlinePoints;
+  vtkNew<vtkPolyData> ringPoints;
+  vtkNew<vtkPolyData> ringOutlinePoints;
+
+  vtkNew<vtkTensorGlyph> arrowGlyph;
+  arrowGlyph->SetScaleFactor(this->WidgetScale);
+  arrowGlyph->SetSourceData(this->Pipeline->ArrowPolyData);
+  arrowGlyph->SetInputData(arrowPoints);
+  arrowGlyph->ScalingOff();
+  arrowGlyph->ExtractEigenvaluesOff();
+  arrowGlyph->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
+
+  vtkNew<vtkTensorGlyph> arrowOutlineGlyph;
+  arrowOutlineGlyph->SetSourceData(this->Pipeline->ArrowOutlinePolyData);
+  arrowOutlineGlyph->SetInputData(arrowOutlinePoints);
+  arrowOutlineGlyph->SetScaleFactor(this->WidgetScale);
+  arrowOutlineGlyph->ScalingOff();
+  arrowOutlineGlyph->ExtractEigenvaluesOff();
+  arrowOutlineGlyph->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
+
+  vtkNew<vtkTensorGlyph> circleGlyph;
+  circleGlyph->SetSourceData(this->Pipeline->CirclePolyData);
+  circleGlyph->SetScaleFactor(this->WidgetScale);
+  circleGlyph->SetInputData(circlePoints);
+  circleGlyph->SetScaleFactor(this->WidgetScale);
+  circleGlyph->ScalingOff();
+  circleGlyph->ExtractEigenvaluesOff();
+  circleGlyph->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
+
+  vtkNew<vtkTensorGlyph> circleOutlineGlyph;
+  circleOutlineGlyph->SetSourceData(this->Pipeline->CircleOutlinePolyData);
+  circleOutlineGlyph->SetInputData(circleOutlinePoints);
+  circleOutlineGlyph->SetScaleFactor(this->WidgetScale);
+  circleOutlineGlyph->ScalingOff();
+  circleOutlineGlyph->ExtractEigenvaluesOff();
+  circleOutlineGlyph->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
+
+  vtkNew<vtkTensorGlyph> ringGlyph;
+  ringGlyph->SetSourceData(this->Pipeline->RingPolyData);
+  ringGlyph->SetInputData(ringPoints);
+  ringGlyph->SetScaleFactor(this->WidgetScale);
+  ringGlyph->ScalingOff();
+  ringGlyph->ExtractEigenvaluesOff();
+  ringGlyph->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
+
+  vtkNew<vtkTensorGlyph> ringOutlineGlyph;
+  ringOutlineGlyph->SetSourceData(this->Pipeline->RingOutlinePolyData);
+  ringOutlineGlyph->SetInputData(ringOutlinePoints);
+  ringOutlineGlyph->SetScaleFactor(this->WidgetScale);
+  ringOutlineGlyph->ScalingOff();
+  ringOutlineGlyph->ExtractEigenvaluesOff();
+  ringOutlineGlyph->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
+
+  HandleInfoList handleInfoList = this->GetHandleInfoList();
+  for (HandleInfo handleInfo : handleInfoList)
+    {
+    if (!handleInfo.IsVisible())
+      {
+      continue;
+      }
+
+    vtkPolyData* outputPoints = nullptr;
+    vtkPolyData* outlinePoints = nullptr;
+    switch (handleInfo.GlyphType)
+      {
+      case GlyphArrow:
+        outputPoints = arrowPoints;
+        outlinePoints = arrowOutlinePoints;
+        break;
+      case GlyphCircle:
+        outputPoints = circlePoints;
+        outlinePoints = circleOutlinePoints;
+        break;
+      case GlyphRing:
+        outputPoints = ringPoints;
+        outlinePoints = ringOutlinePoints;
+        break;
+      default:
+        break;
+      }
+
+    if (!outputPoints)
+      {
+      continue;
+      }
+
+    vtkPolyData* handlePolyData = this->GetHandlePolydata(handleInfo.ComponentType);
+    if (!handlePolyData)
+      {
+      continue;
+      }
+
+    // Copy point and array values at handleInfo.ComponentIndex
+    if (!outputPoints->GetPoints())
+      {
+      outputPoints->SetPoints(vtkNew<vtkPoints>());
+      }
+    if (!outlinePoints->GetPoints())
+      {
+      outlinePoints->SetPoints(vtkNew<vtkPoints>());
+      }
+
+    double point[3] = { 0.0, 0.0, 0.0 };
+    handlePolyData->GetPoints()->GetPoint(handleInfo.Index, point);
+    vtkMath::MultiplyScalar(point, this->WidgetScale);
+
+    outputPoints->GetPoints()->InsertNextPoint(point);
+    outlinePoints->GetPoints()->InsertNextPoint(point);
+
+    vtkPointData* pointData = handlePolyData->GetPointData();
+    vtkPointData* outputPointData = outputPoints->GetPointData();
+    vtkPointData* outlinePointData = outlinePoints->GetPointData();
+    for (int arrayIndex = 0; arrayIndex < pointData->GetNumberOfArrays(); ++arrayIndex)
+      {
+      vtkDataArray* array = pointData->GetArray(arrayIndex);
+
+      vtkSmartPointer<vtkDataArray> outputArray = outputPointData->GetArray(array->GetName());
+      if (!outputArray)
+        {
+        outputArray = vtkSmartPointer<vtkDataArray>::Take(array->NewInstance());
+        outputArray->SetName(array->GetName());
+        outputArray->SetNumberOfComponents(array->GetNumberOfComponents());
+        outputArray->SetNumberOfTuples(0);
+        outputPointData->AddArray(outputArray);
+        }
+      outputArray->InsertNextTuple(array->GetTuple(handleInfo.Index));
+
+      vtkSmartPointer<vtkDataArray> outlineArray = outlinePointData->GetArray(array->GetName());
+      if (!outlineArray)
+        {
+        outlineArray = vtkSmartPointer<vtkDataArray>::Take(array->NewInstance());
+        outlineArray->SetName(array->GetName());
+        outlineArray->SetNumberOfComponents(array->GetNumberOfComponents());
+        outlineArray->SetNumberOfTuples(0);
+        outlinePointData->AddArray(outlineArray);
+        }
+      if (strcmp(array->GetName(), "colorIndex") == 0)
+        {
+        outlineArray->InsertNextTuple1(array->GetTuple(handleInfo.Index)[0] + 1);
+        }
+      else
+        {
+        outlineArray->InsertNextTuple(array->GetTuple(handleInfo.Index));
+        }
+
+      }
+    }
+
+  arrowPoints->GetPointData()->SetActiveScalars("colorIndex");
+  arrowOutlinePoints->GetPointData()->SetActiveScalars("colorIndex");
+  circlePoints->GetPointData()->SetActiveScalars("colorIndex");
+  circleOutlinePoints->GetPointData()->SetActiveScalars("colorIndex");
+  ringPoints->GetPointData()->SetActiveScalars("colorIndex");
+  ringOutlinePoints->GetPointData()->SetActiveScalars("colorIndex");
+
+  this->Pipeline->Append->AddInputConnection(arrowGlyph->GetOutputPort());
+  this->Pipeline->Append->AddInputConnection(arrowOutlineGlyph->GetOutputPort());
+  this->Pipeline->Append->AddInputConnection(circleGlyph->GetOutputPort());
+  this->Pipeline->Append->AddInputConnection(circleOutlineGlyph->GetOutputPort());
+  this->Pipeline->Append->AddInputConnection(ringGlyph->GetOutputPort());
+  this->Pipeline->Append->AddInputConnection(ringOutlineGlyph->GetOutputPort());
 }
 
 //----------------------------------------------------------------------
@@ -552,11 +674,18 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
   vtkProp* actor = this->GetInteractionActor();
   if (actor && actor->GetVisibility())
     {
+    if (!this->Pipeline)
+      {
+      this->SetupInteractionPipeline();
+      }
+    this->UpdateHandleToWorldTransform();
+    this->UpdateSlicePlaneFromSliceNode();
     this->UpdateHandleColors();
     this->UpdateViewScaleFactor();
     this->UpdateTranslationHandleOrientation();
     this->UpdateScaleHandleOrientation();
     this->UpdateHandleSize();
+    this->UpdateHandlePolyData();
     count += actor->RenderOpaqueGeometry(viewport);
     }
   return count;
@@ -593,10 +722,6 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   /// Rotation pipeline
   this->RotationHandlePoints = vtkSmartPointer<vtkPolyData>::New();
 
-  this->RotationScaleTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->RotationScaleTransformFilter->SetInputData(this->RotationHandlePoints);
-  this->RotationScaleTransformFilter->SetTransform(vtkNew<vtkTransform>());
-
   vtkNew<vtkEllipseArcSource> outerArcSource;
   outerArcSource->SetMajorRadiusVector(-INTERACTION_HANDLE_ROTATION_ARC_OUTER_RADIUS, 0.0, 0.0);
   outerArcSource->SetResolution(INTERACTION_HANDLE_ROTATION_ARC_RESOLUTION);
@@ -619,13 +744,13 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
 
   vtkNew<vtkPoints> rotationPts;
 
-  this->AxisRotationOutlinePolyData = vtkSmartPointer <vtkPolyData>::New();
-  this->AxisRotationOutlinePolyData->SetPoints(rotationPts);
-  this->AxisRotationOutlinePolyData->SetLines(vtkNew<vtkCellArray>());
+  this->RingOutlinePolyData = vtkSmartPointer <vtkPolyData>::New();
+  this->RingOutlinePolyData->SetPoints(rotationPts);
+  this->RingOutlinePolyData->SetLines(vtkNew<vtkCellArray>());
 
-  this->AxisRotationPolyData = vtkSmartPointer <vtkPolyData>::New();
-  this->AxisRotationPolyData->SetPoints(rotationPts);
-  this->AxisRotationPolyData->SetPolys(vtkNew<vtkCellArray>());
+  this->RingPolyData = vtkSmartPointer <vtkPolyData>::New();
+  this->RingPolyData->SetPoints(rotationPts);
+  this->RingPolyData->SetPolys(vtkNew<vtkCellArray>());
 
   if (INTERACTION_HANDLE_ROTATION_ARC_DEGREES < 360.0)
     {
@@ -649,8 +774,8 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
       rotationLine->InsertNextId(id);
       }
       rotationLine->InsertNextId(0);
-      this->AxisRotationOutlinePolyData->InsertNextCell(VTK_POLY_LINE, rotationLine);
-      this->AxisRotationPolyData->InsertNextCell(VTK_POLYGON, rotationPoly);
+      this->ArrowOutlinePolyData->InsertNextCell(VTK_POLY_LINE, rotationLine);
+      this->ArrowPolyData->InsertNextCell(VTK_POLYGON, rotationPoly);
     }
   else
     {
@@ -705,34 +830,13 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
       rotationTriangles->InsertNextCell(rotationTriangleB);
       }
 
-    this->AxisRotationOutlinePolyData->InsertNextCell(VTK_POLY_LINE, outerLine);
-    this->AxisRotationOutlinePolyData->InsertNextCell(VTK_POLY_LINE, innerLine);
-    this->AxisRotationPolyData->SetPolys(rotationTriangles);
+    this->RingOutlinePolyData->InsertNextCell(VTK_POLY_LINE, outerLine);
+    this->RingOutlinePolyData->InsertNextCell(VTK_POLY_LINE, innerLine);
+    this->RingPolyData->SetPolys(rotationTriangles);
     }
 
   vtkNew<vtkTriangleFilter> triangleFilter;
-  triangleFilter->SetInputData(this->AxisRotationPolyData);
-
-  this->AxisRotationGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
-  this->AxisRotationGlypher->SetInputConnection(this->RotationScaleTransformFilter->GetOutputPort());
-  this->AxisRotationGlypher->SetSourceConnection(triangleFilter->GetOutputPort());
-  this->AxisRotationGlypher->ScalingOff();
-  this->AxisRotationGlypher->ExtractEigenvaluesOff();
-  this->AxisRotationGlypher->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
-
-  this->AxisRotationOutlineCalculator = vtkSmartPointer<vtkArrayCalculator>::New();
-  this->AxisRotationOutlineCalculator->SetInputConnection(this->RotationScaleTransformFilter->GetOutputPort());
-  this->AxisRotationOutlineCalculator->SetResultArrayName("colorIndex");
-  this->AxisRotationOutlineCalculator->SetResultArrayType(VTK_ID_TYPE);
-  this->AxisRotationOutlineCalculator->AddScalarVariable("colorIndex", "colorIndex");
-  this->AxisRotationOutlineCalculator->SetFunction("colorIndex+1");
-
-  this->AxisRotationOutlineGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
-  this->AxisRotationOutlineGlypher->SetInputConnection(this->AxisRotationOutlineCalculator->GetOutputPort());
-  this->AxisRotationOutlineGlypher->SetSourceData(this->AxisRotationOutlinePolyData);
-  this->AxisRotationOutlineGlypher->ScalingOff();
-  this->AxisRotationOutlineGlypher->ExtractEigenvaluesOff();
-  this->AxisRotationOutlineGlypher->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
+  triangleFilter->SetInputData(this->RingPolyData);
 
   vtkNew<vtkPoints> translationHandlePoints;
   vtkNew<vtkIdList> translationHandlePoly;
@@ -754,43 +858,18 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   translationHandleLine->DeepCopy(translationHandlePoly);
   translationHandleLine->InsertNextId(0);
 
-  this->AxisTranslationPolyData = vtkSmartPointer <vtkPolyData>::New();
-  this->AxisTranslationPolyData->SetPoints(translationHandlePoints);
-  this->AxisTranslationPolyData->SetPolys(vtkNew<vtkCellArray>());
-  this->AxisTranslationPolyData->InsertNextCell(VTK_POLYGON, translationHandlePoly);
+  this->ArrowPolyData = vtkSmartPointer <vtkPolyData>::New();
+  this->ArrowPolyData->SetPoints(translationHandlePoints);
+  this->ArrowPolyData->SetPolys(vtkNew<vtkCellArray>());
+  this->ArrowPolyData->InsertNextCell(VTK_POLYGON, translationHandlePoly);
 
-  this->AxisTranslationOutlinePolyData = vtkSmartPointer <vtkPolyData>::New();
-  this->AxisTranslationOutlinePolyData->SetPoints(translationHandlePoints);
-  this->AxisTranslationOutlinePolyData->SetLines(vtkNew<vtkCellArray>());
-  this->AxisTranslationOutlinePolyData->InsertNextCell(VTK_POLY_LINE, translationHandleLine);
+  this->ArrowOutlinePolyData = vtkSmartPointer <vtkPolyData>::New();
+  this->ArrowOutlinePolyData->SetPoints(translationHandlePoints);
+  this->ArrowOutlinePolyData->SetLines(vtkNew<vtkCellArray>());
+  this->ArrowOutlinePolyData->InsertNextCell(VTK_POLY_LINE, translationHandleLine);
 
   /// Translation pipeline
   this->TranslationHandlePoints = vtkSmartPointer<vtkPolyData>::New();
-
-  this->TranslationScaleTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->TranslationScaleTransformFilter->SetInputData(this->TranslationHandlePoints);
-  this->TranslationScaleTransformFilter->SetTransform(vtkNew<vtkTransform>());
-
-  this->AxisTranslationGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
-  this->AxisTranslationGlypher->SetInputConnection(this->TranslationScaleTransformFilter->GetOutputPort());
-  this->AxisTranslationGlypher->SetSourceData(this->AxisTranslationPolyData);
-  this->AxisTranslationGlypher->ScalingOff();
-  this->AxisTranslationGlypher->ExtractEigenvaluesOff();
-  this->AxisTranslationGlypher->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
-
-  this->AxisTranslationOutlineCalculator = vtkSmartPointer<vtkArrayCalculator>::New();
-  this->AxisTranslationOutlineCalculator->SetInputConnection(this->TranslationScaleTransformFilter->GetOutputPort());
-  this->AxisTranslationOutlineCalculator->SetResultArrayName("colorIndex");
-  this->AxisTranslationOutlineCalculator->SetResultArrayType(VTK_ID_TYPE);
-  this->AxisTranslationOutlineCalculator->AddScalarVariable("colorIndex", "colorIndex");
-  this->AxisTranslationOutlineCalculator->SetFunction("colorIndex+1");
-
-  this->AxisTranslationOutlineGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
-  this->AxisTranslationOutlineGlypher->SetInputConnection(this->AxisTranslationOutlineCalculator->GetOutputPort());
-  this->AxisTranslationOutlineGlypher->SetSourceData(this->AxisTranslationOutlinePolyData);
-  this->AxisTranslationOutlineGlypher->ScalingOff();
-  this->AxisTranslationOutlineGlypher->ExtractEigenvaluesOff();
-  this->AxisTranslationOutlineGlypher->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
 
   /// Scale pipeline
   vtkNew<vtkEllipseArcSource> scaleArcSource;
@@ -816,50 +895,19 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
     }
   scaleLine->InsertNextId(0);
 
-  this->AxisScalePolyData = vtkSmartPointer<vtkPolyData>::New();
-  this->AxisScalePolyData->SetPoints(scalePoints);
-  this->AxisScalePolyData->SetPolys(vtkNew<vtkCellArray>());
-  this->AxisScalePolyData->InsertNextCell(VTK_POLYGON, scalePoly);
+  this->CirclePolyData = vtkSmartPointer<vtkPolyData>::New();
+  this->CirclePolyData->SetPoints(scalePoints);
+  this->CirclePolyData->SetPolys(vtkNew<vtkCellArray>());
+  this->CirclePolyData->InsertNextCell(VTK_POLYGON, scalePoly);
 
-  this->AxisScaleOutlinePolyData = vtkSmartPointer<vtkPolyData>::New();
-  this->AxisScaleOutlinePolyData->SetPoints(scalePoints);
-  this->AxisScaleOutlinePolyData->SetLines(vtkNew<vtkCellArray>());
-  this->AxisScaleOutlinePolyData->InsertNextCell(VTK_POLY_LINE, scaleLine);
+  this->CircleOutlinePolyData = vtkSmartPointer<vtkPolyData>::New();
+  this->CircleOutlinePolyData->SetPoints(scalePoints);
+  this->CircleOutlinePolyData->SetLines(vtkNew<vtkCellArray>());
+  this->CircleOutlinePolyData->InsertNextCell(VTK_POLY_LINE, scaleLine);
 
   this->ScaleHandlePoints = vtkSmartPointer<vtkPolyData>::New();
 
-  this->ScaleScaleTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->ScaleScaleTransformFilter->SetInputData(this->ScaleHandlePoints);
-  this->ScaleScaleTransformFilter->SetTransform(vtkNew<vtkTransform>());
-
-  this->AxisScaleGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
-  this->AxisScaleGlypher->SetInputConnection(this->ScaleScaleTransformFilter->GetOutputPort());
-  this->AxisScaleGlypher->SetSourceData(this->AxisScalePolyData);
-  this->AxisScaleGlypher->ScalingOff();
-  this->AxisScaleGlypher->ExtractEigenvaluesOff();
-  this->AxisScaleGlypher->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
-
-  this->AxisScaleOutlineCalculator = vtkSmartPointer<vtkArrayCalculator>::New();
-  this->AxisScaleOutlineCalculator->SetInputConnection(this->ScaleScaleTransformFilter->GetOutputPort());
-  this->AxisScaleOutlineCalculator->SetResultArrayName("colorIndex");
-  this->AxisScaleOutlineCalculator->SetResultArrayType(VTK_ID_TYPE);
-  this->AxisScaleOutlineCalculator->AddScalarVariable("colorIndex", "colorIndex");
-  this->AxisScaleOutlineCalculator->SetFunction("colorIndex+1");
-
-  this->AxisScaleOutlineGlypher = vtkSmartPointer<vtkTensorGlyph>::New();
-  this->AxisScaleOutlineGlypher->SetInputConnection(this->AxisScaleOutlineCalculator->GetOutputPort());
-  this->AxisScaleOutlineGlypher->SetSourceData(this->AxisScaleOutlinePolyData);
-  this->AxisScaleOutlineGlypher->ScalingOff();
-  this->AxisScaleOutlineGlypher->ExtractEigenvaluesOff();
-  this->AxisScaleOutlineGlypher->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
-
   this->Append = vtkSmartPointer<vtkAppendPolyData>::New();
-  this->Append->AddInputConnection(this->AxisTranslationGlypher->GetOutputPort());
-  this->Append->AddInputConnection(this->AxisTranslationOutlineGlypher->GetOutputPort());
-  this->Append->AddInputConnection(this->AxisRotationGlypher->GetOutputPort());
-  this->Append->AddInputConnection(this->AxisRotationOutlineGlypher->GetOutputPort());
-  this->Append->AddInputConnection(this->AxisScaleGlypher->GetOutputPort());
-  this->Append->AddInputConnection(this->AxisScaleOutlineGlypher->GetOutputPort());
 
   this->HandleToWorldTransform = vtkSmartPointer<vtkTransform>::New();
   this->HandleToWorldTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
@@ -887,26 +935,6 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   this->Actor3D = vtkSmartPointer<vtkActor>::New();
   this->Actor3D->SetProperty(this->Property3D);
   this->Actor3D->SetMapper(this->Mapper3D);
-
-  vtkNew<vtkCoordinate> coordinate;
-  coordinate->SetCoordinateSystemToWorld();
-
-  this->Mapper2D = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-  this->Mapper2D->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
-  this->Mapper2D->SetColorModeToMapScalars();
-  this->Mapper2D->ColorByArrayComponent("colorIndex", 0);
-  this->Mapper2D->SetLookupTable(this->ColorTable);
-  this->Mapper2D->ScalarVisibilityOn();
-  this->Mapper2D->UseLookupTableScalarRangeOn();
-  this->Mapper2D->SetTransformCoordinate(coordinate);
-
-  this->Property2D = vtkSmartPointer<vtkProperty2D>::New();
-  this->Property2D->SetPointSize(0.0);
-  this->Property2D->SetLineWidth(2.0);
-
-  this->Actor2D = vtkSmartPointer<vtkActor2D>::New();
-  this->Actor2D->SetProperty(this->Property2D);
-  this->Actor2D->SetMapper(this->Mapper2D);
 
   this->WorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
   this->WorldToSliceTransformFilter->SetTransform(vtkNew<vtkTransform>());
@@ -996,19 +1024,10 @@ void vtkMRMLInteractionWidgetRepresentation::CreateTranslationHandles()
   orientationArray->InsertNextTuple9(1.0, 0.0, 1.0,
                                      0.0, 0.0, 0.0,
                                      0.0, 0.0, 1.0);
-  orientationArray->InsertNextTuple9(0.0, 0.0, 0.0,
-                                     0.0, 0.0, 0.0,
-                                     0.0, 0.0, 0.0); // Free translation
+  orientationArray->InsertNextTuple9(1.0, 0.0, 0.0,
+                                     0.0, 1.0, 0.0,
+                                     0.0, 0.0, 1.0); // Free translation
   this->Pipeline->TranslationHandlePoints->GetPointData()->AddArray(orientationArray);
-
-  vtkNew<vtkDoubleArray> glyphIndexArray;
-  glyphIndexArray->SetName("glyphIndex");
-  glyphIndexArray->SetNumberOfComponents(1);
-  glyphIndexArray->InsertNextTuple1(0); // Arrow
-  glyphIndexArray->InsertNextTuple1(0);
-  glyphIndexArray->InsertNextTuple1(0);
-  glyphIndexArray->InsertNextTuple1(1); // Point
-  this->Pipeline->TranslationHandlePoints->GetPointData()->AddArray(glyphIndexArray);
 
   vtkNew<vtkIdTypeArray> visibilityArray;
   visibilityArray->SetName("visibility");
@@ -1025,20 +1044,7 @@ vtkProp* vtkMRMLInteractionWidgetRepresentation::GetInteractionActor()
     {
     return nullptr;
     }
-  if (this->GetSliceNode())
-    {
-    return this->Pipeline->Actor2D;
-    }
-  else
-    {
-    return this->Pipeline->Actor3D;
-    }
-}
-
-//----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::UpdateHandlesFacingCamera(int type)
-{
-
+  return this->Pipeline->Actor3D;
 }
 
 //----------------------------------------------------------------------
@@ -1086,9 +1092,43 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateTranslationHandleOrientation(
                                    yAxis[0], yAxis[1], yAxis[2],
                                    zAxis[0], zAxis[1], zAxis[2]);
     }
-  orientationArray->SetTuple9(3, 0.0, 0.0, 0.0,
-                                 0.0, 0.0, 0.0,
-                                 0.0, 0.0, 0.0);
+
+  double viewUp_World[3] = { 0.0, 1.0, 0.0 };
+  double viewUp_Handle[3] = { 0.0, 0.0, 0.0 };
+  vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse())->TransformVector(viewDirection_World, viewDirection_Handle);
+  vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse())->TransformVector(viewUp_World, viewUp_Handle);
+  if (this->GetSliceNode())
+    {
+    this->SlicePlane->GetNormal(viewDirection_World);
+    double viewup[4] = { 0,1,0,0 };
+    double viewup2[4] = { 0,1,0,0 };
+    this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(viewup, viewup2);
+    viewUp_World[0] = viewup2[0];
+    viewUp_World[1] = viewup2[1];
+    viewUp_World[2] = viewup2[2];
+    }
+  else
+    {
+    this->Renderer->GetActiveCamera()->GetDirectionOfProjection(viewDirection_World);
+    this->Renderer->GetActiveCamera()->GetViewUp(viewUp_World);
+    }
+  double xAxis[3] = { 0.0, 0.0, 0.0 };
+  double yAxis[3] = { 0.0, 0.0, 0.0 };
+  double zAxis[3] = { 0.0, 0.0, 0.0 };
+  zAxis[0] = viewDirection_Handle[0];
+  zAxis[1] = viewDirection_Handle[1];
+  zAxis[2] = viewDirection_Handle[2];
+  vtkMath::Normalize(zAxis);
+
+  vtkMath::Cross(viewUp_Handle, viewDirection_Handle, xAxis);
+  vtkMath::Normalize(xAxis);
+
+  vtkMath::Cross(viewDirection_Handle, xAxis, yAxis);
+  vtkMath::Normalize(yAxis);
+
+  orientationArray->SetTuple9(3, xAxis[0], xAxis[1], xAxis[2],
+    yAxis[0], yAxis[1], yAxis[2],
+    zAxis[0], zAxis[1], zAxis[2]);
 }
 
 //----------------------------------------------------------------------
@@ -1156,9 +1196,9 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateScaleHandleOrientation()
 void vtkMRMLInteractionWidgetRepresentation::CreateScaleHandles()
 {
   vtkNew<vtkPoints> points;
-  points->InsertNextPoint(1.5, 0.0, 0.0); // X-axis
-  points->InsertNextPoint(0.0, 1.5, 0.0); // Y-axis
-  points->InsertNextPoint(0.0, 0.0, 1.5); // Z-axis
+  points->InsertNextPoint(1.4, 0.0, 0.0); // X-axis
+  points->InsertNextPoint(0.0, 1.4, 0.0); // Y-axis
+  points->InsertNextPoint(0.0, 0.0, 1.4); // Z-axis
   this->Pipeline->ScaleHandlePoints->SetPoints(points);
 
   vtkNew<vtkDoubleArray> orientationArray;
@@ -1225,25 +1265,6 @@ vtkPolyData* vtkMRMLInteractionWidgetRepresentation::GetHandlePolydata(int type)
     return this->Pipeline->ScaleHandlePoints;
     }
   return nullptr;
-}
-
-//----------------------------------------------------------------------
-vtkTransform* vtkMRMLInteractionWidgetRepresentation::GetHandleScaleTransform(int type)
-{
-  vtkAbstractTransform* scaleTransform = nullptr;
-  if (type == InteractionRotationHandle)
-    {
-    scaleTransform = this->Pipeline->RotationScaleTransformFilter->GetTransform();
-    }
-  else if (type == InteractionTranslationHandle)
-    {
-    scaleTransform = this->Pipeline->TranslationScaleTransformFilter->GetTransform();
-    }
-  else if (type == InteractionScaleHandle)
-    {
-    scaleTransform = this->Pipeline->ScaleScaleTransformFilter->GetTransform();
-    }
-  return vtkTransform::SafeDownCast(scaleTransform);
 }
 
 //----------------------------------------------------------------------
@@ -1329,7 +1350,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
   double blueSelected[4] = { 0.07, 0.07, 0.70 };
 
   double orange[4] = { 0.80, 0.65, 0.35 };
-  double orangeSelected[4] = { 0.70, 0.25, 0.07 };
+  double orangeSelected[4] = { 0.70, 0.50, 0.07 };
 
   double white[4]  = { 0.80, 0.80, 0.80 };
   double whiteSelected[4] = { 1.00, 1.00, 1.00 };
@@ -1367,6 +1388,20 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
     color[i] = currentColor[i];
     }
   color[3] = opacity;
+}
+
+//----------------------------------------------------------------------
+int vtkMRMLInteractionWidgetRepresentation::GetHandleGlyphType(int type, int index)
+{
+  if (type == InteractionRotationHandle)
+    {
+    return GlyphRing;
+    }
+  else if (type == InteractionTranslationHandle && index < 3)
+    {
+    return GlyphArrow;
+    }
+  return GlyphCircle;
 }
 
 //----------------------------------------------------------------------
@@ -1482,20 +1517,12 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleToCameraVector(double norm
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::SetWidgetScale(double scale)
 {
-  vtkNew<vtkTransform> scaleTransform;
-  scaleTransform->Scale(scale, scale, scale);
-
-  this->Pipeline->RotationScaleTransformFilter->SetTransform(scaleTransform);
-  this->Pipeline->AxisRotationGlypher->SetScaleFactor(scale);
-  this->Pipeline->AxisRotationOutlineGlypher->SetScaleFactor(scale);
-
-  this->Pipeline->TranslationScaleTransformFilter->SetTransform(scaleTransform);
-  this->Pipeline->AxisTranslationGlypher->SetScaleFactor(scale);
-  this->Pipeline->AxisTranslationOutlineGlypher->SetScaleFactor(scale);
-
-  this->Pipeline->ScaleScaleTransformFilter->SetTransform(scaleTransform);
-  this->Pipeline->AxisScaleGlypher->SetScaleFactor(scale);
-  this->Pipeline->AxisScaleOutlineGlypher->SetScaleFactor(scale);
+  if (this->WidgetScale == scale)
+    {
+    return;
+    }
+  this->WidgetScale = scale;
+  this->NeedToRenderOn();
 }
 
 //----------------------------------------------------------------------
@@ -1592,11 +1619,9 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandlePositionWorld(i
     }
   handlePolyData->GetPoint(index, positionWorld);
 
-  vtkTransform* handleScaleTransform = this->GetHandleScaleTransform(type);
-  if (handleScaleTransform)
-    {
-    handleScaleTransform->TransformPoint(positionWorld, positionWorld);
-    }
+  vtkNew<vtkTransform> handleScaleTransform;
+  handleScaleTransform->Scale(this->WidgetScale, this->WidgetScale, this->WidgetScale);
+  handleScaleTransform->TransformPoint(positionWorld, positionWorld);
 
   this->Pipeline->HandleToWorldTransform->TransformPoint(positionWorld, positionWorld);
 }
@@ -1613,7 +1638,9 @@ vtkMRMLInteractionWidgetRepresentation::HandleInfo vtkMRMLInteractionWidgetRepre
   double color[4] = { 0.0, 0.0, 0.0, 0.0 };
   this->GetHandleColor(type, index, color);
 
-  return HandleInfo(index, type, handlePositionWorld, handlePositionLocal, color);
+  int glyphType = this->GetHandleGlyphType(type, index);
+
+  return HandleInfo(index, type, handlePositionWorld, handlePositionLocal, color, glyphType);
 }
 
 //----------------------------------------------------------------------
@@ -1682,13 +1709,11 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateSlicePlaneFromSliceNode()
   vtkMatrix4x4* sliceXYToRAS = this->GetSliceNode()->GetXYToRAS();
 
   // Update transformation to slice
-  vtkNew<vtkMatrix4x4> rasToSliceXY;
-  vtkMatrix4x4::Invert(sliceXYToRAS, rasToSliceXY.GetPointer());
-  // Project all points to the slice plane (slice Z coordinate = 0)
-  rasToSliceXY->SetElement(2, 0, 0);
-  rasToSliceXY->SetElement(2, 1, 0);
-  rasToSliceXY->SetElement(2, 2, 0);
-  this->WorldToSliceTransform->SetMatrix(rasToSliceXY.GetPointer());
+  vtkMatrix4x4* sliceToWorld = this->GetSliceNode()->GetXYToRAS();
+  vtkNew<vtkMatrix4x4> worldToSlice;
+  worldToSlice->DeepCopy(sliceToWorld);
+  worldToSlice->Invert();
+  this->WorldToSliceTransform->SetMatrix(worldToSlice);
 
   // Update slice plane (for distance computation)
   double normal[3] = { 0.0, 0.0, 0.0 };

@@ -444,26 +444,23 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::UpdateInteraction
   vtkSmartPointer<vtkMRMLTransformHandleWidget> widget = nullptr;
   InteractionPipelinesCacheType::iterator pipelineIt = this->InteractionPipelines.find(displayNode);
 
-  if (displayNode->GetInteractionVisibility())
+  if (displayNode->GetInteractionVisibility() && pipelineIt == this->InteractionPipelines.end())
     {
-    if (pipelineIt == this->InteractionPipelines.end())
-      {
-      // No pipeline, yet interaction visibility is on, create a new one
+    // No pipeline, yet interaction visibility is on, create a new one
 
-      vtkNew<vtkMRMLTransformHandleWidget> interactionWidget;
-      interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLViewNode(), this->InteractionRenderer);
-      this->InteractionPipelines[displayNode] = interactionWidget;
-      widget = interactionWidget;
-      }
-    else if (!displayNode->GetInteractionVisibility() && pipelineIt != this->InteractionPipelines.end())
-      {
-      // Pipeline exists, but interaction visibility is off, remove it
-      this->InteractionPipelines.erase(pipelineIt);
-      }
-    else
-      {
-      widget = pipelineIt->second;
-      }
+    vtkNew<vtkMRMLTransformHandleWidget> interactionWidget;
+    interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLViewNode(), this->InteractionRenderer);
+    this->InteractionPipelines[displayNode] = interactionWidget;
+    widget = interactionWidget;
+    }
+  else if (!displayNode->GetInteractionVisibility() && pipelineIt != this->InteractionPipelines.end())
+    {
+    // Pipeline exists, but interaction visibility is off, remove it
+    this->InteractionPipelines.erase(pipelineIt);
+    }
+  else if (pipelineIt != this->InteractionPipelines.end())
+    {
+    widget = pipelineIt->second;
     }
 
   if (widget)
@@ -692,9 +689,7 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::SetupRenderer()
     }
 
   this->InteractionRenderer->SetUseDepthPeeling(renderer->GetUseDepthPeeling());
-  //this->InteractionRenderer->SetUseFXAA(renderer->GetUseFXAA());
-  this->InteractionRenderer->SetUseFXAA(true);
-  this->InteractionRenderer->SetFXAAOptions(renderer->GetFXAAOptions());
+
   // Prevent erasing Z-buffer (important for quick picking and markup label visibility assessment)
   this->InteractionRenderer->EraseOn(); // TODO
   this->InteractionRenderer->InteractiveOff();

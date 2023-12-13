@@ -128,6 +128,8 @@ public:
   /// Update the interaction pipeline
   virtual void UpdateInteractionPipeline();
 
+  virtual void UpdateHandlePolyData();
+
   /// Get the axis for the handle specified by the index in local coordinates
   virtual void GetInteractionHandleAxisLocal(int type, int index, double axis[3]);
 
@@ -143,6 +145,13 @@ public:
     InteractionRotationHandle,
     InteractionScaleHandle,
     Interaction_Last
+  };
+
+  enum
+  {
+    GlyphArrow,
+    GlyphCircle,
+    GlyphRing
   };
 
   virtual int GetActiveComponentType() = 0;
@@ -172,30 +181,17 @@ protected:
     InteractionPipeline();
     virtual ~InteractionPipeline();
 
-    vtkSmartPointer<vtkPolyData>                AxisRotationPolyData;
-    vtkSmartPointer<vtkPolyData>                AxisRotationOutlinePolyData;
+    vtkSmartPointer<vtkPolyData>                ArrowPolyData;
+    vtkSmartPointer<vtkPolyData>                CirclePolyData;
+    vtkSmartPointer<vtkPolyData>                RingPolyData;
+    vtkSmartPointer<vtkPolyData>                ArrowOutlinePolyData;
+    vtkSmartPointer<vtkPolyData>                CircleOutlinePolyData;
+    vtkSmartPointer<vtkPolyData>                RingOutlinePolyData;
+
+
     vtkSmartPointer<vtkPolyData>                RotationHandlePoints;
-    vtkSmartPointer<vtkTransformPolyDataFilter> RotationScaleTransformFilter;
-    vtkSmartPointer<vtkTensorGlyph>             AxisRotationGlypher;
-    vtkSmartPointer<vtkArrayCalculator>         AxisRotationOutlineCalculator;
-    vtkSmartPointer<vtkTensorGlyph>             AxisRotationOutlineGlypher;
-
-    vtkSmartPointer<vtkPolyData>                AxisTranslationPolyData;
-    vtkSmartPointer<vtkPolyData>                AxisTranslationOutlinePolyData;
-    vtkSmartPointer<vtkTransformPolyDataFilter> AxisTranslationGlyphTransformer;
     vtkSmartPointer<vtkPolyData>                TranslationHandlePoints;
-    vtkSmartPointer<vtkTransformPolyDataFilter> TranslationScaleTransformFilter;
-    vtkSmartPointer<vtkTensorGlyph>             AxisTranslationGlypher;
-    vtkSmartPointer<vtkArrayCalculator>         AxisTranslationOutlineCalculator;
-    vtkSmartPointer<vtkTensorGlyph>             AxisTranslationOutlineGlypher;
-
-    vtkSmartPointer<vtkPolyData>                AxisScalePolyData;
-    vtkSmartPointer<vtkPolyData>                AxisScaleOutlinePolyData;
     vtkSmartPointer<vtkPolyData>                ScaleHandlePoints;
-    vtkSmartPointer<vtkTransformPolyDataFilter> ScaleScaleTransformFilter;
-    vtkSmartPointer<vtkTensorGlyph>             AxisScaleGlypher;
-    vtkSmartPointer<vtkArrayCalculator>         AxisScaleOutlineCalculator;
-    vtkSmartPointer<vtkTensorGlyph>             AxisScaleOutlineGlypher;
 
     vtkSmartPointer<vtkAppendPolyData>          Append;
     vtkSmartPointer<vtkTransformPolyDataFilter> HandleToWorldTransformFilter;
@@ -206,18 +202,15 @@ protected:
     vtkSmartPointer<vtkProperty>                Property3D;
     vtkSmartPointer<vtkActor>                   Actor3D;
 
-    vtkSmartPointer<vtkPolyDataMapper2D>        Mapper2D;
-    vtkSmartPointer<vtkProperty2D>              Property2D;
-    vtkSmartPointer<vtkActor2D>                 Actor2D;
-
     vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
   };
 
   struct HandleInfo
   {
-    HandleInfo(int index, int componentType, double positionWorld[3], double positionLocal[3], double color[4])
+    HandleInfo(int index, int componentType, double positionWorld[3], double positionLocal[3], double color[4], int glyphType)
       : Index(index)
       , ComponentType(componentType)
+      , GlyphType(glyphType)
     {
     for (int i = 0; i < 3; ++i)
       {
@@ -236,6 +229,7 @@ protected:
     }
     int Index;
     int ComponentType;
+    int GlyphType;
     double PositionLocal[4];
     double PositionWorld[4];
     double Color[4];
@@ -258,11 +252,9 @@ protected:
   virtual void UpdateHandleColors();
   virtual int UpdateHandleColors(int type, int startIndex);
   virtual vtkPolyData* GetHandlePolydata(int type);
-  virtual vtkTransform* GetHandleScaleTransform(int type);
 
   virtual void UpdateTranslationHandleOrientation();
   virtual void UpdateScaleHandleOrientation();
-  virtual void UpdateHandlesFacingCamera(int type);
 
   /// Set the scale of the interaction handles in world coordinates
   virtual void SetWidgetScale(double scale);
@@ -273,6 +265,8 @@ protected:
   virtual double GetHandleOpacity(int type, int index);
   /// Get the visibility of the specified handle
   virtual bool GetHandleVisibility(int type, int index);
+  ///  TODO
+  virtual int GetHandleGlyphType(int type, int index);
 
   /// Get the vector from the interaction handle to the camera in world coordinates.
   /// In slice views and in 3D with parallel projection this is the same as the camera view direction.
@@ -318,6 +312,8 @@ protected:
   // For 3D views, renderer world coordinate system is the Slicer world coordinate system, so it is measured in the
   // scene length unit (typically millimeters).
   double InteractionSize{ 1.0 };
+
+  double WidgetScale{ 1.0 };
 
   bool Interacting{ false };
 

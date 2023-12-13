@@ -95,6 +95,8 @@ bool vtkMRMLTransformHandleWidget::CanProcessInteractionEvent(vtkMRMLInteraction
     distance2 = 0.0;
     return true;
     }
+
+  return false;
 }
 
 //----------------------------------------------------------------------
@@ -222,7 +224,8 @@ bool vtkMRMLTransformHandleWidget::ProcessWidgetMenu(vtkMRMLInteractionEventData
     return false;
     }
 
-  this->ProcessWidgetMenuDisplayNodeTypeAndIndex(eventData, displayNode, displayNode->GetActiveInteractionType(), displayNode->GetActiveInteractionIndex());
+  return this->ProcessWidgetMenuDisplayNodeTypeAndIndex(
+    eventData, displayNode, displayNode->GetActiveInteractionType(), displayNode->GetActiveInteractionIndex());
 }
 
 //-------------------------------------------------------------------------

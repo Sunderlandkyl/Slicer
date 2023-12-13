@@ -183,6 +183,7 @@ bool vtkMRMLInteractionWidget::ProcessMouseMove(vtkMRMLInteractionEventData* eve
     this->LastEventPosition[0] = eventPos[0];
     this->LastEventPosition[1] = eventPos[1];
     }
+  return true;
 }
 
 //----------------------------------------------------------------------

@@ -158,7 +158,6 @@ void vtkMRMLTransformHandleWidgetRepresentation::UpdateHandleToWorldTransform(vt
 
   // The vtkMRMLInteractionWidgetRepresentation::UpdateHandleToWorldTransform() method will orthogonalize the matrix.
   handleToWorldTransform->Identity();
-  handleToWorldTransform->PostMultiply();
   handleToWorldTransform->Concatenate(nodeToWorldMatrix);
 }
 
