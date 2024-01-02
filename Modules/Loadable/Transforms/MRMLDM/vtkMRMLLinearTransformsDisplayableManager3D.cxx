@@ -82,7 +82,6 @@ public:
   void AddDisplayNode(vtkMRMLTransformNode*, vtkMRMLTransformDisplayNode*);
   void UpdateDisplayNode(vtkMRMLTransformDisplayNode* displayNode);
   void RemoveDisplayNode(vtkMRMLTransformDisplayNode* displayNode);
-  void SetTransformDisplayProperty(vtkMRMLTransformDisplayNode *displayNode, vtkActor* actor);
 
   // Observations
   void AddObservations(vtkMRMLTransformNode* node);
@@ -351,67 +350,6 @@ bool vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::UseDisplayableNod
 {
   bool use = node && node->IsA("vtkMRMLTransformNode");
   return use;
-}
-
-//---------------------------------------------------------------------------
-void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::SetTransformDisplayProperty(vtkMRMLTransformDisplayNode *displayNode, vtkActor* actor)
-{
-  bool visible = this->IsVisible(displayNode);
-  actor->SetVisibility(visible);
-
-  vtkMapper* mapper=actor->GetMapper();
-
-  // if the scalars are visible, set active scalars
-  bool scalarVisibility = false;
-  if (displayNode->GetScalarVisibility())
-    {
-    vtkColorTransferFunction* colorTransferFunction=displayNode->GetColorMap();
-    if (colorTransferFunction != nullptr && colorTransferFunction->GetSize()>0)
-      {
-      // Copy the transfer function to not share them between multiple mappers
-      vtkNew<vtkColorTransferFunction> colorTransferFunctionCopy;
-      colorTransferFunctionCopy->DeepCopy(colorTransferFunction);
-      mapper->SetLookupTable(colorTransferFunctionCopy.GetPointer());
-      mapper->SetScalarModeToUsePointData();
-      mapper->SetColorModeToMapScalars();
-      mapper->SelectColorArray(vtkSlicerTransformLogic::GetVisualizationDisplacementMagnitudeScalarName());
-      mapper->UseLookupTableScalarRangeOff();
-      mapper->SetScalarRange(displayNode->GetScalarRange());
-      scalarVisibility = true;
-      }
-    }
-  mapper->SetScalarVisibility(scalarVisibility);
-
-  actor->GetProperty()->SetRepresentation(displayNode->GetRepresentation());
-  actor->GetProperty()->SetPointSize(displayNode->GetPointSize());
-  actor->GetProperty()->SetLineWidth(displayNode->GetLineWidth());
-  actor->GetProperty()->SetLighting(displayNode->GetLighting());
-  actor->GetProperty()->SetInterpolation(displayNode->GetInterpolation());
-  actor->GetProperty()->SetShading(displayNode->GetShading());
-  actor->GetProperty()->SetFrontfaceCulling(displayNode->GetFrontfaceCulling());
-  actor->GetProperty()->SetBackfaceCulling(displayNode->GetBackfaceCulling());
-
-  if (displayNode->GetSelected())
-    {
-    actor->GetProperty()->SetColor(displayNode->GetSelectedColor());
-    actor->GetProperty()->SetAmbient(displayNode->GetSelectedAmbient());
-    actor->GetProperty()->SetSpecular(displayNode->GetSelectedSpecular());
-    }
-  else
-    {
-    actor->GetProperty()->SetColor(displayNode->GetColor());
-    actor->GetProperty()->SetAmbient(displayNode->GetAmbient());
-    actor->GetProperty()->SetSpecular(displayNode->GetSpecular());
-    }
-  actor->GetProperty()->SetOpacity(displayNode->GetOpacity());
-  actor->GetProperty()->SetDiffuse(displayNode->GetDiffuse());
-  actor->GetProperty()->SetSpecularPower(displayNode->GetPower());
-  actor->GetProperty()->SetMetallic(displayNode->GetMetallic());
-  actor->GetProperty()->SetRoughness(displayNode->GetRoughness());
-  actor->GetProperty()->SetEdgeVisibility(displayNode->GetEdgeVisibility());
-  actor->GetProperty()->SetEdgeColor(displayNode->GetEdgeColor());
-
-  actor->SetTexture(nullptr);
 }
 
 //---------------------------------------------------------------------------

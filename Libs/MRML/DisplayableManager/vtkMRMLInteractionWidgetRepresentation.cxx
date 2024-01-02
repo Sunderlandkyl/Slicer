@@ -78,26 +78,23 @@ vtkMRMLInteractionWidgetRepresentation::vtkMRMLInteractionWidgetRepresentation()
 
   this->PointPlacer = vtkSmartPointer<vtkFocalPlanePointPlacer>::New();
 
-  this->AlwaysOnTop = false;
+  this->AlwaysOnTop = true;
 
   this->Pipeline = nullptr;
 
   this->SlicePlane = vtkSmartPointer<vtkPlane>::New();
-  this->WorldToSliceTransform = vtkSmartPointer<vtkTransform>::New();
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
 {
   this->Pipeline = new InteractionPipeline();
+  this->InitializePipeline();
   if (this->GetSliceNode())
     {
     this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
-    this->Pipeline->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
     this->Pipeline->Mapper3D->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
     }
-
-  this->InitializePipeline();
   this->NeedToRenderOn();
 }
 
@@ -105,8 +102,6 @@ void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
 vtkMRMLInteractionWidgetRepresentation::~vtkMRMLInteractionWidgetRepresentation()
 {
   // Force deleting variables to prevent circular dependency keeping objects alive
-  this->PointPlacer = nullptr;
-
   if (this->Pipeline != nullptr)
     {
     delete this->Pipeline;
@@ -120,7 +115,6 @@ void vtkMRMLInteractionWidgetRepresentation::PrintSelf(ostream& os,
 {
   //Superclass typedef defined in vtkTypeMacro() found in vtkSetGet.h
   this->Superclass::PrintSelf(os, indent);
-  os << indent << "Point Placer: " << this->PointPlacer << "\n";
 }
 
 //----------------------------------------------------------------------
@@ -236,15 +230,65 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
       double* handleWorldPos = handleInfo.PositionWorld;
       double handleDisplayPos[3] = { 0.0, 0.0, 0.0 };
 
+      double pixelTolerance = this->InteractionSize / 4.0 / this->GetViewScaleFactorAtPosition(handleWorldPos)
+        + this->PickingTolerance * this->ScreenScaleFactor;
+      double dist2 = VTK_DOUBLE_MAX;
+
       if (interactionEventData->IsDisplayPositionValid())
         {
-        double pixelTolerance = this->InteractionSize / 2.0 / this->GetViewScaleFactorAtPosition(handleWorldPos)
-          + this->PickingTolerance * this->ScreenScaleFactor;
-        this->Renderer->SetWorldPoint(handleWorldPos);
-        this->Renderer->WorldToDisplay();
-        this->Renderer->GetDisplayPoint(handleDisplayPos);
-        handleDisplayPos[2] = 0.0;
-        double dist2 = vtkMath::Distance2BetweenPoints(handleDisplayPos, displayPosition3);
+        if (handleInfo.ComponentType == InteractionRotationHandle)
+          {
+          double handleNormalWorld[4] = { 0.0, 0.0, 0.0, 0.0 };
+          this->GetInteractionHandleAxisWorld(handleInfo.ComponentType, handleInfo.Index, handleNormalWorld);
+          if (handleNormalWorld[0] <= 0.0 && handleNormalWorld[1] <= 0.0 && handleNormalWorld[2] <= 0.0)
+            {
+            // Vector from camera position to handle position.
+            double cameraWorld[3] = { 0.0, 0.0, 0.0 };
+            this->Renderer->GetActiveCamera()->GetPosition(cameraWorld);
+            vtkMath::Subtract(handleWorldPos, cameraWorld, handleNormalWorld);
+            }
+
+          vtkNew<vtkPlane> plane;
+          plane->SetOrigin(handleWorldPos);
+          plane->SetNormal(handleNormalWorld);
+
+          this->Renderer->SetDisplayPoint(displayPosition3);
+          this->Renderer->DisplayToWorld();
+          double worldPosition[4] = { 0.0, 0.0, 0.0, 0.0 };
+          this->Renderer->GetWorldPoint(worldPosition);
+
+          double viewDirection_World[3] = { 0.0, 0.0, 0.0 };
+          this->Renderer->GetActiveCamera()->GetDirectionOfProjection(viewDirection_World);
+
+          double worldPosition2[4] = { 0.0, 0.0, 0.0, 0.0 };
+          vtkMath::Add(worldPosition, viewDirection_World, worldPosition2);
+
+          double t = 0; // not used
+          double interactionPointOnPlaneWorld[3] = { 0.0, 0.0, 0.0 };
+          plane->IntersectWithLine(worldPosition, this->Renderer->GetActiveCamera()->GetPosition(), t, interactionPointOnPlaneWorld);
+
+          double closestPointOnRingWorld[3] = { 0.0, 0.0, 0.0 };
+          vtkMath::Subtract(interactionPointOnPlaneWorld, handleWorldPos, closestPointOnRingWorld);
+          vtkMath::Normalize(closestPointOnRingWorld);
+          vtkMath::MultiplyScalar(closestPointOnRingWorld, this->WidgetScale);
+          vtkMath::Add(handleWorldPos, closestPointOnRingWorld, closestPointOnRingWorld);
+
+          double closestPointOnRingDisplay[3] = { 0.0, 0.0, 0.0 };
+          this->Renderer->SetWorldPoint(closestPointOnRingWorld);
+          this->Renderer->WorldToDisplay();
+          this->Renderer->GetDisplayPoint(closestPointOnRingDisplay);
+
+          dist2 = vtkMath::Distance2BetweenPoints(displayPosition3, closestPointOnRingDisplay);
+          }
+        else
+          {
+          this->Renderer->SetWorldPoint(handleWorldPos);
+          this->Renderer->WorldToDisplay();
+          this->Renderer->GetDisplayPoint(handleDisplayPos);
+          handleDisplayPos[2] = 0.0;
+          dist2 = vtkMath::Distance2BetweenPoints(handleDisplayPos, displayPosition3);
+          }
+
         if (dist2 < pixelTolerance * pixelTolerance && dist2 < closestDistance2)
           {
           closestDistance2 = dist2;
@@ -401,6 +445,11 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateFromMRML(
     this->SetupInteractionPipeline();
     }
 
+  if (this->GetSliceNode())
+    {
+    this->UpdateSlicePlaneFromSliceNode();
+    }
+
   if (this->Pipeline)
     {
     this->UpdateInteractionPipeline();
@@ -471,9 +520,9 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateHandlePolyData()
   vtkNew<vtkPolyData> ringOutlinePoints;
 
   vtkNew<vtkTensorGlyph> arrowGlyph;
-  arrowGlyph->SetScaleFactor(this->WidgetScale);
   arrowGlyph->SetSourceData(this->Pipeline->ArrowPolyData);
   arrowGlyph->SetInputData(arrowPoints);
+  arrowGlyph->SetScaleFactor(this->WidgetScale);
   arrowGlyph->ScalingOff();
   arrowGlyph->ExtractEigenvaluesOff();
   arrowGlyph->SetInputArrayToProcess(0, 0, 0, 0, "orientation"); // Orientation direction array
@@ -488,7 +537,6 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateHandlePolyData()
 
   vtkNew<vtkTensorGlyph> circleGlyph;
   circleGlyph->SetSourceData(this->Pipeline->CirclePolyData);
-  circleGlyph->SetScaleFactor(this->WidgetScale);
   circleGlyph->SetInputData(circlePoints);
   circleGlyph->SetScaleFactor(this->WidgetScale);
   circleGlyph->ScalingOff();
@@ -522,11 +570,6 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateHandlePolyData()
   HandleInfoList handleInfoList = this->GetHandleInfoList();
   for (HandleInfo handleInfo : handleInfoList)
     {
-    if (!handleInfo.IsVisible())
-      {
-      continue;
-      }
-
     vtkPolyData* outputPoints = nullptr;
     vtkPolyData* outlinePoints = nullptr;
     switch (handleInfo.GlyphType)
@@ -670,23 +713,35 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOverlay(vtkViewport* viewport)
 //----------------------------------------------------------------------
 int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* viewport)
 {
+  if (!this->Pipeline)
+    {
+    this->SetupInteractionPipeline();
+    }
+
   int count = 0;
   vtkProp* actor = this->GetInteractionActor();
   if (actor && actor->GetVisibility())
     {
-    if (!this->Pipeline)
-      {
-      this->SetupInteractionPipeline();
-      }
     this->UpdateHandleToWorldTransform();
     this->UpdateSlicePlaneFromSliceNode();
     this->UpdateHandleColors();
     this->UpdateViewScaleFactor();
-    this->UpdateTranslationHandleOrientation();
-    this->UpdateScaleHandleOrientation();
+    this->UpdateHandleOrientation();
     this->UpdateHandleSize();
     this->UpdateHandlePolyData();
     count += actor->RenderOpaqueGeometry(viewport);
+    this->Pipeline->HandleToWorldTransformFilter->Update();
+    if (this->Pipeline->HandleToWorldTransformFilter->GetOutput()->GetNumberOfPoints() > 0)
+      {
+      double bounds[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+      this->Pipeline->HandleToWorldTransformFilter->GetOutput()->GetBounds(bounds);
+      }
+    this->Pipeline->WorldToSliceTransformFilter->Update();
+    if (this->Pipeline->WorldToSliceTransformFilter->GetOutput()->GetNumberOfPoints() > 0)
+      {
+      double bounds[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+      this->Pipeline->WorldToSliceTransformFilter->GetOutput()->GetBounds(bounds);
+      }
     }
   return count;
 }
@@ -725,7 +780,7 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   vtkNew<vtkEllipseArcSource> outerArcSource;
   outerArcSource->SetMajorRadiusVector(-INTERACTION_HANDLE_ROTATION_ARC_OUTER_RADIUS, 0.0, 0.0);
   outerArcSource->SetResolution(INTERACTION_HANDLE_ROTATION_ARC_RESOLUTION);
-  outerArcSource->SetCenter(-1.0, 0, 0);
+  outerArcSource->SetCenter(0, 0, 0);
   outerArcSource->SetNormal(0, 0, 1);
   outerArcSource->SetRatio(1.0);
   outerArcSource->SetStartAngle(180 - INTERACTION_HANDLE_ROTATION_ARC_DEGREES / 2.0);
@@ -735,7 +790,7 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   vtkNew<vtkEllipseArcSource> innerArcSource;
   innerArcSource->SetMajorRadiusVector(-INTERACTION_HANDLE_ROTATION_ARC_INNER_RADIUS, 0.0, 0.0);
   innerArcSource->SetResolution(INTERACTION_HANDLE_ROTATION_ARC_RESOLUTION);
-  innerArcSource->SetCenter(-1.0, 0, 0);
+  innerArcSource->SetCenter(0, 0, 0);
   innerArcSource->SetNormal(0, 0, 1);
   innerArcSource->SetRatio(1.0);
   innerArcSource->SetStartAngle(180 - INTERACTION_HANDLE_ROTATION_ARC_DEGREES / 2.0);
@@ -931,13 +986,16 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
   this->Property3D->SetAmbient(1.0);
   this->Property3D->SetMetallic(0.0);
   this->Property3D->SetSpecular(0.0);
+  this->Property3D->SetEdgeVisibility(true);
 
   this->Actor3D = vtkSmartPointer<vtkActor>::New();
   this->Actor3D->SetProperty(this->Property3D);
   this->Actor3D->SetMapper(this->Mapper3D);
 
+  this->WorldToSliceTransform = vtkSmartPointer<vtkTransform>::New();
+
   this->WorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->WorldToSliceTransformFilter->SetTransform(vtkNew<vtkTransform>());
+  this->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
 }
 
 //----------------------------------------------------------------------
@@ -957,16 +1015,17 @@ void vtkMRMLInteractionWidgetRepresentation::CreateRotationHandles()
 {
   vtkNew<vtkPoints> points;
 
-  double xRotationHandle[3] = { 0, 1, 1 }; // X-axis
-  vtkMath::Normalize(xRotationHandle);
+  double xRotationHandle[3] = { 0, 0, 0 }; // X-axis
   points->InsertNextPoint(xRotationHandle);
-  double yRotationHandle[3] = { 1, 0, 1 }; // Y-axis
+  double yRotationHandle[3] = { 0, 0, 0 }; // Y-axis
   vtkMath::Normalize(yRotationHandle);
   points->InsertNextPoint(yRotationHandle);
-  double zRotationHandle[3] = { 1, 1, 0 }; // Z-axis
+  double zRotationHandle[3] = { 0, 0, 0 }; // Z-axis
   vtkMath::Normalize(zRotationHandle);
   points->InsertNextPoint(zRotationHandle);
   this->Pipeline->RotationHandlePoints->SetPoints(points);
+  double viewPlaneRotationHandle[3] = { 0, 0, 0 }; // View
+  this->Pipeline->RotationHandlePoints->GetPoints()->InsertNextPoint(viewPlaneRotationHandle);
 
   vtkNew<vtkDoubleArray> orientationArray;
   orientationArray->SetName("orientation");
@@ -992,6 +1051,8 @@ void vtkMRMLInteractionWidgetRepresentation::CreateRotationHandles()
   orientationArray->InsertNextTuple9(zRotationMatrix->GetElement(0, 0), zRotationMatrix->GetElement(1, 0), zRotationMatrix->GetElement(2, 0),
                                      zRotationMatrix->GetElement(0, 1), zRotationMatrix->GetElement(1, 1), zRotationMatrix->GetElement(2, 1),
                                      zRotationMatrix->GetElement(0, 2), zRotationMatrix->GetElement(1, 2), zRotationMatrix->GetElement(2, 2));
+
+  orientationArray->InsertNextTuple9(1,0,0,0,1,0,0,0,1); // View
   this->Pipeline->RotationHandlePoints->GetPointData()->AddArray(orientationArray);
 
   vtkNew<vtkIdTypeArray> visibilityArray;
@@ -1045,6 +1106,14 @@ vtkProp* vtkMRMLInteractionWidgetRepresentation::GetInteractionActor()
     return nullptr;
     }
   return this->Pipeline->Actor3D;
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::UpdateHandleOrientation()
+{
+  this->UpdateTranslationHandleOrientation();
+  this->UpdateScaleHandleOrientation();
+  this->UpdateRotationHandleOrientation();
 }
 
 //----------------------------------------------------------------------
@@ -1190,6 +1259,64 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateScaleHandleOrientation()
                                    yAxis[0], yAxis[1], yAxis[2],
                                    zAxis[0], zAxis[1], zAxis[2]);
     }
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::UpdateRotationHandleOrientation()
+{
+  vtkPolyData* handlePolyData = this->GetHandlePolydata(InteractionRotationHandle);
+  if (!handlePolyData)
+    {
+    return;
+    }
+
+  vtkDoubleArray* orientationArray = vtkDoubleArray::SafeDownCast(handlePolyData->GetPointData()->GetAbstractArray("orientation"));
+  if (!orientationArray)
+    {
+    return;
+    }
+
+  double viewDirection_World[3] = { 0.0, 0.0, 0.0 };
+  double viewDirection_Handle[3] = { 0.0, 0.0, 0.0 };
+
+  double viewUp_World[3] = { 0.0, 1.0, 0.0 };
+  double viewUp_Handle[3] = { 0.0, 0.0, 0.0 };
+
+  if (this->GetSliceNode())
+    {
+    this->SlicePlane->GetNormal(viewDirection_World);
+    double viewup[4] = { 0,1,0,0 };
+    double viewup2[4] = { 0,1,0,0 };
+    this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(viewup, viewup2);
+    viewUp_World[0] = viewup2[0];
+    viewUp_World[1] = viewup2[1];
+    viewUp_World[2] = viewup2[2];
+    }
+  else
+    {
+    this->Renderer->GetActiveCamera()->GetDirectionOfProjection(viewDirection_World);
+    this->Renderer->GetActiveCamera()->GetViewUp(viewUp_World);
+    }
+  vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse())->TransformVector(viewDirection_World, viewDirection_Handle);
+  vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse())->TransformVector(viewUp_World, viewUp_Handle);
+
+  double xAxis[3] = { 1.0, 0.0, 0.0 };
+  double yAxis[3] = { 0.0, 1.0, 0.0 };
+  double zAxis[3] = { 0.0, 0.0, 1.0 };
+  zAxis[0] = viewDirection_Handle[0];
+  zAxis[1] = viewDirection_Handle[1];
+  zAxis[2] = viewDirection_Handle[2];
+  vtkMath::Normalize(zAxis);
+
+  vtkMath::Cross(viewUp_Handle, viewDirection_Handle, xAxis);
+  vtkMath::Normalize(xAxis);
+
+  vtkMath::Cross(viewDirection_Handle, xAxis, yAxis);
+  vtkMath::Normalize(yAxis);
+
+  orientationArray->SetTuple9(3, xAxis[0], xAxis[1], xAxis[2],
+                                 yAxis[0], yAxis[1], yAxis[2],
+                                 zAxis[0], zAxis[1], zAxis[2]);
 }
 
 //----------------------------------------------------------------------
@@ -1370,7 +1497,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
       currentColor = selected ? blueSelected : blue;
       break;
     case 3:
-      currentColor = selected ? orangeSelected : orange;
+      currentColor = selected ? whiteSelected: white;
       break;
     default:
       currentColor = selected ? whiteSelected : white;
@@ -1708,12 +1835,15 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateSlicePlaneFromSliceNode()
 
   vtkMatrix4x4* sliceXYToRAS = this->GetSliceNode()->GetXYToRAS();
 
-  // Update transformation to slice
-  vtkMatrix4x4* sliceToWorld = this->GetSliceNode()->GetXYToRAS();
-  vtkNew<vtkMatrix4x4> worldToSlice;
-  worldToSlice->DeepCopy(sliceToWorld);
-  worldToSlice->Invert();
-  this->WorldToSliceTransform->SetMatrix(worldToSlice);
+  if (this->Pipeline)
+    {
+    // Update transformation to slice
+    vtkNew<vtkMatrix4x4> rasToXY;
+    rasToXY->DeepCopy(sliceXYToRAS);
+    //rasToXY->Invert();
+    this->Pipeline->WorldToSliceTransform->Identity();
+    this->Pipeline->WorldToSliceTransform->Concatenate(rasToXY);
+    }
 
   // Update slice plane (for distance computation)
   double normal[3] = { 0.0, 0.0, 0.0 };

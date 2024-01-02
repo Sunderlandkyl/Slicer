@@ -202,6 +202,7 @@ protected:
     vtkSmartPointer<vtkProperty>                Property3D;
     vtkSmartPointer<vtkActor>                   Actor3D;
 
+    vtkSmartPointer<vtkTransform> WorldToSliceTransform;
     vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
   };
 
@@ -253,8 +254,10 @@ protected:
   virtual int UpdateHandleColors(int type, int startIndex);
   virtual vtkPolyData* GetHandlePolydata(int type);
 
+  virtual void UpdateHandleOrientation();
   virtual void UpdateTranslationHandleOrientation();
   virtual void UpdateScaleHandleOrientation();
+  virtual void UpdateRotationHandleOrientation();
 
   /// Set the scale of the interaction handles in world coordinates
   virtual void SetWidgetScale(double scale);
@@ -304,7 +307,6 @@ protected:
   double ViewScaleFactorMmPerPixel;
   double ScreenSizePixel; // diagonal size of the screen
 
-  vtkSmartPointer<vtkTransform> WorldToSliceTransform{ nullptr };
   vtkSmartPointer<vtkPlane> SlicePlane{ nullptr };
 
   // Handle size, specified in renderer world coordinate system.

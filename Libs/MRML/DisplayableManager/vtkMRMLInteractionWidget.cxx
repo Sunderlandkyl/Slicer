@@ -211,10 +211,7 @@ bool vtkMRMLInteractionWidget::CanProcessInteractionEvent(vtkMRMLInteractionEven
   // Currently interacting
   if (this->WidgetState == WidgetStateTranslate
     || this->WidgetState == WidgetStateRotate
-    || this->WidgetState == WidgetStateScale
-    /*|| this->WidgetState == WidgetStateOnScaleHandle
-    || this->WidgetState == WidgetStateOnRotationHandle
-    || this->WidgetState == WidgetStateOnTranslationHandle*/)
+    || this->WidgetState == WidgetStateScale)
     {
     distance2 = 0.0;
     return true;

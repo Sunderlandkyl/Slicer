@@ -431,14 +431,12 @@ void vtkMRMLLinearTransformsDisplayableManager2D::OnMRMLSceneNodeRemoved(vtkMRML
 void vtkMRMLLinearTransformsDisplayableManager2D::ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData)
 {
   vtkMRMLScene* scene = this->GetMRMLScene();
-
   if (scene == nullptr || scene->IsBatchProcessing())
     {
     return;
     }
 
   vtkMRMLTransformNode* displayableNode = vtkMRMLTransformNode::SafeDownCast(caller);
-
   if ( displayableNode )
     {
     vtkMRMLNode* callDataNode = reinterpret_cast<vtkMRMLDisplayNode *> (callData);
@@ -535,6 +533,7 @@ void vtkMRMLLinearTransformsDisplayableManager2D::OnMRMLSceneEndBatchProcess()
 void vtkMRMLLinearTransformsDisplayableManager2D::Create()
 {
   this->Internal->SetSliceNode(this->GetMRMLSliceNode());
+  this->Internal->SetupRenderer();
   this->SetUpdateFromMRMLRequested(true);
 }
 
@@ -578,9 +577,6 @@ void vtkMRMLLinearTransformsDisplayableManager2D::vtkInternal::SetupRenderer()
     }
 
   this->InteractionRenderer->SetUseDepthPeeling(renderer->GetUseDepthPeeling());
-  //this->InteractionRenderer->SetUseFXAA(renderer->GetUseFXAA());
-  this->InteractionRenderer->SetUseFXAA(true);
-  this->InteractionRenderer->SetFXAAOptions(renderer->GetFXAAOptions());
   // Prevent erasing Z-buffer (important for quick picking and markup label visibility assessment)
   this->InteractionRenderer->EraseOn(); // TODO
   this->InteractionRenderer->InteractiveOff();
