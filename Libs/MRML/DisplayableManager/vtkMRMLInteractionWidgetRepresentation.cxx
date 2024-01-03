@@ -264,17 +264,17 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
           vtkMath::Add(worldPosition, viewDirection_World, worldPosition2);
 
           double t = 0; // not used
-          double interactionPointOnPlaneWorld[3] = { 0.0, 0.0, 0.0 };
-          plane->IntersectWithLine(worldPosition, this->Renderer->GetActiveCamera()->GetPosition(), t, interactionPointOnPlaneWorld);
+          double interactionPointOnPlane_World[3] = { 0.0, 0.0, 0.0 };
+          plane->IntersectWithLine(worldPosition, this->Renderer->GetActiveCamera()->GetPosition(), t, interactionPointOnPlane_World);
 
-          double closestPointOnRingWorld[3] = { 0.0, 0.0, 0.0 };
-          vtkMath::Subtract(interactionPointOnPlaneWorld, handleWorldPos, closestPointOnRingWorld);
-          vtkMath::Normalize(closestPointOnRingWorld);
-          vtkMath::MultiplyScalar(closestPointOnRingWorld, this->WidgetScale);
-          vtkMath::Add(handleWorldPos, closestPointOnRingWorld, closestPointOnRingWorld);
+          double closestPointOnRing_World[3] = { 0.0, 0.0, 0.0 };
+          vtkMath::Subtract(interactionPointOnPlane_World, handleWorldPos, closestPointOnRing_World);
+          vtkMath::Normalize(closestPointOnRing_World);
+          vtkMath::MultiplyScalar(closestPointOnRing_World, this->WidgetScale);
+          vtkMath::Add(handleWorldPos, closestPointOnRing_World, closestPointOnRing_World);
 
           double closestPointOnRingDisplay[3] = { 0.0, 0.0, 0.0 };
-          this->Renderer->SetWorldPoint(closestPointOnRingWorld);
+          this->Renderer->SetWorldPoint(closestPointOnRing_World);
           this->Renderer->WorldToDisplay();
           this->Renderer->GetDisplayPoint(closestPointOnRingDisplay);
 
@@ -1677,6 +1677,8 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisLocal(int t
   axisLocal[1] = 0.0;
   axisLocal[2] = 0.0;
 
+  bool faceCamera = false;
+
   switch (index)
     {
     case 0:
@@ -1689,7 +1691,23 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisLocal(int t
       axisLocal[2] = 1.0;
       break;
     default:
+      faceCamera = type == InteractionRotationHandle;
       break;
+    }
+
+  if (faceCamera)
+    {
+    double cameraPosition_World[3] = { 0.0, 0.0, 0.0 };
+    this->Renderer->GetActiveCamera()->GetPosition(cameraPosition_World);
+    double handlePosition_World[3] = { 0.0, 0.0, 0.0 };
+    this->GetInteractionHandlePositionWorld(type, index, handlePosition_World);
+    vtkMath::Subtract(handlePosition_World, cameraPosition_World, axisLocal);
+
+    vtkNew<vtkTransform> worldToHandleTransform;
+    worldToHandleTransform->DeepCopy(this->GetHandleToWorldTransform());
+    worldToHandleTransform->Inverse();
+    worldToHandleTransform->TransformVector(axisLocal, axisLocal);
+    vtkMath::Normalize(axisLocal);
     }
 }
 
