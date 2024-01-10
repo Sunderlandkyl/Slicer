@@ -35,8 +35,6 @@
 #include <vtkPlane.h>
 #include <vtkPointData.h>
 #include <vtkPointSetToLabelHierarchy.h>
-#include <vtkPolyDataMapper2D.h>
-#include <vtkProperty2D.h>
 #include <vtkRenderer.h>
 #include <vtkRenderWindow.h>
 #include <vtkSphereSource.h>
@@ -58,11 +56,15 @@
 
 //----------------------------------------------------------------------
 static const double INTERACTION_HANDLE_SCALE_RADIUS = 0.1;
+static const double INTERACTION_HANDLE_SCALE_DISTANCE_FROM_CENTER = 1.5;
 
 static const double INTERACTION_HANDLE_ROTATION_ARC_OUTER_RADIUS = 1.2;
 static const double INTERACTION_HANDLE_ROTATION_ARC_INNER_RADIUS = 1.1;
 static const double INTERACTION_HANDLE_ROTATION_ARC_DEGREES = 360.0;
 static const int    INTERACTION_HANDLE_ROTATION_ARC_RESOLUTION = 30;
+
+static const double INTERACTION_HANDLE_ROTATION_FREE_ARC_OUTER_RADIUS = 1.4;
+static const double INTERACTION_HANDLE_ROTATION_FREE_ARC_INNER_RADIUS = 1.3;
 
 static const double INTERACTION_TRANSLATION_HANDLE_LENGTH= 0.75;
 static const double INTERACTION_TRANSLATION_HANDLE_TIP_RADIUS = 0.15;
@@ -113,8 +115,7 @@ vtkMRMLInteractionWidgetRepresentation::~vtkMRMLInteractionWidgetRepresentation(
 void vtkMRMLInteractionWidgetRepresentation::PrintSelf(ostream& os,
                                                       vtkIndent indent)
 {
-  //Superclass typedef defined in vtkTypeMacro() found in vtkSetGet.h
-  this->Superclass::PrintSelf(os, indent);
+  Superclass::PrintSelf(os, indent);
 }
 
 //----------------------------------------------------------------------
@@ -270,7 +271,8 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
           double closestPointOnRing_World[3] = { 0.0, 0.0, 0.0 };
           vtkMath::Subtract(interactionPointOnPlane_World, handleWorldPos, closestPointOnRing_World);
           vtkMath::Normalize(closestPointOnRing_World);
-          vtkMath::MultiplyScalar(closestPointOnRing_World, this->WidgetScale);
+          vtkMath::MultiplyScalar(closestPointOnRing_World,
+            this->WidgetScale * ((INTERACTION_HANDLE_ROTATION_ARC_OUTER_RADIUS + INTERACTION_HANDLE_ROTATION_ARC_INNER_RADIUS) / 2.0));
           vtkMath::Add(handleWorldPos, closestPointOnRing_World, closestPointOnRing_World);
 
           double closestPointOnRingDisplay[3] = { 0.0, 0.0, 0.0 };
@@ -731,17 +733,6 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
     this->UpdateHandlePolyData();
     count += actor->RenderOpaqueGeometry(viewport);
     this->Pipeline->HandleToWorldTransformFilter->Update();
-    if (this->Pipeline->HandleToWorldTransformFilter->GetOutput()->GetNumberOfPoints() > 0)
-      {
-      double bounds[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-      this->Pipeline->HandleToWorldTransformFilter->GetOutput()->GetBounds(bounds);
-      }
-    this->Pipeline->WorldToSliceTransformFilter->Update();
-    if (this->Pipeline->WorldToSliceTransformFilter->GetOutput()->GetNumberOfPoints() > 0)
-      {
-      double bounds[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-      this->Pipeline->WorldToSliceTransformFilter->GetOutput()->GetBounds(bounds);
-      }
     }
   return count;
 }
@@ -1323,9 +1314,9 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateRotationHandleOrientation()
 void vtkMRMLInteractionWidgetRepresentation::CreateScaleHandles()
 {
   vtkNew<vtkPoints> points;
-  points->InsertNextPoint(1.4, 0.0, 0.0); // X-axis
-  points->InsertNextPoint(0.0, 1.4, 0.0); // Y-axis
-  points->InsertNextPoint(0.0, 0.0, 1.4); // Z-axis
+  points->InsertNextPoint(INTERACTION_HANDLE_SCALE_DISTANCE_FROM_CENTER, 0.0, 0.0); // X-axis
+  points->InsertNextPoint(0.0, INTERACTION_HANDLE_SCALE_DISTANCE_FROM_CENTER, 0.0); // Y-axis
+  points->InsertNextPoint(0.0, 0.0, INTERACTION_HANDLE_SCALE_DISTANCE_FROM_CENTER); // Z-axis
   this->Pipeline->ScaleHandlePoints->SetPoints(points);
 
   vtkNew<vtkDoubleArray> orientationArray;
@@ -1619,7 +1610,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleToCameraVector(double norm
     vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->GetViewNode());
     if (sliceNode)
       {
-      sliceNode->GetSliceToRAS()->MultiplyPoint(viewPlaneNormal4, viewPlaneNormal4);
+      sliceNode->GetXYToRAS()->MultiplyPoint(viewPlaneNormal4, viewPlaneNormal4);
       }
     normal[0] = viewPlaneNormal4[0];
     normal[1] = viewPlaneNormal4[1];
@@ -1852,15 +1843,31 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateSlicePlaneFromSliceNode()
     }
 
   vtkMatrix4x4* sliceXYToRAS = this->GetSliceNode()->GetXYToRAS();
-
   if (this->Pipeline)
     {
     // Update transformation to slice
     vtkNew<vtkMatrix4x4> rasToXY;
     rasToXY->DeepCopy(sliceXYToRAS);
-    //rasToXY->Invert();
+    rasToXY->Invert();
     this->Pipeline->WorldToSliceTransform->Identity();
+    this->Pipeline->WorldToSliceTransform->PostMultiply();
     this->Pipeline->WorldToSliceTransform->Concatenate(rasToXY);
+
+    // TODO: Use 'vtkCamera::GetCompositeProjectionTransformMatrix()'
+    //int* size = this->Renderer->GetSize();
+    //double aspect = double(size[1]) / double(size[0]);
+    //vtkNew<vtkMatrix4x4> compositeProjectionTransformMatrix;
+    //compositeProjectionTransformMatrix->DeepCopy(this->Renderer->GetActiveCamera()->GetCompositeProjectionTransformMatrix(aspect, -1, +1));
+    //compositeProjectionTransformMatrix->Invert();
+    //this->Pipeline->WorldToSliceTransform->Concatenate(compositeProjectionTransformMatrix);
+
+    int* dimensions = this->GetSliceNode()->GetDimensions();
+    this->Pipeline->WorldToSliceTransform->Scale(2.0/dimensions[1], 2.0/dimensions[1], 1.0);
+    this->Pipeline->WorldToSliceTransform->Translate(-1.0*dimensions[0]/dimensions[1], -1.0, 0.0);
+
+    double origin[4] = { 0.0, 0.0, 0.0, 1.0 };
+    this->Pipeline->WorldToSliceTransform->MultiplyPoint(origin, origin);
+    this->Pipeline->WorldToSliceTransform->Translate(0.0, 0.0, -origin[2] - this->WidgetScale);
     }
 
   // Update slice plane (for distance computation)
@@ -1886,7 +1893,6 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateSlicePlaneFromSliceNode()
 
   this->SlicePlane->SetNormal(normal);
   this->SlicePlane->SetOrigin(origin);
-  this->SlicePlane->Modified();
   this->NeedToRenderOn();
 }
 

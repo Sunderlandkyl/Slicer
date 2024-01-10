@@ -567,27 +567,23 @@ vtkMRMLTransformHandleWidget* vtkMRMLLinearTransformsDisplayableManager2D::vtkIn
 //---------------------------------------------------------------------------
 void vtkMRMLLinearTransformsDisplayableManager2D::vtkInternal::SetupRenderer()
 {
-  this->InteractionRenderer = vtkSmartPointer<vtkRenderer>::New();
-
   vtkRenderer* renderer = this->External->GetRenderer();
-  if (renderer==nullptr)
+  if (renderer == nullptr)
     {
     vtkErrorWithObjectMacro(this->External, "vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::SetupRenderer() failed: renderer is invalid");
     return;
     }
 
-  this->InteractionRenderer->SetUseDepthPeeling(renderer->GetUseDepthPeeling());
-  // Prevent erasing Z-buffer (important for quick picking and markup label visibility assessment)
-  this->InteractionRenderer->EraseOn(); // TODO
-  this->InteractionRenderer->InteractiveOff();
-
-  this->InteractionRenderer->SetActiveCamera(renderer->GetActiveCamera());
-
   vtkRenderWindow* renderWindow = renderer->GetRenderWindow();
-  if (renderWindow->GetNumberOfLayers() < RENDERER_LAYER+1)
+  if (renderWindow->GetNumberOfLayers() < RENDERER_LAYER + 1)
     {
-    renderWindow->SetNumberOfLayers( RENDERER_LAYER+1 );
+    renderWindow->SetNumberOfLayers(RENDERER_LAYER + 1);
     }
+
+  this->InteractionRenderer = vtkSmartPointer<vtkRenderer>::New();
+  this->InteractionRenderer->UseDepthPeelingOn();
+  this->InteractionRenderer->InteractiveOff();
+  this->InteractionRenderer->SetActiveCamera(renderer->GetActiveCamera());
   this->InteractionRenderer->SetLayer(RENDERER_LAYER);
   renderWindow->AddRenderer(this->InteractionRenderer);
 }
