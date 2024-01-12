@@ -121,7 +121,7 @@ void vtkMRMLInteractionWidgetRepresentation::PrintSelf(ostream& os,
 //----------------------------------------------------------------------
 double vtkMRMLInteractionWidgetRepresentation::GetMaximumHandlePickingDistance2()
 {
-  double maximumHandlePickingDistance = this->InteractionSize / 2.0 + this->PickingTolerance * this->ScreenScaleFactor;
+  double maximumHandlePickingDistance = this->InteractionSize / 10.0 + this->PickingTolerance * this->ScreenScaleFactor;
   return maximumHandlePickingDistance * maximumHandlePickingDistance;
 }
 
@@ -131,245 +131,237 @@ void vtkMRMLInteractionWidgetRepresentation::CanInteract(
   int &foundComponentType, int &foundComponentIndex, double &closestDistance2)
 {
   foundComponentType = InteractionNone;
+  closestDistance2 = VTK_DOUBLE_MAX; // in display coordinate system
+  foundComponentIndex = -1;
+
   vtkMRMLAbstractViewNode* viewNode = this->GetViewNode();
   if (!viewNode || !this->IsDisplayable() || !interactionEventData)
     {
     return;
     }
 
-  closestDistance2 = VTK_DOUBLE_MAX; // in display coordinate system
-  foundComponentIndex = -1;
+  HandleInfoList handleInfoList = this->GetHandleInfoList();
+  for (HandleInfo handleInfo : handleInfoList)
+    {
+    if (!handleInfo.IsVisible())
+      {
+      continue;
+      }
+
+    if (handleInfo.GlyphType == GlyphCircle)
+      {
+      this->CanInteractWithCircleHandle(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2, handleInfo);
+      }
+    else if (handleInfo.GlyphType == GlyphRing)
+      {
+      this->CanInteractWithRingHandle(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2, handleInfo);
+      }
+    else if (handleInfo.GlyphType == GlyphArrow)
+      {
+      this->CanInteractWithArrowHandle(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2, handleInfo);
+      }
+    }
+}
+
+//----------------------------------------------------------------------
+void
+vtkMRMLInteractionWidgetRepresentation::CanInteractWithCircleHandle(
+  vtkMRMLInteractionEventData* interactionEventData,
+  int &foundComponentType, int &foundComponentIndex, double &closestDistance2, HandleInfo& handleInfo)
+{
+  vtkMRMLAbstractViewNode* viewNode = this->GetViewNode();
+  if (!viewNode || !this->IsDisplayable() || !interactionEventData || !handleInfo.IsVisible() || !interactionEventData->IsDisplayPositionValid())
+    {
+    return;
+    }
 
   double maxPickingDistanceFromControlPoint2 = this->GetMaximumHandlePickingDistance2();
   double displayPosition3[3] = { 0.0, 0.0, 0.0 };
   // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
   // virtual reality, and then we expect a valid world position in the absence of display position.
-  if (interactionEventData->IsDisplayPositionValid())
+  const int* displayPosition = interactionEventData->GetDisplayPosition();
+  displayPosition3[0] = static_cast<double>(displayPosition[0]);
+  displayPosition3[1] = static_cast<double>(displayPosition[1]);
+
+  double handleDisplayPos[4] = { 0.0, 0.0, 0.0, 1.0 };
+  vtkMRMLSliceNode* sliceNode = this->GetSliceNode();
+  if (sliceNode)
     {
-    const int* displayPosition = interactionEventData->GetDisplayPosition();
-    displayPosition3[0] = static_cast<double>(displayPosition[0]);
-    displayPosition3[1] = static_cast<double>(displayPosition[1]);
+    vtkNew<vtkMatrix4x4> rasToxyMatrix;
+    vtkMatrix4x4::Invert(sliceNode->GetXYToRAS(), rasToxyMatrix);
+
+    double* handleWorldPos = handleInfo.PositionWorld;
+    rasToxyMatrix->MultiplyPoint(handleWorldPos, handleDisplayPos);
+    handleDisplayPos[2] = 0.0; // Handles are always projected
     }
-  else if (!interactionEventData->IsWorldPositionValid())
+  else
+    {
+    double* handleWorldPos = handleInfo.PositionWorld;
+    this->Renderer->SetWorldPoint(handleWorldPos);
+    this->Renderer->WorldToDisplay();
+    this->Renderer->GetDisplayPoint(handleDisplayPos);
+    handleDisplayPos[2] = 0.0; // Handles are always projected
+    }
+
+  double dist2 = vtkMath::Distance2BetweenPoints(handleDisplayPos, displayPosition3);
+  if (dist2 < maxPickingDistanceFromControlPoint2 && dist2 <= closestDistance2)
+    {
+    closestDistance2 = dist2;
+    foundComponentType = handleInfo.ComponentType;
+    foundComponentIndex = handleInfo.Index;
+    }
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::CanInteractWithArrowHandle(vtkMRMLInteractionEventData* interactionEventData,
+  int& foundComponentType, int& foundComponentIndex, double& closestDistance2, HandleInfo& handleInfo)
+{
+  if (!handleInfo.IsVisible() || !interactionEventData->IsDisplayPositionValid())
     {
     return;
     }
 
+  // Check the arrow tip.
+  this->CanInteractWithCircleHandle(interactionEventData, foundComponentType, foundComponentIndex, closestDistance2, handleInfo);
+
+  double maxPickingDistanceFromControlPoint2 = this->GetMaximumHandlePickingDistance2();
+
+  // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
+  // virtual reality, and then we expect a valid world position in the absence of display position.
+  const int* displayPosition = interactionEventData->GetDisplayPosition();
+  double displayPosition3[3] = { 0.0, 0.0, 0.0 };
+  displayPosition3[0] = static_cast<double>(displayPosition[0]);
+  displayPosition3[1] = static_cast<double>(displayPosition[1]);
+
+  double* handleWorldPos = handleInfo.PositionWorld;
+  double handleWorldPos4[4] = { handleWorldPos[0], handleWorldPos[1], handleWorldPos[2], 1.0 };
+  double handleDisplayPos4[4] = { 0.0, 0.0, 0.0, 1.0 };
+  double originWorldPos4[4] = { 0.0, 0.0, 0.0, 1.0 };
+  this->GetInteractionHandleOriginWorld(originWorldPos4);
+  double originDisplayPos4[4] = { 0.0, 0.0, 0.0, 1.0 };
+
   vtkMRMLSliceNode* sliceNode = this->GetSliceNode();
   if (sliceNode)
     {
-    double handleDisplayPos[4] = { 0.0, 0.0, 0.0, 1.0 };
-
     vtkNew<vtkMatrix4x4> rasToxyMatrix;
     vtkMatrix4x4::Invert(sliceNode->GetXYToRAS(), rasToxyMatrix);
 
-    bool handlePicked = false;
-    HandleInfoList handleInfoList = this->GetHandleInfoList();
-    for (HandleInfo handleInfo : handleInfoList)
-      {
-      if (!handleInfo.IsVisible())
-        {
-        continue;
-        }
-      double* handleWorldPos = handleInfo.PositionWorld;
-      rasToxyMatrix->MultiplyPoint(handleWorldPos, handleDisplayPos);
-      handleDisplayPos[2] = displayPosition3[2]; // Handles are always projected
-      double dist2 = vtkMath::Distance2BetweenPoints(handleDisplayPos, displayPosition3);
-      if (dist2 < maxPickingDistanceFromControlPoint2 && dist2 < closestDistance2)
-        {
-        closestDistance2 = dist2;
-        foundComponentType = handleInfo.ComponentType;
-        foundComponentIndex = handleInfo.Index;
-        handlePicked = true;
-        }
-      }
+    rasToxyMatrix->MultiplyPoint(handleWorldPos4, handleDisplayPos4);
+    handleDisplayPos4[2] = 0.0; // Handles are always projected.
 
-    if (!handlePicked)
-      {
-      // Detect translation handle shaft
-      for (HandleInfo handleInfo : handleInfoList)
-        {
-        if (!handleInfo.IsVisible() || handleInfo.ComponentType != InteractionTranslationHandle)
-          {
-          continue;
-          }
-
-        double* handleWorldPos = handleInfo.PositionWorld;
-        rasToxyMatrix->MultiplyPoint(handleWorldPos, handleDisplayPos);
-        handleDisplayPos[2] = displayPosition3[2]; // Handles are always projected
-
-        double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
-        this->GetInteractionHandleOriginWorld(originWorldPos);
-        double originDisplayPos[4] = { 0.0, 0.0, 0.0, 0.0 };
-        rasToxyMatrix->MultiplyPoint(originWorldPos, originDisplayPos);
-        originDisplayPos[2] = displayPosition3[2]; // Handles are always projected
-
-        double t = 0.0; // Not used
-        double lineDistance = vtkLine::DistanceToLine(displayPosition3, originDisplayPos, handleDisplayPos, t);
-        double lineDistance2 = lineDistance * lineDistance;
-        if (lineDistance2 < maxPickingDistanceFromControlPoint2 / 2.0 && lineDistance2 < closestDistance2)
-          {
-          closestDistance2 = lineDistance2;
-          foundComponentType = handleInfo.ComponentType;
-          foundComponentIndex = handleInfo.Index;
-          }
-        }
-      }
+    rasToxyMatrix->MultiplyPoint(originWorldPos4, originDisplayPos4);
+    originDisplayPos4[2] = 0.0; // Handles are always projected.
     }
   else
     {
+    this->Renderer->SetWorldPoint(handleWorldPos);
+    this->Renderer->WorldToDisplay();
+    this->Renderer->GetDisplayPoint(handleDisplayPos4);
+    handleDisplayPos4[2] = 0.0; // Handles are always projected.
 
-    bool handlePicked = false;
-    HandleInfoList handleInfoList = this->GetHandleInfoList();
-    for (HandleInfo handleInfo : handleInfoList)
+    this->Renderer->SetWorldPoint(originWorldPos4);
+    this->Renderer->WorldToDisplay();
+    this->Renderer->GetDisplayPoint(originDisplayPos4);
+    originDisplayPos4[2] = 0.0; // Handles are always projected.
+    }
+
+  double t = 0.0;
+  double lineDistance = vtkLine::DistanceToLine(displayPosition3, originDisplayPos4, handleDisplayPos4, t);
+  if (t > 1.0 - INTERACTION_TRANSLATION_HANDLE_LENGTH && t < 1.0)
+    {
+    double lineDistance2 = lineDistance * lineDistance;
+    if (lineDistance < this->GetMaximumHandlePickingDistance2() && lineDistance2 <= closestDistance2)
       {
-      if (!handleInfo.IsVisible())
-        {
-        continue;
-        }
-
-      double* handleWorldPos = handleInfo.PositionWorld;
-      double handleDisplayPos[3] = { 0.0, 0.0, 0.0 };
-
-      double pixelTolerance = this->InteractionSize / 4.0 / this->GetViewScaleFactorAtPosition(handleWorldPos)
-        + this->PickingTolerance * this->ScreenScaleFactor;
-      double dist2 = VTK_DOUBLE_MAX;
-
-      if (interactionEventData->IsDisplayPositionValid())
-        {
-        if (handleInfo.ComponentType == InteractionRotationHandle)
-          {
-          double handleNormalWorld[4] = { 0.0, 0.0, 0.0, 0.0 };
-          this->GetInteractionHandleAxisWorld(handleInfo.ComponentType, handleInfo.Index, handleNormalWorld);
-          if (handleNormalWorld[0] <= 0.0 && handleNormalWorld[1] <= 0.0 && handleNormalWorld[2] <= 0.0)
-            {
-            // Vector from camera position to handle position.
-            double cameraWorld[3] = { 0.0, 0.0, 0.0 };
-            this->Renderer->GetActiveCamera()->GetPosition(cameraWorld);
-            vtkMath::Subtract(handleWorldPos, cameraWorld, handleNormalWorld);
-            }
-
-          vtkNew<vtkPlane> plane;
-          plane->SetOrigin(handleWorldPos);
-          plane->SetNormal(handleNormalWorld);
-
-          this->Renderer->SetDisplayPoint(displayPosition3);
-          this->Renderer->DisplayToWorld();
-          double worldPosition[4] = { 0.0, 0.0, 0.0, 0.0 };
-          this->Renderer->GetWorldPoint(worldPosition);
-
-          double viewDirection_World[3] = { 0.0, 0.0, 0.0 };
-          this->Renderer->GetActiveCamera()->GetDirectionOfProjection(viewDirection_World);
-
-          double worldPosition2[4] = { 0.0, 0.0, 0.0, 0.0 };
-          vtkMath::Add(worldPosition, viewDirection_World, worldPosition2);
-
-          double t = 0; // not used
-          double interactionPointOnPlane_World[3] = { 0.0, 0.0, 0.0 };
-          plane->IntersectWithLine(worldPosition, this->Renderer->GetActiveCamera()->GetPosition(), t, interactionPointOnPlane_World);
-
-          double closestPointOnRing_World[3] = { 0.0, 0.0, 0.0 };
-          vtkMath::Subtract(interactionPointOnPlane_World, handleWorldPos, closestPointOnRing_World);
-          vtkMath::Normalize(closestPointOnRing_World);
-          vtkMath::MultiplyScalar(closestPointOnRing_World,
-            this->WidgetScale * ((INTERACTION_HANDLE_ROTATION_ARC_OUTER_RADIUS + INTERACTION_HANDLE_ROTATION_ARC_INNER_RADIUS) / 2.0));
-          vtkMath::Add(handleWorldPos, closestPointOnRing_World, closestPointOnRing_World);
-
-          double closestPointOnRingDisplay[3] = { 0.0, 0.0, 0.0 };
-          this->Renderer->SetWorldPoint(closestPointOnRing_World);
-          this->Renderer->WorldToDisplay();
-          this->Renderer->GetDisplayPoint(closestPointOnRingDisplay);
-
-          dist2 = vtkMath::Distance2BetweenPoints(displayPosition3, closestPointOnRingDisplay);
-          }
-        else
-          {
-          this->Renderer->SetWorldPoint(handleWorldPos);
-          this->Renderer->WorldToDisplay();
-          this->Renderer->GetDisplayPoint(handleDisplayPos);
-          handleDisplayPos[2] = 0.0;
-          dist2 = vtkMath::Distance2BetweenPoints(handleDisplayPos, displayPosition3);
-          }
-
-        if (dist2 < pixelTolerance * pixelTolerance && dist2 < closestDistance2)
-          {
-          closestDistance2 = dist2;
-          foundComponentType = handleInfo.ComponentType;
-          foundComponentIndex = handleInfo.Index;
-          handlePicked = true;
-          }
-        }
-      else
-        {
-        const double* worldPosition = interactionEventData->GetWorldPosition();
-        double worldTolerance = this->InteractionSize / 2.0 +
-          this->PickingTolerance / interactionEventData->GetWorldToPhysicalScale();
-        double dist2 = vtkMath::Distance2BetweenPoints(handleWorldPos, worldPosition);
-        if (dist2 < worldTolerance * worldTolerance && dist2 < closestDistance2)
-          {
-          closestDistance2 = dist2;
-          foundComponentType = handleInfo.ComponentType;
-          foundComponentIndex = handleInfo.Index;
-          }
-        }
+      closestDistance2 = lineDistance2;
+      foundComponentType = handleInfo.ComponentType;
+      foundComponentIndex = handleInfo.Index;
       }
+    }
+}
 
-    if (!handlePicked)
-      {
-      // Detect translation handle shaft
-      for (HandleInfo handleInfo : handleInfoList)
-        {
-        if (!handleInfo.IsVisible() || handleInfo.ComponentType != InteractionTranslationHandle)
-          {
-          continue;
-          }
-        double* handleWorldPos = handleInfo.PositionWorld;
-        double handleDisplayPos[3] = { 0.0, 0.0, 0.0 };
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::CanInteractWithRingHandle(vtkMRMLInteractionEventData* interactionEventData,
+  int& foundComponentType, int& foundComponentIndex, double& closestDistance2, HandleInfo& handleInfo)
+{
+  double handleNormalWorld[4] = { 0.0, 0.0, 0.0, 0.0 };
+  this->GetInteractionHandleAxisWorld(handleInfo.ComponentType, handleInfo.Index, handleNormalWorld);
+  if (handleNormalWorld[0] == 0.0 && handleNormalWorld[1] == 0.0 && handleNormalWorld[2] == 0.0)
+    {
+    // Axis not valid.
+    return;
+    }
 
-        if (interactionEventData->IsDisplayPositionValid())
-          {
-          double pixelTolerance = this->InteractionSize / 2.0 / this->GetViewScaleFactorAtPosition(handleWorldPos)
-            + this->PickingTolerance * this->ScreenScaleFactor;
-          this->Renderer->SetWorldPoint(handleWorldPos);
-          this->Renderer->WorldToDisplay();
-          this->Renderer->GetDisplayPoint(handleDisplayPos);
-          handleDisplayPos[2] = 0.0;
 
-          double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
-          this->GetInteractionHandleOriginWorld(originWorldPos);
-          double originDisplayPos[4] = { 0.0, 0.0, 0.0, 0.0 };
-          this->Renderer->SetWorldPoint(originWorldPos);
-          this->Renderer->WorldToDisplay();
-          this->Renderer->GetDisplayPoint(originDisplayPos);
-          originDisplayPos[2] = displayPosition3[2]; // Handles are always projected
-          double t = 0.0; // Not used
-          double lineDistance = vtkLine::DistanceToLine(displayPosition3, originDisplayPos, handleDisplayPos, t);
-          double lineDistance2 = lineDistance * lineDistance;
-          if (lineDistance < pixelTolerance && lineDistance2 < closestDistance2)
-            {
-            closestDistance2 = lineDistance2;
-            foundComponentType = handleInfo.ComponentType;
-            foundComponentIndex = handleInfo.Index;
-            }
-          }
-        else
-          {
-          const double* worldPosition = interactionEventData->GetWorldPosition();
-          double worldTolerance = this->InteractionSize / 2.0 +
-            this->PickingTolerance / interactionEventData->GetWorldToPhysicalScale();
-          double originWorldPos[4] = { 0.0, 0.0, 0.0, 1.0 };
-          this->GetInteractionHandleOriginWorld(originWorldPos);
-          double t = 0.0; // Not used
-          double lineDistance = vtkLine::DistanceToLine(worldPosition, originWorldPos, handleWorldPos, t);
-          if (lineDistance < worldTolerance && lineDistance < closestDistance2)
-            {
-            closestDistance2 = lineDistance;
-            foundComponentType = handleInfo.ComponentType;
-            foundComponentIndex = handleInfo.Index;
-            }
-          }
-        }
-      }
+  // Display position is valid in case of desktop interactions. Otherwise it is a 3D only context such as
+  // virtual reality, and then we expect a valid world position in the absence of display position.
+  if (!interactionEventData->IsDisplayPositionValid())
+    {
+    return;
+    }
+
+  double* handleWorldPos = handleInfo.PositionWorld;
+
+  vtkNew<vtkPlane> plane;
+  plane->SetOrigin(handleWorldPos);
+  plane->SetNormal(handleNormalWorld);
+
+  const int* displayPosition = interactionEventData->GetDisplayPosition();
+  double displayPosition4[4] = { displayPosition[0], displayPosition[1], 0.0, 1.0 };
+  double worldPosition4[4] = { 0.0, 0.0, 0.0, 0.0 };
+
+  vtkMRMLSliceNode* sliceNode = this->GetSliceNode();
+  if (sliceNode)
+    {
+    sliceNode->GetXYToRAS()->MultiplyPoint(displayPosition4, worldPosition4);
+    }
+  else
+    {
+    this->Renderer->SetDisplayPoint(displayPosition4);
+    this->Renderer->DisplayToWorld();
+    this->Renderer->GetWorldPoint(worldPosition4);
+    }
+
+  double viewDirection_World[3] = { 0.0, 0.0, 0.0 };
+  this->GetHandleToCameraVectorWorld(handleWorldPos, viewDirection_World);
+
+  double t = 0; // not used
+  double interactionPointOnPlane_World[3] = { 0.0, 0.0, 0.0 };
+  double worldPositionAlongView[4] = {
+    worldPosition4[0] + viewDirection_World[0],
+    worldPosition4[1] + viewDirection_World[1],
+    worldPosition4[2] + viewDirection_World[2],
+    1.0 };
+  plane->IntersectWithLine(worldPosition4, worldPositionAlongView, t, interactionPointOnPlane_World);
+
+  double closestPointOnRing_World[4] = { 0.0, 0.0, 0.0, 1.0 };
+  vtkMath::Subtract(interactionPointOnPlane_World, handleWorldPos, closestPointOnRing_World);
+  vtkMath::Normalize(closestPointOnRing_World);
+
+  vtkMath::MultiplyScalar(closestPointOnRing_World,
+    this->WidgetScale * ((INTERACTION_HANDLE_ROTATION_ARC_OUTER_RADIUS + INTERACTION_HANDLE_ROTATION_ARC_INNER_RADIUS) / 2.0));
+  vtkMath::Add(handleWorldPos, closestPointOnRing_World, closestPointOnRing_World);
+
+  double closestPointOnRing_Display4[4] = { 0.0, 0.0, 0.0, 1.0 };
+  if (sliceNode)
+    {
+    vtkNew<vtkMatrix4x4> rasToxyMatrix;
+    vtkMatrix4x4::Invert(sliceNode->GetXYToRAS(), rasToxyMatrix);
+    rasToxyMatrix->MultiplyPoint(closestPointOnRing_World, closestPointOnRing_Display4);
+    }
+  else
+    {
+    this->Renderer->SetWorldPoint(closestPointOnRing_World);
+    this->Renderer->WorldToDisplay();
+    this->Renderer->GetDisplayPoint(closestPointOnRing_Display4);
+    }
+  closestPointOnRing_Display4[2] = 0.0;
+
+  double dist2 = vtkMath::Distance2BetweenPoints(displayPosition4, closestPointOnRing_Display4);
+  if (dist2 < this->GetMaximumHandlePickingDistance2() && dist2 <= closestDistance2)
+    {
+    closestDistance2 = dist2;
+    foundComponentType = handleInfo.ComponentType;
+    foundComponentIndex = handleInfo.Index;
     }
 }
 
@@ -1124,14 +1116,21 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateTranslationHandleOrientation(
 
   double viewDirection_World[3] = { 0.0, 0.0, 0.0 };
   double viewDirection_Handle[3] = { 0.0, 0.0, 0.0 };
-
+  double viewUp_World[3] = { 0.0, 1.0, 0.0 };
   if (this->GetSliceNode())
     {
     this->SlicePlane->GetNormal(viewDirection_World);
+    double viewUp[4] = { 0,1,0,0 };
+    double viewUp2[4] = { 0,1,0,0 };
+    this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(viewUp, viewUp2);
+    viewUp_World[0] = viewUp2[0];
+    viewUp_World[1] = viewUp2[1];
+    viewUp_World[2] = viewUp2[2];
     }
   else
     {
     this->Renderer->GetActiveCamera()->GetDirectionOfProjection(viewDirection_World);
+    this->Renderer->GetActiveCamera()->GetViewUp(viewUp_World);
     }
   vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse())->TransformVector(viewDirection_World, viewDirection_Handle);
 
@@ -1153,25 +1152,10 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateTranslationHandleOrientation(
                                    zAxis[0], zAxis[1], zAxis[2]);
     }
 
-  double viewUp_World[3] = { 0.0, 1.0, 0.0 };
   double viewUp_Handle[3] = { 0.0, 0.0, 0.0 };
   vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse())->TransformVector(viewDirection_World, viewDirection_Handle);
   vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse())->TransformVector(viewUp_World, viewUp_Handle);
-  if (this->GetSliceNode())
-    {
-    this->SlicePlane->GetNormal(viewDirection_World);
-    double viewup[4] = { 0,1,0,0 };
-    double viewup2[4] = { 0,1,0,0 };
-    this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(viewup, viewup2);
-    viewUp_World[0] = viewup2[0];
-    viewUp_World[1] = viewup2[1];
-    viewUp_World[2] = viewup2[2];
-    }
-  else
-    {
-    this->Renderer->GetActiveCamera()->GetDirectionOfProjection(viewDirection_World);
-    this->Renderer->GetActiveCamera()->GetViewUp(viewUp_World);
-    }
+
   double xAxis[3] = { 0.0, 0.0, 0.0 };
   double yAxis[3] = { 0.0, 0.0, 0.0 };
   double zAxis[3] = { 0.0, 0.0, 0.0 };
@@ -1361,7 +1345,7 @@ int vtkMRMLInteractionWidgetRepresentation::GetNumberOfHandles(int type)
   vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
   if (!handlePolyData)
     {
-    vtkErrorMacro( << "GetNumberOfHandles: Invalid handle type: " << type);
+    vtkErrorMacro("GetNumberOfHandles: Invalid handle type: " << type);
     return 0;
     }
   return handlePolyData->GetNumberOfPoints();
@@ -1558,8 +1542,11 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
     return opacity;
     }
 
+  double handlePosition_World[3] = { 0.0, 0.0, 0.0 };
+  this->GetInteractionHandlePositionWorld(type, index, handlePosition_World);
+
   double viewNormal_World[3] = { 0.0, 0.0, 0.0 };
-  this->GetHandleToCameraVector(viewNormal_World);
+  this->GetHandleToCameraVectorWorld(handlePosition_World, viewNormal_World);
   if (vtkMath::Dot(viewNormal_World, axis_World) < 0.0)
     {
     vtkMath::MultiplyScalar(axis_World, -1.0);
@@ -1597,10 +1584,11 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
 }
 
 //----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::GetHandleToCameraVector(double normal[3])
+void vtkMRMLInteractionWidgetRepresentation::GetHandleToCameraVectorWorld(double handlePosition_World[3], double normal_World[3])
 {
-  if (!normal)
+  if (!handlePosition_World || !normal_World)
     {
+    vtkErrorMacro("GetHandleToCameraVectorWorld: Invalid arguments");
     return;
     }
 
@@ -1612,22 +1600,23 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleToCameraVector(double norm
       {
       sliceNode->GetXYToRAS()->MultiplyPoint(viewPlaneNormal4, viewPlaneNormal4);
       }
-    normal[0] = viewPlaneNormal4[0];
-    normal[1] = viewPlaneNormal4[1];
-    normal[2] = viewPlaneNormal4[2];
+    normal_World[0] = viewPlaneNormal4[0];
+    normal_World[1] = viewPlaneNormal4[1];
+    normal_World[2] = viewPlaneNormal4[2];
+    vtkMath::Normalize(normal_World);
     }
   else if (this->GetRenderer() && this->GetRenderer()->GetActiveCamera())
     {
     vtkCamera* camera = this->GetRenderer()->GetActiveCamera();
     if (camera->GetParallelProjection())
       {
-      camera->GetViewPlaneNormal(normal);
+      camera->GetViewPlaneNormal(normal_World);
       }
     else
       {
-      camera->GetPosition(normal);
-      vtkMath::Subtract(normal, this->GetHandleToWorldTransform()->TransformPoint(0, 0, 0), normal);
-      vtkMath::Normalize(normal);
+      camera->GetPosition(normal_World);
+      vtkMath::Subtract(normal_World, this->GetHandleToWorldTransform()->TransformPoint(handlePosition_World), normal_World);
+      vtkMath::Normalize(normal_World);
       }
     }
 }
@@ -1660,7 +1649,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisLocal(int t
 {
   if (!axisLocal)
     {
-    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleVectorWorld: Invalid axis argument");
+    vtkErrorWithObjectMacro(nullptr, "GetInteractionHandleAxisLocal: Invalid axis argument");
     return;
     }
 
@@ -1688,20 +1677,19 @@ void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisLocal(int t
 
   if (faceCamera)
     {
-    double cameraPosition_World[3] = { 0.0, 0.0, 0.0 };
-    this->Renderer->GetActiveCamera()->GetPosition(cameraPosition_World);
     double handlePosition_World[3] = { 0.0, 0.0, 0.0 };
     this->GetInteractionHandlePositionWorld(type, index, handlePosition_World);
-    vtkMath::Subtract(handlePosition_World, cameraPosition_World, axisLocal);
+
+    double axisWorld[3] = { 0.0, 0.0, 0.0 };
+    this->GetHandleToCameraVectorWorld(handlePosition_World, axisWorld);
 
     vtkNew<vtkTransform> worldToHandleTransform;
     worldToHandleTransform->DeepCopy(this->GetHandleToWorldTransform());
     worldToHandleTransform->Inverse();
-    worldToHandleTransform->TransformVector(axisLocal, axisLocal);
+    worldToHandleTransform->TransformVector(axisWorld, axisLocal);
     vtkMath::Normalize(axisLocal);
     }
 }
-
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::GetInteractionHandleAxisWorld(int type, int index, double axisWorld[3])
@@ -1953,7 +1941,7 @@ double vtkMRMLInteractionWidgetRepresentation::GetInteractionScale()
 //----------------------------------------------------------------------
 double vtkMRMLInteractionWidgetRepresentation::GetInteractionSize()
 {
-  return 1.0;
+  return this->InteractionSize;
 }
 
 //----------------------------------------------------------------------

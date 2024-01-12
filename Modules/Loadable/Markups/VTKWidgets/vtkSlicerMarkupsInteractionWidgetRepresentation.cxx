@@ -166,6 +166,7 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateInteractionPipeline(
       }
     return;
     }
+  this->SetVisibility(true);
 
   vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
   vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
@@ -200,12 +201,13 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateInteractionPipeline(
       }
     visibilityArray->SetNumberOfValues(handlePolyData->GetNumberOfPoints());
 
-    //bool handleVisibility = displayNode->GetHandleVisibility(markupsComponentType);
-    //for (int i = 0; i < handlePolyData->GetNumberOfPoints(); ++i)
-    //  {
-    //  bool handleIndexVisibility = displayNode->GetHandleVisibility(markupsComponentType, i);
-    //  visibilityArray->SetValue(i, handleVisibility);
-    //  }
+    bool handleVisibility = displayNode->GetHandleVisibility(markupsComponentType);
+    for (int i = 0; i < handlePolyData->GetNumberOfPoints(); ++i)
+      {
+      //bool handleIndexVisibility = displayNode->GetHandleVisibility(markupsComponentType, i);
+      handleVisibility = true;
+      visibilityArray->SetValue(i, handleVisibility);
+      }
     }
 
   if (vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode()))
@@ -705,6 +707,13 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::CreateScaleHandles()
     visibilityArray->SetNumberOfValues(points->GetNumberOfPoints());
     visibilityArray->Fill(1.0);
     this->Pipeline->ScaleHandlePoints->GetPointData()->AddArray(visibilityArray);
+
+    vtkNew<vtkDoubleArray> orientationArray;
+    orientationArray->SetName("orientation");
+    orientationArray->SetNumberOfComponents(9);
+    orientationArray->SetNumberOfValues(points->GetNumberOfPoints());
+    orientationArray->Fill(0.0);
+    this->Pipeline->ScaleHandlePoints->GetPointData()->AddArray(orientationArray);
     }
   else
     {

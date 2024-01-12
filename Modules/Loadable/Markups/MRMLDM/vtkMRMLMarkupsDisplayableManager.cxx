@@ -56,6 +56,8 @@ typedef void (*fp)();
 
 #define NUMERIC_ZERO 0.001
 
+static const int INTERACTION_RENDERER_LAYER = 1;
+
 //---------------------------------------------------------------------------
 vtkStandardNewMacro (vtkMRMLMarkupsDisplayableManager);
 
@@ -962,6 +964,27 @@ int vtkMRMLMarkupsDisplayableManager::GetMouseCursor()
     }
   return this->LastActiveWidget->GetMouseCursor();
 }
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManager::Create()
+{
+  Superclass::Create();
+
+  vtkRenderer* renderer = this->GetRenderer();
+  vtkRenderWindow* renderWindow = renderer->GetRenderWindow();
+  if (renderWindow->GetNumberOfLayers() < INTERACTION_RENDERER_LAYER + 1)
+    {
+    renderWindow->SetNumberOfLayers(INTERACTION_RENDERER_LAYER + 1);
+    }
+
+  this->InteractionRenderer = vtkSmartPointer<vtkRenderer>::New();
+  this->InteractionRenderer->UseDepthPeelingOn();
+  this->InteractionRenderer->InteractiveOff();
+  this->InteractionRenderer->SetActiveCamera(renderer->GetActiveCamera());
+  this->InteractionRenderer->SetLayer(INTERACTION_RENDERER_LAYER);
+  renderWindow->AddRenderer(this->InteractionRenderer);
+
+  this->SetUpdateFromMRMLRequested(true);
+}
 
 //---------------------------------------------------------------------------
 vtkSlicerMarkupsWidget * vtkMRMLMarkupsDisplayableManager::CreateWidget(vtkMRMLMarkupsDisplayNode* markupsDisplayNode)
@@ -1023,9 +1046,7 @@ vtkSlicerMarkupsInteractionWidget* vtkMRMLMarkupsDisplayableManager::CreateInter
     vtkErrorMacro("vtkMRMLMarkupsDisplayableManager::CreateWidget failed: cannot instantiate widget for markup " << markupsNode->GetMarkupType());
     return nullptr;
     }
-
-  vtkMRMLAbstractViewNode* viewNode = vtkMRMLAbstractViewNode::SafeDownCast(this->GetMRMLDisplayableNode());
-  vtkRenderer* renderer = this->GetRenderer();
+  widget->SetRenderer(this->InteractionRenderer);
   widget->SetMRMLApplicationLogic(this->GetMRMLApplicationLogic());
   return widget;
 }

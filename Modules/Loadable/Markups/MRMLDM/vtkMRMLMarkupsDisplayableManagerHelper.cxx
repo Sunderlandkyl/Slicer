@@ -330,17 +330,17 @@ void vtkMRMLMarkupsDisplayableManagerHelper::AddInteractionWidget(vtkMRMLMarkups
 
   vtkSlicerMarkupsInteractionWidget* newWidget = this->DisplayableManager->CreateInteractionWidget(markupsDisplayNode);
   if (!newWidget)
-  {
+    {
     vtkErrorMacro("vtkMRMLMarkupsDisplayableManagerHelper: Failed to create interaction widget");
     return;
-  }
+    }
 
   MRMLNodeModifyBlocker blocker(markupsDisplayNode);
   // record the mapping between node and widget in the helper
   this->MarkupsDisplayNodesToInteractionWidgets[markupsDisplayNode] = newWidget;
 
   vtkMRMLAbstractViewNode* viewNode = vtkMRMLAbstractViewNode::SafeDownCast(this->DisplayableManager->GetMRMLDisplayableNode());
-  newWidget->CreateDefaultRepresentation(markupsDisplayNode, viewNode, this->DisplayableManager->GetRenderer());
+  newWidget->CreateDefaultRepresentation(markupsDisplayNode, viewNode, newWidget->GetRenderer());
 
   // Build representation
   newWidget->UpdateFromMRML(markupsDisplayNode, 0); // no specific event triggers full rebuild

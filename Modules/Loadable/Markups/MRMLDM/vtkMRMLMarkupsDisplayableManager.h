@@ -112,6 +112,9 @@ protected:
   void OnMRMLSceneNodeAdded(vtkMRMLNode* node) override;
   void OnMRMLSceneNodeRemoved(vtkMRMLNode* node) override;
 
+  /// Initialize the displayable manager
+  void Create() override;
+
   /// Create a widget.
   vtkSlicerMarkupsWidget* CreateWidget(vtkMRMLMarkupsDisplayNode* node);
 
@@ -150,6 +153,8 @@ protected:
   double LastClickWorldCoordinates[4];
 
   vtkWeakPointer<vtkMRMLAbstractWidget> LastActiveWidget;
+
+  vtkSmartPointer<vtkRenderer> InteractionRenderer;
 
 private:
   vtkMRMLMarkupsDisplayableManager(const vtkMRMLMarkupsDisplayableManager&) = delete;

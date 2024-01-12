@@ -273,7 +273,7 @@ protected:
 
   /// Get the vector from the interaction handle to the camera in world coordinates.
   /// In slice views and in 3D with parallel projection this is the same as the camera view direction.
-  virtual void GetHandleToCameraVector(double normal[3]);
+  virtual void GetHandleToCameraVectorWorld(double handlePosition_World[3], double normal_World[3]);
 
   /// Get the position of the interaction handle in local coordinates
   /// Type is specified using vtkMRMLInteractionDisplayNode::ComponentType
@@ -297,6 +297,13 @@ protected:
   virtual double GetInteractionScale();
   virtual double GetInteractionSize();
   virtual bool GetInteractionSizeAbsolute();
+
+  virtual void CanInteractWithCircleHandle(vtkMRMLInteractionEventData* interactionEventData,
+    int& foundComponentType, int& foundComponentIndex, double& closestDistance2, HandleInfo& handleInfo);
+  virtual void CanInteractWithArrowHandle(vtkMRMLInteractionEventData* interactionEventData,
+    int& foundComponentType, int& foundComponentIndex, double& closestDistance2, HandleInfo& handleInfo);
+  virtual void CanInteractWithRingHandle(vtkMRMLInteractionEventData* interactionEventData,
+    int& foundComponentType, int& foundComponentIndex, double& closestDistance2, HandleInfo& handleInfo);
 
   // The angle between the camera and the interaction axis at which point the interaction handle starts to fade out.
   double StartFadeAngleDegrees{ 30 };
