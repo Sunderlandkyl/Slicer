@@ -711,7 +711,7 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::CreateScaleHandles()
     vtkNew<vtkDoubleArray> orientationArray;
     orientationArray->SetName("orientation");
     orientationArray->SetNumberOfComponents(9);
-    orientationArray->SetNumberOfValues(points->GetNumberOfPoints());
+    orientationArray->SetNumberOfTuples(points->GetNumberOfPoints());
     orientationArray->Fill(0.0);
     this->Pipeline->ScaleHandlePoints->GetPointData()->AddArray(orientationArray);
     }
@@ -811,14 +811,23 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
     return;
     }
 
-  double red[4]    = { 1.0, 0.0, 0.0, 1.0 };
-  double green[4]  = { 0.0, 1.0, 0.0, 1.0 };
-  double blue[4]   = { 0.0, 0.0, 1.0, 1.0 };
-  double orange[4] = { 1.0, 0.5, 0.0, 1.0 };
-  double white[4]  = { 1.0, 1.0, 1.0, 1.0 };
-  double yellow[4] = { 1.0, 1.0, 0.0, 1.0 };
+  double red[3] = { 0.80, 0.35, 0.35 };
+  double redSelected[3] = { 0.70, 0.07, 0.07 };
+
+  double green[4] = { 0.35, 0.80, 0.35 };
+  double greenSelected[4] = { 0.07, 0.70, 0.07 };
+
+  double blue[4] = { 0.35, 0.35, 0.8 };
+  double blueSelected[4] = { 0.07, 0.07, 0.70 };
+
+  double orange[4] = { 0.80, 0.65, 0.35 };
+  double orangeSelected[4] = { 0.70, 0.50, 0.07 };
+
+  double white[4] = { 0.80, 0.80, 0.80 };
+  double whiteSelected[4] = { 1.00, 1.00, 1.00 };
 
   double* currentColor = white;
+  double* selectedColor = white;
 
   if (planeNode)
     {
@@ -827,10 +836,12 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
       case 0:
       case 1:
         currentColor = red;
+        selectedColor = redSelected;
         break;
       case 2:
       case 3:
         currentColor = green;
+        selectedColor = greenSelected;
         break;
       default:
         break;
@@ -843,14 +854,17 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
       case 0:
       case 1:
         currentColor = red;
+        selectedColor = redSelected;
         break;
       case 2:
       case 3:
         currentColor = green;
+        selectedColor = greenSelected;
         break;
       case 4:
       case 5:
         currentColor = blue;
+        selectedColor = blueSelected;
         break;
       default:
         break;
@@ -860,7 +874,7 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
   double opacity = this->GetHandleOpacity(type, index);
   if (this->GetActiveComponentType() == type && this->GetActiveComponentIndex() == index)
     {
-    currentColor = yellow;
+    currentColor = selectedColor;
     opacity = 1.0;
     }
 
