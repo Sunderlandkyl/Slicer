@@ -432,7 +432,7 @@ bool vtkMRMLInteractionWidgetRepresentation::GetTransformationReferencePoint(dou
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::UpdateFromMRML(
-    vtkMRMLNode* vtkNotUsed(caller), unsigned long event, void *vtkNotUsed(callData))
+    vtkMRMLNode* vtkNotUsed(caller), unsigned long vtkNotUsed(event), void *vtkNotUsed(callData))
 {
   if (!this->Pipeline)
     {
@@ -607,7 +607,10 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateHandlePolyData()
 
     double point[3] = { 0.0, 0.0, 0.0 };
     handlePolyData->GetPoints()->GetPoint(handleInfo.Index, point);
-    vtkMath::MultiplyScalar(point, this->WidgetScale);
+    if (handleInfo.ApplyScaleToPosition)
+      {
+      vtkMath::MultiplyScalar(point, this->WidgetScale);
+      }
 
     outputPoints->GetPoints()->InsertNextPoint(point);
     outlinePoints->GetPoints()->InsertNextPoint(point);
@@ -1211,8 +1214,9 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateScaleHandleOrientation()
     this->Renderer->GetActiveCamera()->GetDirectionOfProjection(viewDirection_World);
     this->Renderer->GetActiveCamera()->GetViewUp(viewUp_World);
     }
-  vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse())->TransformVector(viewDirection_World, viewDirection_Handle);
-  vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse())->TransformVector(viewUp_World, viewUp_Handle);
+  vtkTransform* worldToHandleTransform = vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse());
+  worldToHandleTransform->TransformVector(viewDirection_World, viewDirection_Handle);
+  worldToHandleTransform->TransformVector(viewUp_World, viewUp_Handle);
 
   for (int i = 0; i < orientationArray->GetNumberOfTuples(); ++i)
     {
@@ -1445,17 +1449,17 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
   double red[3]    = { 0.80, 0.35, 0.35 };
   double redSelected[3] = { 0.70, 0.07, 0.07 };
 
-  double green[4] = { 0.35, 0.80, 0.35 };
-  double greenSelected[4] = { 0.07, 0.70, 0.07 };
+  double green[3] = { 0.35, 0.80, 0.35 };
+  double greenSelected[3] = { 0.07, 0.70, 0.07 };
 
-  double blue[4]   = { 0.35, 0.35, 0.8 };
-  double blueSelected[4] = { 0.07, 0.07, 0.70 };
+  double blue[3]   = { 0.35, 0.35, 0.8 };
+  double blueSelected[3] = { 0.07, 0.07, 0.70 };
 
-  double orange[4] = { 0.80, 0.65, 0.35 };
-  double orangeSelected[4] = { 0.70, 0.50, 0.07 };
+  double orange[3] = { 0.80, 0.65, 0.35 };
+  double orangeSelected[3] = { 0.70, 0.50, 0.07 };
 
-  double white[4]  = { 0.80, 0.80, 0.80 };
-  double whiteSelected[4] = { 1.00, 1.00, 1.00 };
+  double white[3]  = { 0.80, 0.80, 0.80 };
+  double whiteSelected[3] = { 1.00, 1.00, 1.00 };
 
   bool selected = this->GetActiveComponentType() == type && this->GetActiveComponentIndex() == index;
 
@@ -1594,15 +1598,15 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleToCameraVectorWorld(double
 
   if (this->GetSliceNode())
     {
-    double viewPlaneNormal4[4] = { 0, 0, 1, 0 };
-    vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->GetViewNode());
+    double slicePlaneNormalWorld4[4] = { 0.0, 0.0, 1.0, 0.0 };
+    vtkMRMLSliceNode* sliceNode = this->GetSliceNode();
     if (sliceNode)
       {
-      sliceNode->GetXYToRAS()->MultiplyPoint(viewPlaneNormal4, viewPlaneNormal4);
+      sliceNode->GetXYToRAS()->MultiplyPoint(slicePlaneNormalWorld4, slicePlaneNormalWorld4);
       }
-    normal_World[0] = viewPlaneNormal4[0];
-    normal_World[1] = viewPlaneNormal4[1];
-    normal_World[2] = viewPlaneNormal4[2];
+    normal_World[0] = slicePlaneNormalWorld4[0];
+    normal_World[1] = slicePlaneNormalWorld4[1];
+    normal_World[2] = slicePlaneNormalWorld4[2];
     vtkMath::Normalize(normal_World);
     }
   else if (this->GetRenderer() && this->GetRenderer()->GetActiveCamera())
@@ -1615,7 +1619,7 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleToCameraVectorWorld(double
     else
       {
       camera->GetPosition(normal_World);
-      vtkMath::Subtract(normal_World, this->GetHandleToWorldTransform()->TransformPoint(handlePosition_World), normal_World);
+      vtkMath::Subtract(normal_World, handlePosition_World, normal_World);
       vtkMath::Normalize(normal_World);
       }
     }
@@ -1764,7 +1768,15 @@ vtkMRMLInteractionWidgetRepresentation::HandleInfo vtkMRMLInteractionWidgetRepre
 
   int glyphType = this->GetHandleGlyphType(type, index);
 
-  return HandleInfo(index, type, handlePositionWorld, handlePositionLocal, color, glyphType);
+  bool applyScaleToPosition = this->GetApplyScaleToPosition(type, index);
+
+  return HandleInfo(index, type, handlePositionWorld, handlePositionLocal, color, glyphType, applyScaleToPosition);
+}
+
+//----------------------------------------------------------------------
+bool vtkMRMLInteractionWidgetRepresentation::GetApplyScaleToPosition(int type, int index)
+{
+  return true;
 }
 
 //----------------------------------------------------------------------
@@ -1852,10 +1864,6 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateSlicePlaneFromSliceNode()
     int* dimensions = this->GetSliceNode()->GetDimensions();
     this->Pipeline->WorldToSliceTransform->Scale(2.0/dimensions[1], 2.0/dimensions[1], 1.0);
     this->Pipeline->WorldToSliceTransform->Translate(-1.0*dimensions[0]/dimensions[1], -1.0, 0.0);
-
-    double origin[4] = { 0.0, 0.0, 0.0, 1.0 };
-    this->Pipeline->WorldToSliceTransform->MultiplyPoint(origin, origin);
-    this->Pipeline->WorldToSliceTransform->Translate(0.0, 0.0, -origin[2] - this->WidgetScale);
     }
 
   // Update slice plane (for distance computation)

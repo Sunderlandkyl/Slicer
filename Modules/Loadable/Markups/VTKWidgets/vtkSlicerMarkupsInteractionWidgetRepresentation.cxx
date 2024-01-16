@@ -379,11 +379,12 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateROIScaleHandles2D()
 
   vtkIdTypeArray* visibilityArray = vtkIdTypeArray::SafeDownCast(this->Pipeline->ScaleHandlePoints->GetPointData()->GetArray("visibility"));
   visibilityArray->SetNumberOfValues(scaleHandlePoints_Object->GetNumberOfPoints());
-  visibilityArray->Fill(displayNode ? displayNode->GetScaleHandleVisibility() : 1);
+  visibilityArray->Fill(displayNode ? displayNode->GetScaleHandleVisibility() : 1.0);
 
   // Corner handles are not visible in 2D
   for (int i = vtkMRMLMarkupsROIDisplayNode::HandleLPICorner; i <= vtkMRMLMarkupsROIDisplayNode::HandleRASCorner; ++i)
     {
+    scaleHandlePoints_Object->SetPoint(i, 0.0, 0.0, 0.0);
     visibilityArray->SetValue(i, 0);
     }
 
@@ -690,6 +691,13 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::CreateScaleHandles()
       points->InsertNextPoint(-distance, distance, -distance);
       points->InsertNextPoint(-distance, -distance, distance);
       points->InsertNextPoint(-distance, -distance, -distance);
+      if (this->GetSliceNode())
+        {
+        for (unsigned long i = vtkMRMLMarkupsROIDisplayNode::HandleLPEdge; i < vtkMRMLMarkupsROIDisplayNode::HandleROI_Last; ++i)
+          {
+          points->InsertNextPoint(0.0, 0.0, 0.0);
+          }
+        }
       }
     else if (planeNode)
       {
@@ -814,20 +822,20 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::GetHandleColor(int type, i
   double red[3] = { 0.80, 0.35, 0.35 };
   double redSelected[3] = { 0.70, 0.07, 0.07 };
 
-  double green[4] = { 0.35, 0.80, 0.35 };
-  double greenSelected[4] = { 0.07, 0.70, 0.07 };
+  double green[3] = { 0.35, 0.80, 0.35 };
+  double greenSelected[3] = { 0.07, 0.70, 0.07 };
 
-  double blue[4] = { 0.35, 0.35, 0.8 };
-  double blueSelected[4] = { 0.07, 0.07, 0.70 };
+  double blue[3] = { 0.35, 0.35, 0.8 };
+  double blueSelected[3] = { 0.07, 0.07, 0.70 };
 
-  double orange[4] = { 0.80, 0.65, 0.35 };
-  double orangeSelected[4] = { 0.70, 0.50, 0.07 };
+  double orange[3] = { 0.80, 0.65, 0.35 };
+  double orangeSelected[3] = { 0.70, 0.50, 0.07 };
 
-  double white[4] = { 0.80, 0.80, 0.80 };
-  double whiteSelected[4] = { 1.00, 1.00, 1.00 };
+  double white[3] = { 0.80, 0.80, 0.80 };
+  double whiteSelected[3] = { 1.00, 1.00, 1.00 };
 
   double* currentColor = white;
-  double* selectedColor = white;
+  double* selectedColor = whiteSelected;
 
   if (planeNode)
     {
@@ -917,12 +925,30 @@ bool vtkSlicerMarkupsInteractionWidgetRepresentation::AddScaleEdgeIntersection(
   vtkMath::Add(edgePoint1_Object, edgeVector_Object, edgePoint2_Object);
 
   double t = 0.0;
-  double raEdgeIntersection_Object[3] = { 0.0, 0.0, 0.0 };
-  if (!vtkPlane::IntersectWithLine(edgePoint1_Object, edgePoint2_Object, viewPlaneNormal_Object, viewPlaneOrigin_Object, t, raEdgeIntersection_Object))
+  double edgeIntersection_Object[3] = { 0.0, 0.0, 0.0 };
+  if (!vtkPlane::IntersectWithLine(edgePoint1_Object, edgePoint2_Object, viewPlaneNormal_Object, viewPlaneOrigin_Object, t, edgeIntersection_Object))
     {
+    scaleHandlePoints_Object->SetPoint(pointIndex, edgeIntersection_Object);
     visibilityArray->SetValue(pointIndex, false);
     return false;
     }
-  scaleHandlePoints_Object->SetPoint(pointIndex, raEdgeIntersection_Object);
+  scaleHandlePoints_Object->SetPoint(pointIndex, edgeIntersection_Object);
   return true;
+}
+
+//-----------------------------------------------------------------------------
+bool vtkSlicerMarkupsInteractionWidgetRepresentation::GetApplyScaleToPosition(int type, int index)
+{
+  if (type != InteractionScaleHandle)
+    {
+    return Superclass::GetApplyScaleToPosition(type, index);
+    }
+
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  if (vtkMRMLMarkupsROINode::SafeDownCast(markupsNode) || vtkMRMLMarkupsPlaneNode::SafeDownCast(markupsNode))
+    {
+    return false;
+    }
+
+  return Superclass::GetApplyScaleToPosition(type, index);
 }

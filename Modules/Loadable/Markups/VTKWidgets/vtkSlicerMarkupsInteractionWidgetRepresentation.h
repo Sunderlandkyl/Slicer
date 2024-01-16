@@ -58,6 +58,7 @@ public:
   int GetActiveComponentIndex() override;
   void SetActiveComponentIndex(int type) override;
   bool GetHandleVisibility(int type, int index) override;
+  bool GetApplyScaleToPosition(int type, int index) override;
 
   virtual int InteractionComponentToMarkupsComponent(int);
   virtual int MarkupsComponentToInteractionComponent(int);

@@ -208,10 +208,11 @@ protected:
 
   struct HandleInfo
   {
-    HandleInfo(int index, int componentType, double positionWorld[3], double positionLocal[3], double color[4], int glyphType)
+    HandleInfo(int index, int componentType, double positionWorld[3], double positionLocal[3], double color[4], int glyphType, bool applyScaleToPosition)
       : Index(index)
       , ComponentType(componentType)
       , GlyphType(glyphType)
+      , ApplyScaleToPosition(applyScaleToPosition)
     {
     for (int i = 0; i < 3; ++i)
       {
@@ -234,6 +235,7 @@ protected:
     double PositionLocal[4];
     double PositionWorld[4];
     double Color[4];
+    bool ApplyScaleToPosition{ true };
     bool IsVisible()
       {
       double epsilon = 0.001;
@@ -270,6 +272,8 @@ protected:
   virtual bool GetHandleVisibility(int type, int index);
   ///  TODO
   virtual int GetHandleGlyphType(int type, int index);
+  /// TODO
+  virtual bool GetApplyScaleToPosition(int type, int index);
 
   /// Get the vector from the interaction handle to the camera in world coordinates.
   /// In slice views and in 3D with parallel projection this is the same as the camera view direction.

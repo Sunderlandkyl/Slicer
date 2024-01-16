@@ -225,7 +225,10 @@ bool vtkMRMLInteractionWidget::CanProcessInteractionEvent(vtkMRMLInteractionEven
     {
     return false;
     }
-  distance2 = closestDistance2;
+
+  // TODO: This gives the widget a very high priority.
+  // There may be a better way to handle this.
+  distance2 = 0.0;
 
   return true;
 }

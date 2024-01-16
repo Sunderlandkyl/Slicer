@@ -588,11 +588,10 @@ vtkMRMLAbstractWidget* vtkMRMLMarkupsDisplayableManager::FindClosestWidget(vtkMR
   vtkMRMLAbstractWidget* closestWidget = nullptr;
   closestDistance2 = VTK_DOUBLE_MAX;
 
-  for (vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToInteractionWidgetIt interactionIterator =
-    this->Helper->MarkupsDisplayNodesToInteractionWidgets.begin();
-    interactionIterator != this->Helper->MarkupsDisplayNodesToInteractionWidgets.end(); ++interactionIterator)
+  for (vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToWidgetIt widgetIterator = this->Helper->MarkupsDisplayNodesToWidgets.begin();
+    widgetIterator != this->Helper->MarkupsDisplayNodesToWidgets.end(); ++widgetIterator)
     {
-    vtkSlicerMarkupsInteractionWidget* widget = interactionIterator->second;
+    vtkSlicerMarkupsWidget* widget = widgetIterator->second;
     if (!widget)
       {
       continue;
@@ -608,10 +607,11 @@ vtkMRMLAbstractWidget* vtkMRMLMarkupsDisplayableManager::FindClosestWidget(vtkMR
       }
     }
 
-  for (vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToWidgetIt widgetIterator = this->Helper->MarkupsDisplayNodesToWidgets.begin();
-    widgetIterator != this->Helper->MarkupsDisplayNodesToWidgets.end(); ++widgetIterator)
+  for (vtkMRMLMarkupsDisplayableManagerHelper::DisplayNodeToInteractionWidgetIt interactionIterator =
+    this->Helper->MarkupsDisplayNodesToInteractionWidgets.begin();
+    interactionIterator != this->Helper->MarkupsDisplayNodesToInteractionWidgets.end(); ++interactionIterator)
     {
-    vtkSlicerMarkupsWidget* widget = widgetIterator->second;
+    vtkSlicerMarkupsInteractionWidget* widget = interactionIterator->second;
     if (!widget)
       {
       continue;
