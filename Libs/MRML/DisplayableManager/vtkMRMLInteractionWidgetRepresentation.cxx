@@ -723,6 +723,7 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
     this->UpdateSlicePlaneFromSliceNode();
     this->UpdateHandleColors();
     this->UpdateViewScaleFactor();
+    this->UpdateInteractionPipeline();
     this->UpdateHandleOrientation();
     this->UpdateHandleSize();
     this->UpdateHandlePolyData();

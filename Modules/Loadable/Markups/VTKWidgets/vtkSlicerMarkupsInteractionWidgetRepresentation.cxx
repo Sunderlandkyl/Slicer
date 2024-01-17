@@ -170,12 +170,6 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdateInteractionPipeline(
 
   vtkMRMLMarkupsPlaneNode* planeNode = vtkMRMLMarkupsPlaneNode::SafeDownCast(this->GetMarkupsNode());
   vtkMRMLMarkupsROINode* roiNode = vtkMRMLMarkupsROINode::SafeDownCast(this->GetMarkupsNode());
-  if (planeNode || roiNode)
-    {
-    // We are specifying the position of the handles manually.
-    //TODO
-    //this->Pipeline->AxisScaleGlypher->SetInputData(this->Pipeline->ScaleHandlePoints);
-    }
 
   // Final visibility handled by superclass in vtkMRMLInteractionWidgetRepresentation
   Superclass::UpdateInteractionPipeline();
@@ -284,6 +278,7 @@ void vtkSlicerMarkupsInteractionWidgetRepresentation::UpdatePlaneScaleHandles()
     scaleHandlePoints->SetPoint(i, scaleHandlePoint);
     }
   this->Pipeline->ScaleHandlePoints->SetPoints(scaleHandlePoints);
+  this->NeedToRenderOn();
 }
 
 //----------------------------------------------------------------------
