@@ -73,7 +73,8 @@ public:
   QAction* ResetCenterOfTransformAction;
   QAction* ResetCenterOfTransformCurrentItemAction;
 
-  QAction* ToggleInteractionBoxAction;
+  QAction* ToggleInteractionAction;
+  QAction* ToggleInteractionItemAction;
 
   QVariantMap ViewContextMenuEventData;
 
@@ -88,7 +89,8 @@ qSlicerSubjectHierarchyTransformsPluginPrivate::qSlicerSubjectHierarchyTransform
 : q_ptr(&object)
 {
   this->TransformIcon = QIcon(":Icons/Transform.png");
-  this->ToggleInteractionBoxAction = nullptr;
+  this->ToggleInteractionAction = nullptr;
+  this->ToggleInteractionItemAction = nullptr;
   this->InvertAction = nullptr;
   this->InvertCurrentItemAction = nullptr;
   this->IdentityAction = nullptr;
@@ -120,10 +122,15 @@ void qSlicerSubjectHierarchyTransformsPluginPrivate::init()
   this->ResetCenterOfTransformCurrentItemAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Reset center of transformation"), q);
   QObject::connect(this->ResetCenterOfTransformCurrentItemAction, SIGNAL(triggered()), q, SLOT(resetCenterOfTransformationCurrentItem()));
 
-  this->ToggleInteractionBoxAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Interaction in 3D view"), q);
-  QObject::connect(this->ToggleInteractionBoxAction, SIGNAL(toggled(bool)), q, SLOT(toggleInteractionBox(bool)));
-  this->ToggleInteractionBoxAction->setCheckable(true);
-  this->ToggleInteractionBoxAction->setChecked(false);
+  this->ToggleInteractionAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Interaction in 3D view"), q);
+  QObject::connect(this->ToggleInteractionAction, SIGNAL(toggled(bool)), q, SLOT(toggleInteractionBox(bool)));
+  this->ToggleInteractionAction->setCheckable(true);
+  this->ToggleInteractionAction->setChecked(false);
+
+  this->ToggleInteractionItemAction = new QAction(qSlicerSubjectHierarchyTransformsPlugin::tr("Interaction in 3D view"), q);
+  QObject::connect(this->ToggleInteractionItemAction, SIGNAL(toggled(bool)), q, SLOT(toggleInteractionBox(bool)));
+  this->ToggleInteractionItemAction->setCheckable(true);
+  this->ToggleInteractionItemAction->setChecked(false);
 }
 
 //-----------------------------------------------------------------------------
@@ -139,9 +146,9 @@ vtkMRMLTransformNode* qSlicerSubjectHierarchyTransformsPluginPrivate::transformN
     }
   vtkMRMLScene* scene = qSlicerSubjectHierarchyPluginHandler::instance()->mrmlScene();
   if (!scene)
-  {
+    {
     return nullptr;
-  }
+    }
 
   // Get markups node
   QString nodeID = this->ViewContextMenuEventData["NodeID"].toString();
@@ -281,6 +288,11 @@ double qSlicerSubjectHierarchyTransformsPlugin::canOwnSubjectHierarchyItem(vtkId
     return 0.5; // There are other plugins that can handle special transform nodes better, thus the relatively low value
     }
 
+  if (associatedNode && associatedNode->IsA("vtkMRMLDisplayableNode"))
+    {
+    return 0.1; // Most other plugins can handle displayable nodes better.
+    }
+
   return 0.0;
 }
 
@@ -379,23 +391,27 @@ void qSlicerSubjectHierarchyTransformsPlugin::showContextMenuActionsForItem(vtkI
 
   if (this->canOwnSubjectHierarchyItem(itemID))
     {
-    d->InvertAction->setVisible(true);
-    vtkMRMLTransformNode* tnode = vtkMRMLTransformNode::SafeDownCast(shNode->GetItemDataNode(itemID));
-    if (tnode && tnode->IsLinear())
+    vtkMRMLTransformNode* transformNode = vtkMRMLTransformNode::SafeDownCast(shNode->GetItemDataNode(itemID));
+    if (transformNode)
       {
-      d->IdentityAction->setVisible(true);
+      d->InvertCurrentItemAction->setVisible(true);
+      vtkMRMLTransformNode* tnode = vtkMRMLTransformNode::SafeDownCast(shNode->GetItemDataNode(itemID));
+      if (tnode && tnode->IsLinear())
+        {
+        d->IdentityCurrentItemAction->setVisible(true);
+        }
+      d->ResetCenterOfTransformCurrentItemAction->setVisible(true);
       }
-    d->ResetCenterOfTransformAction->setVisible(true);
     }
 }
 
 //---------------------------------------------------------------------------
-QList<QAction*> qSlicerSubjectHierarchyTransformsPlugin::visibilityContextMenuActions()const
+QList<QAction*> qSlicerSubjectHierarchyTransformsPlugin::visibilityContextMenuActions() const
 {
   Q_D(const qSlicerSubjectHierarchyTransformsPlugin);
 
   QList<QAction*> actions;
-  actions << d->ToggleInteractionBoxAction;
+  actions << d->ToggleInteractionItemAction;
   return actions;
 }
 
@@ -417,23 +433,29 @@ void qSlicerSubjectHierarchyTransformsPlugin::showVisibilityContextMenuActionsFo
 
   if (this->canOwnSubjectHierarchyItem(itemID))
     {
+
+    vtkMRMLTransformableNode* transformableNode = vtkMRMLTransformableNode::SafeDownCast(shNode->GetItemDataNode(itemID));
+    if (!transformableNode)
+      {
+      return;
+      }
+
     vtkMRMLTransformNode* transformNode = vtkMRMLTransformNode::SafeDownCast(shNode->GetItemDataNode(itemID));
     if (transformNode)
       {
-      vtkMRMLTransformDisplayNode* displayNode = vtkMRMLTransformDisplayNode::SafeDownCast(transformNode->GetDisplayNode());
-      if (!displayNode)
-        {
-        transformNode->CreateDefaultDisplayNodes();
-        displayNode = vtkMRMLTransformDisplayNode::SafeDownCast(transformNode->GetDisplayNode());
-        }
-      if (displayNode)
-        {
-        d->ToggleInteractionBoxAction->setVisible(true);
-        bool wasBlocked = d->ToggleInteractionBoxAction->blockSignals(true);
-        d->ToggleInteractionBoxAction->setChecked(displayNode->GetEditorVisibility());
-        d->ToggleInteractionBoxAction->blockSignals(wasBlocked);
-        }
+      // We only display this option for transformable nodes, not transform nodes where
+      // the option is controlled by regular visibility options.
+      return;
       }
+
+    transformNode = transformableNode->GetParentTransformNode();
+
+    vtkMRMLTransformDisplayNode* displayNode = transformNode ? vtkMRMLTransformDisplayNode::SafeDownCast(transformNode->GetDisplayNode()) : nullptr;
+
+    d->ToggleInteractionItemAction->setVisible(true);
+    bool wasBlocked = d->ToggleInteractionItemAction->blockSignals(true);
+    d->ToggleInteractionItemAction->setChecked(displayNode ? displayNode->GetVisibility() : false);
+    d->ToggleInteractionItemAction->blockSignals(wasBlocked);
     }
 }
 
@@ -477,7 +499,7 @@ void qSlicerSubjectHierarchyTransformsPlugin::showViewContextMenuActionsForItem(
   d->InvertAction->setVisible(true);
   d->IdentityAction->setVisible(true);
   d->ResetCenterOfTransformAction->setVisible(true);
-  d->ToggleInteractionBoxAction->setVisible(true);
+  d->ToggleInteractionAction->setVisible(true);
 }
 
 //---------------------------------------------------------------------------
@@ -605,11 +627,28 @@ void qSlicerSubjectHierarchyTransformsPlugin::toggleInteractionBox(bool visible)
     return;
     }
 
+  vtkMRMLTransformableNode* transformableNode = vtkMRMLTransformableNode::SafeDownCast(
+    shNode->GetItemDataNode(currentItemID) );
   vtkMRMLTransformNode* transformNode = vtkMRMLTransformNode::SafeDownCast(
     shNode->GetItemDataNode(currentItemID) );
   if (!transformNode)
     {
-    qCritical() << Q_FUNC_INFO << ": Failed to get transform node";
+    transformNode = transformableNode->GetParentTransformNode();
+    }
+
+  if (!transformNode)
+    {
+    std::stringstream transformNameSS;
+    transformNameSS << "Interaction_" << transformableNode->GetName();
+    transformNode = vtkMRMLTransformNode::SafeDownCast(
+      transformableNode->GetScene()->AddNewNodeByClass("vtkMRMLTransformNode", transformNameSS.str()));
+    transformNode->CreateDefaultDisplayNodes();
+    transformableNode->SetAndObserveTransformNodeID(transformNode->GetID());
+    }
+
+  if (!transformNode)
+    {
+    qCritical() << Q_FUNC_INFO << ": Failed to get or create transform node";
     return;
     }
   vtkMRMLTransformDisplayNode* displayNode = vtkMRMLTransformDisplayNode::SafeDownCast(
@@ -619,6 +658,5 @@ void qSlicerSubjectHierarchyTransformsPlugin::toggleInteractionBox(bool visible)
     qCritical() << Q_FUNC_INFO << ": Failed to get transform display node";
     return;
     }
-
-  displayNode->SetEditorVisibility(visible);
+  displayNode->SetVisibility(visible);
 }
