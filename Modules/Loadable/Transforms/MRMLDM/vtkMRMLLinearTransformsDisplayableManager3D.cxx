@@ -206,16 +206,14 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::UpdateDisplayable
 {
   // Update the pipeline for all tracked DisplayableNode
 
-  //PipelinesCacheType::iterator pipelinesIter;
-  //std::set< vtkMRMLTransformDisplayNode* > displayNodes = this->TransformToDisplayNodes[mNode];
-  //std::set< vtkMRMLTransformDisplayNode* >::iterator dnodesIter;
-  //for ( dnodesIter = displayNodes.begin(); dnodesIter != displayNodes.end(); dnodesIter++ )
-  //  {
-  //  if ((pipelinesIter = this->DisplayPipelines.find(*dnodesIter)) != this->DisplayPipelines.end())
-  //    {
-  //    this->UpdateDisplayNodePipeline(pipelinesIter->first, pipelinesIter->second);
-  //    }
-  //  }
+  InteractionPipelinesCacheType::iterator pipelinesIter;
+  std::set< vtkMRMLTransformDisplayNode* > displayNodes = this->TransformToDisplayNodes[mNode];
+  std::set< vtkMRMLTransformDisplayNode* >::iterator dnodesIter;
+  for ( dnodesIter = displayNodes.begin(); dnodesIter != displayNodes.end(); dnodesIter++ )
+    {
+    vtkMRMLTransformDisplayNode* displayNode = *dnodesIter;
+    this->UpdateDisplayNode(displayNode);
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -235,34 +233,6 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::AddDisplayNode(vt
     {
     return;
     }
-
-  // Do not add the display node if it is already associated with a pipeline object.
-  // This happens when a transform node already associated with a display node
-  // is copied into an other (using vtkMRMLNode::Copy()) and is added to the scene afterward.
-  // Related issue are #3428 and #2608
-  //PipelinesCacheType::iterator it;
-  //it = this->DisplayPipelines.find(displayNode);
-  //if (it != this->DisplayPipelines.end())
-  //  {
-  //  return;
-  //  }
-
-  //// Create pipeline
-  //Pipeline* pipeline = new Pipeline();
-
-  //pipeline->Actor = vtkSmartPointer<vtkActor>::New();
-  //vtkNew<vtkPolyDataMapper> mapper;
-  //pipeline->Actor->SetMapper(mapper.GetPointer());
-  //pipeline->Actor->SetVisibility(false);
-  //pipeline->Actor->SetPickable(false);
-  //pipeline->InputPolyData = vtkSmartPointer<vtkPolyData>::New();
-  //mapper->SetInputData(pipeline->InputPolyData);
-
-  //// Add actor to Renderer and local cache
-  //this->External->GetRenderer()->AddActor( pipeline->Actor );
-  //this->DisplayPipelines.insert( std::make_pair(displayNode, pipeline) );
-
-  // Update cached matrices. Calls UpdateDisplayNodePipeline
   this->UpdateDisplayableTransforms(mNode);
 }
 
@@ -276,16 +246,11 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::UpdateDisplayNode
     {
     return;
     }
-  //PipelinesCacheType::iterator it;
-  //it = this->DisplayPipelines.find(displayNode);
-  //if (it != this->DisplayPipelines.end())
-  //  {
-  //  this->UpdateDisplayNodePipeline(displayNode, it->second);
-  //  }
-  //else
-    {
-    this->AddTransformNode( vtkMRMLTransformNode::SafeDownCast(displayNode->GetDisplayableNode()) );
-    }
+
+  InteractionPipelinesCacheType::iterator it;
+  it = this->InteractionPipelines.find(displayNode);
+  vtkMRMLTransformNode* displayableNode = vtkMRMLTransformNode::SafeDownCast(displayNode->GetDisplayableNode());
+  this->UpdateInteractionPipeline(displayableNode, vtkCommand::ModifiedEvent, displayNode);
 }
 
 //---------------------------------------------------------------------------
@@ -382,7 +347,8 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::UpdateInteraction
   vtkSmartPointer<vtkMRMLTransformHandleWidget> widget = nullptr;
   InteractionPipelinesCacheType::iterator pipelineIt = this->InteractionPipelines.find(displayNode);
 
-  if (displayNode->GetInteractionVisibility() && pipelineIt == this->InteractionPipelines.end())
+  bool visible = displayNode->GetVisibility() && displayNode->GetVisibility3D();
+  if (visible && pipelineIt == this->InteractionPipelines.end())
     {
     // No pipeline, yet interaction visibility is on, create a new one
 
@@ -391,7 +357,7 @@ void vtkMRMLLinearTransformsDisplayableManager3D::vtkInternal::UpdateInteraction
     this->InteractionPipelines[displayNode] = interactionWidget;
     widget = interactionWidget;
     }
-  else if (!displayNode->GetInteractionVisibility() && pipelineIt != this->InteractionPipelines.end())
+  else if (!visible && pipelineIt != this->InteractionPipelines.end())
     {
     // Pipeline exists, but interaction visibility is off, remove it
     this->InteractionPipelines.erase(pipelineIt);

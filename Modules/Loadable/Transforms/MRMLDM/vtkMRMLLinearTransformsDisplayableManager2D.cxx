@@ -280,15 +280,39 @@ void vtkMRMLLinearTransformsDisplayableManager2D::vtkInternal::UpdateDisplayNode
     {
     return;
     }
-  InteractionWidgetsCacheType::iterator it;
-  it = this->InteractionWidgets.find(displayNode);
-  if (it != this->InteractionWidgets.end())
+
+  vtkSmartPointer<vtkMRMLTransformHandleWidget> widget = nullptr;
+  InteractionWidgetsCacheType::iterator pipelineIt;
+  pipelineIt = this->InteractionWidgets.find(displayNode);
+
+  bool visible = displayNode->GetVisibility() && displayNode->GetVisibility2D();
+  if (visible && pipelineIt == this->InteractionWidgets.end())
     {
-    return;
+    // No pipeline, yet interaction visibility is on, create a new one
+
+    vtkNew<vtkMRMLTransformHandleWidget> interactionWidget;
+    interactionWidget->CreateDefaultRepresentation(displayNode, this->External->GetMRMLSliceNode(), this->InteractionRenderer);
+    this->InteractionWidgets[displayNode] = interactionWidget;
+    widget = interactionWidget;
     }
-  else
+  else if (!visible && pipelineIt != this->InteractionWidgets.end())
     {
-    this->AddTransformNode( vtkMRMLTransformNode::SafeDownCast(displayNode->GetDisplayableNode()) );
+    // Pipeline exists, but interaction visibility is off, remove it
+    this->InteractionWidgets.erase(pipelineIt);
+    }
+  else if (pipelineIt != this->InteractionWidgets.end())
+    {
+    widget = pipelineIt->second;
+    }
+
+  if (widget)
+    {
+    unsigned long event = vtkMRMLDisplayableNode::DisplayModifiedEvent;
+    widget->UpdateFromMRML(displayNode->GetDisplayableNode(), event, displayNode);
+    if (widget->GetNeedToRender())
+      {
+      this->External->RequestRender();
+      }
     }
 }
 
