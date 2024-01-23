@@ -188,6 +188,8 @@ protected:
     vtkSmartPointer<vtkPolyData>                CircleOutlinePolyData;
     vtkSmartPointer<vtkPolyData>                RingOutlinePolyData;
 
+    std::map<std::pair<int, int>, vtkSmartPointer<vtkPolyData>> HandleGlyphPolyDataMap;
+    std::map<std::pair<int, int>, vtkSmartPointer<vtkPolyData>> HandleOutlineGlyphPolyDataMap;
 
     vtkSmartPointer<vtkPolyData>                RotationHandlePoints;
     vtkSmartPointer<vtkPolyData>                TranslationHandlePoints;
