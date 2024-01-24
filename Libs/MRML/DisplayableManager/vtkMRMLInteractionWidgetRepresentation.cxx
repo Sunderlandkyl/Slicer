@@ -1471,9 +1471,6 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index,
   double blue[3]   = { 0.35, 0.35, 0.8 };
   double blueSelected[3] = { 0.07, 0.07, 0.70 };
 
-  double orange[3] = { 0.80, 0.65, 0.35 };
-  double orangeSelected[3] = { 0.70, 0.50, 0.07 };
-
   double white[3]  = { 0.80, 0.80, 0.80 };
   double whiteSelected[3] = { 1.00, 1.00, 1.00 };
 
