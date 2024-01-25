@@ -249,7 +249,7 @@ public:
 
   /// Import models in a folder into the segmentation as segments.
   static bool ImportModelsToSegmentationNode(
-    vtkIdType folderItemId, vtkMRMLSegmentationNode* segmentationNode, std::string insertBeforeSegmentId = "" );
+    vtkIdType folderItemId, vtkMRMLSegmentationNode* segmentationNode, std::string insertBeforeSegmentId = "", std::string hierarchyPrefix = "");
 
   /// Export closed surface representation of multiple segments to files. Typically used for writing 3D printable model files.
   /// \param segmentationNode Segmentation node from which the the segments are exported

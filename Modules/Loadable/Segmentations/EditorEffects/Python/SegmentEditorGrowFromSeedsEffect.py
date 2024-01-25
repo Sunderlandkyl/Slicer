@@ -104,6 +104,10 @@ The effect uses <a href="http://interactivemedical.org/imic2014/CameraReadyPaper
     def computePreviewLabelmap(self, mergedImage, outputLabelmap):
         import vtkSlicerSegmentationsModuleLogicPython as vtkSlicerSegmentationsModuleLogic
 
+        minDimension = min(self.clippedMasterImageData.GetDimensions())
+        if minDimension < 3:
+            raise Exception(f"Minimum required image size in any direction is 3 voxels, current minimum size is {minDimension} voxels.")
+
         if not self.growCutFilter:
             self.growCutFilter = vtkSlicerSegmentationsModuleLogic.vtkImageGrowCutSegment()
             self.growCutFilter.SetIntensityVolume(self.clippedMasterImageData)

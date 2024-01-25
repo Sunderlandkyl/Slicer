@@ -277,12 +277,8 @@ class AbstractScriptedSegmentEditorAutoCompleteEffect(AbstractScriptedSegmentEdi
         self.previewComputationInProgress = True
 
         slicer.util.showStatusMessage(f"Running {self.scriptedEffect.name} auto-complete...", 2000)
-        try:
-            # This can be a long operation - indicate it to the user
-            qt.QApplication.setOverrideCursor(qt.Qt.WaitCursor)
+        with slicer.util.tryWithErrorDisplay(f"Error running {self.scriptedEffect.name}.", waitCursor=True):
             self.preview()
-        finally:
-            qt.QApplication.restoreOverrideCursor()
 
         self.previewComputationInProgress = False
 
@@ -435,7 +431,7 @@ class AbstractScriptedSegmentEditorAutoCompleteEffect(AbstractScriptedSegmentEdi
                 self.selectedSegmentIds = vtk.vtkStringArray()
                 segmentationNode.GetDisplayNode().GetVisibleSegmentIDs(self.selectedSegmentIds)
             if self.selectedSegmentIds.GetNumberOfValues() < self.minimumNumberOfSegments:
-                logging.error(f"Auto-complete operation skipped: at least {self.minimumNumberOfSegments} visible segments are required")
+                raise Exception(f"Auto-complete operation skipped: at least {self.minimumNumberOfSegments} visible segments are required")
                 self.selectedSegmentIds = None
                 return
 
@@ -445,7 +441,7 @@ class AbstractScriptedSegmentEditorAutoCompleteEffect(AbstractScriptedSegmentEdi
             commonGeometryString = segmentationNode.GetSegmentation().DetermineCommonLabelmapGeometry(
                 vtkSegmentationCore.vtkSegmentation.EXTENT_UNION_OF_EFFECTIVE_SEGMENTS, self.selectedSegmentIds)
             if not commonGeometryString:
-                logging.info("Auto-complete operation skipped: all visible segments are empty")
+                raise Exception("Auto-complete operation skipped: all visible segments are empty")
                 return
             vtkSegmentationCore.vtkSegmentationConverter.DeserializeImageGeometry(commonGeometryString, self.mergedLabelmapGeometryImage)
 

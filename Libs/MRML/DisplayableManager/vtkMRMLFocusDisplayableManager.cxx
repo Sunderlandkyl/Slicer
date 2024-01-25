@@ -363,9 +363,11 @@ void vtkMRMLFocusDisplayableManager::UpdateFromDisplayableNode()
   this->UpdateOriginalSoftFocusActors();
   this->UpdateSoftFocus();
 
+  /*
   this->UpdateHardFocusDisplayableNodes();
   this->UpdateOriginalHardFocusActors();
   this->UpdateHardFocus();
+  */
 }
 
 //---------------------------------------------------------------------------
@@ -410,6 +412,12 @@ void vtkMRMLFocusDisplayableManager::UpdateSoftFocusDisplayableNodes()
       continue;
       }
     this->Internal->SoftFocusDisplayableNodes.push_back(softFocusedNode);
+    }
+
+  vtkMRMLDisplayableNode* focusedNode = vtkMRMLDisplayableNode::SafeDownCast(this->GetFocusNode());
+  if (focusedNode)
+    {
+    this->Internal->SoftFocusDisplayableNodes.push_back(focusedNode);
     }
 }
 
@@ -603,11 +611,13 @@ void vtkMRMLFocusDisplayableManager::UpdateSoftFocus()
   this->Internal->SoftFocusRendererOutline->RemoveAllViewProps();
 
   vtkMRMLSelectionNode* selectionNode = this->Internal->SelectionNode;
+  /*
   int numberOfSoftFocusNodes = selectionNode ?
     selectionNode->GetNumberOfNodeReferences(selectionNode->GetSoftFocusNodeReferenceRole()) : 0;
+  */
 
   vtkRenderer* renderer = this->GetRenderer();
-  if (numberOfSoftFocusNodes <= 0 || !renderer)
+  if (/*numberOfSoftFocusNodes <= 0 || */!renderer)
     {
     return;
     }
@@ -643,7 +653,7 @@ void vtkMRMLFocusDisplayableManager::UpdateSoftFocus()
       }
 
     newOriginalToCopyActors[originalProp] = newProp;
-    this->Internal->SoftFocusRendererOutline->AddViewProp(newProp);
+    this->Internal->SoftFocusRendererOutline->AddViewProp(originalProp);
     }
   this->Internal->SoftFocusOriginalToCopyActors = newOriginalToCopyActors;
 
