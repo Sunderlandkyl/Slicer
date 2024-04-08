@@ -211,6 +211,13 @@ vtkSlicerMarkupsWidgetRepresentation3D::vtkSlicerMarkupsWidgetRepresentation3D()
   this->RenderCompletedCallback = vtkSmartPointer<vtkCallbackCommand>::New();
   this->RenderCompletedCallback->SetClientData(this);
   this->RenderCompletedCallback->SetCallback(vtkSlicerMarkupsWidgetRepresentation3D::OnRenderCompleted);
+
+  this->VisibleCurvePoints = vtkSmartPointer<vtkPolyData>::New();
+
+  this->FastSelectCurvePoints = vtkSmartPointer<vtkFastSelectVisiblePoints>::New();
+  this->FastSelectCurvePoints->SetOutput(this->VisibleCurvePoints);
+
+  this->CurrentLabelPedigreeId = -1.0;
 }
 
 //----------------------------------------------------------------------
@@ -679,6 +686,7 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOverlay(vtkViewport *viewport)
 {
   vtkFloatArray* zBuffer = vtkSlicerMarkupsWidgetRepresentation3D::GetCachedZBuffer(this->Renderer);
   int count = Superclass::RenderOverlay(viewport);
+  this->UpdateCurveLabelVisibility();
   for (int i = 0; i < NumberOfControlPointTypes; i++)
   {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
@@ -1307,4 +1315,89 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateRelativeCoincidentTopologyOff
   occludedMapper->SetRelativeCoincidentTopologyLineOffsetParameters(-1, this->OccludedRelativeOffset);
   occludedMapper->SetRelativeCoincidentTopologyPolygonOffsetParameters(-1, this->OccludedRelativeOffset);
   occludedMapper->SetRelativeCoincidentTopologyPointOffsetParameter(this->OccludedRelativeOffset);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation3D::UpdateCurveLabelVisibility()
+{
+  // Properties label display
+  // Display if there is at least one control point (even if preview)
+  this->FastSelectCurvePoints->SetRenderer(this->Renderer);
+  vtkFloatArray* zBuffer = this->GetCachedZBuffer(this->Renderer);
+  if (zBuffer)
+  {
+    this->FastSelectCurvePoints->SetZBuffer(zBuffer);
+  }
+  else
+  {
+    this->FastSelectCurvePoints->UpdateZBuffer();
+    zBuffer = this->FastSelectCurvePoints->GetZBuffer();
+    vtkSlicerMarkupsWidgetRepresentation3D::CachedZBuffers[this->Renderer] = zBuffer;
+  }
+
+  if (!this->MarkupsDisplayNode->GetPropertiesLabelVisibility()
+    || this->MarkupsNode->GetNumberOfDefinedControlPoints(true) == 0
+    || zBuffer == nullptr)
+  {
+    this->TextActor->SetVisibility(false);
+    this->CurrentLabelPedigreeId = -1.0;
+    return;
+  }
+
+  vtkPolyData* curveWorld = this->MarkupsNode->GetCurveWorld();
+  this->FastSelectCurvePoints->SetInputData(curveWorld);
+  this->FastSelectCurvePoints->SetTolerance(0.0);
+  this->FastSelectCurvePoints->SetToleranceWorld(this->ControlPointSize);
+  this->FastSelectCurvePoints->Update();
+
+  vtkIdType numberOfVisiblePoints = this->VisibleCurvePoints->GetNumberOfPoints();
+  if (numberOfVisiblePoints == 0)
+  {
+    this->TextActor->SetVisibility(false);
+    this->CurrentLabelPedigreeId = -1.0;
+    return;
+  }
+
+  vtkDoubleArray* pedigreeIds = vtkDoubleArray::SafeDownCast(this->VisibleCurvePoints->GetPointData()->GetArray("PedigreeIDs"));
+  if (pedigreeIds == nullptr)
+  {
+    return;
+  }
+
+  bool findNewLabelPosition = false;
+  if (this->CurrentLabelPedigreeId < 0.0)
+  {
+    findNewLabelPosition = true;
+  }
+
+  int pedigreeIdIndex = 0;
+  if (!findNewLabelPosition)
+  {
+    findNewLabelPosition = true;
+    for (int i = 0; i < numberOfVisiblePoints; ++i)
+    {
+      if (pedigreeIds->GetValue(i) == this->CurrentLabelPedigreeId)
+      {
+        // The current label is still visible.
+        findNewLabelPosition = false;
+        pedigreeIdIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (findNewLabelPosition)
+  {
+    pedigreeIdIndex = std::floor(numberOfVisiblePoints / 2);
+    this->CurrentLabelPedigreeId = pedigreeIds->GetValue(pedigreeIdIndex);
+  }
+
+  double center[3] = { 0.0, 0.0, 0.0 };
+  this->VisibleCurvePoints->GetPoint(pedigreeIdIndex, center);
+
+  this->TextActorPositionWorld[0] = center[0];
+  this->TextActorPositionWorld[1] = center[1];
+  this->TextActorPositionWorld[2] = center[2];
+
+  this->TextActor->SetVisibility(true);
 }

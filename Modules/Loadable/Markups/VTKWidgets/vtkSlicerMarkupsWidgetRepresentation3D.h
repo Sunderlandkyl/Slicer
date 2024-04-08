@@ -151,6 +151,9 @@ protected:
   void UpdateRelativeCoincidentTopologyOffsets(vtkMapper* mapper, vtkMapper* occludedMapper);
   using vtkMRMLAbstractWidgetRepresentation::UpdateRelativeCoincidentTopologyOffsets;
 
+  /// Update the curve label visibility based on the visibility of the control points
+  void UpdateCurveLabelVisibility();
+
   vtkSmartPointer<vtkCellPicker> AccuratePicker;
 
   double TextActorPositionWorld[3];
@@ -163,6 +166,10 @@ protected:
   vtkSmartPointer<vtkCallbackCommand> RenderCompletedCallback;
   static void OnRenderCompleted(vtkObject* caller, unsigned long event, void* clientData, void* callData);
   static vtkFloatArray* GetCachedZBuffer(vtkRenderer* renderer);
+
+  vtkSmartPointer<vtkFastSelectVisiblePoints> FastSelectCurvePoints;
+  vtkSmartPointer<vtkPolyData> VisibleCurvePoints;
+  double CurrentLabelPedigreeId;
 
 private:
   vtkSlicerMarkupsWidgetRepresentation3D(const vtkSlicerMarkupsWidgetRepresentation3D&) = delete;

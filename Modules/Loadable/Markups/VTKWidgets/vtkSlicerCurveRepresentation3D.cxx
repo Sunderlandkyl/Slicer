@@ -87,35 +87,6 @@ void vtkSlicerCurveRepresentation3D::UpdateFromMRMLInternal(vtkMRMLNode* caller,
 
   this->VisibilityOn();
 
-  // Properties label display
-  // Display if there is at least one control point (even if preview)
-  if (this->MarkupsDisplayNode->GetPropertiesLabelVisibility()
-    && markupsNode->GetNumberOfDefinedControlPoints(true) > 0) // including preview
-  {
-    int controlPointIndex = 0;
-    int numberOfDefinedControlPoints = markupsNode->GetNumberOfDefinedControlPoints(); // excluding previewed point
-    if (numberOfDefinedControlPoints > 0)
-    {
-      // there is at least one placed point
-      controlPointIndex = markupsNode->GetNthControlPointIndexByPositionStatus((numberOfDefinedControlPoints - 1) / 2, vtkMRMLMarkupsNode::PositionDefined);
-    }
-    else
-    {
-      // we only have a preview point
-      controlPointIndex = markupsNode->GetNthControlPointIndexByPositionStatus(0, vtkMRMLMarkupsNode::PositionPreview);
-    }
-    // It would be better to show the properties label near a visible segment of the curve
-    // but then we may need to iterate through many points whenever the camera rotates, so it may not worth the trouble.
-    // Especially because labels could be still poorly positioned. Probably some more sophisticated auto-placement
-    // with option for manual label position adjustment (and maybe anchor position adjustment) would be the best.
-    markupsNode->GetNthControlPointPositionWorld(controlPointIndex, this->TextActorPositionWorld);
-    this->TextActor->SetVisibility(true);
-  }
-  else
-  {
-    this->TextActor->SetVisibility(false);
-  }
-
   // Line display
 
   for (int controlPointType = 0; controlPointType < NumberOfControlPointTypes; ++controlPointType)
@@ -267,8 +238,11 @@ void vtkSlicerCurveRepresentation3D::ReleaseGraphicsResources(
 //----------------------------------------------------------------------
 int vtkSlicerCurveRepresentation3D::RenderOverlay(vtkViewport *viewport)
 {
+  this->UpdateCurveLabelVisibility();
+
   int count=0;
   count = this->Superclass::RenderOverlay(viewport);
+
   if (this->LineActor->GetVisibility())
   {
     count +=  this->LineActor->RenderOverlay(viewport);
@@ -286,6 +260,12 @@ int vtkSlicerCurveRepresentation3D::RenderOpaqueGeometry(
 {
   int count=0;
   count = this->Superclass::RenderOpaqueGeometry(viewport);
+
+  if (this->MarkupsNode == nullptr)
+  {
+    return count;
+  }
+
   if (this->LineActor->GetVisibility())
   {
     double diameter = ( this->MarkupsDisplayNode->GetCurveLineSizeMode() == vtkMRMLMarkupsDisplayNode::UseLineDiameter ?
@@ -429,7 +409,7 @@ void vtkSlicerCurveRepresentation3D::CanInteractWithCurve(
   this->CurvePointLocator->SetDataSet(curveWorld);
   this->CurvePointLocator->Update();
 
-  double closestPointDisplay[3] = { 0.0 };
+  double closestPointDisplay[3] = { 0.0, 0.0, 0.0 };
   vtkIdType cellId = -1;
   int subId = -1;
   // dist2 is initialized to -1.0 because this is how FindClosestPoint indicates that no closest point is found
