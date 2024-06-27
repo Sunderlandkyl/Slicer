@@ -16,7 +16,7 @@
 #define __vtkMRMLSelectionNode_h
 
 // MRML includes
-#include "vtkMRMLNode.h"
+#include "vtkMRMLDisplayableNode.h"
 
 class vtkMRMLUnitNode;
 
@@ -31,11 +31,11 @@ class vtkMRMLUnitNode;
 /// Note: the SetReferenceActive* routines are added because
 /// the vtkSetReferenceStringMacro is not wrapped (vtkSetStringMacro
 /// on which it is based is a special case in vtk's parser).
-class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
+class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLDisplayableNode
 {
   public:
   static vtkMRMLSelectionNode *New();
-  vtkTypeMacro(vtkMRMLSelectionNode,vtkMRMLNode);
+  vtkTypeMacro(vtkMRMLSelectionNode, vtkMRMLDisplayableNode);
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
   vtkMRMLNode* CreateNodeInstance() override;
@@ -231,8 +231,6 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
   vtkGetMacro(FocusedComponentType, int);
   vtkSetMacro(FocusedComponentIndex, int);
   vtkGetMacro(FocusedComponentIndex, int);
-  vtkSetMacro(FocusedHighlightStrength, double);
-  vtkGetMacro(FocusedHighlightStrength, double);
   const char* GetFocusNodeReferenceRole();
   const char* GetFocusNodeReferenceMRMLAttributeName();
 
@@ -245,6 +243,9 @@ class VTK_MRML_EXPORT vtkMRMLSelectionNode : public vtkMRMLNode
   void RemoveAllSoftFocus();
   const char* GetSoftFocusNodeReferenceRole();
   const char* GetSoftFocusNodeReferenceMRMLAttributeName();
+
+  /// Create and observe default display node(s)
+  void CreateDefaultDisplayNodes() override;
 
 protected:
   vtkMRMLSelectionNode();
@@ -261,7 +262,6 @@ protected:
 
   int FocusedComponentType{ -1 };
   int FocusedComponentIndex{ -1 };
-  double FocusedHighlightStrength{ 10.0 };
 
   std::map<std::string, std::pair<int, int>> SoftFocusComponents;
 };

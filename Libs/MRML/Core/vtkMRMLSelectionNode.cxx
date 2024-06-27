@@ -15,6 +15,7 @@ Version:   $Revision: 1.2 $
 
 // MRML includes
 #include "vtkMRMLScene.h"
+#include "vtkMRMLSelectionDisplayNode.h"
 #include "vtkMRMLSelectionNode.h"
 #include "vtkMRMLUnitNode.h"
 
@@ -712,4 +713,24 @@ const char* vtkMRMLSelectionNode::GetSoftFocusNodeReferenceRole()
 const char* vtkMRMLSelectionNode::GetSoftFocusNodeReferenceMRMLAttributeName()
 {
   return SOFT_FOCUS_NODE_REFERENCE_MRML_ATTRIBUTE_NAME;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSelectionNode::CreateDefaultDisplayNodes()
+{
+  if (vtkMRMLSelectionDisplayNode::SafeDownCast(this->GetDisplayNode()) != nullptr)
+  {
+    // display node already exists
+    return;
+  }
+  vtkMRMLScene* scene = this->GetScene();
+  if (scene == nullptr)
+  {
+    vtkErrorMacro("vtkMRMLModelNode::CreateDefaultDisplayNodes failed: scene is invalid");
+    return;
+  }
+  vtkMRMLSelectionDisplayNode* dispNode = vtkMRMLSelectionDisplayNode::SafeDownCast(
+    scene->AddNewNodeByClass("vtkMRMLSelectionDisplayNode"));
+
+  this->SetAndObserveDisplayNodeID(dispNode->GetID());
 }

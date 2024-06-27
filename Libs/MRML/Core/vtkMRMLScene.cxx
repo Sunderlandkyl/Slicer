@@ -52,6 +52,7 @@ Version:   $Revision: 1.18 $
 #include "vtkMRMLSegmentationDisplayNode.h"
 #include "vtkMRMLSegmentationNode.h"
 #include "vtkMRMLSegmentationStorageNode.h"
+#include "vtkMRMLSelectionDisplayNode.h"
 #include "vtkMRMLSelectionNode.h"
 #include "vtkMRMLSequenceNode.h"
 #include "vtkMRMLSequenceStorageNode.h"
@@ -179,6 +180,7 @@ vtkMRMLScene::vtkMRMLScene()
   this->RegisterNodeClass( vtkSmartPointer< vtkMRMLSegmentationDisplayNode >::New() );
   this->RegisterNodeClass( vtkSmartPointer< vtkMRMLSegmentationNode >::New() );
   this->RegisterNodeClass( vtkSmartPointer< vtkMRMLSegmentationStorageNode >::New() );
+  this->RegisterNodeClass( vtkSmartPointer< vtkMRMLSelectionDisplayNode >::New() );
   this->RegisterNodeClass( vtkSmartPointer< vtkMRMLSelectionNode >::New() );
   this->RegisterNodeClass( vtkSmartPointer< vtkMRMLSliceDisplayNode >::New());
   this->RegisterNodeClass( vtkSmartPointer< vtkMRMLSliceNode >::New() );

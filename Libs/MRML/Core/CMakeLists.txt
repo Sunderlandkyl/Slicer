@@ -201,6 +201,7 @@ set(MRMLCore_SRCS
   vtkMRMLSequenceNode.h
   vtkMRMLSequenceStorageNode.cxx
   vtkMRMLSequenceStorageNode.h
+  vtkMRMLSelectionDisplayNode.cxx
   vtkMRMLSelectionNode.cxx
   vtkMRMLSliceCompositeNode.cxx
   vtkMRMLSliceDisplayNode.cxx
