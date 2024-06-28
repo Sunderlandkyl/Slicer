@@ -63,6 +63,50 @@
 //---------------------------------------------------------------------------
 vtkStandardNewMacro(vtkMRMLFocusDisplayableManager);
 
+class SoftFocusPipeline
+{
+public:
+  vtkNew<vtkRenderer> SoftFocusRendererOutline;
+  vtkNew<vtkRenderStepsPass> SoftFocusBasicPasses;
+  vtkNew<vtkOutlineGlowPass> SoftFocusROIGlowPass;
+
+  // Soft focus pipeline
+  std::vector<vtkWeakPointer<vtkMRMLDisplayableNode>> SoftFocusDisplayableNodes;
+  std::vector<vtkSmartPointer<vtkProp>> SoftFocusOriginalActors;
+  std::map<vtkSmartPointer<vtkProp>, vtkSmartPointer<vtkProp>> SoftFocusOriginalToCopyActors;
+
+  SoftFocusPipeline()
+  {
+    this->SoftFocusROIGlowPass->SetDelegatePass(this->SoftFocusBasicPasses);
+    this->SoftFocusRendererOutline->UseFXAAOn();
+    this->SoftFocusRendererOutline->UseShadowsOff();
+    this->SoftFocusRendererOutline->UseDepthPeelingOff();
+    this->SoftFocusRendererOutline->UseDepthPeelingForVolumesOff();
+    this->SoftFocusRendererOutline->SetPass(this->SoftFocusROIGlowPass);
+  }
+};
+
+class HardFocusPipeline
+{
+public:
+  // Hard focus pipeline
+  std::vector<vtkWeakPointer<vtkMRMLDisplayableNode>> HardFocusDisplayableNodes;
+  std::vector<vtkSmartPointer<vtkProp>> HardFocusOriginalActors;
+  vtkNew<vtkPolyData> HardFocusPolyData;
+  vtkNew<vtkPolyDataMapper2D> HardFocusMapper;
+  vtkNew<vtkActor2D> HardFocusActor;
+
+  double Bounds_RAS[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN };
+
+  HardFocusPipeline()
+  {
+    double widthPx = 5.0;
+    this->HardFocusMapper->SetInputData(this->HardFocusPolyData);
+    this->HardFocusActor->SetMapper(this->HardFocusMapper);
+    this->HardFocusActor->GetProperty()->SetLineWidth(widthPx);
+  }
+
+};
 
 //---------------------------------------------------------------------------
 class vtkMRMLFocusDisplayableManager::vtkInternal
@@ -77,28 +121,13 @@ public:
 public:
   vtkMRMLFocusDisplayableManager* External;
   vtkNew<vtkMRMLFocusWidget> FocusWidget;
-  vtkWeakPointer<vtkMRMLSelectionNode> SelectionNode;
 
-  // Soft focus pipeline
-  std::vector<vtkWeakPointer<vtkMRMLDisplayableNode>> SoftFocusDisplayableNodes;
-  std::vector<vtkSmartPointer<vtkProp>> SoftFocusOriginalActors;
-  std::map<vtkSmartPointer<vtkProp>, vtkSmartPointer<vtkProp>> SoftFocusOriginalToCopyActors;
-  vtkNew<vtkRenderer> SoftFocusRendererOutline;
-  vtkNew<vtkRenderStepsPass> SoftFocusBasicPasses;
-  vtkNew<vtkOutlineGlowPass> SoftFocusROIGlowPass;
-
-  // Hard focus pipeline
-  std::vector<vtkWeakPointer<vtkMRMLDisplayableNode>> HardFocusDisplayableNodes;
-  std::vector<vtkSmartPointer<vtkProp>> HardFocusOriginalActors;
-  vtkNew<vtkPolyData> HardFocusPolyData;
-  vtkNew<vtkPolyDataMapper2D> HardFocusMapper;
-  vtkNew<vtkActor2D> HardFocusActor;
+  std::map<vtkMRMLSelectionDisplayNode*, SoftFocusPipeline*> SoftFocusPipelines;
+  std::map<vtkMRMLSelectionDisplayNode*, HardFocusPipeline*> HardFocusPipelines;
 
   vtkNew<vtkCallbackCommand> ObjectCallback;
   static void ObjectsCallback(vtkObject* caller, unsigned long eid,
     void* clientData, void* callData);
-
-  double Bounds_RAS[6] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN };
 
   void AddDisplayableNodeObservers(vtkMRMLDisplayableNode* displayNode);
   void AddDisplayableNodeObservers(std::vector<vtkWeakPointer<vtkMRMLDisplayableNode>>& displayNode);
@@ -113,18 +142,6 @@ public:
 vtkMRMLFocusDisplayableManager::vtkInternal::vtkInternal(vtkMRMLFocusDisplayableManager* external)
   : External(external)
 {
-  this->SoftFocusROIGlowPass->SetDelegatePass(this->SoftFocusBasicPasses);
-  this->SoftFocusRendererOutline->UseFXAAOn();
-  this->SoftFocusRendererOutline->UseShadowsOff();
-  this->SoftFocusRendererOutline->UseDepthPeelingOff();
-  this->SoftFocusRendererOutline->UseDepthPeelingForVolumesOff();
-  this->SoftFocusRendererOutline->SetPass(this->SoftFocusROIGlowPass);
-
-  double widthPx = 5.0;
-  this->HardFocusMapper->SetInputData(this->HardFocusPolyData);
-  this->HardFocusActor->SetMapper(this->HardFocusMapper);
-  this->HardFocusActor->GetProperty()->SetLineWidth(widthPx);
-
   this->ObjectCallback->SetCallback(vtkMRMLFocusDisplayableManager::vtkInternal::ObjectsCallback);
   this->ObjectCallback->SetClientData(this->External);
 }
@@ -173,9 +190,16 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::AddDisplayableNodeObservers(st
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::vtkInternal::AddFocusedNodeObservers()
 {
-  this->AddDisplayableNodeObservers(this->SoftFocusDisplayableNodes);
-  this->AddDisplayableNodeObservers(this->HardFocusDisplayableNodes);
-  vtkEventBroker* broker = vtkEventBroker::GetInstance();
+  for (auto pipelineIt = this->SoftFocusPipelines.begin();
+    pipelineIt != this->SoftFocusPipelines.end(); ++pipelineIt)
+  {
+    SoftFocusPipeline* softFocusPipeline = pipelineIt->second;
+    this->AddDisplayableNodeObservers(softFocusPipeline->SoftFocusDisplayableNodes);
+    for (auto pipelineIt = this->HardFocusPipelines.begin(); pipelineIt != this->HardFocusPipelines.end(); ++pipelineIt)
+    {
+      this->AddDisplayableNodeObservers(pipelineIt->second->HardFocusDisplayableNodes);
+    }
+  }
 }
 
 //---------------------------------------------------------------------------
@@ -206,22 +230,33 @@ void vtkMRMLFocusDisplayableManager::vtkInternal::RemoveDisplayableNodeObservers
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::vtkInternal::RemoveDisplayableNodeObservers(std::vector<vtkWeakPointer<vtkMRMLDisplayableNode>>& displayNodes)
 {
-  for (vtkMRMLDisplayableNode* displayableNode : this->SoftFocusDisplayableNodes)
+  for (auto pipelineIt = this->SoftFocusPipelines.begin();
+    pipelineIt != this->SoftFocusPipelines.end(); ++pipelineIt)
   {
-    if (!displayableNode)
+    for (vtkMRMLDisplayableNode* displayableNode : pipelineIt->second->SoftFocusDisplayableNodes)
     {
-      continue;
+      if (!displayableNode)
+      {
+        continue;
+      }
+      this->RemoveDisplayableNodeObservers(displayableNode);
     }
-    this->RemoveDisplayableNodeObservers(displayableNode);
   }
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::vtkInternal::RemoveFocusedNodeObservers()
 {
-  vtkEventBroker* broker = vtkEventBroker::GetInstance();
-  this->RemoveDisplayableNodeObservers(this->SoftFocusDisplayableNodes);
-  this->RemoveDisplayableNodeObservers(this->HardFocusDisplayableNodes);
+  for (auto pipelineIt = this->SoftFocusPipelines.begin();
+    pipelineIt != this->SoftFocusPipelines.end(); ++pipelineIt)
+  {
+    vtkEventBroker* broker = vtkEventBroker::GetInstance();
+    for (auto pipelineIt = this->HardFocusPipelines.begin(); pipelineIt != this->HardFocusPipelines.end(); ++pipelineIt)
+    {
+      this->RemoveDisplayableNodeObservers(pipelineIt->second->HardFocusDisplayableNodes);
+    }
+    this->RemoveDisplayableNodeObservers(pipelineIt->second->SoftFocusDisplayableNodes);
+  }
 }
 
 //----------------------------------------------------------------------------
@@ -254,16 +289,6 @@ void vtkMRMLFocusDisplayableManager::PrintSelf(ostream& os, vtkIndent indent)
 }
 
 //---------------------------------------------------------------------------
-vtkMRMLNode* vtkMRMLFocusDisplayableManager::GetFocusNode()
-{
-  vtkMRMLSelectionNode* selectionNode = this->Internal->SelectionNode;
-  const char* focusNodeID = selectionNode ? selectionNode->GetFocusNodeID() : nullptr;
-  vtkMRMLNode* focusedNode =
-    vtkMRMLNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(focusNodeID));
-  return focusedNode;
-}
-
-//---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::UpdateFromMRMLScene()
 {
   // UpdateFromMRML will be executed only if there has been some actions
@@ -272,31 +297,35 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRMLScene()
   // maybe in OnMRMLSceneNodeAddedEvent, OnMRMLSceneNodeRemovedEvent or
   // OnMRMLDisplayableModelNodeModifiedEvent).
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
-  if (this->Internal->SelectionNode)
+
+  std::vector<vtkMRMLNode*> selectionNodes;
+  this->GetMRMLScene()->GetNodesByClass("vtkMRMLSelectionNode", selectionNodes);
+
+  for (vtkMRMLNode* node : selectionNodes)
   {
-    broker->RemoveObservations(this->Internal->SelectionNode,
+    vtkMRMLSelectionNode* selectionNode = vtkMRMLSelectionNode::SafeDownCast(node);
+    broker->RemoveObservations(selectionNode,
       vtkCommand::ModifiedEvent,
       this, this->GetMRMLNodesCallbackCommand());
-  }
 
-  this->Internal->SelectionNode = this->GetSelectionNode();
-  broker->AddObservation(this->Internal->SelectionNode,
-    vtkCommand::ModifiedEvent,
-    this, this->GetMRMLNodesCallbackCommand());
-  this->Internal->FocusWidget->SetSelectionNode(this->Internal->SelectionNode);
+    broker->AddObservation(selectionNode,
+      vtkCommand::ModifiedEvent,
+      this, this->GetMRMLNodesCallbackCommand());
+    this->Internal->FocusWidget->SetSelectionNode(selectionNode);
 
-  if (!broker->GetObservationExist(this->GetRenderer()->GetActiveCamera(), vtkCommand::ModifiedEvent,
-    this, this->Internal->ObjectCallback))
-  {
-    broker->AddObservation(this->GetRenderer()->GetActiveCamera(), vtkCommand::ModifiedEvent,
-      this, this->Internal->ObjectCallback);
-  }
+    if (!broker->GetObservationExist(this->GetRenderer()->GetActiveCamera(), vtkCommand::ModifiedEvent,
+      this, this->Internal->ObjectCallback))
+    {
+      broker->AddObservation(this->GetRenderer()->GetActiveCamera(), vtkCommand::ModifiedEvent,
+        this, this->Internal->ObjectCallback);
+    }
 
-  if (!broker->GetObservationExist(this->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
-    this, this->Internal->ObjectCallback))
-  {
-    broker->AddObservation(this->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
-      this, this->Internal->ObjectCallback);
+    if (!broker->GetObservationExist(this->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
+      this, this->Internal->ObjectCallback))
+    {
+      broker->AddObservation(this->GetRenderer()->GetRenderWindow(), vtkCommand::ModifiedEvent,
+        this, this->Internal->ObjectCallback);
+    }
   }
 
   this->UpdateFromMRML();
@@ -388,32 +417,103 @@ void vtkMRMLFocusDisplayableManager::UpdateFromMRML()
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::UpdateHardFocusDisplayableNodes()
 {
-  this->Internal->HardFocusDisplayableNodes.clear();
-
-  vtkMRMLDisplayableNode* focusedNode = vtkMRMLDisplayableNode::SafeDownCast(this->GetFocusNode());
-  if (focusedNode)
+  vtkRenderer* renderer = this->GetRenderer();
+  if (!renderer)
   {
-    this->Internal->HardFocusDisplayableNodes.push_back(focusedNode);
+    return;
+  }
+
+  for (auto pipelineIt = this->Internal->HardFocusPipelines.begin();
+    pipelineIt != this->Internal->HardFocusPipelines.end(); ++pipelineIt)
+  {
+    renderer->RemoveActor(pipelineIt->second->HardFocusActor);
+    delete pipelineIt->second;
+  }
+  this->Internal->HardFocusPipelines.clear();
+
+  std::vector<vtkMRMLNode*> selectionDisplayNodes;
+  this->GetMRMLScene()->GetNodesByClass("vtkMRMLSelectionDisplayNode", selectionDisplayNodes);
+
+  for (vtkMRMLNode* node : selectionDisplayNodes)
+  {
+    vtkMRMLSelectionDisplayNode* selectionDisplayNode = vtkMRMLSelectionDisplayNode::SafeDownCast(node);
+    if (!selectionDisplayNode)
+    {
+      continue;
+    }
+
+    vtkMRMLSelectionNode* selectionNode = vtkMRMLSelectionNode::SafeDownCast(selectionDisplayNode->GetDisplayableNode());
+
+    this->Internal->HardFocusPipelines[selectionDisplayNode] = new HardFocusPipeline();
+
+    for (auto pipelineIt = this->Internal->HardFocusPipelines.begin();
+      pipelineIt != this->Internal->HardFocusPipelines.end(); ++pipelineIt)
+    {
+      pipelineIt->second->HardFocusDisplayableNodes.clear();
+
+      vtkMRMLDisplayableNode* focusedNode = vtkMRMLDisplayableNode::SafeDownCast(selectionNode->GetFocusNode());
+      if (focusedNode)
+      {
+        pipelineIt->second->HardFocusDisplayableNodes.push_back(focusedNode);
+      }
+    }
   }
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::UpdateSoftFocusDisplayableNodes()
 {
-  this->Internal->SoftFocusDisplayableNodes.clear();
+  vtkRenderer* renderer = this->GetRenderer();
 
-  int numberOfSoftFocusNodes = this->Internal->SelectionNode ?
-    this->Internal->SelectionNode->GetNumberOfNodeReferences(this->Internal->SelectionNode->GetSoftFocusNodeReferenceRole()) : 0;
-  std::vector<vtkMRMLDisplayableNode*> displayableNodes;
-  for (int i = 0; i < numberOfSoftFocusNodes; ++i)
+  for (auto pipelineIt = this->Internal->SoftFocusPipelines.begin();
+    pipelineIt != this->Internal->SoftFocusPipelines.end(); ++pipelineIt)
   {
-    vtkMRMLDisplayableNode* softFocusedNode =
-      vtkMRMLDisplayableNode::SafeDownCast(this->Internal->SelectionNode->GetNthSoftFocusNode(i));
-    if (!softFocusedNode)
+    for (auto actorIt = pipelineIt->second->SoftFocusOriginalToCopyActors.begin();
+      actorIt != pipelineIt->second->SoftFocusOriginalToCopyActors.end(); ++actorIt)
+    {
+      pipelineIt->second->SoftFocusRendererOutline->RemoveViewProp(actorIt->second);
+    }
+    renderer->GetRenderWindow()->RemoveRenderer(pipelineIt->second->SoftFocusRendererOutline);
+
+    delete pipelineIt->second;
+  }
+  this->Internal->SoftFocusPipelines.clear();
+
+  std::vector<vtkMRMLNode*> selectionDisplayNodes;
+  this->GetMRMLScene()->GetNodesByClass("vtkMRMLSelectionDisplayNode", selectionDisplayNodes);
+
+  for (vtkMRMLNode* node : selectionDisplayNodes)
+  {
+    vtkMRMLSelectionDisplayNode* selectionDisplayNode = vtkMRMLSelectionDisplayNode::SafeDownCast(node);
+    if (!selectionDisplayNode)
     {
       continue;
     }
-    this->Internal->SoftFocusDisplayableNodes.push_back(softFocusedNode);
+    this->Internal->SoftFocusPipelines[selectionDisplayNode] = new SoftFocusPipeline();
+  }
+
+  for (auto pipelineIt = this->Internal->SoftFocusPipelines.begin();
+    pipelineIt != this->Internal->SoftFocusPipelines.end(); ++pipelineIt)
+  {
+    SoftFocusPipeline* softFocusPipeline = pipelineIt->second;
+    softFocusPipeline->SoftFocusDisplayableNodes.clear();
+
+    vtkMRMLSelectionDisplayNode* displayNode = pipelineIt->first;
+    vtkMRMLSelectionNode* selectionnode = vtkMRMLSelectionNode::SafeDownCast(displayNode->GetDisplayableNode());
+
+    int numberOfSoftFocusNodes = selectionnode ?
+      selectionnode->GetNumberOfNodeReferences(selectionnode->GetSoftFocusNodeReferenceRole()) : 0;
+    std::vector<vtkMRMLDisplayableNode*> displayableNodes;
+    for (int i = 0; i < numberOfSoftFocusNodes; ++i)
+    {
+      vtkMRMLDisplayableNode* softFocusedNode =
+        vtkMRMLDisplayableNode::SafeDownCast(selectionnode->GetNthSoftFocusNode(i));
+      if (!softFocusedNode)
+      {
+        continue;
+      }
+      softFocusPipeline->SoftFocusDisplayableNodes.push_back(softFocusedNode);
+    }
   }
 }
 
@@ -422,80 +522,90 @@ void vtkMRMLFocusDisplayableManager::UpdateOriginalHardFocusActors()
 {
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
 
-  for (vtkProp* oldActor : this->Internal->HardFocusOriginalActors)
+  for (auto pipelineIt = this->Internal->HardFocusPipelines.begin();
+    pipelineIt != this->Internal->HardFocusPipelines.end(); ++pipelineIt)
   {
-    if (!oldActor)
+    for (vtkProp* oldActor : pipelineIt->second->HardFocusOriginalActors)
     {
-      continue;
-    }
-    broker->RemoveObservations(oldActor, vtkCommand::ModifiedEvent,
-      this, this->Internal->ObjectCallback);
-
-    vtkActor2D* oldActor2D = vtkActor2D::SafeDownCast(oldActor);
-    if (oldActor2D)
-    {
-      // Need to update copied actors when the position of the 2D actor changes
-      broker->RemoveObservations(oldActor2D->GetPositionCoordinate(),
-        vtkCommand::ModifiedEvent,
+      if (!oldActor)
+      {
+        continue;
+      }
+      broker->RemoveObservations(oldActor, vtkCommand::ModifiedEvent,
         this, this->Internal->ObjectCallback);
-    }
-  }
 
-  this->Internal->HardFocusOriginalActors.clear();
+      vtkActor2D* oldActor2D = vtkActor2D::SafeDownCast(oldActor);
+      if (oldActor2D)
+      {
+        // Need to update copied actors when the position of the 2D actor changes
+        broker->RemoveObservations(oldActor2D->GetPositionCoordinate(),
+          vtkCommand::ModifiedEvent,
+          this, this->Internal->ObjectCallback);
+      }
+    }
+    pipelineIt->second->HardFocusOriginalActors.clear();
+  }
 
   std::vector<vtkMRMLDisplayNode*> displayNodes;
-  for (vtkMRMLDisplayableNode* displayableNode : this->Internal->HardFocusDisplayableNodes)
+  for (auto pipelineIt = this->Internal->HardFocusPipelines.begin();
+    pipelineIt != this->Internal->HardFocusPipelines.end(); ++pipelineIt)
   {
-    for (int i = 0; i < displayableNode->GetNumberOfDisplayNodes(); ++i)
+    vtkMRMLSelectionDisplayNode* selectionDisplayNode = pipelineIt->first;
+    vtkMRMLSelectionNode* selectionNode = vtkMRMLSelectionNode::SafeDownCast(selectionDisplayNode->GetDisplayableNode());
+
+    for (vtkMRMLDisplayableNode* displayableNode : pipelineIt->second->HardFocusDisplayableNodes)
     {
-      vtkMRMLDisplayNode* displayNode = displayableNode->GetNthDisplayNode(i);
-      if (!displayNode)
+      for (int i = 0; i < displayableNode->GetNumberOfDisplayNodes(); ++i)
       {
+        vtkMRMLDisplayNode* displayNode = displayableNode->GetNthDisplayNode(i);
+        if (!displayNode)
+        {
+          continue;
+        }
+        displayNodes.push_back(displayNode);
+      }
+    }
+
+    vtkNew<vtkPropCollection> focusNodeActors;
+    vtkMRMLDisplayableManagerGroup* group = this->GetMRMLDisplayableManagerGroup();
+    for (vtkMRMLDisplayNode* displayNode : displayNodes)
+    {
+      for (int i = 0; i < group->GetDisplayableManagerCount(); ++i)
+      {
+        vtkMRMLAbstractDisplayableManager* displayableManager = group->GetNthDisplayableManager(i);
+        if (displayableManager == this)
+        {
+          // Ignore focus display manager.
+          continue;
+        }
+        displayableManager->GetActorsByDisplayNode(focusNodeActors, displayNode,
+          selectionNode->GetFocusedComponentType(), selectionNode->GetFocusedComponentIndex());
+      }
+    }
+
+    vtkSmartPointer<vtkProp> prop = nullptr;
+    vtkCollectionSimpleIterator it = nullptr;
+    for (focusNodeActors->InitTraversal(it); prop = focusNodeActors->GetNextProp(it);)
+    {
+      if (!prop->GetVisibility())
+      {
+        // Ignore actors that are not visible.
         continue;
       }
-      displayNodes.push_back(displayNode);
-    }
-  }
 
-  vtkNew<vtkPropCollection> focusNodeActors;
-  vtkMRMLDisplayableManagerGroup* group = this->GetMRMLDisplayableManagerGroup();
-  for (vtkMRMLDisplayNode* displayNode : displayNodes)
-  {
-    for (int i = 0; i < group->GetDisplayableManagerCount(); ++i)
-    {
-      vtkMRMLAbstractDisplayableManager* displayableManager = group->GetNthDisplayableManager(i);
-      if (displayableManager == this)
-      {
-        // Ignore focus display manager.
-        continue;
-      }
-      displayableManager->GetActorsByDisplayNode(focusNodeActors, displayNode,
-        this->Internal->SelectionNode->GetFocusedComponentType(), this->Internal->SelectionNode->GetFocusedComponentIndex());
-    }
-  }
+      pipelineIt->second->HardFocusOriginalActors.push_back(prop);
 
-  vtkSmartPointer<vtkProp> prop = nullptr;
-  vtkCollectionSimpleIterator it = nullptr;
-  for (focusNodeActors->InitTraversal(it); prop = focusNodeActors->GetNextProp(it);)
-  {
-    if (!prop->GetVisibility())
-    {
-      // Ignore actors that are not visible.
-      continue;
-    }
-
-    this->Internal->HardFocusOriginalActors.push_back(prop);
-
-    broker->AddObservation(prop,
-      vtkCommand::ModifiedEvent,
-      this, this->Internal->ObjectCallback);
-
-    vtkActor2D* actor2D = vtkActor2D::SafeDownCast(prop);
-    if (actor2D)
-    {
-      broker->AddObservation(actor2D->GetPositionCoordinate(),
+      broker->AddObservation(prop,
         vtkCommand::ModifiedEvent,
         this, this->Internal->ObjectCallback);
+
+      vtkActor2D* actor2D = vtkActor2D::SafeDownCast(prop);
+      if (actor2D)
+      {
+        broker->AddObservation(actor2D->GetPositionCoordinate(),
+          vtkCommand::ModifiedEvent,
+          this, this->Internal->ObjectCallback);
+      }
     }
   }
 }
@@ -506,97 +616,103 @@ void vtkMRMLFocusDisplayableManager::UpdateOriginalSoftFocusActors()
 {
   vtkEventBroker* broker = vtkEventBroker::GetInstance();
 
-  for (vtkProp* oldActor : this->Internal->SoftFocusOriginalActors)
+  for (auto pipelineIt = this->Internal->SoftFocusPipelines.begin();
+    pipelineIt != this->Internal->SoftFocusPipelines.end(); ++pipelineIt)
   {
-    if (!oldActor)
+    SoftFocusPipeline* softFocusPipeline = pipelineIt->second;
+
+    for (vtkProp* oldActor : softFocusPipeline->SoftFocusOriginalActors)
     {
-      continue;
-    }
-    broker->RemoveObservations(oldActor, vtkCommand::ModifiedEvent,
-      this, this->Internal->ObjectCallback);
-
-    vtkActor2D* oldActor2D = vtkActor2D::SafeDownCast(oldActor);
-    if (oldActor2D)
-    {
-      // Need to update copied actors when the position of the 2D actor changes
-      broker->RemoveObservations(oldActor2D->GetPositionCoordinate(),
-        vtkCommand::ModifiedEvent,
-        this, this->Internal->ObjectCallback);
-    }
-  }
-
-  this->Internal->SoftFocusOriginalActors.clear();
-
-  struct A
-  {
-    vtkMRMLDisplayableNode* DisplayableNode{ nullptr };
-    int ComponentType{ -1 };
-    int ComponentIndex{ -1 };
-  };
-  std::map<vtkMRMLDisplayNode*, A> info;
-
-  std::vector<vtkMRMLDisplayNode*> displayNodes;
-  for (vtkMRMLDisplayableNode* displayableNode : this->Internal->SoftFocusDisplayableNodes)
-  {
-    for (int i = 0; i < displayableNode->GetNumberOfDisplayNodes(); ++i)
-    {
-      vtkMRMLDisplayNode* displayNode = displayableNode->GetNthDisplayNode(i);
-      if (!displayNode)
+      if (!oldActor)
       {
         continue;
       }
-      displayNodes.push_back(displayNode);
+      broker->RemoveObservations(oldActor, vtkCommand::ModifiedEvent,
+        this, this->Internal->ObjectCallback);
 
-      A newInfo;
-      newInfo.DisplayableNode = displayableNode;
-      this->GetSelectionNode()->GetSoftFocusComponent(displayableNode->GetID(),
-        newInfo.ComponentType, newInfo.ComponentIndex);
-      info[displayNode] = newInfo;
-    }
-  }
-
-  vtkNew<vtkPropCollection> focusNodeActors;
-  vtkMRMLDisplayableManagerGroup* group = this->GetMRMLDisplayableManagerGroup();
-  for (vtkMRMLDisplayNode* displayNode : displayNodes)
-  {
-    for (int i = 0; i < group->GetDisplayableManagerCount(); ++i)
-    {
-      vtkMRMLAbstractDisplayableManager* displayableManager = group->GetNthDisplayableManager(i);
-      if (displayableManager == this)
+      vtkActor2D* oldActor2D = vtkActor2D::SafeDownCast(oldActor);
+      if (oldActor2D)
       {
-        // Ignore focus display manager.
+        // Need to update copied actors when the position of the 2D actor changes
+        broker->RemoveObservations(oldActor2D->GetPositionCoordinate(),
+          vtkCommand::ModifiedEvent,
+          this, this->Internal->ObjectCallback);
+      }
+    }
+
+    softFocusPipeline->SoftFocusOriginalActors.clear();
+
+    struct A
+    {
+      vtkMRMLDisplayableNode* DisplayableNode{ nullptr };
+      int ComponentType{ -1 };
+      int ComponentIndex{ -1 };
+    };
+    std::map<vtkMRMLDisplayNode*, A> info;
+
+    std::vector<vtkMRMLDisplayNode*> displayNodes;
+    for (vtkMRMLDisplayableNode* displayableNode : softFocusPipeline->SoftFocusDisplayableNodes)
+    {
+      for (int i = 0; i < displayableNode->GetNumberOfDisplayNodes(); ++i)
+      {
+        vtkMRMLDisplayNode* displayNode = displayableNode->GetNthDisplayNode(i);
+        if (!displayNode)
+        {
+          continue;
+        }
+        displayNodes.push_back(displayNode);
+
+        A newInfo;
+        newInfo.DisplayableNode = displayableNode;
+        this->GetSelectionNode()->GetSoftFocusComponent(displayableNode->GetID(),
+          newInfo.ComponentType, newInfo.ComponentIndex);
+        info[displayNode] = newInfo;
+      }
+    }
+
+    vtkNew<vtkPropCollection> focusNodeActors;
+    vtkMRMLDisplayableManagerGroup* group = this->GetMRMLDisplayableManagerGroup();
+    for (vtkMRMLDisplayNode* displayNode : displayNodes)
+    {
+      for (int i = 0; i < group->GetDisplayableManagerCount(); ++i)
+      {
+        vtkMRMLAbstractDisplayableManager* displayableManager = group->GetNthDisplayableManager(i);
+        if (displayableManager == this)
+        {
+          // Ignore focus display manager.
+          continue;
+        }
+
+        A b = info[displayNode];
+
+        displayableManager->GetActorsByDisplayNode(focusNodeActors, displayNode,
+          b.ComponentType, b.ComponentIndex);
+      }
+    }
+
+    vtkSmartPointer<vtkProp> prop = nullptr;
+    vtkCollectionSimpleIterator it = nullptr;
+    for (focusNodeActors->InitTraversal(it); prop = focusNodeActors->GetNextProp(it);)
+    {
+      if (!prop->GetVisibility())
+      {
+        // Ignore actors that are not visible.
         continue;
       }
 
-      A b = info[displayNode];
+      softFocusPipeline->SoftFocusOriginalActors.push_back(prop);
 
-      displayableManager->GetActorsByDisplayNode(focusNodeActors, displayNode,
-        b.ComponentType, b.ComponentIndex);
-    }
-  }
-
-  vtkSmartPointer<vtkProp> prop = nullptr;
-  vtkCollectionSimpleIterator it = nullptr;
-  for (focusNodeActors->InitTraversal(it); prop = focusNodeActors->GetNextProp(it);)
-  {
-    if (!prop->GetVisibility())
-    {
-      // Ignore actors that are not visible.
-      continue;
-    }
-
-    this->Internal->SoftFocusOriginalActors.push_back(prop);
-
-    broker->AddObservation(prop,
-      vtkCommand::ModifiedEvent,
-      this, this->Internal->ObjectCallback);
-
-    vtkActor2D* actor2D = vtkActor2D::SafeDownCast(prop);
-    if (actor2D)
-    {
-      broker->AddObservation(actor2D->GetPositionCoordinate(),
+      broker->AddObservation(prop,
         vtkCommand::ModifiedEvent,
         this, this->Internal->ObjectCallback);
+
+      vtkActor2D* actor2D = vtkActor2D::SafeDownCast(prop);
+      if (actor2D)
+      {
+        broker->AddObservation(actor2D->GetPositionCoordinate(),
+          vtkCommand::ModifiedEvent,
+          this, this->Internal->ObjectCallback);
+      }
     }
   }
 }
@@ -604,62 +720,67 @@ void vtkMRMLFocusDisplayableManager::UpdateOriginalSoftFocusActors()
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::UpdateSoftFocus()
 {
-  this->Internal->SoftFocusRendererOutline->RemoveAllViewProps();
-
-  vtkMRMLSelectionNode* selectionNode = this->Internal->SelectionNode;
-  /*
-  int numberOfSoftFocusNodes = selectionNode ?
-    selectionNode->GetNumberOfNodeReferences(selectionNode->GetSoftFocusNodeReferenceRole()) : 0;
-  */
-
-  vtkRenderer* renderer = this->GetRenderer();
-  if (/*numberOfSoftFocusNodes <= 0 || */!renderer)
+  for (auto pipelineIt = this->Internal->SoftFocusPipelines.begin();
+    pipelineIt != this->Internal->SoftFocusPipelines.end(); ++pipelineIt)
   {
-    return;
-  }
+    pipelineIt->second->SoftFocusRendererOutline->RemoveAllViewProps();
 
-  int RENDERER_LAYER = 1;
-  if (renderer->GetRenderWindow()->GetNumberOfLayers() < RENDERER_LAYER + 1)
-  {
-    renderer->GetRenderWindow()->SetNumberOfLayers(RENDERER_LAYER + 1);
-  }
+    vtkMRMLSelectionDisplayNode* displayNode = pipelineIt->first;
+    vtkMRMLSelectionNode* selectionNode = vtkMRMLSelectionNode::SafeDownCast(displayNode->GetDisplayableNode());
+    /*
+    int numberOfSoftFocusNodes = selectionNode ?
+      selectionNode->GetNumberOfNodeReferences(selectionNode->GetSoftFocusNodeReferenceRole()) : 0;
+    */
 
-  this->Internal->SoftFocusROIGlowPass->SetOutlineIntensity(1000.0);
-  //this->Internal->SoftFocusROIGlowPass->SetOutlineIntensity(selectionNode->GetFocusedHighlightStrength());
-  this->Internal->SoftFocusRendererOutline->SetLayer(RENDERER_LAYER);
-
-  std::map<vtkSmartPointer<vtkProp>, vtkSmartPointer<vtkProp>> newOriginalToCopyActors;
-
-  vtkEventBroker* broker = vtkEventBroker::GetInstance();
-
-  vtkSmartPointer<vtkProp> prop = nullptr;
-  vtkCollectionSimpleIterator it = nullptr;
-  for (vtkProp* originalProp : this->Internal->SoftFocusOriginalActors)
-  {
-    if (!originalProp->GetVisibility())
+    vtkRenderer* renderer = this->GetRenderer();
+    if (/*numberOfSoftFocusNodes <= 0 || */!renderer)
     {
-      // Ignore actors that are not visible.
-      continue;
+      return;
     }
 
-    vtkSmartPointer<vtkProp> newProp = this->Internal->SoftFocusOriginalToCopyActors[originalProp];
-    if (!newProp)
+    int RENDERER_LAYER = 1;
+    if (renderer->GetRenderWindow()->GetNumberOfLayers() < RENDERER_LAYER + 1)
     {
-      newProp = vtkSmartPointer<vtkProp>::Take(originalProp->NewInstance());
-      newProp->SetPickable(false);
+      renderer->GetRenderWindow()->SetNumberOfLayers(RENDERER_LAYER + 1);
     }
 
-    newOriginalToCopyActors[originalProp] = newProp;
-    this->Internal->SoftFocusRendererOutline->AddViewProp(originalProp);
-  }
-  this->Internal->SoftFocusOriginalToCopyActors = newOriginalToCopyActors;
+    pipelineIt->second->SoftFocusROIGlowPass->SetOutlineIntensity(1000.0);
+    //this->Internal->SoftFocusROIGlowPass->SetOutlineIntensity(selectionNode->GetFocusedHighlightStrength());
+    pipelineIt->second->SoftFocusRendererOutline->SetLayer(RENDERER_LAYER);
 
-  this->UpdateActors();
+    std::map<vtkSmartPointer<vtkProp>, vtkSmartPointer<vtkProp>> newOriginalToCopyActors;
 
-  this->Internal->SoftFocusRendererOutline->SetActiveCamera(renderer->GetActiveCamera());
-  if (!renderer->GetRenderWindow()->HasRenderer(this->Internal->SoftFocusRendererOutline))
-  {
-    renderer->GetRenderWindow()->AddRenderer(this->Internal->SoftFocusRendererOutline);
+    vtkEventBroker* broker = vtkEventBroker::GetInstance();
+
+    vtkSmartPointer<vtkProp> prop = nullptr;
+    vtkCollectionSimpleIterator it = nullptr;
+    for (vtkProp* originalProp : pipelineIt->second->SoftFocusOriginalActors)
+    {
+      if (!originalProp->GetVisibility())
+      {
+        // Ignore actors that are not visible.
+        continue;
+      }
+
+      vtkSmartPointer<vtkProp> newProp = pipelineIt->second->SoftFocusOriginalToCopyActors[originalProp];
+      if (!newProp)
+      {
+        newProp = vtkSmartPointer<vtkProp>::Take(originalProp->NewInstance());
+        newProp->SetPickable(false);
+      }
+
+      newOriginalToCopyActors[originalProp] = newProp;
+      pipelineIt->second->SoftFocusRendererOutline->AddViewProp(originalProp);
+    }
+    pipelineIt->second->SoftFocusOriginalToCopyActors = newOriginalToCopyActors;
+
+    this->UpdateActors();
+
+    pipelineIt->second->SoftFocusRendererOutline->SetActiveCamera(renderer->GetActiveCamera());
+    if (!renderer->GetRenderWindow()->HasRenderer(pipelineIt->second->SoftFocusRendererOutline))
+    {
+      renderer->GetRenderWindow()->AddRenderer(pipelineIt->second->SoftFocusRendererOutline);
+    }
   }
 }
 
@@ -675,31 +796,43 @@ void vtkMRMLFocusDisplayableManager::UpdateHardFocus()
   this->UpdateActorRASBounds();
   this->UpdateCornerROIPolyData();
 
-  if (!renderer->HasViewProp(this->Internal->HardFocusActor))
+  for (auto pipelineIt = this->Internal->HardFocusPipelines.begin();
+    pipelineIt != this->Internal->HardFocusPipelines.end(); ++pipelineIt)
   {
-    renderer->AddActor(this->Internal->HardFocusActor);
+    vtkActor2D* actor = pipelineIt->second->HardFocusActor;
+    if (!renderer->HasViewProp(actor))
+    {
+      renderer->AddActor(actor);
+    }
+
+    actor->GetProperty()->SetColor(pipelineIt->first->GetHighlightColor());
   }
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::UpdateActorRASBounds()
 {
-  this->Internal->Bounds_RAS[0] = VTK_DOUBLE_MAX;
-  this->Internal->Bounds_RAS[1] = VTK_DOUBLE_MIN;
-  this->Internal->Bounds_RAS[2] = VTK_DOUBLE_MAX;
-  this->Internal->Bounds_RAS[3] = VTK_DOUBLE_MIN;
-  this->Internal->Bounds_RAS[4] = VTK_DOUBLE_MAX;
-  this->Internal->Bounds_RAS[5] = VTK_DOUBLE_MIN;
-
-  for (vtkProp* originalProp : this->Internal->HardFocusOriginalActors)
+  for (auto pipelineIt = this->Internal->HardFocusPipelines.begin();
+    pipelineIt != this->Internal->HardFocusPipelines.end(); ++pipelineIt)
   {
-    double* currentBounds = originalProp->GetBounds();
-    if (currentBounds)
+    HardFocusPipeline* pipeline = pipelineIt->second;
+    pipeline->Bounds_RAS[0] = VTK_DOUBLE_MAX;
+    pipeline->Bounds_RAS[1] = VTK_DOUBLE_MIN;
+    pipeline->Bounds_RAS[2] = VTK_DOUBLE_MAX;
+    pipeline->Bounds_RAS[3] = VTK_DOUBLE_MIN;
+    pipeline->Bounds_RAS[4] = VTK_DOUBLE_MAX;
+    pipeline->Bounds_RAS[5] = VTK_DOUBLE_MIN;
+
+    for (vtkProp* originalProp : pipelineIt->second->HardFocusOriginalActors)
     {
-      for (int i = 0; i < 6; i += 2)
+      double* currentBounds = originalProp->GetBounds();
+      if (currentBounds)
       {
-        this->Internal->Bounds_RAS[i] = std::min(this->Internal->Bounds_RAS[i], currentBounds[i]);
-        this->Internal->Bounds_RAS[i + 1] = std::max(this->Internal->Bounds_RAS[i + 1], currentBounds[i + 1]);
+        for (int i = 0; i < 6; i += 2)
+        {
+          pipeline->Bounds_RAS[i] = std::min(pipeline->Bounds_RAS[i], currentBounds[i]);
+          pipeline->Bounds_RAS[i + 1] = std::max(pipeline->Bounds_RAS[i + 1], currentBounds[i + 1]);
+        }
       }
     }
   }
@@ -708,220 +841,246 @@ void vtkMRMLFocusDisplayableManager::UpdateActorRASBounds()
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::UpdateCornerROIPolyData()
 {
-  vtkMRMLSelectionNode* selectionNode = this->Internal->SelectionNode;
-  vtkMRMLNode* focusedNode = selectionNode ? selectionNode->GetFocusNode() : nullptr;
-
-  bool boundsValid = true;
-  if (this->Internal->Bounds_RAS[0] > this->Internal->Bounds_RAS[1]
-    || this->Internal->Bounds_RAS[2] > this->Internal->Bounds_RAS[3]
-    || this->Internal->Bounds_RAS[4] > this->Internal->Bounds_RAS[5])
+  for (auto pipelineIt = this->Internal->HardFocusPipelines.begin();
+    pipelineIt != this->Internal->HardFocusPipelines.end(); ++pipelineIt)
   {
-    boundsValid = false;
-  }
+    vtkMRMLSelectionDisplayNode* displayNode = pipelineIt->first;
+    vtkMRMLSelectionNode* selectionNode = vtkMRMLSelectionNode::SafeDownCast(displayNode->GetDisplayableNode());
+    vtkMRMLNode* focusedNode = selectionNode ? selectionNode->GetFocusNode() : nullptr;
 
-  vtkRenderer* renderer = this->GetRenderer();
-  if (!renderer || !focusedNode || !boundsValid)
-  {
-    this->Internal->HardFocusPolyData->Initialize();
-    return;
-  }
-
-  vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->GetMRMLDisplayableNode());
-  if (sliceNode)
-  {
-    // TODO: Hard focus is currently only visualized in 3D.
-    this->Internal->HardFocusPolyData->Initialize();
-    return;
-  }
-
-  double displayBounds[4] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN };
-  for (int k = 4; k < 6; ++k)
-  {
-    for (int j = 2; j < 4; ++j)
+    for (auto pipelineIt = this->Internal->HardFocusPipelines.begin();
+      pipelineIt != this->Internal->HardFocusPipelines.end(); ++pipelineIt)
     {
-      for (int i = 0; i < 2; ++i)
+      HardFocusPipeline* pipeline = pipelineIt->second;
+
+      bool boundsValid = true;
+      if (pipeline->Bounds_RAS[0] > pipeline->Bounds_RAS[1]
+        || pipeline->Bounds_RAS[2] > pipeline->Bounds_RAS[3]
+        || pipeline->Bounds_RAS[4] > pipeline->Bounds_RAS[5])
       {
-        double point_RAS[4] = { this->Internal->Bounds_RAS[i], this->Internal->Bounds_RAS[j], this->Internal->Bounds_RAS[k], 1.0 };
-        renderer->SetWorldPoint(point_RAS);
-        renderer->WorldToDisplay();
-        double* displayPoint = renderer->GetDisplayPoint();
-
-        displayBounds[0] = std::min(displayBounds[0], displayPoint[0]);
-        displayBounds[1] = std::max(displayBounds[1], displayPoint[0]);
-        displayBounds[2] = std::min(displayBounds[2], displayPoint[1]);
-        displayBounds[3] = std::max(displayBounds[3], displayPoint[1]);
+        boundsValid = false;
       }
+
+      vtkRenderer* renderer = this->GetRenderer();
+      if (!renderer || !focusedNode || !boundsValid)
+      {
+        pipelineIt->second->HardFocusPolyData->Initialize();
+        continue;
+      }
+
+      vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->GetMRMLDisplayableNode());
+      if (sliceNode)
+      {
+        // TODO: Hard focus is currently only visualized in 3D.
+        pipelineIt->second->HardFocusPolyData->Initialize();
+        continue;
+      }
+
+      double displayBounds[4] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN };
+      for (int k = 4; k < 6; ++k)
+      {
+        for (int j = 2; j < 4; ++j)
+        {
+          for (int i = 0; i < 2; ++i)
+          {
+            double point_RAS[4] = {
+              pipeline->Bounds_RAS[i],
+              pipeline->Bounds_RAS[j],
+              pipeline->Bounds_RAS[k],
+              1.0 };
+            renderer->SetWorldPoint(point_RAS);
+            renderer->WorldToDisplay();
+            double* displayPoint = renderer->GetDisplayPoint();
+
+            displayBounds[0] = std::min(displayBounds[0], displayPoint[0]);
+            displayBounds[1] = std::max(displayBounds[1], displayPoint[0]);
+            displayBounds[2] = std::min(displayBounds[2], displayPoint[1]);
+            displayBounds[3] = std::max(displayBounds[3], displayPoint[1]);
+          }
+        }
+      }
+
+      for (int i = 0; i < 4; ++i)
+      {
+        displayBounds[i] = std::max(0.0, displayBounds[i]);
+      }
+
+      int* displaySize = renderer->GetSize();
+      displayBounds[0] = std::min(displayBounds[0], static_cast<double>(displaySize[0]));
+      displayBounds[1] = std::min(displayBounds[1], static_cast<double>(displaySize[0]));
+      displayBounds[2] = std::min(displayBounds[2], static_cast<double>(displaySize[1]));
+      displayBounds[3] = std::min(displayBounds[3], static_cast<double>(displaySize[1]));
+
+      double lenPx = 10.0;
+      vtkPoints* outlinePoints = pipelineIt->second->HardFocusPolyData->GetPoints();
+      if (!outlinePoints)
+      {
+        pipelineIt->second->HardFocusPolyData->SetPoints(vtkNew<vtkPoints>());
+        outlinePoints = pipelineIt->second->HardFocusPolyData->GetPoints();
+      }
+
+      if (outlinePoints->GetNumberOfPoints() != 12)
+      {
+        outlinePoints->SetNumberOfPoints(12);
+      }
+
+      int pointIndex = 0;
+      outlinePoints->SetPoint(pointIndex++, displayBounds[0] + lenPx, displayBounds[2], 0.0);
+      outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[2], 0.0);
+      outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[2] + lenPx, 0.0);
+
+      outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[3] - lenPx, 0.0);
+      outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[3], 0.0);
+      outlinePoints->SetPoint(pointIndex++, displayBounds[0] + lenPx, displayBounds[3], 0.0);
+
+      outlinePoints->SetPoint(pointIndex++, displayBounds[1] - lenPx, displayBounds[3], 0.0);
+      outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[3], 0.0);
+      outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[3] - lenPx, 0.0);
+
+      outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[2] + lenPx, 0.0);
+      outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[2], 0.0);
+      outlinePoints->SetPoint(pointIndex++, displayBounds[1] - lenPx, displayBounds[2], 0.0);
+
+      vtkSmartPointer<vtkCellArray> lines = pipelineIt->second->HardFocusPolyData->GetLines();
+      if (!lines || lines->GetNumberOfCells() == 0)
+      {
+        lines = vtkSmartPointer<vtkCellArray>::New();
+
+        pointIndex = 0;
+        for (int lineIndex = 0; lineIndex < 4; ++lineIndex)
+        {
+          int point0 = pointIndex++;
+          int point1 = pointIndex++;
+          int point2 = pointIndex++;
+
+          vtkNew<vtkIdList> cornerA;
+          cornerA->InsertNextId(point0);
+          cornerA->InsertNextId(point1);
+          lines->InsertNextCell(cornerA);
+
+          vtkNew<vtkIdList> cornerB;
+          cornerB->InsertNextId(point2);
+          cornerB->InsertNextId(point1);
+          lines->InsertNextCell(cornerB);
+        }
+
+        pipelineIt->second->HardFocusPolyData->SetLines(lines);
+      }
+
+      outlinePoints->Modified();
     }
   }
-
-  for (int i = 0; i < 4; ++i)
-  {
-    displayBounds[i] = std::max(0.0, displayBounds[i]);
-  }
-
-  int* displaySize = renderer->GetSize();
-  displayBounds[0] = std::min(displayBounds[0], static_cast<double>(displaySize[0]));
-  displayBounds[1] = std::min(displayBounds[1], static_cast<double>(displaySize[0]));
-  displayBounds[2] = std::min(displayBounds[2], static_cast<double>(displaySize[1]));
-  displayBounds[3] = std::min(displayBounds[3], static_cast<double>(displaySize[1]));
-
-  double lenPx = 10.0;
-  vtkPoints* outlinePoints = this->Internal->HardFocusPolyData->GetPoints();
-  if (!outlinePoints)
-  {
-    this->Internal->HardFocusPolyData->SetPoints(vtkNew<vtkPoints>());
-    outlinePoints = this->Internal->HardFocusPolyData->GetPoints();
-  }
-
-  if (outlinePoints->GetNumberOfPoints() != 12)
-  {
-    outlinePoints->SetNumberOfPoints(12);
-  }
-
-  int pointIndex = 0;
-  outlinePoints->SetPoint(pointIndex++, displayBounds[0] + lenPx, displayBounds[2], 0.0);
-  outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[2], 0.0);
-  outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[2] + lenPx, 0.0);
-
-  outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[3] - lenPx, 0.0);
-  outlinePoints->SetPoint(pointIndex++, displayBounds[0], displayBounds[3], 0.0);
-  outlinePoints->SetPoint(pointIndex++, displayBounds[0] + lenPx, displayBounds[3], 0.0);
-
-  outlinePoints->SetPoint(pointIndex++, displayBounds[1] - lenPx, displayBounds[3], 0.0);
-  outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[3], 0.0);
-  outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[3] - lenPx, 0.0);
-
-  outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[2] + lenPx, 0.0);
-  outlinePoints->SetPoint(pointIndex++, displayBounds[1], displayBounds[2], 0.0);
-  outlinePoints->SetPoint(pointIndex++, displayBounds[1] - lenPx, displayBounds[2], 0.0);
-
-  vtkSmartPointer<vtkCellArray> lines = this->Internal->HardFocusPolyData->GetLines();
-  if (!lines || lines->GetNumberOfCells() == 0)
-  {
-    lines = vtkSmartPointer<vtkCellArray>::New();
-
-    pointIndex = 0;
-    for (int lineIndex = 0; lineIndex < 4; ++lineIndex)
-    {
-      int point0 = pointIndex++;
-      int point1 = pointIndex++;
-      int point2 = pointIndex++;
-
-      vtkNew<vtkIdList> cornerA;
-      cornerA->InsertNextId(point0);
-      cornerA->InsertNextId(point1);
-      lines->InsertNextCell(cornerA);
-
-      vtkNew<vtkIdList> cornerB;
-      cornerB->InsertNextId(point2);
-      cornerB->InsertNextId(point1);
-      lines->InsertNextCell(cornerB);
-    }
-
-    this->Internal->HardFocusPolyData->SetLines(lines);
-  }
-
-  outlinePoints->Modified();
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::UpdateActors()
 {
-  for (vtkProp* originalProp : this->Internal->SoftFocusOriginalActors)
+  for (auto pipelineIt = this->Internal->SoftFocusPipelines.begin();
+    pipelineIt != this->Internal->SoftFocusPipelines.end(); ++pipelineIt)
   {
-    if (!originalProp)
+    SoftFocusPipeline* softFocusPipeline = pipelineIt->second;
+    for (vtkProp* originalProp : softFocusPipeline->SoftFocusOriginalActors)
     {
-      continue;
+      if (!originalProp)
+      {
+        continue;
+      }
+      this->UpdateActor(originalProp);
     }
-    this->UpdateActor(originalProp);
   }
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLFocusDisplayableManager::UpdateActor(vtkProp* originalProp)
 {
-  vtkProp* copyProp = this->Internal->SoftFocusOriginalToCopyActors[originalProp];
-  if (!copyProp)
+  for (auto pipelineIt = this->Internal->SoftFocusPipelines.begin();
+    pipelineIt != this->Internal->SoftFocusPipelines.end(); ++pipelineIt)
   {
-    return;
-  }
+    SoftFocusPipeline* softFocusPipeline = pipelineIt->second;
 
-  // Copy the properties of the original actor to the duplicate one
-  copyProp->ShallowCopy(originalProp);
-
-  vtkActor* copyActor = vtkActor::SafeDownCast(copyProp);
-  if (copyActor)
-  {
-    copyActor->SetTexture(nullptr);
-
-    // Make the actor flat. This generates a better outline.
-    vtkSmartPointer<vtkProperty> copyProperty = vtkSmartPointer<vtkProperty>::Take(copyActor->GetProperty()->NewInstance());
-    copyProperty->DeepCopy(copyActor->GetProperty());
-    copyProperty->SetLighting(false);
-    copyProperty->SetColor(1.0, 0.0, 0.0);
-    copyProperty->SetOpacity(1.0);
-    copyActor->SetProperty(copyProperty);
-  }
-
-  vtkVolume* copyVolume = vtkVolume::SafeDownCast(copyProp);
-  if (copyVolume)
-  {
-    vtkNew<vtkColorTransferFunction> colorTransferFunction;
-    colorTransferFunction->AddRGBPoint(0, 1.0, 1.0, 1.0);
-
-    vtkSmartPointer<vtkVolumeProperty> newProperty = vtkSmartPointer<vtkVolumeProperty>::Take(copyVolume->GetProperty()->NewInstance());
-    newProperty->DeepCopy(copyVolume->GetProperty());
-    newProperty->SetDiffuse(0.0);
-    newProperty->SetAmbient(1.0);
-    newProperty->ShadeOff();
-    newProperty->SetColor(colorTransferFunction);
-    copyVolume->SetProperty(newProperty);
-  }
-
-  vtkActor2D* newActor2D = vtkActor2D::SafeDownCast(copyProp);
-  if (newActor2D)
-  {
-    vtkSmartPointer<vtkProperty2D> newProperty2D = vtkSmartPointer<vtkProperty2D>::Take(newActor2D->GetProperty()->NewInstance());
-    newProperty2D->DeepCopy(newActor2D->GetProperty());
-    newProperty2D->SetColor(1.0, 1.0, 1.0);
-    newActor2D->SetProperty(newProperty2D);
-  }
-
-  vtkLabelPlacementMapper* oldLabelMapper = newActor2D ? vtkLabelPlacementMapper::SafeDownCast(newActor2D->GetMapper()) : nullptr;
-  if (oldLabelMapper)
-  {
-    // TODO: Workaround for markups widgets in order to modify text property for control point labels.
-
-    vtkPointSetToLabelHierarchy* oldPointSetInput = vtkPointSetToLabelHierarchy::SafeDownCast(oldLabelMapper->GetInputAlgorithm());
-    if (oldPointSetInput)
+    vtkProp* copyProp = softFocusPipeline->SoftFocusOriginalToCopyActors[originalProp];
+    if (!copyProp)
     {
-      vtkSmartPointer<vtkLabelPlacementMapper> newLabelMapper = vtkSmartPointer<vtkLabelPlacementMapper>::Take(oldLabelMapper->NewInstance());
-      newLabelMapper->ShallowCopy(oldLabelMapper);
-
-      vtkSmartPointer<vtkPointSetToLabelHierarchy> newPointSetInput = vtkSmartPointer<vtkPointSetToLabelHierarchy>::Take(oldPointSetInput->NewInstance());
-      newPointSetInput->SetInputData(oldPointSetInput->GetInput());
-      newPointSetInput->SetLabelArrayName("labels");
-      newPointSetInput->SetPriorityArrayName("priority");
-
-      vtkSmartPointer<vtkTextProperty> textProperty = vtkSmartPointer<vtkTextProperty>::Take(newPointSetInput->GetTextProperty()->NewInstance());
-      textProperty->ShallowCopy(newPointSetInput->GetTextProperty());
-      textProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
-      textProperty->SetOpacity(1.0);
-      newPointSetInput->SetTextProperty(textProperty);
-
-      newLabelMapper->SetInputConnection(newPointSetInput->GetOutputPort());
-
-      newActor2D->SetMapper(newLabelMapper);
+      return;
     }
-  }
 
-  vtkTextActor* textActor = vtkTextActor::SafeDownCast(copyProp);
-  if (textActor)
-  {
-    // TODO: Outline is not large enough if background is fully transparent.
-    vtkSmartPointer<vtkTextProperty> textProperty = vtkSmartPointer<vtkTextProperty>::Take(textActor->GetTextProperty()->NewInstance());
-    textProperty->ShallowCopy(textActor->GetTextProperty());
-    textProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
-    textActor->SetTextProperty(textProperty);
+    // Copy the properties of the original actor to the duplicate one
+    copyProp->ShallowCopy(originalProp);
+
+    vtkActor* copyActor = vtkActor::SafeDownCast(copyProp);
+    if (copyActor)
+    {
+      copyActor->SetTexture(nullptr);
+
+      // Make the actor flat. This generates a better outline.
+      vtkSmartPointer<vtkProperty> copyProperty = vtkSmartPointer<vtkProperty>::Take(copyActor->GetProperty()->NewInstance());
+      copyProperty->DeepCopy(copyActor->GetProperty());
+      copyProperty->SetLighting(false);
+      copyProperty->SetColor(1.0, 0.0, 0.0);
+      copyProperty->SetOpacity(1.0);
+      copyActor->SetProperty(copyProperty);
+    }
+
+    vtkVolume* copyVolume = vtkVolume::SafeDownCast(copyProp);
+    if (copyVolume)
+    {
+      vtkNew<vtkColorTransferFunction> colorTransferFunction;
+      colorTransferFunction->AddRGBPoint(0, 1.0, 1.0, 1.0);
+
+      vtkSmartPointer<vtkVolumeProperty> newProperty = vtkSmartPointer<vtkVolumeProperty>::Take(copyVolume->GetProperty()->NewInstance());
+      newProperty->DeepCopy(copyVolume->GetProperty());
+      newProperty->SetDiffuse(0.0);
+      newProperty->SetAmbient(1.0);
+      newProperty->ShadeOff();
+      newProperty->SetColor(colorTransferFunction);
+      copyVolume->SetProperty(newProperty);
+    }
+
+    vtkActor2D* newActor2D = vtkActor2D::SafeDownCast(copyProp);
+    if (newActor2D)
+    {
+      vtkSmartPointer<vtkProperty2D> newProperty2D = vtkSmartPointer<vtkProperty2D>::Take(newActor2D->GetProperty()->NewInstance());
+      newProperty2D->DeepCopy(newActor2D->GetProperty());
+      newProperty2D->SetColor(1.0, 1.0, 1.0);
+      newActor2D->SetProperty(newProperty2D);
+    }
+
+    vtkLabelPlacementMapper* oldLabelMapper = newActor2D ? vtkLabelPlacementMapper::SafeDownCast(newActor2D->GetMapper()) : nullptr;
+    if (oldLabelMapper)
+    {
+      // TODO: Workaround for markups widgets in order to modify text property for control point labels.
+
+      vtkPointSetToLabelHierarchy* oldPointSetInput = vtkPointSetToLabelHierarchy::SafeDownCast(oldLabelMapper->GetInputAlgorithm());
+      if (oldPointSetInput)
+      {
+        vtkSmartPointer<vtkLabelPlacementMapper> newLabelMapper = vtkSmartPointer<vtkLabelPlacementMapper>::Take(oldLabelMapper->NewInstance());
+        newLabelMapper->ShallowCopy(oldLabelMapper);
+
+        vtkSmartPointer<vtkPointSetToLabelHierarchy> newPointSetInput = vtkSmartPointer<vtkPointSetToLabelHierarchy>::Take(oldPointSetInput->NewInstance());
+        newPointSetInput->SetInputData(oldPointSetInput->GetInput());
+        newPointSetInput->SetLabelArrayName("labels");
+        newPointSetInput->SetPriorityArrayName("priority");
+
+        vtkSmartPointer<vtkTextProperty> textProperty = vtkSmartPointer<vtkTextProperty>::Take(newPointSetInput->GetTextProperty()->NewInstance());
+        textProperty->ShallowCopy(newPointSetInput->GetTextProperty());
+        textProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
+        textProperty->SetOpacity(1.0);
+        newPointSetInput->SetTextProperty(textProperty);
+
+        newLabelMapper->SetInputConnection(newPointSetInput->GetOutputPort());
+
+        newActor2D->SetMapper(newLabelMapper);
+      }
+    }
+
+    vtkTextActor* textActor = vtkTextActor::SafeDownCast(copyProp);
+    if (textActor)
+    {
+      // TODO: Outline is not large enough if background is fully transparent.
+      vtkSmartPointer<vtkTextProperty> textProperty = vtkSmartPointer<vtkTextProperty>::Take(textActor->GetTextProperty()->NewInstance());
+      textProperty->ShallowCopy(textActor->GetTextProperty());
+      textProperty->SetBackgroundRGBA(1.0, 1.0, 1.0, 1.0);
+      textActor->SetTextProperty(textProperty);
+    }
   }
 }

@@ -125,11 +125,6 @@ protected:
   void UpdateCornerROIPolyData();
   ///@}
 
-  ///@{
-  /// Returns the currently focused node if one is set, otherwise returns nullptr.
-  vtkMRMLNode* GetFocusNode();
-  ///@}
-
 protected:
   vtkMRMLFocusDisplayableManager();
   ~vtkMRMLFocusDisplayableManager() override;
