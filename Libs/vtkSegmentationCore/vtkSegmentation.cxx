@@ -36,10 +36,12 @@
 #include <vtkImageThreshold.h>
 #include <vtkMath.h>
 #include <vtkMatrix4x4.h>
+#include <vtkMinimalStandardRandomSequence.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
 #include <vtkPointData.h>
 #include <vtkPolyData.h>
+#include <vtkSingleton.h>
 #include <vtkStringArray.h>
 #include <vtkTransform.h>
 #include <vtkTransformPolyDataFilter.h>
@@ -47,10 +49,26 @@
 
 // STD includes
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <sstream>
 
 const int DEFAULT_LABEL_VALUE = 1;
+const int DEFAULT_SEGMENT_ID_LENGTH = 16;
+
+//----------------------------------------------------------------------------
+// The segment ID randomizer singleton instance class.
+// This MUST be default initialized to zero by the compiler and is
+// therefore not initialized here. The classInitialize and classFinalize methods handle this instance.
+class vtkSegmentationRandomSequence : public vtkMinimalStandardRandomSequence
+{
+public:
+  vtkSegmentationRandomSequence() = default;
+  ~vtkSegmentationRandomSequence() = default;
+  static vtkSegmentationRandomSequence* New();
+  VTK_SINGLETON_DECLARE(vtkSegmentationRandomSequence);
+  static vtkSegmentationRandomSequence* GetInstance();
+};
 
 //----------------------------------------------------------------------------
 vtkStandardNewMacro(vtkSegmentation);
@@ -271,9 +289,46 @@ bool vtkSegmentation::SetSegmentModifiedEnabled(bool enabled)
 }
 
 //---------------------------------------------------------------------------
-std::string vtkSegmentation::GenerateUniqueSegmentID(std::string id)
+std::string vtkSegmentation::GenerateUniqueSegmentName(std::string base)
 {
-  if (!id.empty() &&  this->Segments.find(id) == this->Segments.end())
+  if (base.empty())
+  {
+    base = "Segment";
+  }
+
+  // try to make it unique by attaching a postfix
+  std::string segmentName = base;
+  int nameIndex = 1;
+  while (true)
+  {
+    std::stringstream nameStream;
+    bool found = false;
+    nameStream << base << "_" << nameIndex;
+    for (auto segment : this->Segments)
+    {
+      if (segment.second->GetName() == nameStream.str())
+      {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found)
+    {
+      segmentName = nameStream.str();
+      break;
+    }
+
+    nameIndex++;
+  }
+
+  return segmentName;
+}
+
+//---------------------------------------------------------------------------
+std::string vtkSegmentation::GenerateUniqueSegmentID(std::string id/*=""*/)
+{
+  if (!id.empty() && this->Segments.find(id) == this->Segments.end())
   {
     // the provided id is already unique
     return id;
@@ -281,8 +336,12 @@ std::string vtkSegmentation::GenerateUniqueSegmentID(std::string id)
 
   if (id.empty())
   {
-    // use a non-empty default prefix if no id is provided
-    id = "Segment";
+    std::string randomString;
+    while (randomString.empty() || this->Segments.find(randomString) != this->Segments.end())
+    {
+      randomString = vtkSegmentation::GenerateRandomSegmentID(DEFAULT_SEGMENT_ID_LENGTH);
+    }
+    return randomString;
   }
 
   // try to make it unique by attaching a postfix
@@ -306,6 +365,30 @@ std::string vtkSegmentation::GenerateUniqueSegmentID(std::string id)
 
   // try to make it unique by modifying prefix
   return this->GenerateUniqueSegmentID(id + "_");
+}
+
+//---------------------------------------------------------------------------
+std::string vtkSegmentation::GenerateRandomSegmentID(int suffix_Length, std::string validCharacters/*=""*/)
+{
+  if (suffix_Length <= 0)
+  {
+    vtkErrorWithObjectMacro(nullptr, "GenerateRandomSegmentID: Invalid suffix length, must be greater than 0");
+    return "";
+  }
+
+  if (validCharacters.empty())
+  {
+    validCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  }
+
+  vtkMinimalStandardRandomSequence* randomSequence = vtkSegmentation::GetSegmentIDRandomSequenceInstance();
+  std::string randomString = "S_";
+  for (int i = 0; i < suffix_Length; ++i)
+  {
+    int index = static_cast<int>(std::floor(std::fmod(randomSequence->GetNextValue(), 1.0) * validCharacters.size()));
+    randomString += validCharacters[index];
+  }
+  return randomString;
 }
 
 //---------------------------------------------------------------------------
@@ -476,8 +559,7 @@ bool vtkSegmentation::AddSegment(vtkSegment* segment, std::string segmentId/*=""
       vtkErrorMacro("AddSegment: Unable to add segment without a key; neither key is given nor segment name is defined!");
       return false;
     }
-    key = segment->GetName();
-    key = this->GenerateUniqueSegmentID(key);
+    key = this->GenerateUniqueSegmentID();
   }
   this->Segments[key] = segment;
   if (insertBeforeSegmentId.empty())
@@ -1808,14 +1890,14 @@ std::string vtkSegmentation::AddEmptySegment(std::string segmentId/*=""*/, std::
   }
 
   // Segment ID will be segment name by default
-  segmentId = this->GenerateUniqueSegmentID(segmentId);
   if (!segmentName.empty())
   {
     segment->SetName(segmentName.c_str());
   }
   else
   {
-    segment->SetName(segmentId.c_str());
+    std::string name = this->GenerateUniqueSegmentName("Segment");
+    segment->SetName(name.c_str());
   }
 
   if (this->SourceRepresentationName == vtkSegmentationConverter::GetBinaryLabelmapRepresentationName())
@@ -1841,6 +1923,7 @@ std::string vtkSegmentation::AddEmptySegment(std::string segmentId/*=""*/, std::
   }
 
   // Add segment
+  segmentId = this->GenerateUniqueSegmentID(segmentId);
   if (!this->AddSegment(segment, segmentId))
   {
     return "";
@@ -2514,3 +2597,30 @@ void vtkSegmentation::CopySegment(vtkSegment* destination, vtkSegment* source, v
     }
   }
 }
+
+//----------------------------------------------------------------------------
+// Return the single instance of vtkMinimalStandardRandomSequence
+vtkMinimalStandardRandomSequence* vtkSegmentation::GetSegmentIDRandomSequenceInstance()
+{
+  return vtkSegmentationRandomSequence::GetInstance();
+}
+
+//----------------------------------------------------------------------------
+// Implementation of vtkSegmentationRandomSequenceInitialize class.
+//----------------------------------------------------------------------------
+
+//----------------------------------------------------------------------------
+void vtkSegmentationRandomSequence::classInitialize()
+{
+  vtkSegmentationRandomSequence::Instance = vtkSegmentationRandomSequence::GetInstance();
+
+  // Get the current ms since the epoch
+  time_t currentTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  int seed = currentTime % VTK_INT_MAX;
+  vtkSegmentationRandomSequence::Instance->SetSeed(seed);
+}
+
+//----------------------------------------------------------------------------
+VTK_SINGLETON_CLASS_FINALIZE_CXX(vtkSegmentationRandomSequence);
+VTK_SINGLETON_INITIALIZER_CXX(vtkSegmentationRandomSequence);
+VTK_SINGLETON_GETINSTANCE_CXX(vtkSegmentationRandomSequence);
