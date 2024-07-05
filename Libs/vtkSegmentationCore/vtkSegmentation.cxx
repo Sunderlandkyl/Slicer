@@ -53,8 +53,13 @@
 #include <functional>
 #include <sstream>
 
+// GDCM includes
+#include <gdcmUUIDGenerator.h>
+#include <gdcmUIDGenerator.h>
+#include <gdcmSystem.h>
+
 const int DEFAULT_LABEL_VALUE = 1;
-const int DEFAULT_SEGMENT_ID_LENGTH = 16;
+const int UUID_STRING_LENGTH = 39;
 
 //----------------------------------------------------------------------------
 // The segment ID randomizer singleton instance class.
@@ -339,7 +344,7 @@ std::string vtkSegmentation::GenerateUniqueSegmentID(std::string id/*=""*/)
     std::string randomString;
     while (randomString.empty() || this->Segments.find(randomString) != this->Segments.end())
     {
-      randomString = vtkSegmentation::GenerateRandomSegmentID(DEFAULT_SEGMENT_ID_LENGTH);
+      randomString = vtkSegmentation::GenerateRandomSegmentTrackingUID();
     }
     return randomString;
   }
@@ -366,29 +371,44 @@ std::string vtkSegmentation::GenerateUniqueSegmentID(std::string id/*=""*/)
   // try to make it unique by modifying prefix
   return this->GenerateUniqueSegmentID(id + "_");
 }
-
+#include <rpc.h>
 //---------------------------------------------------------------------------
-std::string vtkSegmentation::GenerateRandomSegmentID(int suffix_Length, std::string validCharacters/*=""*/)
+std::string vtkSegmentation::GenerateRandomSegmentTrackingUID()
 {
-  if (suffix_Length <= 0)
-  {
-    vtkErrorWithObjectMacro(nullptr, "GenerateRandomSegmentID: Invalid suffix length, must be greater than 0");
-    return "";
-  }
-
-  if (validCharacters.empty())
-  {
-    validCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  }
-
   vtkMinimalStandardRandomSequence* randomSequence = vtkSegmentation::GetSegmentIDRandomSequenceInstance();
-  std::string randomString = "S_";
-  for (int i = 0; i < suffix_Length; ++i)
+  std::stringstream uuidStream;
+  uuidStream << "2.25."; // Derived UID
+
+
+  gdcm::UUIDGenerator uuidGenerator;
+  const char* uuid = uuidGenerator.Generate();
+
+  GUID guid;
+  UuidCreate(&guid);
+
+  uuidStream << uuid;
+
+  for (int i = 0; i < UUID_STRING_LENGTH; ++i)
   {
-    int index = static_cast<int>(std::floor(std::fmod(randomSequence->GetNextValue(), 1.0) * validCharacters.size()));
-    randomString += validCharacters[index];
+    std::cout << static_cast<unsigned char>(uuid[i]);
   }
-  return randomString;
+  std::cout << std::endl;
+
+  //bool leadingZeroes = true;
+  //for (int i = 0; i < UUID_STRING_LENGTH; ++i)
+  //{
+  //  int value = static_cast<int>(std::floor(std::fmod(randomSequence->GetNextValue(), 10.0) * 10.0));
+  //  if (value != 0)
+  //  {
+  //    leadingZeroes = false;
+  //  }
+
+  //  if (!leadingZeroes)
+  //  {
+  //    uuidStream << value;
+  //  }
+  //}
+  return uuidStream.str();
 }
 
 //---------------------------------------------------------------------------

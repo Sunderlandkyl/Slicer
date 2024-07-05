@@ -575,7 +575,7 @@ protected:
   /// Generate a random segment ID.
   /// The form is "S_" + random alphanumeric characters.
   /// \param length Length of the generated ID
-  static std::string GenerateRandomSegmentID(int length, std::string validCharacters="");
+  static std::string GenerateRandomSegmentTrackingUID();
 
 protected:
   vtkSegmentation();

@@ -96,6 +96,7 @@ set(vtkSegmentationCore_INCLUDE_DIRS
 
 set(vtkSegmentationCore_LIBS
   ${VTK_LIBRARIES}
+  gdcmMSFF
   )
 
 include_directories( ${vtkSegmentationCore_INCLUDE_DIRS} )
