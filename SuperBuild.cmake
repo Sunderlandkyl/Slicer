@@ -58,6 +58,24 @@ endif()
 set(ep_common_c_flags "${CMAKE_C_FLAGS_INIT} ${ADDITIONAL_C_FLAGS}")
 set(ep_common_cxx_flags "${CMAKE_CXX_FLAGS_INIT} ${ADDITIONAL_CXX_FLAGS}")
 
+if(MSVC)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /bigobj")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
+
+  if(MSVC_VERSION VERSION_LESS 1928)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
+  endif()
+endif()
+
+if(MSVC)
+  if(MSVC_VERSION VERSION_GREATER_EQUAL 1928)
+    list(APPEND ep_common_args
+      "-DCMAKE_VS_GLOBALS:STRING=UseMultiToolTask=true${sep}EnforceProcessCountAcrossBuilds=true"
+    )
+  endif()
+endif()
+
 #-----------------------------------------------------------------------------
 # Define list of additional options used to configure Slicer
 #------------------------------------------------------------------------------
