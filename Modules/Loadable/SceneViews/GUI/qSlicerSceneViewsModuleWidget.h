@@ -11,7 +11,6 @@
 
 
 class qSlicerSceneViewsModuleDialog;
-class vtkMRMLSceneViewNode;
 class qSlicerSceneViewsModuleWidgetPrivate;
 
 class vtkMRMLNode;
@@ -45,7 +44,7 @@ public slots:
     void restoreSceneView(const QString& mrmlId);
 
     /// User clicked on property edit button
-    void editSceneView(const QString& mrmlId);
+    void editSceneView(int index);
 
     /// scene was closed or imported or restored or finished batch
     /// processing, reset as necessary
@@ -64,6 +63,8 @@ protected slots:
 
   /// Respond to scene events
   void onMRMLSceneEvent(vtkObject*, vtkObject* node);
+
+  void updateSceneViewObservers();
 
   /// respond to mrml events
   void updateFromMRMLScene();

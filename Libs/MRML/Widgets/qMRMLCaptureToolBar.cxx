@@ -35,7 +35,6 @@
 
 // MRML includes
 #include <vtkMRMLViewNode.h>
-#include <vtkMRMLSceneViewNode.h>
 #include <vtkMRMLScene.h>
 
 // VTK includes
@@ -181,14 +180,6 @@ void qMRMLCaptureToolBarPrivate::createSceneView()
   {
     return;
   }
-
-  // Create scene view
-  qMRMLNodeFactory nodeFactory;
-  nodeFactory.setMRMLScene(this->MRMLScene);
-  nodeFactory.setBaseName("vtkMRMLSceneViewNode", sceneViewName);
-  vtkMRMLNode * newNode = nodeFactory.createNode("vtkMRMLSceneViewNode");
-  vtkMRMLSceneViewNode * newSceneViewNode = vtkMRMLSceneViewNode::SafeDownCast(newNode);
-  newSceneViewNode->StoreScene();
 }
 
 // --------------------------------------------------------------------------

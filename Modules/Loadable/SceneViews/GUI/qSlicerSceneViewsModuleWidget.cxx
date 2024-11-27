@@ -18,7 +18,9 @@
 // MRML includes
 #include "qMRMLUtils.h"
 #include "vtkMRMLScene.h"
-#include "vtkMRMLSceneViewNode.h"
+
+// Sequences MRML includes
+#include "vtkMRMLSequenceBrowserNode.h"
 
 // VTK includes
 #include "vtkCollection.h"
@@ -42,7 +44,7 @@ enum
 static const char ROW_INDEX_PROPERTY[] = "RowIndex";
 
 //-----------------------------------------------------------------------------
-class qSlicerSceneViewsModuleWidgetPrivate: public Ui_qSlicerSceneViewsModuleWidget
+class qSlicerSceneViewsModuleWidgetPrivate : public Ui_qSlicerSceneViewsModuleWidget
 {
   Q_DECLARE_PUBLIC(qSlicerSceneViewsModuleWidget);
 protected:
@@ -55,7 +57,7 @@ public:
 
   vtkSlicerSceneViewsModuleLogic* logic() const;
   qSlicerSceneViewsModuleDialog* sceneViewDialog();
-  void updateTableRowFromSceneView(int row, vtkMRMLSceneViewNode *sceneView);
+  void updateTableRowFromSceneView(int row);
 
   QPointer<qSlicerSceneViewsModuleDialog> SceneViewDialog;
 };
@@ -129,7 +131,7 @@ void qSlicerSceneViewsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
 }
 
 //-----------------------------------------------------------------------------
-void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row, vtkMRMLSceneViewNode *sceneView)
+void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
 {
   Q_Q(qSlicerSceneViewsModuleWidget);
   if (row >= this->SceneViewTableWidget->rowCount())
@@ -138,7 +140,7 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row, 
   }
 
   // Thumbnail
-  vtkImageData* thumbnailImage = sceneView->GetScreenShot();
+  vtkImageData* thumbnailImage = this->logic()->GetNthSceneViewScreenshot(row);
   QLabel* thumbnailWidget = dynamic_cast<QLabel*>(this->SceneViewTableWidget->cellWidget(row, SCENE_VIEW_THUMBNAIL_COLUMN));
   if (thumbnailWidget == nullptr)
   {
@@ -157,8 +159,8 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row, 
   }
 
   // Description
-  QString name = sceneView->GetName();
-  QString description = sceneView->GetSceneViewDescription().c_str();
+  QString name = QString::fromStdString(this->logic()->GetNthSceneViewName(row));
+  QString description = QString::fromStdString(this->logic()->GetNthSceneViewDescription(row));
   // replace any carriage returns with html line breaks
   description.replace(QString("\n"), QString("<br>"));
   ctkFittedTextBrowser* descriptionWidget = dynamic_cast<ctkFittedTextBrowser*>(this->SceneViewTableWidget->cellWidget(row, SCENE_VIEW_DESCRIPTION_COLUMN));
@@ -228,13 +230,13 @@ void qSlicerSceneViewsModuleWidget::moveDownSelected(QString mrmlId)
 {
   Q_D(qSlicerSceneViewsModuleWidget);
 
-  const char* id = d->logic()->MoveSceneViewDown(mrmlId.toUtf8());
+  /*const char* id = d->logic()->MoveSceneViewDown(mrmlId.toUtf8());
 
   if (id != nullptr &&
-      strcmp(id, "") != 0)
+    strcmp(id, "") != 0)
   {
     this->updateFromMRMLScene();
-  }
+  }*/
 }
 
 //-----------------------------------------------------------------------------
@@ -242,13 +244,13 @@ void qSlicerSceneViewsModuleWidget::moveUpSelected(QString mrmlId)
 {
   Q_D(qSlicerSceneViewsModuleWidget);
 
-  const char* id = d->logic()->MoveSceneViewUp(mrmlId.toUtf8());
+  //const char* id = d->logic()->MoveSceneViewUp(mrmlId.toUtf8());
 
-  if (id != nullptr &&
-      strcmp(id, "") != 0)
-  {
-    this->updateFromMRMLScene();
-  }
+  //if (id != nullptr &&
+  //  strcmp(id, "") != 0)
+  //{
+  //  this->updateFromMRMLScene();
+  //}
 }
 
 //-----------------------------------------------------------------------------
@@ -256,74 +258,74 @@ void qSlicerSceneViewsModuleWidget::restoreSceneView(const QString& mrmlId)
 {
   Q_D(qSlicerSceneViewsModuleWidget);
 
-  // by default, make sure no nodes from the current scene are lost, adding them to
-  // the scene view about to be restored
-  if (!d->logic()->RestoreSceneView(mrmlId.toUtf8(), false))
-  {
-    // ask if the user wishes to save the current scene nodes, restore and delete them or cancel
-    qSlicerApplication* app = qSlicerApplication::application();
-    QWidget* mainWindow = app ? app->mainWindow() : nullptr;
-    ctkMessageBox* missingNodesMsgBox = new ctkMessageBox(mainWindow);
-    missingNodesMsgBox->setWindowTitle("Data missing from Scene View");
-    vtkMRMLSceneViewNode* viewNode = vtkMRMLSceneViewNode::SafeDownCast(this->mrmlScene()->GetNodeByID(mrmlId.toUtf8()));
-    QString sceneViewName;
-    if (viewNode)
-    {
-      sceneViewName = QString(viewNode->GetName());
-    }
-    QString labelText = QString("Add data to scene view \"")
-      + sceneViewName
-      + QString("\" before restoring?\n"
-                "\n");
-    QString infoText = QString(
-      "Data is present in the current scene but not in the scene view.\n"
-      "\n"
-      "If you don't add and restore, data not already saved to disk"
-      ", or saved in another scene view,"
-      " will be permanently lost!\n");
-    missingNodesMsgBox->setText(labelText + infoText);
-    // until CTK bug is fixed, informative text will overlap the don't show
-    // again message so put it all in the label text
-    // missingNodesMsgBox->setInformativeText(infoText);
-    QPushButton *continueButton = missingNodesMsgBox->addButton(QMessageBox::Discard);
-    continueButton->setText("Restore without saving");
-    QPushButton *addButton = missingNodesMsgBox->addButton(QMessageBox::Save);
-    addButton->setText("Add and Restore");
-    missingNodesMsgBox->addButton(QMessageBox::Cancel);
+  //// by default, make sure no nodes from the current scene are lost, adding them to
+  //// the scene view about to be restored
+  //if (!d->logic()->RestoreSceneView(mrmlId.toUtf8(), false))
+  //{
+  //  // ask if the user wishes to save the current scene nodes, restore and delete them or cancel
+  //  qSlicerApplication* app = qSlicerApplication::application();
+  //  QWidget* mainWindow = app ? app->mainWindow() : nullptr;
+  //  ctkMessageBox* missingNodesMsgBox = new ctkMessageBox(mainWindow);
+  //  missingNodesMsgBox->setWindowTitle("Data missing from Scene View");
+  //  vtkMRMLSceneViewNode* viewNode = vtkMRMLSceneViewNode::SafeDownCast(this->mrmlScene()->GetNodeByID(mrmlId.toUtf8()));
+  //  QString sceneViewName;
+  //  if (viewNode)
+  //  {
+  //    sceneViewName = QString(viewNode->GetName());
+  //  }
+  //  QString labelText = QString("Add data to scene view \"")
+  //    + sceneViewName
+  //    + QString("\" before restoring?\n"
+  //              "\n");
+  //  QString infoText = QString(
+  //    "Data is present in the current scene but not in the scene view.\n"
+  //    "\n"
+  //    "If you don't add and restore, data not already saved to disk"
+  //    ", or saved in another scene view,"
+  //    " will be permanently lost!\n");
+  //  missingNodesMsgBox->setText(labelText + infoText);
+  //  // until CTK bug is fixed, informative text will overlap the don't show
+  //  // again message so put it all in the label text
+  //  // missingNodesMsgBox->setInformativeText(infoText);
+  //  QPushButton *continueButton = missingNodesMsgBox->addButton(QMessageBox::Discard);
+  //  continueButton->setText("Restore without saving");
+  //  QPushButton *addButton = missingNodesMsgBox->addButton(QMessageBox::Save);
+  //  addButton->setText("Add and Restore");
+  //  missingNodesMsgBox->addButton(QMessageBox::Cancel);
 
-    missingNodesMsgBox->setIcon(QMessageBox::Warning);
-    missingNodesMsgBox->setDontShowAgainVisible(true);
-    missingNodesMsgBox->setDontShowAgainSettingsKey("SceneViewsModule/AlwaysRemoveNodes");
-    int ret = missingNodesMsgBox->exec();
-    switch (ret)
-    {
-      case QMessageBox::Discard:
-        d->logic()->RestoreSceneView(mrmlId.toUtf8(), true);
-        break;
-      case QMessageBox::Save:
-        if (viewNode)
-        {
-          viewNode->AddMissingNodes();
+  //  missingNodesMsgBox->setIcon(QMessageBox::Warning);
+  //  missingNodesMsgBox->setDontShowAgainVisible(true);
+  //  missingNodesMsgBox->setDontShowAgainSettingsKey("SceneViewsModule/AlwaysRemoveNodes");
+  //  int ret = missingNodesMsgBox->exec();
+  //  switch (ret)
+  //  {
+  //    case QMessageBox::Discard:
+  //      d->logic()->RestoreSceneView(mrmlId.toUtf8(), true);
+  //      break;
+  //    case QMessageBox::Save:
+  //      if (viewNode)
+  //      {
+  //        viewNode->AddMissingNodes();
 
-          // and restore again
-          d->logic()->RestoreSceneView(mrmlId.toUtf8(), false);
-        }
-        break;
-      case QMessageBox::Cancel:
-      default:
-        break;
-    }
-    missingNodesMsgBox->deleteLater();
-  }
+  //        // and restore again
+  //        d->logic()->RestoreSceneView(mrmlId.toUtf8(), false);
+  //      }
+  //      break;
+  //    case QMessageBox::Cancel:
+  //    default:
+  //      break;
+  //  }
+  //  missingNodesMsgBox->deleteLater();
+  //}
 
-  qSlicerApplication::application()->mainWindow()->statusBar()->showMessage("The SceneView was restored including the attached scene.", 2000);
+  //qSlicerApplication::application()->mainWindow()->statusBar()->showMessage("The SceneView was restored including the attached scene.", 2000);
 }
 
 //-----------------------------------------------------------------------------
-void qSlicerSceneViewsModuleWidget::editSceneView(const QString& mrmlId)
+void qSlicerSceneViewsModuleWidget::editSceneView(int index)
 {
   Q_D(qSlicerSceneViewsModuleWidget);
-  d->sceneViewDialog()->loadNode(mrmlId);
+  d->sceneViewDialog()->loadSceneViewInfo(index);
   d->sceneViewDialog()->exec();
   this->updateFromMRMLScene();
 }
@@ -338,25 +340,15 @@ void qSlicerSceneViewsModuleWidget::updateFromMRMLScene()
     d->SceneViewTableWidget->setRowCount(0);
     return;
   }
-  int numSceneViews = this->mrmlScene()->GetNumberOfNodesByClass("vtkMRMLSceneViewNode");
+  int numSceneViews = d->logic()->GetNumberOfSceneViews();
 
   // don't recreate the table if the number of items is not changed to preserve selection state
   d->SceneViewTableWidget->setRowCount(numSceneViews);
 
-  std::vector<vtkMRMLNode*> sceneViewNodes;
-  this->mrmlScene()->GetNodesByClass("vtkMRMLSceneViewNode", sceneViewNodes);
-  int rowIndex = 0;
-  for (std::vector<vtkMRMLNode*>::iterator it = sceneViewNodes.begin(); it != sceneViewNodes.end(); ++it)
+  for (int rowIndex = 0; rowIndex < numSceneViews; ++rowIndex)
   {
-    vtkMRMLSceneViewNode* sceneViewNode = vtkMRMLSceneViewNode::SafeDownCast(*it);
-    if (!sceneViewNode)
-    {
-      continue;
-    }
-    d->updateTableRowFromSceneView(rowIndex, sceneViewNode);
-    ++rowIndex;
+    d->updateTableRowFromSceneView(rowIndex);
   }
-
   d->SceneViewTableWidget->resizeRowsToContents();
 }
 
@@ -367,18 +359,19 @@ void qSlicerSceneViewsModuleWidget::enter()
 
   // set up mrml scene observations so that the GUI gets updated
   this->qvtkConnect(this->mrmlScene(), vtkMRMLScene::NodeAddedEvent,
-                    this, SLOT(onMRMLSceneEvent(vtkObject*, vtkObject*)));
+    this, SLOT(onMRMLSceneEvent(vtkObject*, vtkObject*)));
   this->qvtkConnect(this->mrmlScene(), vtkMRMLScene::NodeRemovedEvent,
-                    this, SLOT(onMRMLSceneEvent(vtkObject*, vtkObject*)));
+    this, SLOT(onMRMLSceneEvent(vtkObject*, vtkObject*)));
   this->qvtkConnect(this->mrmlScene(), vtkMRMLScene::EndCloseEvent,
-                    this, SLOT(onMRMLSceneReset()));
+    this, SLOT(onMRMLSceneReset()));
   this->qvtkConnect(this->mrmlScene(), vtkMRMLScene::EndImportEvent,
-                    this, SLOT(onMRMLSceneReset()));
+    this, SLOT(onMRMLSceneReset()));
   this->qvtkConnect(this->mrmlScene(), vtkMRMLScene::EndRestoreEvent,
-                    this, SLOT(onMRMLSceneReset()));
+    this, SLOT(onMRMLSceneReset()));
   this->qvtkConnect(this->mrmlScene(), vtkMRMLScene::EndBatchProcessEvent,
-                    this, SLOT(onMRMLSceneReset()));
+    this, SLOT(onMRMLSceneReset()));
 
+  this->updateSceneViewObservers();
   this->updateFromMRMLScene();
 }
 
@@ -399,10 +392,13 @@ void qSlicerSceneViewsModuleWidget::onMRMLSceneEvent(vtkObject*, vtkObject* node
   {
     return;
   }
-  vtkMRMLSceneViewNode* sceneViewNode = vtkMRMLSceneViewNode::SafeDownCast(node);
-  if (sceneViewNode)
+
+  vtkMRMLSequenceBrowserNode* sequenceBrowserNode = vtkMRMLSequenceBrowserNode::SafeDownCast(node);
+  const char* sceneViewAttributeValue = sequenceBrowserNode ?
+    sequenceBrowserNode->GetAttribute(vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeName()) : nullptr;
+  if (sceneViewAttributeValue && strcmp(sceneViewAttributeValue, vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeValue()))
   {
-    this->updateFromMRMLScene();
+    this->updateSceneViewObservers();
   }
 }
 
@@ -414,6 +410,38 @@ void qSlicerSceneViewsModuleWidget::onMRMLSceneReset()
     return;
   }
   this->updateFromMRMLScene();
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSceneViewsModuleWidget::updateSceneViewObservers()
+{
+  if (!this->mrmlScene() || this->mrmlScene()->IsBatchProcessing())
+  {
+    return;
+  }
+
+  // get all the scene view nodes
+  std::vector<vtkMRMLNode*> sequenceBrowserNodes;
+  this->mrmlScene()->GetNodesByClass("vtkMRMLSequenceBrowserNode", sequenceBrowserNodes);
+  for (std::vector<vtkMRMLNode*>::iterator it = sequenceBrowserNodes.begin(); it != sequenceBrowserNodes.end(); ++it)
+  {
+    vtkMRMLSequenceBrowserNode* sequenceBrowserNode = vtkMRMLSequenceBrowserNode::SafeDownCast(*it);
+    if (!sequenceBrowserNode)
+    {
+      continue;
+    }
+    const char* sceneViewAttributeValue = sequenceBrowserNode->GetAttribute(vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeName());
+    if (!sceneViewAttributeValue || strcmp(sceneViewAttributeValue, vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeValue()) != 0)
+    {
+      continue;
+    }
+
+    if (this->qvtkIsConnected(sequenceBrowserNode, vtkMRMLSequenceBrowserNode::SequenceNodeModifiedEvent, this, SLOT(updateFromMRMLScene())))
+    {
+      continue;
+    }
+    this->qvtkConnect(sequenceBrowserNode, vtkMRMLSequenceBrowserNode::SequenceNodeModifiedEvent, this, SLOT(updateFromMRMLScene()));
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -431,37 +459,40 @@ void qSlicerSceneViewsModuleWidget::showSceneViewDialog()
 
 //-----------------------------------------------------------
 bool qSlicerSceneViewsModuleWidget::setEditedNode(vtkMRMLNode* node,
-                                                  QString role /* = QString()*/,
-                                                  QString context /* = QString()*/)
+  QString role /* = QString()*/,
+  QString context /* = QString()*/)
 {
-  Q_UNUSED(role);
-  Q_UNUSED(context);
-  Q_D(qSlicerSceneViewsModuleWidget);
-  if (!vtkMRMLSceneViewNode::SafeDownCast(node))
-  {
-    return false;
-  }
-  std::vector<vtkMRMLNode*> sceneViewNodes;
-  this->mrmlScene()->GetNodesByClass("vtkMRMLSceneViewNode", sceneViewNodes);
-  int rowIndex = 0;
-  for (std::vector<vtkMRMLNode*>::iterator it = sceneViewNodes.begin(); it != sceneViewNodes.end(); ++it)
-  {
-    vtkMRMLSceneViewNode* sceneViewNode = vtkMRMLSceneViewNode::SafeDownCast(*it);
-    if (!sceneViewNode)
-    {
-      continue;
-    }
-    if (node == sceneViewNode)
-    {
-      // scene view node found
-      this->updateFromMRMLScene();
-      QModelIndex newIndex = d->SceneViewTableWidget->model()->index(rowIndex, SCENE_VIEW_ACTIONS_COLUMN);
-      d->SceneViewTableWidget->setCurrentIndex(newIndex);
-      return true;
-    }
-    ++rowIndex;
-  }
-  // scene view node not found
+  //Q_UNUSED(role);
+  //Q_UNUSED(context);
+  //Q_D(qSlicerSceneViewsModuleWidget);
+  //if (!vtkMRMLSceneViewNode::SafeDownCast(node))
+  //{
+  //  return false;
+  //}
+  //std::vector<vtkMRMLNode*> sceneViewNodes;
+  //this->mrmlScene()->GetNodesByClass("vtkMRMLSceneViewNode", sceneViewNodes);
+  //int rowIndex = 0;
+  //for (std::vector<vtkMRMLNode*>::iterator it = sceneViewNodes.begin(); it != sceneViewNodes.end(); ++it)
+  //{
+  //  vtkMRMLSceneViewNode* sceneViewNode = vtkMRMLSceneViewNode::SafeDownCast(*it);
+  //  if (!sceneViewNode)
+  //  {
+  //    continue;
+  //  }
+  //  if (node == sceneViewNode)
+  //  {
+  //    // scene view node found
+  //    this->updateFromMRMLScene();
+  //    QModelIndex newIndex = d->SceneViewTableWidget->model()->index(rowIndex, SCENE_VIEW_ACTIONS_COLUMN);
+  //    d->SceneViewTableWidget->setCurrentIndex(newIndex);
+  //    return true;
+  //  }
+  //  ++rowIndex;
+  //}
+  //// scene view node not found
+
+  this->updateFromMRMLScene();
+
   return false;
 }
 
@@ -476,6 +507,8 @@ void qSlicerSceneViewsModuleWidget::onSceneViewDoubleClicked(int row, int column
     return;
   }
   this->restoreSceneView(QString(sceneViewNode->GetID()));
+
+  this->updateFromMRMLScene();
 }
 
 //-----------------------------------------------------------------------------
@@ -488,12 +521,9 @@ void qSlicerSceneViewsModuleWidget::onRestoreButtonClicked()
     return;
   }
   int rowIndex = button->property(ROW_INDEX_PROPERTY).toInt();
-  vtkMRMLNode* sceneViewNode = this->mrmlScene()->GetNthNodeByClass(rowIndex, "vtkMRMLSceneViewNode");
-  if (!sceneViewNode || !sceneViewNode->GetID())
-  {
-    return;
-  }
-  this->restoreSceneView(QString(sceneViewNode->GetID()));
+  d->logic()->RestoreSceneView(rowIndex);
+
+  this->updateFromMRMLScene();
 }
 
 //-----------------------------------------------------------------------------
@@ -506,12 +536,9 @@ void qSlicerSceneViewsModuleWidget::onEditButtonClicked()
     return;
   }
   int rowIndex = button->property(ROW_INDEX_PROPERTY).toInt();
-  vtkMRMLNode* sceneViewNode = this->mrmlScene()->GetNthNodeByClass(rowIndex, "vtkMRMLSceneViewNode");
-  if (!sceneViewNode || !sceneViewNode->GetID())
-  {
-    return;
-  }
-  this->editSceneView(QString(sceneViewNode->GetID()));
+  this->editSceneView(rowIndex);
+
+  this->updateFromMRMLScene();
 }
 
 //-----------------------------------------------------------------------------
@@ -524,10 +551,7 @@ void qSlicerSceneViewsModuleWidget::onDeleteButtonClicked()
     return;
   }
   int rowIndex = button->property(ROW_INDEX_PROPERTY).toInt();
-  vtkMRMLNode* sceneViewNode = this->mrmlScene()->GetNthNodeByClass(rowIndex, "vtkMRMLSceneViewNode");
-  if (!sceneViewNode)
-  {
-    return;
-  }
-  this->mrmlScene()->RemoveNode(sceneViewNode);
+  d->logic()->RemoveSceneView(rowIndex);
+
+  this->updateFromMRMLScene();
 }

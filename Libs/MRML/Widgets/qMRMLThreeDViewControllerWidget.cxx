@@ -42,7 +42,6 @@
 // MRML includes
 #include <vtkMRMLCameraNode.h>
 #include <vtkMRMLScene.h>
-#include <vtkMRMLSceneViewNode.h>
 #include <vtkMRMLViewNode.h>
 
 // VTK includes

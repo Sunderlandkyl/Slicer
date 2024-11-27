@@ -697,8 +697,7 @@ void vtkMRMLScalarVolumeDisplayNode::GetDisplayScalarRange(double range[2])
   {
     // it's a problem if the volume node has an image data but the display node
     // doesn't. It's ok if the display node is not yet in the scene: being
-    // loaded (vtkMRMLScene::LoadIntoScene)or stored
-    // (vtkMRMLSceneViewNode::StoreScene).
+    // loaded (vtkMRMLScene::LoadIntoScene).
     assert( !this->GetVolumeNode() || !this->GetVolumeNode()->GetImageData() ||
             !this->GetScene() || this->GetScene()->GetNodeByID(this->GetID()) != this);
     vtkDebugMacro( << "No valid image data, returning default values [0, 255]");

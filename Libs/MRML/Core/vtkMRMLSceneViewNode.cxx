@@ -108,8 +108,7 @@ void vtkMRMLSceneViewNode::WriteNodeBodyXML(ostream& of, int nIndent)
 //----------------------------------------------------------------------------
 void vtkMRMLSceneViewNode::ReadXMLAttributes(const char** atts)
 {
-
-  int disabledModify = this->StartModify();
+  MRMLNodeModifyBlocker blocker(this);
 
   Superclass::ReadXMLAttributes(atts);
 
@@ -179,17 +178,18 @@ void vtkMRMLSceneViewNode::ReadXMLAttributes(const char** atts)
       storageNode = this->GetStorageNode();
       if (storageNode)
       {
-        vtkWarningMacro("ReadXMLAttributes: found the ScreenCapture directory, creating a storage node to read the image file at\n\t" << storageNode->GetFileName() << "\n\tImage data be overwritten if there is a storage node pointing to another file");
+        vtkWarningMacro("ReadXMLAttributes: found the ScreenCapture directory, creating a storage node to read the image file at\n\t"
+          << storageNode->GetFileName()
+          << "\n\tImage data be overwritten if there is a storage node pointing to another file");
         storageNode->ReadData(this);
       }
     }
     else
     {
-      vtkWarningMacro("ReadXMLAttributes: there is a ScreenCaptures directory with a valid file in it, but waiting to let the extant storage node read it's image file");
+      vtkWarningMacro("ReadXMLAttributes: there is a ScreenCaptures directory with a valid file in it,"
+        << "but waiting to let the extant storage node read it's image file");
     }
   }
-
-  this->EndModify(disabledModify);
 }
 
 //----------------------------------------------------------------------------
