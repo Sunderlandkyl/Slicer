@@ -23,7 +23,6 @@
 #include "vtkMRMLInteractionNode.h"
 #include "vtkMRMLScene.h"
 #include "vtkMRMLSceneEventRecorder.h"
-#include "vtkMRMLSceneViewNode.h"
 
 // VTK includes
 #include <vtkCommand.h>
@@ -41,10 +40,6 @@ int vtkMRMLSceneViewNodeEventsTest(
   vtkNew<vtkMRMLInteractionNode> interactionNode;
   interactionNode->SetPlaceModePersistence(0);
   scene->AddNode(interactionNode.GetPointer());
-
-  vtkNew<vtkMRMLSceneViewNode> sceneViewNode;
-  sceneViewNode->SetScene(scene.GetPointer());
-  sceneViewNode->StoreScene();
 
   // Remove the cameraNode but keep the interaction node (singleton)
   scene->Clear(0);
@@ -67,7 +62,7 @@ int vtkMRMLSceneViewNodeEventsTest(
   // vtkMRMLScene::StartState(RestoreState);
   // vtkMRMLScene::AddNode(savedCameraNode);
   // vtkMRMLScene::EndState(RestoreState);
-  sceneViewNode->RestoreScene();
+
 
   if (scene->GetNumberOfNodesByClass("vtkMRMLCameraNode") != 1 ||
       scene->GetNumberOfNodesByClass("vtkMRMLInteractionNode") != 1)

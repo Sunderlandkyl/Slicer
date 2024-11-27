@@ -11,7 +11,6 @@
 
 
 class qSlicerSceneViewsModuleDialog;
-class vtkMRMLSceneViewNode;
 class qSlicerSceneViewsModuleWidgetPrivate;
 
 class vtkMRMLNode;

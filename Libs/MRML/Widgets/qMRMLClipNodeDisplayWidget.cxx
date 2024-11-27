@@ -97,7 +97,7 @@ vtkMRMLDisplayNode* qMRMLClipNodeDisplayWidget::mrmlDisplayNode() const
 //------------------------------------------------------------------------------
 void qMRMLClipNodeDisplayWidget::setMRMLDisplayNode(vtkMRMLNode* node)
 {
-  this->setMRMLDisplayNode(vtkMRMLClipNode::SafeDownCast(node));
+  this->setMRMLDisplayNode(vtkMRMLDisplayNode::SafeDownCast(node));
 }
 
 //------------------------------------------------------------------------------

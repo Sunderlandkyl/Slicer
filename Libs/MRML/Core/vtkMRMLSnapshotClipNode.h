@@ -58,14 +58,14 @@ class VTK_MRML_EXPORT vtkMRMLSnapshotClipNode : public vtkMRMLNode
 
   ///
   /// Add SceneSnapshot node
-  void AddSceneSnapshotNode(vtkMRMLSceneViewNode * node);
+  void AddSceneSnapshotNode(vtkMRMLNode* node);
 
   ///
   /// Get number of SceneSnapshot nodes
   int GetNumberOfSceneSnapshotNodes();
   ///
   /// Get SceneSnapshot node
-  vtkMRMLSceneViewNode* GetSceneSnapshotNode(int index);
+  vtkMRMLNode* GetSceneSnapshotNode(int index);
 
 protected:
   vtkMRMLSnapshotClipNode();

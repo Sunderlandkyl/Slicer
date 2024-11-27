@@ -18,7 +18,6 @@
 // MRML includes
 #include "qMRMLUtils.h"
 #include "vtkMRMLScene.h"
-#include "vtkMRMLSceneViewNode.h"
 
 // VTK includes
 #include "vtkCollection.h"
@@ -55,7 +54,7 @@ public:
 
   vtkSlicerSceneViewsModuleLogic* logic() const;
   qSlicerSceneViewsModuleDialog* sceneViewDialog();
-  void updateTableRowFromSceneView(int row, vtkMRMLSceneViewNode *sceneView);
+  void updateTableRowFromSceneView(int row, vtkMRMLSequenceBrowserNode* sceneView);
 
   QPointer<qSlicerSceneViewsModuleDialog> SceneViewDialog;
 };
@@ -129,13 +128,15 @@ void qSlicerSceneViewsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
 }
 
 //-----------------------------------------------------------------------------
-void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row, vtkMRMLSceneViewNode *sceneView)
+void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row, vtkMRMLSequenceBrowserNode* sceneView)
 {
   Q_Q(qSlicerSceneViewsModuleWidget);
   if (row >= this->SceneViewTableWidget->rowCount())
   {
     return;
   }
+
+  sceneView->
 
   // Thumbnail
   vtkImageData* thumbnailImage = sceneView->GetScreenShot();
@@ -488,7 +489,7 @@ void qSlicerSceneViewsModuleWidget::onRestoreButtonClicked()
     return;
   }
   int rowIndex = button->property(ROW_INDEX_PROPERTY).toInt();
-  vtkMRMLNode* sceneViewNode = this->mrmlScene()->GetNthNodeByClass(rowIndex, "vtkMRMLSceneViewNode");
+
   if (!sceneViewNode || !sceneViewNode->GetID())
   {
     return;

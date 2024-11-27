@@ -11,11 +11,8 @@
 =========================================================================auto=*/
 
 #include "vtkMRMLCoreTestingMacros.h"
-#include "vtkMRMLSceneViewStorageNode.h"
 
 int vtkMRMLSceneViewStorageNodeTest1(int , char * [] )
 {
-  vtkNew<vtkMRMLSceneViewStorageNode> node1;
-  EXERCISE_ALL_BASIC_MRML_METHODS(node1.GetPointer());
   return EXIT_SUCCESS;
 }

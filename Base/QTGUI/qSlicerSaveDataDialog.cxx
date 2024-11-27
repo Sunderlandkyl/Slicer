@@ -54,8 +54,8 @@
 //#include <vtkMRMLHierarchyNode.h>
 #include <vtkMRMLMessageCollection.h>
 #include <vtkMRMLScene.h>
+#include <vtkMRMLStorableNode.h>
 #include <vtkMRMLStorageNode.h>
-#include <vtkMRMLSceneViewNode.h>
 
 /// VTK includes
 #include <vtkStringArray.h>
@@ -264,30 +264,6 @@ void qSlicerSaveDataDialogPrivate::populateItems()
 
   // get all additional storable nodes for all scene views except "Master Scene View"
   nodes.clear();
-  this->MRMLScene->GetNodesByClass("vtkMRMLSceneViewNode", nodes);
-  for (it = nodes.begin(); it != nodes.end(); it++)
-  {
-    vtkMRMLSceneViewNode *svNode = vtkMRMLSceneViewNode::SafeDownCast(*it);
-    // skip "Master Scene View" since it contains the same nodes as the scene
-    if (svNode->GetName() && std::string(/*no tr*/"Master Scene View") == std::string(svNode->GetName()))
-    {
-      continue;
-    }
-    std::vector<vtkMRMLNode *> snodes;
-    svNode->GetNodesByClass("vtkMRMLStorableNode", snodes);
-    std::vector<vtkMRMLNode *>::iterator sit;
-    for (sit = snodes.begin(); sit != snodes.end(); sit++)
-    {
-      vtkMRMLNode* node = (*sit);
-      if (storableNodes.find(std::string(node->GetID())) == storableNodes.end())
-      {
-        // process only new storable nodes
-        this->populateNode(node);
-        storableNodes[std::string(node->GetID())] = node;
-      }
-    }
-  }
-
 
   // Here we could have restore the sorting property but we want to keep the
   // MRML scene the first item of the list so we don't do restore the sorting.
@@ -963,35 +939,6 @@ vtkMRMLNode* qSlicerSaveDataDialogPrivate::getNodeByID(char *id)const
 vtkMRMLNode* qSlicerSaveDataDialogPrivate::getNodeByID(char *id, vtkMRMLScene* scene)
 {
   vtkMRMLNode *node = scene->GetNodeByID(id);
-  if (node == nullptr)
-  {
-    // search in SceneView nodes
-    std::string sID(id);
-    std::vector<vtkMRMLNode *> nodes;
-    scene->GetNodesByClass("vtkMRMLSceneViewNode", nodes);
-    std::vector<vtkMRMLNode *>::iterator it;
-
-    for (it = nodes.begin(); it != nodes.end(); it++)
-    {
-      vtkMRMLSceneViewNode *svNode = vtkMRMLSceneViewNode::SafeDownCast(*it);
-      // skip "Master Scene View" since it contains the same nodes as the scene
-      if (svNode->GetName() && std::string(/*no tr*/"Master Scene View") == std::string(svNode->GetName()))
-      {
-        continue;
-      }
-      std::vector<vtkMRMLNode *> snodes;
-      svNode->GetNodesByClass("vtkMRMLStorableNode", snodes);
-      std::vector<vtkMRMLNode *>::iterator sit;
-      for (sit = snodes.begin(); sit != snodes.end(); sit++)
-      {
-        vtkMRMLNode* snode = (*sit);
-        if (std::string(snode->GetID()) == sID)
-        {
-          return snode;
-        }
-      }
-    }
-  }
   return node;
 }
 
@@ -1076,18 +1023,6 @@ QString qSlicerSaveDataDialogPrivate::sceneFileFormat()const
 void qSlicerSaveDataDialogPrivate::setSceneRootDirectory(const QString& dir)
 {
   this->MRMLScene->SetRootDirectory(dir.toUtf8());
-
-  // update the root directory of scene snapshot nodes (not sure why)
-  const int nnodes = this->MRMLScene->GetNumberOfNodesByClass("vtkMRMLSceneViewNode");
-  for (int n=0; n<nnodes; n++)
-  {
-    vtkMRMLNode* node = this->MRMLScene->GetNthNodeByClass(n, "vtkMRMLSceneViewNode");
-    vtkMRMLSceneViewNode *snode = vtkMRMLSceneViewNode::SafeDownCast(node);
-    if (snode && snode->GetStoredScene())
-    {
-      snode->GetStoredScene()->SetRootDirectory(this->MRMLScene->GetRootDirectory());
-    }
-  }
 }
 
 //-----------------------------------------------------------------------------

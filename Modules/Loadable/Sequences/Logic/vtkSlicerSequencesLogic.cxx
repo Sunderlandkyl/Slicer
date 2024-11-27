@@ -906,7 +906,7 @@ vtkMRMLSequenceBrowserNode* vtkSlicerSequencesLogic::GetFirstBrowserNodeForProxy
     vtkErrorMacro("proxyNode is invalid");
     return nullptr;
   }
-  std::vector< vtkMRMLNode* > browserNodes;
+  std::vector<vtkMRMLNode* > browserNodes;
   this->GetMRMLScene()->GetNodesByClass("vtkMRMLSequenceBrowserNode", browserNodes);
   for (std::vector< vtkMRMLNode* >::iterator browserNodeIt = browserNodes.begin(); browserNodeIt != browserNodes.end(); ++browserNodeIt)
   {

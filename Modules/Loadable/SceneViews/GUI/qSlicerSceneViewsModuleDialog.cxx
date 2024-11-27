@@ -130,17 +130,13 @@ void qSlicerSceneViewsModuleDialog::accept()
   {
     // this is a new SceneView
     this->m_Logic->CreateSceneView(nameBytes.data(),descriptionBytes.data(),
-                                   screenshotType,this->imageData());
-    //QMessageBox::information(this, "3D Slicer SceneView created",
-    //             "A new SceneView was created and the current scene was attached.");
+                                   screenshotType,this->imageData(), true, true); // TODO
   }
   else
   {
     // this SceneView already exists
     this->m_Logic->ModifySceneView(std::string(this->data().toString().toUtf8()),nameBytes.data(),descriptionBytes.data()
                                    ,screenshotType,this->imageData());
-    //QMessageBox::information(this, "3D Slicer SceneView updated",
-    //             The SceneView was updated without changing the attached scene.");
   }
   this->Superclass::accept();
 }

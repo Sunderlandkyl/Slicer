@@ -68,7 +68,6 @@
 #include "vtkMRMLSelectionNode.h"
 #include "vtkMRMLSliceCompositeNode.h"
 #include "vtkMRMLSliceNode.h"
-#include "vtkMRMLSceneViewNode.h"
 #include <vtkMRMLSubjectHierarchyNode.h>
 #include "vtkMRMLTableNode.h"
 
@@ -1339,19 +1338,6 @@ void vtkSlicerMarkupsLogic::ConvertAnnotationFiducialsToMarkups(vtkStringArray* 
   std::vector<vtkMRMLScene *> scenes;
   scenes.push_back(this->GetMRMLScene());
 
-  vtkSmartPointer<vtkCollection> sceneViews = vtkSmartPointer<vtkCollection>::Take(
-    this->GetMRMLScene()->GetNodesByClass("vtkMRMLSceneViewNode"));
-  int numberOfSceneViews = sceneViews->GetNumberOfItems();
-  for (int n = 0; n < numberOfSceneViews; ++n)
-  {
-    vtkMRMLSceneViewNode *sceneView =
-      vtkMRMLSceneViewNode::SafeDownCast(sceneViews->GetItemAsObject(n));
-    if (sceneView && sceneView->GetStoredScene())
-    {
-      scenes.push_back(sceneView->GetStoredScene());
-    }
-  }
-
   vtkDebugMacro("ConvertAnnotationFiducialsToMarkups: Have " << scenes.size()
                 << " scenes to check for annotation fiducial hierarchies");
 
@@ -1556,18 +1542,6 @@ void vtkSlicerMarkupsLogic::ConvertAnnotationLinesROIsToMarkups(vtkStringArray* 
   // view scenes, so collect all of those in one vector to iterate over
   std::vector<vtkMRMLScene *> scenes;
   scenes.push_back(this->GetMRMLScene());
-
-  vtkSmartPointer<vtkCollection> sceneViews = vtkSmartPointer<vtkCollection>::Take(
-    this->GetMRMLScene()->GetNodesByClass("vtkMRMLSceneViewNode"));
-  int numberOfSceneViews = sceneViews->GetNumberOfItems();
-  for (int n = 0; n < numberOfSceneViews; ++n)
-  {
-    vtkMRMLSceneViewNode *sceneView = vtkMRMLSceneViewNode::SafeDownCast(sceneViews->GetItemAsObject(n));
-    if (sceneView && sceneView->GetStoredScene())
-    {
-      scenes.push_back(sceneView->GetStoredScene());
-    }
-  }
 
   for (vtkMRMLScene* scene : scenes)
   {

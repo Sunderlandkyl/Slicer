@@ -33,7 +33,7 @@
 #include "vtkSlicerModuleLogic.h"
 
 // MRML includes
-class vtkMRMLSceneViewNode;
+class vtkMRMLSequenceBrowserNode;
 
 // VTK includes
 class vtkImageData;
@@ -46,18 +46,26 @@ class VTK_SLICER_SCENEVIEWS_MODULE_LOGIC_EXPORT vtkSlicerSceneViewsModuleLogic :
 {
 public:
 
-  static vtkSlicerSceneViewsModuleLogic *New();
-  vtkTypeMacro(vtkSlicerSceneViewsModuleLogic,vtkSlicerModuleLogic);
+  static vtkSlicerSceneViewsModuleLogic* New();
+  vtkTypeMacro(vtkSlicerSceneViewsModuleLogic, vtkSlicerModuleLogic);
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
   /// Initialize listening to MRML events
-  void SetMRMLSceneInternal(vtkMRMLScene * newScene) override;
+  void SetMRMLSceneInternal(vtkMRMLScene* newScene) override;
 
   /// Register MRML Node classes to Scene. Gets called automatically when the MRMLScene is attached to this logic class.
   void RegisterNodes() override;
 
   /// Create a sceneView..
-  void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot);
+  void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot,
+    bool saveDisplayNodes = true, bool saveViewNodes = true, bool saveCameraNodes = true);
+  void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot,
+    vtkCollection* savedNodes);
+  void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot,
+    std::vector<vtkMRMLNode*> savedNodes);
+
+  void RestoreSceneView(int index);
+  void RestoreSceneView(vtkMRMLSequenceBrowserNode* sequenceBrowser, int itemNumber);
 
   /// Modify an existing sceneView.
   void ModifySceneView(std::string id, const char* name, const char* description, int screenshotType, vtkImageData* screenshot);
@@ -87,8 +95,13 @@ public:
   /// Move sceneView up
   const char* MoveSceneViewDown(const char* id);
 
-  /// Remove a scene view node
-  void RemoveSceneViewNode(vtkMRMLSceneViewNode *sceneViewNode);
+  static const char* GetSceneViewNodeAttributeName();
+  static const char* GetSceneViewNodeAttributeValue();
+
+  static const char* GetSceneViewDescriptionReferenceRole();
+  static const char* GetSceneViewScreenshotReferenceRole();
+
+  vtkMRMLSequenceBrowserNode* GetSceneViewSequenceBrowserNode(bool addMissingNode);
 
 protected:
 

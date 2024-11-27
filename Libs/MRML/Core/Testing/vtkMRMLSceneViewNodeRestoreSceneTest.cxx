@@ -23,7 +23,6 @@
 #include "vtkMRMLScalarVolumeDisplayNode.h"
 #include "vtkMRMLScalarVolumeNode.h"
 #include "vtkMRMLScene.h"
-#include "vtkMRMLSceneViewNode.h"
 
 // VTK includes
 #include <vtkNew.h>
@@ -71,21 +70,6 @@ int restoreEditAndRestore()
 {
   vtkSmartPointer<vtkMRMLScene> scene;
   scene.TakeReference(createScene());
-
-  vtkNew<vtkMRMLSceneViewNode> sceneViewNode;
-  scene->AddNode(sceneViewNode.GetPointer());
-
-  sceneViewNode->StoreScene();
-
-  sceneViewNode->RestoreScene();
-
-  vtkMRMLScalarVolumeNode* volumeNode = vtkMRMLScalarVolumeNode::SafeDownCast(
-    scene->GetNodeByID("vtkMRMLScalarVolumeNode1"));
-  volumeNode->SetAndObserveDisplayNodeID("vtkMRMLScalarVolumeDisplayNode2");
-
-  sceneViewNode->RestoreScene();
-
-  CHECK_STRING(volumeNode->GetDisplayNodeID(), "vtkMRMLScalarVolumeDisplayNode1");
 
   return EXIT_SUCCESS;
 }

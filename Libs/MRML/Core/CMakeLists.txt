@@ -191,8 +191,6 @@ set(MRMLCore_SRCS
   vtkMRMLScalarVolumeDisplayNode.cxx
   vtkMRMLScalarVolumeNode.cxx
   vtkMRMLScene.cxx
-  vtkMRMLSceneViewNode.cxx
-  vtkMRMLSceneViewStorageNode.cxx
   vtkMRMLScriptedModuleNode.cxx
   vtkMRMLScriptedModuleNode.h
   vtkMRMLSegmentationNode.cxx
