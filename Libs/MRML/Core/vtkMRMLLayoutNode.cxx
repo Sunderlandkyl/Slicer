@@ -84,7 +84,7 @@ void vtkMRMLLayoutNode::WriteXML(ostream& of, int nIndent)
 //----------------------------------------------------------------------------
 void vtkMRMLLayoutNode::ReadXMLAttributes(const char** atts)
 {
-  int disabledModify = this->StartModify();
+  MRMLNodeModifyBlocker blocker(this);
 
   Superclass::ReadXMLAttributes(atts);
 
@@ -174,8 +174,6 @@ void vtkMRMLLayoutNode::ReadXMLAttributes(const char** atts)
       //this->SetAndParseCurrentLayoutDescription(attValue);
     }
   }
-
-  this->EndModify(disabledModify);
 }
 
 //----------------------------------------------------------------------------
@@ -196,11 +194,11 @@ void vtkMRMLLayoutNode::SetViewArrangement(int arrNew)
   {
     return;
   }
+
+  MRMLNodeModifyBlocker blocker(this);
   this->ViewArrangement = arrNew;
-  int wasModifying = this->StartModify();
   this->UpdateCurrentLayoutDescription();
   this->Modified();
-  this->EndModify(wasModifying);
 }
 
 //----------------------------------------------------------------------------
@@ -242,10 +240,10 @@ bool vtkMRMLLayoutNode::SetLayoutDescription(int layout, const char* layoutDescr
   {
     this->Layouts[layout] = layoutDescriptionStr;
   }
-  int wasModifying = this->StartModify();
+
+  MRMLNodeModifyBlocker blocker(this);
   this->UpdateCurrentLayoutDescription();
   this->Modified();
-  this->EndModify(wasModifying);
   return true;
 }
 
@@ -351,11 +349,11 @@ vtkXMLDataElement* vtkMRMLLayoutNode::ParseLayout(const char* description)
 //----------------------------------------------------------------------------
 // Copy the node's attributes to this object.
 // Does NOT copy: ID, FilePrefix, LabelText, ID
-void vtkMRMLLayoutNode::Copy(vtkMRMLNode *anode)
+void vtkMRMLLayoutNode::CopyContent(vtkMRMLNode* anode, bool deepCopy/*=true*/)
 {
-  int disabledModify = this->StartModify();
+  MRMLNodeModifyBlocker blocker(this);
+  Superclass::CopyContent(anode, deepCopy);
 
-//  vtkObject::Copy(anode);
   vtkMRMLLayoutNode *node = (vtkMRMLLayoutNode *) anode;
   // Try to copy the registered layout descriptions. However, if the node
   // currently has layout descriptions (more than the default None description)
@@ -363,22 +361,23 @@ void vtkMRMLLayoutNode::Copy(vtkMRMLNode *anode)
   if (node->Layouts.size() > 1 && this->Layouts.size() == 1)
   {
     this->Layouts = node->Layouts;
+    this->Modified();
   }
-  this->SetViewArrangement (node->GetViewArrangement() );
-  this->SetGUIPanelVisibility(node->GetGUIPanelVisibility()) ;
-  this->SetBottomPanelVisibility (node->GetBottomPanelVisibility());
-  this->SetGUIPanelLR ( node->GetGUIPanelLR());
-  this->SetCollapseSliceControllers( node->GetCollapseSliceControllers() );
-  this->SetNumberOfCompareViewRows ( node->GetNumberOfCompareViewRows() );
-  this->SetNumberOfCompareViewColumns ( node->GetNumberOfCompareViewColumns() );
-  this->SetNumberOfCompareViewLightboxRows ( node->GetNumberOfCompareViewLightboxRows() );
-  this->SetNumberOfCompareViewLightboxColumns ( node->GetNumberOfCompareViewLightboxColumns() );
 
-  this->SetMainPanelSize( node->GetMainPanelSize() );
-  this->SetSecondaryPanelSize( node->GetSecondaryPanelSize() );
-  this->SetSelectedModule( node->GetSelectedModule() );
-
-  this->EndModify(disabledModify);
+  vtkMRMLCopyBeginMacro(anode);
+  vtkMRMLCopyIntMacro(ViewArrangement);
+  vtkMRMLCopyIntMacro(GUIPanelVisibility);
+  vtkMRMLCopyIntMacro(BottomPanelVisibility);
+  vtkMRMLCopyIntMacro(GUIPanelLR);
+  vtkMRMLCopyIntMacro(CollapseSliceControllers);
+  vtkMRMLCopyIntMacro(NumberOfCompareViewRows);
+  vtkMRMLCopyIntMacro(NumberOfCompareViewColumns);
+  vtkMRMLCopyIntMacro(NumberOfCompareViewLightboxRows);
+  vtkMRMLCopyIntMacro(NumberOfCompareViewLightboxColumns);
+  vtkMRMLCopyIntMacro(MainPanelSize);
+  vtkMRMLCopyIntMacro(SecondaryPanelSize);
+  vtkMRMLCopyStringMacro(SelectedModule);
+  vtkMRMLCopyEndMacro();
 }
 
 //----------------------------------------------------------------------------

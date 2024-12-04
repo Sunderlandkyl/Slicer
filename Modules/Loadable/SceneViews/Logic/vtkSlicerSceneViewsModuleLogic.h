@@ -34,6 +34,8 @@
 
 // MRML includes
 class vtkMRMLSequenceBrowserNode;
+class vtkMRMLTextNode;
+class vtkMRMLVolumeNode;
 
 // VTK includes
 class vtkImageData;
@@ -58,50 +60,74 @@ public:
 
   /// Create a sceneView..
   void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot,
-    bool saveDisplayNodes = true, bool saveViewNodes = true, bool saveCameraNodes = true);
+    bool saveDisplayNodes = true, bool saveViewNodes = true);
   void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot,
     vtkCollection* savedNodes);
   void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot,
     std::vector<vtkMRMLNode*> savedNodes);
 
-  void RestoreSceneView(int index);
-  void RestoreSceneView(vtkMRMLSequenceBrowserNode* sequenceBrowser, int itemNumber);
+  bool RestoreSceneView(int index);
+  bool RestoreSceneView(vtkMRMLSequenceBrowserNode* sequenceBrowser, int itemNumber);
 
   /// Modify an existing sceneView.
-  void ModifySceneView(std::string id, const char* name, const char* description, int screenshotType, vtkImageData* screenshot);
+  void ModifyNthSceneView(int index, const char* name, const char* description, int screenshotType, vtkImageData* screenshot);
 
-  /// Return the name of an existing sceneView.
-  std::string GetSceneViewName(const char* id);
+  //@{
+  /// Set/Get the name of an existing sceneView.
+  void SetNthSceneViewName(int index, std::string name);
+  std::string GetNthSceneViewName(int index);
+  //@}
 
-  /// Return the description of an existing sceneView.
-  std::string GetSceneViewDescription(const char* id);
+  /// Get the number of sceneViews.
+  int GetNumberOfSceneViews();
 
-  /// Return the screenshotType of an existing sceneView.
-  int GetSceneViewScreenshotType(const char* id);
+  //@{
+  /// Set/Get the description of an existing sceneView.
+  void SetNthSceneViewDescription(int index, std::string description);
+  std::string GetNthSceneViewDescription(int index);
+  //@}
 
-  /// Return the screenshot of an existing sceneView.
-  vtkImageData* GetSceneViewScreenshot(const char* id);
+  //@{
+  /// Set/Get the screenshot type of an existing sceneView.
+  void SetNthSceneViewScreenshotType(int index, int type);
+  int GetNthSceneViewScreenshotType(int index);
+  //@}
+
+  //@{
+  /// Set/Get the screenshot of an existing sceneView.
+  void SetNthSceneViewScreenshot(int index, vtkImageData* screenshot);
+  vtkImageData* GetNthSceneViewScreenshot(int index);
+  //@}
 
   /// Restore a sceneView.
   /// If removeNodes flag is false, don't restore the scene if it will remove data.
   /// The method will return with false if restore failed because nodes were not allowed
   /// to be removed.
-  /// RemoveNodes defaults to true for backward compatibility.
-  bool RestoreSceneView(const char* id, bool removeNodes = true);
 
-  /// Move sceneView up
-  const char* MoveSceneViewUp(const char* id);
-
-  /// Move sceneView up
-  const char* MoveSceneViewDown(const char* id);
+  /// Remove a sceneView.
+  bool RemoveSceneView(int index);
 
   static const char* GetSceneViewNodeAttributeName();
   static const char* GetSceneViewNodeAttributeValue();
+  static const char* GetSceneViewNameAttributeName();
+  static const char* GetSceneViewDescriptionAttributeName();
+  static const char* GetSceneViewScreenshotTypeAttributeName();
 
-  static const char* GetSceneViewDescriptionReferenceRole();
   static const char* GetSceneViewScreenshotReferenceRole();
 
   vtkMRMLSequenceBrowserNode* GetSceneViewSequenceBrowserNode(bool addMissingNode);
+
+  /// The screenshot type of a sceneView
+  enum
+  {
+    ScreenShotType3D = 0,
+    ScreenShotTypeRed = 1,
+    ScreenShotTypeYellow = 2,
+    ScreenShotTypeGreen = 3,
+    ScreenShotTypeFullLayout = 4
+  };
+  std::string GetScreenShotTypeAsString(int type);
+  int GetScreenShotTypeFromString(const std::string& type);
 
 protected:
 
@@ -115,6 +141,12 @@ protected:
   void OnMRMLSceneEndClose() override;
 
   void OnMRMLNodeModified(vtkMRMLNode* node) override;
+
+  vtkMRMLVolumeNode* GetSceneViewScreenshotProxyNode();
+  vtkMRMLNode* GetNthSceneViewDataNode(int index, vtkMRMLNode* proxyNode);
+
+  void SetNthNodeAttribute(vtkMRMLNode* proxyTextNode, int index, std::string attributeName, std::string text);
+  std::string GetNthNodeAttribute(vtkMRMLNode* proxyTextNode, int index, std::string attributeName);
 
 private:
 

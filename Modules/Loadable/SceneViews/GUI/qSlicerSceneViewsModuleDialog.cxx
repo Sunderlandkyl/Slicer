@@ -57,7 +57,7 @@ void qSlicerSceneViewsModuleDialog::setLogic(vtkSlicerSceneViewsModuleLogic* log
 }
 
 //-----------------------------------------------------------------------------
-void qSlicerSceneViewsModuleDialog::loadNode(const QString& nodeId)
+void qSlicerSceneViewsModuleDialog::loadSceneViewInfo(int index)
 {
   if (!this->m_Logic)
   {
@@ -65,27 +65,28 @@ void qSlicerSceneViewsModuleDialog::loadNode(const QString& nodeId)
     return;
   }
   this->setLayoutManager(qSlicerApplication::application()->layoutManager());
-  this->setData(QVariant(nodeId));
+
+  this->setData(QVariant(index));
 
   // get the name..
-  std::string name = this->m_Logic->GetSceneViewName(nodeId.toUtf8());
+  std::string name = this->m_Logic->GetNthSceneViewName(index);
 
   // ..and set it in the GUI
   this->setNameEdit(QString::fromStdString(name));
 
   // get the description..
-  std::string description = this->m_Logic->GetSceneViewDescription(nodeId.toUtf8());
+  std::string description = this->m_Logic->GetNthSceneViewDescription(index);
 
   // ..and set it in the GUI
   this->setDescription(QString::fromStdString(description));
 
   // get the screenshot type..
-  int screenshotType = this->m_Logic->GetSceneViewScreenshotType(nodeId.toUtf8());
+  int screenshotType = this->m_Logic->GetNthSceneViewScreenshotType(index);
 
   // ..and set it in the GUI
   this->setWidgetType((qMRMLScreenShotDialog::WidgetType)screenshotType);
 
-  vtkImageData* imageData = this->m_Logic->GetSceneViewScreenshot(nodeId.toUtf8());
+  vtkImageData* imageData = this->m_Logic->GetNthSceneViewScreenshot(index);
   this->setImageData(imageData);
 }
 
@@ -135,7 +136,8 @@ void qSlicerSceneViewsModuleDialog::accept()
   else
   {
     // this SceneView already exists
-    this->m_Logic->ModifySceneView(std::string(this->data().toString().toUtf8()),nameBytes.data(),descriptionBytes.data()
+    // TODO: row
+    this->m_Logic->ModifyNthSceneView(0, nameBytes.data(),descriptionBytes.data()
                                    ,screenshotType,this->imageData());
   }
   this->Superclass::accept();

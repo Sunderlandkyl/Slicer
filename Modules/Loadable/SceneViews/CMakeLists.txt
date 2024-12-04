@@ -20,6 +20,7 @@ set(MODULE_INCLUDE_DIRECTORIES
   ${CMAKE_CURRENT_SOURCE_DIR}/SubjectHierarchyPlugins
   ${CMAKE_CURRENT_BINARY_DIR}/SubjectHierarchyPlugins
   ${qSlicerSubjectHierarchyModuleWidgets_INCLUDE_DIRS}
+  ${vtkSlicerSequencesModuleMRML_INCLUDE_DIRS}
   )
 
 set(GUI_SRCS

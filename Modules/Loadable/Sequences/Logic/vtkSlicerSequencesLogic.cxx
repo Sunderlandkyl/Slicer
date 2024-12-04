@@ -428,11 +428,12 @@ void vtkSlicerSequencesLogic::UpdateProxyNodesFromSequences(vtkMRMLSequenceBrows
         sourceDataNode = synchronizedSequenceNode->GetDataNodeAtValue(indexValue, /* exactMatchRequired= */ false);
       }
       if (missingItemMode == vtkMRMLSequenceBrowserNode::MissingItemCreateFromDefault
-        || missingItemMode == vtkMRMLSequenceBrowserNode::MissingItemSetToDefault)
+        || missingItemMode == vtkMRMLSequenceBrowserNode::MissingItemSetToDefault
+        || missingItemMode == vtkMRMLSequenceBrowserNode::MissingItemIgnore)
       {
         // We are not saving changes, but we may need to reset the proxy node to the default
         sourceDataNode = synchronizedSequenceNode->GetDataNodeAtValue(indexValue, /* exactMatchRequired= */ true);
-        if (!sourceDataNode)
+        if (!sourceDataNode && missingItemMode != vtkMRMLSequenceBrowserNode::MissingItemIgnore)
         {
           // item is missing, use an empty node as source node for the proxy node
           sourceDataNode = synchronizedSequenceNode->GetNthDataNode(0);

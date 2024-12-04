@@ -44,7 +44,7 @@ public slots:
     void restoreSceneView(const QString& mrmlId);
 
     /// User clicked on property edit button
-    void editSceneView(const QString& mrmlId);
+    void editSceneView(int index);
 
     /// scene was closed or imported or restored or finished batch
     /// processing, reset as necessary
