@@ -288,7 +288,7 @@ void vtkSlicerSequencesLogic::UpdateProxyNodesFromSequences(vtkMRMLSequenceBrows
   timer->StartTimer();
 #endif
 
-  if (this->UpdateProxyNodesFromSequencesInProgress || this->UpdateSequencesFromProxyNodesInProgress)
+  if (this->UpdateProxyNodesFromSequencesInProgress.count(browserNode) > 0 || this->UpdateSequencesFromProxyNodesInProgress.count(browserNode) > 0)
   {
     // avoid infinite loops (caused by triggering a node update during a node update)
     return;
@@ -318,7 +318,7 @@ void vtkSlicerSequencesLogic::UpdateProxyNodesFromSequences(vtkMRMLSequenceBrows
     return;
   }
 
-  this->UpdateProxyNodesFromSequencesInProgress = true;
+  this->UpdateProxyNodesFromSequencesInProgress.insert(browserNode);
 
   int selectedItemNumber=browserNode->GetSelectedItemNumber();
   std::string indexValue("0");
@@ -541,7 +541,7 @@ void vtkSlicerSequencesLogic::UpdateProxyNodesFromSequences(vtkMRMLSequenceBrows
     (nodeModifiedStateIt->first)->EndModify(nodeModifiedStateIt->second);
   }
 
-  this->UpdateProxyNodesFromSequencesInProgress = false;
+  this->UpdateProxyNodesFromSequencesInProgress.erase(browserNode);
 
 #ifdef ENABLE_PERFORMANCE_PROFILING
   timer->StopTimer();
@@ -552,7 +552,7 @@ void vtkSlicerSequencesLogic::UpdateProxyNodesFromSequences(vtkMRMLSequenceBrows
 //---------------------------------------------------------------------------
 void vtkSlicerSequencesLogic::UpdateSequencesFromProxyNodes(vtkMRMLSequenceBrowserNode* browserNode, vtkMRMLNode* proxyNode)
 {
-  if (this->UpdateProxyNodesFromSequencesInProgress || this->UpdateSequencesFromProxyNodesInProgress)
+  if (this->UpdateProxyNodesFromSequencesInProgress.count(browserNode) > 0 || this->UpdateSequencesFromProxyNodesInProgress.count(browserNode) > 0)
   {
     // this update is due to updating from sequence nodes
     return;
@@ -581,7 +581,7 @@ void vtkSlicerSequencesLogic::UpdateSequencesFromProxyNodes(vtkMRMLSequenceBrows
     return;
   }
 
-  this->UpdateSequencesFromProxyNodesInProgress = true;
+  this->UpdateSequencesFromProxyNodesInProgress.insert(browserNode);
 
   if (browserNode->GetRecordingActive())
   {
@@ -639,7 +639,7 @@ void vtkSlicerSequencesLogic::UpdateSequencesFromProxyNodes(vtkMRMLSequenceBrows
       }
     }
   }
-  this->UpdateSequencesFromProxyNodesInProgress = false;
+  this->UpdateSequencesFromProxyNodesInProgress.erase(browserNode);
 }
 
 //---------------------------------------------------------------------------
