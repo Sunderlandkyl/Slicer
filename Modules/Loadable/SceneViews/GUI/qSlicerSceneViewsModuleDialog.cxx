@@ -127,7 +127,13 @@ void qSlicerSceneViewsModuleDialog::accept()
   // we need to know of which type the screenshot is
   int screenshotType = static_cast<int>(this->widgetType());
 
-  if (this->data().toString().isEmpty())
+  int index = -1;
+  if (!this->data().toString().isEmpty())
+  {
+    index = this->data().toInt();
+  }
+
+  if (index < 0)
   {
     // this is a new SceneView
     this->m_Logic->CreateSceneView(nameBytes.data(),descriptionBytes.data(),
@@ -136,9 +142,9 @@ void qSlicerSceneViewsModuleDialog::accept()
   else
   {
     // this SceneView already exists
-    // TODO: row
-    this->m_Logic->ModifyNthSceneView(0, nameBytes.data(),descriptionBytes.data()
-                                   ,screenshotType,this->imageData());
+
+    this->m_Logic->ModifyNthSceneView(index, nameBytes.data(),descriptionBytes.data(),
+      screenshotType,this->imageData());
   }
   this->Superclass::accept();
 }

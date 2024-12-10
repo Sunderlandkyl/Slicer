@@ -500,12 +500,6 @@ void qSlicerSceneViewsModuleWidget::onEditButtonClicked()
     return;
   }
   int rowIndex = button->property(ROW_INDEX_PROPERTY).toInt();
-  vtkMRMLNode* sceneViewNode = this->mrmlScene()->GetNthNodeByClass(rowIndex, "vtkMRMLSceneViewNode");
-  if (!sceneViewNode || !sceneViewNode->GetID())
-  {
-    return;
-  }
-
   this->editSceneView(rowIndex);
 
   this->updateFromMRMLScene();

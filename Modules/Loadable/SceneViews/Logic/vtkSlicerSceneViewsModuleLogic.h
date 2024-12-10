@@ -144,6 +144,7 @@ protected:
 
   vtkMRMLVolumeNode* GetSceneViewScreenshotProxyNode();
   vtkMRMLNode* GetNthSceneViewDataNode(int index, vtkMRMLNode* proxyNode);
+  vtkMRMLVolumeNode* GetNthSceneViewScreenshotNode(int index);
 
   void SetNthNodeAttribute(vtkMRMLNode* proxyTextNode, int index, std::string attributeName, std::string text);
   std::string GetNthNodeAttribute(vtkMRMLNode* proxyTextNode, int index, std::string attributeName);

@@ -242,7 +242,7 @@ void vtkSlicerSceneViewsModuleLogic::
          ModifyNthSceneView(int index,
                          const char* name,
                          const char* description,
-                         int vtkNotUsed(screenshotType),
+                         int screenshotType,
                          vtkImageData* screenshot)
 {
   if (!this->GetMRMLScene())
@@ -251,11 +251,18 @@ void vtkSlicerSceneViewsModuleLogic::
     return;
   }
 
-  if (!screenshot)
+  vtkMRMLVolumeNode* screenshotNode = this->GetNthSceneViewScreenshotNode(index);
+  if (!screenshotNode)
   {
-    vtkErrorMacro("ModifySceneView: No screenshot was set.");
+    vtkErrorMacro("ModifyNthSceneView: Failed to get screenshot node.");
     return;
   }
+
+  screenshotNode->SetAndObserveImageData(screenshot);
+  screenshotNode->SetAttribute(vtkSlicerSceneViewsModuleLogic::GetSceneViewNameAttributeName(), name);
+  screenshotNode->SetAttribute(vtkSlicerSceneViewsModuleLogic::GetSceneViewDescriptionAttributeName(), description);
+  std::string screenshotTypeString = this->GetScreenShotTypeAsString(screenshotType);
+  screenshotNode->SetAttribute(vtkSlicerSceneViewsModuleLogic::GetSceneViewScreenshotTypeAttributeName(), screenshotTypeString.c_str());
 }
 
 //---------------------------------------------------------------------------
@@ -376,36 +383,10 @@ void vtkSlicerSceneViewsModuleLogic::SetNthSceneViewScreenshot(int index, vtkIma
 //---------------------------------------------------------------------------
 vtkImageData* vtkSlicerSceneViewsModuleLogic::GetNthSceneViewScreenshot(int index)
 {
-  vtkMRMLSequenceBrowserNode* sequenceBrowser = this->GetSceneViewSequenceBrowserNode(false);
-  if (!sequenceBrowser)
-  {
-    // No scene view sequence browser node exists, so no scene views are available
-    return nullptr;
-  }
-
-  vtkMRMLVolumeNode* screenshotNode = this->GetSceneViewScreenshotProxyNode();
-  if (!screenshotNode)
-  {
-    // No screenshot node is available
-    return nullptr;
-  }
-
-  vtkMRMLSequenceNode* sequenceNode = sequenceBrowser->GetSequenceNode(screenshotNode);
-  if (!sequenceNode)
-  {
-    // No sequence node is available
-    return nullptr;
-  }
-
-  if (index < 0 || index >= sequenceNode->GetNumberOfDataNodes())
-  {
-    // Index is out of range
-    return nullptr;
-  }
-
-  vtkMRMLVolumeNode* volumeNode = vtkMRMLVolumeNode::SafeDownCast(sequenceNode->GetNthDataNode(index));
+  vtkMRMLVolumeNode* volumeNode = this->GetNthSceneViewScreenshotNode(index);
   if (!volumeNode)
   {
+    vtkErrorMacro("GetNthSceneViewScreenshot: Failed to get volume node.");
     return nullptr;
   }
 
@@ -662,6 +643,39 @@ int vtkSlicerSceneViewsModuleLogic::GetScreenShotTypeFromString(const std::strin
     return ScreenShotTypeFullLayout;
   }
   return -1;
+}
+
+//---------------------------------------------------------------------------
+vtkMRMLVolumeNode* vtkSlicerSceneViewsModuleLogic::GetNthSceneViewScreenshotNode(int index)
+{
+  vtkMRMLSequenceBrowserNode* sequenceBrowser = this->GetSceneViewSequenceBrowserNode(false);
+  if (!sequenceBrowser)
+  {
+    // No scene view sequence browser node exists, so no scene views are available
+    return nullptr;
+  }
+
+  vtkMRMLVolumeNode* screenshotNode = this->GetSceneViewScreenshotProxyNode();
+  if (!screenshotNode)
+  {
+    // No screenshot node is available
+    return nullptr;
+  }
+
+  vtkMRMLSequenceNode* sequenceNode = sequenceBrowser->GetSequenceNode(screenshotNode);
+  if (!sequenceNode)
+  {
+    // No sequence node is available
+    return nullptr;
+  }
+
+  if (index < 0 || index >= sequenceNode->GetNumberOfDataNodes())
+  {
+    // Index is out of range
+    return nullptr;
+  }
+
+  return vtkMRMLVolumeNode::SafeDownCast(sequenceNode->GetNthDataNode(index));
 }
 
 //---------------------------------------------------------------------------
