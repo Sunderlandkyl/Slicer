@@ -34,6 +34,7 @@
 
 // MRML includes
 class vtkMRMLSequenceBrowserNode;
+class vtkMRMLSceneViewNode;
 class vtkMRMLTextNode;
 class vtkMRMLVolumeNode;
 
@@ -148,6 +149,9 @@ protected:
 
   void SetNthNodeAttribute(vtkMRMLNode* proxyTextNode, int index, std::string attributeName, std::string text);
   std::string GetNthNodeAttribute(vtkMRMLNode* proxyTextNode, int index, std::string attributeName);
+
+  void ConvertSceneViewNodesToSequenceBrowserNodes(vtkMRMLScene* scene);
+  vtkMRMLSequenceBrowserNode* ConvertSceneViewNodeToSequenceBrowserNode(vtkMRMLSceneViewNode* sceneView);
 
 private:
 

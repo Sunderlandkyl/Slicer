@@ -42,6 +42,7 @@ class vtkImageData;
 class vtkURIHandler;
 class vtkMRMLMessageCollection;
 class vtkMRMLNode;
+class vtkMRMLSceneViewNode;
 class vtkMRMLSubjectHierarchyNode;
 class vtkMRMLStorableNode;
 class vtkMRMLStorageNode;
@@ -55,6 +56,12 @@ class vtkMRMLStorageNode;
 /// \sa vtkCollection
 class VTK_MRML_EXPORT vtkMRMLScene : public vtkObject
 {
+  ///
+  /// make the vtkMRMLSceneViewNode a friend since it has internal vtkMRMLScene
+  /// so that it can call protected methods, for example UpdateNodeIDs()
+  /// but that's the only class that is allowed to do so
+  friend class vtkMRMLSceneViewNode;
+
 public:
   static vtkMRMLScene *New();
   vtkTypeMacro(vtkMRMLScene, vtkObject);
