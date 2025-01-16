@@ -17,6 +17,8 @@
 
 #include "vtkMRMLStorageNode.h"
 
+class vtkMRMLSceneViewNode;
+
 /// \brief MRML node for model storage on disk.
 ///
 /// Storage nodes has methods to read/write vtkPolyData to/from disk.
@@ -41,6 +43,8 @@ public:
 
   /// Return true if the node can be read in
   bool CanReadInReferenceNode(vtkMRMLNode *refNode) override;
+
+  int ReadSceneViewMRB(vtkMRMLSceneViewNode* refNode, const char* path);
 
 protected:
   vtkMRMLSceneViewStorageNode();

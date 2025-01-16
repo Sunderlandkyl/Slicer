@@ -588,12 +588,11 @@ void vtkMRMLScene::CopyRegisteredNodesToScene(vtkMRMLScene *scene)
     vtkMRMLNode* node = nullptr;
     for (unsigned int i=0; i<this->RegisteredNodeClasses.size(); i++)
     {
-      node = this->RegisteredNodeClasses[i]->CreateNodeInstance();
+      node = this->RegisteredNodeClasses[i];
       if (!scene->GetClassNameByTag(node->GetNodeTagName()))
       {
         scene->RegisterNodeClass(node);
       }
-      node->Delete();
     }
   }
 }
