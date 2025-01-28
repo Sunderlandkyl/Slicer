@@ -61,17 +61,18 @@ public:
 
   /// Create a sceneView..
   void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot,
-    bool saveDisplayNodes = true, bool saveViewNodes = true);
+    bool saveDisplayNodes = true, bool saveViewNodes = true, vtkMRMLSequenceBrowserNode* sequenceBrowser=nullptr);
   void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot,
-    vtkCollection* savedNodes);
+    vtkCollection* savedNodes, vtkMRMLSequenceBrowserNode* sequenceBrowser=nullptr);
   void CreateSceneView(const char* name, const char* description, int screenshotType, vtkImageData* screenshot,
-    std::vector<vtkMRMLNode*> savedNodes);
+    std::vector<vtkMRMLNode*> savedNodes, vtkMRMLSequenceBrowserNode* sequenceBrowser=nullptr);
 
-  bool RestoreSceneView(int index);
-  bool RestoreSceneView(vtkMRMLSequenceBrowserNode* sequenceBrowser, int itemNumber);
+  bool RestoreSceneView(int sceneViewIndex);
 
   /// Modify an existing sceneView.
-  void ModifyNthSceneView(int index, const char* name, const char* description, int screenshotType, vtkImageData* screenshot);
+  void ModifyNthSceneView(int sceneViewIndex, const char* name, const char* description, int screenshotType, vtkImageData* screenshot);
+
+  int SceneViewIndexToSequenceBrowserIndex(int sceneViewIndex);
 
   //@{
   /// Set/Get the name of an existing sceneView.
@@ -117,6 +118,8 @@ public:
   static const char* GetSceneViewScreenshotReferenceRole();
 
   vtkMRMLSequenceBrowserNode* GetSceneViewSequenceBrowserNode(bool addMissingNode);
+  vtkMRMLSequenceBrowserNode* GetNthSceneViewSequenceBrowserNode(int index);
+  vtkMRMLSequenceBrowserNode* CreateSceneViewSequenceBrowserNode();
 
   /// The screenshot type of a sceneView
   enum
@@ -143,15 +146,17 @@ protected:
 
   void OnMRMLNodeModified(vtkMRMLNode* node) override;
 
-  vtkMRMLVolumeNode* GetSceneViewScreenshotProxyNode();
+  vtkMRMLVolumeNode* GetSceneViewScreenshotProxyNode(vtkMRMLSequenceBrowserNode* sequenceBrowser=nullptr);
   vtkMRMLNode* GetNthSceneViewDataNode(int index, vtkMRMLNode* proxyNode);
-  vtkMRMLVolumeNode* GetNthSceneViewScreenshotNode(int index);
+
+  vtkMRMLVolumeNode* GetNthSceneViewScreenshotDataNode(int index);
+  vtkMRMLVolumeNode* GetNthSceneViewScreenshotProxyNode(int index);
 
   void SetNthNodeAttribute(vtkMRMLNode* proxyTextNode, int index, std::string attributeName, std::string text);
   std::string GetNthNodeAttribute(vtkMRMLNode* proxyTextNode, int index, std::string attributeName);
 
   void ConvertSceneViewNodesToSequenceBrowserNodes(vtkMRMLScene* scene);
-  vtkMRMLSequenceBrowserNode* ConvertSceneViewNodeToSequenceBrowserNode(vtkMRMLSceneViewNode* sceneView);
+  vtkMRMLSequenceBrowserNode* ConvertSceneViewNodeToSequenceBrowserNode(vtkMRMLSceneViewNode* sceneView, vtkMRMLSequenceBrowserNode* sequenceBrowserNode);
 
 private:
 
