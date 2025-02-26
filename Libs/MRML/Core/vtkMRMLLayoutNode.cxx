@@ -16,7 +16,6 @@ vtkMRMLNodeNewMacro(vtkMRMLLayoutNode);
 //----------------------------------------------------------------------------
 vtkMRMLLayoutNode::vtkMRMLLayoutNode()
 {
-  this->SetSingletonTag("vtkMRMLLayoutNode");
   this->GUIPanelVisibility = 1;
   this->BottomPanelVisibility = 1;
   this->GUIPanelLR = 0;
@@ -285,13 +284,13 @@ void vtkMRMLLayoutNode::UpdateCurrentLayoutDescription()
     return;
   }
   int viewArrangement = this->ViewArrangement;
-  if (!this->IsLayoutDescription(viewArrangement))
-  {
-    vtkWarningMacro(<< "View arrangement " << this->ViewArrangement
-      << " is not recognized, register it with "
-      << "AddLayoutDescription()");
-    viewArrangement = vtkMRMLLayoutNode::SlicerLayoutDefaultView;
-  }
+  //if (!this->IsLayoutDescription(viewArrangement))
+  //{
+  //  vtkWarningMacro(<< "View arrangement " << this->ViewArrangement
+  //    << " is not recognized, register it with "
+  //    << "AddLayoutDescription()");
+  //  viewArrangement = vtkMRMLLayoutNode::SlicerLayoutDefaultView;
+  //}
   std::string description = this->GetLayoutDescription(viewArrangement);
   if (this->GetCurrentLayoutDescription() &&
       description == this->GetCurrentLayoutDescription())

@@ -371,6 +371,7 @@ void qSlicerSceneViewsModuleWidget::enter()
   this->qvtkConnect(this->mrmlScene(), vtkMRMLScene::EndBatchProcessEvent,
     this, SLOT(onMRMLSceneReset()));
 
+  this->updateSceneViewObservers();
   this->updateFromMRMLScene();
 }
 
@@ -387,15 +388,18 @@ void qSlicerSceneViewsModuleWidget::exit()
 //-----------------------------------------------------------------------------
 void qSlicerSceneViewsModuleWidget::onMRMLSceneEvent(vtkObject*, vtkObject* node)
 {
-  //if (!this->mrmlScene() || this->mrmlScene()->IsBatchProcessing())
-  //{
-  //  return;
-  //}
-  //vtkMRMLSceneViewNode* sceneViewNode = vtkMRMLSceneViewNode::SafeDownCast(node);
-  //if (sceneViewNode)
-  //{
-  //  this->updateFromMRMLScene();
-  //}
+  if (!this->mrmlScene() || this->mrmlScene()->IsBatchProcessing())
+  {
+    return;
+  }
+
+  vtkMRMLSequenceBrowserNode* sequenceBrowserNode = vtkMRMLSequenceBrowserNode::SafeDownCast(node);
+  const char* sceneViewAttributeValue = sequenceBrowserNode ?
+    sequenceBrowserNode->GetAttribute(vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeName()) : nullptr;
+  if (sceneViewAttributeValue && strcmp(sceneViewAttributeValue, vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeValue()))
+  {
+    this->updateSceneViewObservers();
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -406,6 +410,38 @@ void qSlicerSceneViewsModuleWidget::onMRMLSceneReset()
     return;
   }
   this->updateFromMRMLScene();
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSceneViewsModuleWidget::updateSceneViewObservers()
+{
+  if (!this->mrmlScene() || this->mrmlScene()->IsBatchProcessing())
+  {
+    return;
+  }
+
+  // get all the scene view nodes
+  std::vector<vtkMRMLNode*> sequenceBrowserNodes;
+  this->mrmlScene()->GetNodesByClass("vtkMRMLSequenceBrowserNode", sequenceBrowserNodes);
+  for (std::vector<vtkMRMLNode*>::iterator it = sequenceBrowserNodes.begin(); it != sequenceBrowserNodes.end(); ++it)
+  {
+    vtkMRMLSequenceBrowserNode* sequenceBrowserNode = vtkMRMLSequenceBrowserNode::SafeDownCast(*it);
+    if (!sequenceBrowserNode)
+    {
+      continue;
+    }
+    const char* sceneViewAttributeValue = sequenceBrowserNode->GetAttribute(vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeName());
+    if (!sceneViewAttributeValue || strcmp(sceneViewAttributeValue, vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeValue()) != 0)
+    {
+      continue;
+    }
+
+    if (this->qvtkIsConnected(sequenceBrowserNode, vtkMRMLSequenceBrowserNode::SequenceNodeModifiedEvent, this, SLOT(updateFromMRMLScene())))
+    {
+      continue;
+    }
+    this->qvtkConnect(sequenceBrowserNode, vtkMRMLSequenceBrowserNode::SequenceNodeModifiedEvent, this, SLOT(updateFromMRMLScene()));
+  }
 }
 
 //-----------------------------------------------------------------------------

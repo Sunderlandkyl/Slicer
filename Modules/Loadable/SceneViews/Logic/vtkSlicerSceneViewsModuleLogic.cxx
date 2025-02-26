@@ -170,7 +170,7 @@ vtkMRMLSequenceBrowserNode* vtkSlicerSceneViewsModuleLogic::ConvertSceneViewNode
     {
       sequenceNode = vtkMRMLSequenceNode::SafeDownCast(this->GetMRMLScene()->CreateNodeByClass("vtkMRMLSequenceNode"));
       std::stringstream nameSS;
-      nameSS << proxyNode->GetName() << "_Sequence";
+      nameSS << "Sequence_" << proxyNode->GetName();
       std::string nameString = nameSS.str();
       sequenceNode->SetName(this->GetMRMLScene()->GetUniqueNameByString(nameString.c_str()));
       sequenceNode->HideFromEditorsOn();
@@ -375,6 +375,14 @@ void vtkSlicerSceneViewsModuleLogic::CreateSceneView(const char* name, const cha
     {
       sequenceNode = vtkSmartPointer<vtkMRMLSequenceNode>::Take(vtkMRMLSequenceNode::SafeDownCast(
         this->GetMRMLScene()->CreateNodeByClass("vtkMRMLSequenceNode")));
+
+      if (node->GetName())
+      {
+        std::stringstream nodeNameSS;
+        nodeNameSS << "Sequence_" << node->GetName();
+        this->GetMRMLScene()->GenerateUniqueName(nodeNameSS.str());
+        sequenceNode->SetName(nodeNameSS.str().c_str());
+      }
       sequenceNode->HideFromEditorsOn();
       this->GetMRMLScene()->AddNode(sequenceNode);
       sequenceNode = sequencesLogic->AddSynchronizedNode(sequenceNode, node, sequenceBrowser);
@@ -739,7 +747,7 @@ vtkMRMLSequenceBrowserNode* vtkSlicerSceneViewsModuleLogic::CreateSceneViewSeque
   vtkSmartPointer<vtkMRMLSequenceBrowserNode> sequenceBrowserNode = vtkSmartPointer<vtkMRMLSequenceBrowserNode>::Take(
     vtkMRMLSequenceBrowserNode::SafeDownCast(this->GetMRMLScene()->CreateNodeByClass("vtkMRMLSequenceBrowserNode")));
   sequenceBrowserNode->SetName("SceneViews");
-  //sequenceBrowserNode->HideFromEditorsOn();
+  sequenceBrowserNode->HideFromEditorsOn();
   sequenceBrowserNode->SetAttribute(
     vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeName(),
     vtkSlicerSceneViewsModuleLogic::GetSceneViewNodeAttributeValue());
@@ -748,7 +756,7 @@ vtkMRMLSequenceBrowserNode* vtkSlicerSceneViewsModuleLogic::CreateSceneViewSeque
 
   vtkSmartPointer<vtkMRMLVectorVolumeNode> screenshotNode = vtkSmartPointer<vtkMRMLVectorVolumeNode>::Take(
     vtkMRMLVectorVolumeNode::SafeDownCast(this->GetMRMLScene()->CreateNodeByClass("vtkMRMLVectorVolumeNode")));
-  //screenshotNode->HideFromEditorsOn();
+  screenshotNode->HideFromEditorsOn();
   screenshotNode->SetName(this->GetMRMLScene()->GetUniqueNameByString("SceneViewScreenshot"));
   this->GetMRMLScene()->AddNode(screenshotNode);
 
@@ -756,9 +764,9 @@ vtkMRMLSequenceBrowserNode* vtkSlicerSceneViewsModuleLogic::CreateSceneViewSeque
     vtkMRMLSequenceNode::SafeDownCast(this->GetMRMLScene()->CreateNodeByClass("vtkMRMLSequenceNode")));
   sequenceNode->HideFromEditorsOn();
   std::stringstream nameSS;
-  nameSS << screenshotNode->GetName() << "_Sequence";
+  nameSS << "Sequence_" << screenshotNode->GetName();
   std::string nameString = nameSS.str();
-  screenshotNode->SetName(this->GetMRMLScene()->GetUniqueNameByString(nameString.c_str()));
+  sequenceNode->SetName(this->GetMRMLScene()->GetUniqueNameByString(nameString.c_str()));
   this->GetMRMLScene()->AddNode(sequenceNode);
 
   vtkSlicerSequencesLogic* sequencesLogic = vtkSlicerSequencesLogic::SafeDownCast(this->GetModuleLogic("Sequences"));

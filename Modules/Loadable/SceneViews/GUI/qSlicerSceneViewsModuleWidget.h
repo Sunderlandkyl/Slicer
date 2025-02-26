@@ -64,6 +64,8 @@ protected slots:
   /// Respond to scene events
   void onMRMLSceneEvent(vtkObject*, vtkObject* node);
 
+  void updateSceneViewObservers();
+
   /// respond to mrml events
   void updateFromMRMLScene();
 

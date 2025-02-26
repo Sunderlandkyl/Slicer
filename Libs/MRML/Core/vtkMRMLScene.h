@@ -99,7 +99,7 @@ public:
   /// If userMessages is not nullptr then the method may add messages to it about issues
   /// encountered during the operation.
   /// Returns nonzero on success
-  int Commit(const char* url=nullptr, vtkMRMLMessageCollection* userMessages=nullptr);
+  int Commit(const char* url=nullptr, vtkMRMLMessageCollection* userMessages=nullptr, bool saveHiddenNodes=true);
 
   /// Remove nodes and clear undo/redo stacks.
   /// \param removeSingletons If set to true then it removes
@@ -811,7 +811,8 @@ public:
   /// If userMessages is not nullptr then the method may add messages to it about issues
   /// encountered during the operation.
   /// Returns false if the save failed
-  bool SaveSceneToSlicerDataBundleDirectory(const char* sdbDir, vtkImageData* thumbnail=nullptr, vtkMRMLMessageCollection* userMessages=nullptr);
+  bool SaveSceneToSlicerDataBundleDirectory(const char* sdbDir, vtkImageData* thumbnail=nullptr, vtkMRMLMessageCollection* userMessages=nullptr,
+    bool saveHiddenNodes=true);
 
   /// \brief Utility function to write the scene thumbnail to a file in the scene's root folder.
   void SaveSceneScreenshot(vtkImageData* thumbnail);

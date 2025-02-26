@@ -1037,7 +1037,7 @@ int vtkMRMLScene::LoadIntoScene(vtkCollection* nodeCollection, vtkMRMLMessageCol
 }
 
 //------------------------------------------------------------------------------
-int vtkMRMLScene::Commit(const char* url, vtkMRMLMessageCollection * userMessagesInput/*=nullptr*/)
+int vtkMRMLScene::Commit(const char* url, vtkMRMLMessageCollection * userMessagesInput/*=nullptr*/, bool saveHiddenNodes/*=true*/)
 {
   // We use userMessages for collecting error information, so make sure we have it, even if the caller does not need it.
   vtkSmartPointer<vtkMRMLMessageCollection> userMessages = userMessagesInput;
@@ -1152,6 +1152,10 @@ int vtkMRMLScene::Commit(const char* url, vtkMRMLMessageCollection * userMessage
   {
     node = (vtkMRMLNode*)this->Nodes->GetItemAsObject(n);
     if (!node->GetSaveWithScene())
+    {
+      continue;
+    }
+    if (!saveHiddenNodes && node->GetHideFromEditors())
     {
       continue;
     }
@@ -4136,7 +4140,7 @@ std::string vtkMRMLScene::UnpackSlicerDataBundle(const char* sdbFilePath, const 
 
 //----------------------------------------------------------------------------
 bool vtkMRMLScene::SaveSceneToSlicerDataBundleDirectory(const char* sdbDir,
-  vtkImageData* screenShot/*=nullptr*/, vtkMRMLMessageCollection* userMessagesInput/*=nullptr*/)
+  vtkImageData* screenShot/*=nullptr*/, vtkMRMLMessageCollection* userMessagesInput/*=nullptr*/, bool saveHiddenNodes/*=true*/)
 {
   // Overview:
   // - confirm the arguments are valid and create directories if needed
@@ -4284,7 +4288,7 @@ bool vtkMRMLScene::SaveSceneToSlicerDataBundleDirectory(const char* sdbDir,
 
   // write the scene to disk, changes paths to relative
   vtkDebugMacro("calling commit on the scene, to url " << this->GetURL());
-  this->Commit(nullptr, userMessages);
+  this->Commit(nullptr, userMessages, saveHiddenNodes);
 
   //
   // Now, restore the state of the scene
