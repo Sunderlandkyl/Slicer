@@ -311,12 +311,6 @@ void vtkSlicerSceneViewsModuleLogic::CreateSceneView(const char* name, const cha
     return;
   }
 
-  if (!screenshot)
-  {
-    vtkErrorMacro("CreateSceneView: No screenshot was set.");
-    return;
-  }
-
   if (!sequenceBrowser)
   {
     sequenceBrowser = this->GetSceneViewSequenceBrowserNode(true);
