@@ -327,6 +327,9 @@ void vtkSlicerSequencesLogic::UpdateProxyNodesFromSequences(vtkMRMLSequenceBrows
     indexValue=browserNode->GetMasterSequenceNode()->GetNthIndexValue(selectedItemNumber);
   }
 
+  /// Pause rending to speed up the update
+  this->GetApplicationLogic()->PauseRender();
+
   std::vector< vtkMRMLSequenceNode* > synchronizedSequenceNodes;
   browserNode->GetSynchronizedSequenceNodes(synchronizedSequenceNodes, true);
 
@@ -547,6 +550,9 @@ void vtkSlicerSequencesLogic::UpdateProxyNodesFromSequences(vtkMRMLSequenceBrows
   timer->StopTimer();
   vtkInfoMacro("UpdateProxyNodesFromSequences: " << timer->GetElapsedTime() << "sec\n");
 #endif
+
+  /// Resume rending
+  this->GetApplicationLogic()->ResumeRender();
 }
 
 //---------------------------------------------------------------------------

@@ -72,7 +72,9 @@ void vtkSlicerSceneViewsModuleLogic::OnMRMLSceneEndImport()
     return;
   }
 
+  this->GetApplicationLogic()->PauseRender();
   this->ConvertSceneViewNodesToSequenceBrowserNodes(this->GetMRMLScene());
+  this->GetApplicationLogic()->ResumeRender();
 }
 
 //-----------------------------------------------------------------------------
@@ -99,10 +101,15 @@ void vtkSlicerSceneViewsModuleLogic::ConvertSceneViewNodesToSequenceBrowserNodes
     return;
   }
 
-  vtkMRMLSequenceBrowserNode* sequenceBrowser = this->CreateSceneViewSequenceBrowserNode();
-
   std::vector<vtkMRMLNode*> nodes;
   scene->GetNodesByClass("vtkMRMLSceneViewNode", nodes);
+  if (nodes.empty())
+  {
+    return;
+  }
+
+  vtkMRMLSequenceBrowserNode* sequenceBrowser = this->CreateSceneViewSequenceBrowserNode();
+  MRMLNodeModifyBlocker blocker(sequenceBrowser);
   for (vtkMRMLNode* node : nodes)
   {
     vtkMRMLSceneViewNode* sceneView = vtkMRMLSceneViewNode::SafeDownCast(node);
@@ -168,7 +175,8 @@ vtkMRMLSequenceBrowserNode* vtkSlicerSceneViewsModuleLogic::ConvertSceneViewNode
     vtkSmartPointer<vtkMRMLSequenceNode> sequenceNode = sequenceBrowser->GetSequenceNode(proxyNode);
     if (!sequenceNode)
     {
-      sequenceNode = vtkMRMLSequenceNode::SafeDownCast(this->GetMRMLScene()->CreateNodeByClass("vtkMRMLSequenceNode"));
+      sequenceNode = vtkSmartPointer<vtkMRMLSequenceNode>::Take(vtkMRMLSequenceNode::SafeDownCast(
+        this->GetMRMLScene()->CreateNodeByClass("vtkMRMLSequenceNode")));
       std::stringstream nameSS;
       nameSS << "Sequence_" << proxyNode->GetName();
       std::string nameString = nameSS.str();
@@ -323,6 +331,7 @@ void vtkSlicerSceneViewsModuleLogic::CreateSceneView(const char* name, const cha
   }
 
   MRMLNodeModifyBlocker blocker(sequenceBrowser);
+  this->GetApplicationLogic()->PauseRender();
 
   bool wasRecordingActive = sequenceBrowser->GetRecordingActive();
   sequenceBrowser->RecordingActiveOn();
@@ -406,6 +415,7 @@ void vtkSlicerSceneViewsModuleLogic::CreateSceneView(const char* name, const cha
   {
     this->GetMRMLScene()->EndState(vtkMRMLScene::BatchProcessState);
   }
+  this->GetApplicationLogic()->ResumeRender();
 }
 
 //---------------------------------------------------------------------------
