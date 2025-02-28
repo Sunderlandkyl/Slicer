@@ -95,7 +95,6 @@ protected slots:
   void updateChart();
 
   void sequenceNodeNameEdited(int row, int column);
-  void sequenceSelectionChanged();
 
   void onAddSequenceNodeButtonClicked();
   void onRemoveSequenceNodesButtonClicked();
