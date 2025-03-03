@@ -68,6 +68,8 @@ public:
     std::vector<vtkMRMLNode*> savedNodes, vtkMRMLSequenceBrowserNode* sequenceBrowser=nullptr);
 
   bool RestoreSceneView(int sceneViewIndex);
+  bool RestoreSceneView(const char* sceneViewName);
+  int GetSceneViewIndexByName(const char* name);
 
   /// Modify an existing sceneView.
   void ModifyNthSceneView(int sceneViewIndex, const char* name, const char* description, int screenshotType, vtkImageData* screenshot);

@@ -89,7 +89,6 @@ void vtkSlicerSequencesLogic::RegisterNodes()
     vtkErrorMacro("Scene is invalid");
     return;
   }
-  this->GetMRMLScene()->RegisterNodeClass(vtkSmartPointer<vtkMRMLSequenceBrowserNode>::New());
 }
 
 //---------------------------------------------------------------------------
@@ -328,7 +327,10 @@ void vtkSlicerSequencesLogic::UpdateProxyNodesFromSequences(vtkMRMLSequenceBrows
   }
 
   /// Pause rending to speed up the update
-  this->GetApplicationLogic()->PauseRender();
+  if (this->GetApplicationLogic())
+  {
+    this->GetApplicationLogic()->PauseRender();
+  }
 
   std::vector< vtkMRMLSequenceNode* > synchronizedSequenceNodes;
   browserNode->GetSynchronizedSequenceNodes(synchronizedSequenceNodes, true);
@@ -552,7 +554,10 @@ void vtkSlicerSequencesLogic::UpdateProxyNodesFromSequences(vtkMRMLSequenceBrows
 #endif
 
   /// Resume rending
-  this->GetApplicationLogic()->ResumeRender();
+  if (this->GetApplicationLogic())
+  {
+    this->GetApplicationLogic()->ResumeRender();
+  }
 }
 
 //---------------------------------------------------------------------------

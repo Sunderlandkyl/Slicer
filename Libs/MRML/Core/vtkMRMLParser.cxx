@@ -19,6 +19,7 @@ Version:   $Revision: 1.8 $
 #include "vtkMRMLNode.h"
 #include "vtkMRMLSubjectHierarchyNode.h"
 #include "vtkMRMLSubjectHierarchyLegacyNode.h"
+#include "vtkMRMLSceneViewNode.h"
 #include "vtkTagTable.h"
 
 // VTK includes
@@ -99,6 +100,19 @@ void vtkMRMLParser::StartElement(const char* tagName, const char** atts)
     // last node in the scene view's snapshot scene
     vtkMRMLSubjectHierarchyNode* subjectHierarchyNode = vtkMRMLSubjectHierarchyNode::SafeDownCast(
       this->NodeCollection->GetItemAsObject(this->NodeCollection->GetNumberOfItems()-1) );
+    if (!subjectHierarchyNode)
+    {
+      vtkMRMLSceneViewNode* sceneViewNode = vtkMRMLSceneViewNode::SafeDownCast(
+        this->NodeCollection->GetItemAsObject(this->NodeCollection->GetNumberOfItems()-1) );
+      if (!sceneViewNode)
+      {
+        vtkWarningMacro("Invalid parent node element for SubjectHierarchyItem");
+        return;
+      }
+      vtkCollection* shNodeCollection = sceneViewNode->GetStoredScene()->GetNodesByClass("vtkMRMLSubjectHierarchyNode");
+      subjectHierarchyNode = vtkMRMLSubjectHierarchyNode::SafeDownCast(shNodeCollection->GetItemAsObject(0));
+      shNodeCollection->Delete();
+    }
     subjectHierarchyNode->ReadItemFromXML(atts);
     return;
   }

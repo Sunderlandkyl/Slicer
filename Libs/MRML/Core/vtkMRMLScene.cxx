@@ -53,6 +53,7 @@ Version:   $Revision: 1.18 $
 #include "vtkMRMLSegmentationNode.h"
 #include "vtkMRMLSegmentationStorageNode.h"
 #include "vtkMRMLSelectionNode.h"
+#include "vtkMRMLSequenceBrowserNode.h"
 #include "vtkMRMLSequenceNode.h"
 #include "vtkMRMLSequenceStorageNode.h"
 #include "vtkMRMLSliceCompositeNode.h"
@@ -228,6 +229,7 @@ vtkMRMLScene::vtkMRMLScene()
   this->RegisterNodeClass( vtkSmartPointer< vtkMRMLPlotChartNode >::New() );
   this->RegisterNodeClass( vtkSmartPointer< vtkMRMLPlotViewNode >::New() );
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLSubjectHierarchyNode>::New()); // Increments next subject hierarchy item ID
+  this->RegisterNodeClass(vtkSmartPointer<vtkMRMLSequenceBrowserNode>::New());
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLSequenceNode>::New());
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLSequenceStorageNode>::New());
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLLinearTransformSequenceStorageNode>::New());

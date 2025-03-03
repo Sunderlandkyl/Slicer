@@ -72,9 +72,17 @@ void vtkSlicerSceneViewsModuleLogic::OnMRMLSceneEndImport()
     return;
   }
 
-  this->GetApplicationLogic()->PauseRender();
+  if (this->GetApplicationLogic())
+  {
+    this->GetApplicationLogic()->PauseRender();
+  }
+
   this->ConvertSceneViewNodesToSequenceBrowserNodes(this->GetMRMLScene());
-  this->GetApplicationLogic()->ResumeRender();
+
+  if (this->GetApplicationLogic())
+  {
+    this->GetApplicationLogic()->ResumeRender();
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -331,7 +339,10 @@ void vtkSlicerSceneViewsModuleLogic::CreateSceneView(const char* name, const cha
   }
 
   MRMLNodeModifyBlocker blocker(sequenceBrowser);
-  this->GetApplicationLogic()->PauseRender();
+  if (this->GetApplicationLogic())
+  {
+    this->GetApplicationLogic()->PauseRender();
+  }
 
   bool wasRecordingActive = sequenceBrowser->GetRecordingActive();
   sequenceBrowser->RecordingActiveOn();
@@ -346,7 +357,15 @@ void vtkSlicerSceneViewsModuleLogic::CreateSceneView(const char* name, const cha
   vtkMRMLVolumeNode* screenshotNode = this->GetSceneViewScreenshotProxyNode(sequenceBrowser);
   if (screenshotNode)
   {
-    screenshotNode->SetAndObserveImageData(screenshot);
+    if (!screenshotNode->GetImageData())
+    {
+      // Initialize the screenshot image data to ensure that the correct sequence nodes
+      // are created.
+      vtkNew<vtkImageData> tempScreenshot;
+      tempScreenshot->SetDimensions(1, 1, 1);
+      tempScreenshot->AllocateScalars(VTK_CHAR, 3);
+      screenshotNode->SetAndObserveImageData(tempScreenshot);
+    }
     savedNodes.push_back(screenshotNode);
   }
 
@@ -407,6 +426,7 @@ void vtkSlicerSceneViewsModuleLogic::CreateSceneView(const char* name, const cha
   }
 
   int index = this->GetNumberOfSceneViews() - 1;
+  this->SetNthSceneViewScreenshot(index, screenshot);
   this->SetNthSceneViewName(index, name ? name : "");
   this->SetNthSceneViewDescription(index, description ? description : "");
   this->SetNthSceneViewScreenshotType(index, screenshotType);
@@ -415,7 +435,11 @@ void vtkSlicerSceneViewsModuleLogic::CreateSceneView(const char* name, const cha
   {
     this->GetMRMLScene()->EndState(vtkMRMLScene::BatchProcessState);
   }
-  this->GetApplicationLogic()->ResumeRender();
+
+  if (this->GetApplicationLogic())
+  {
+    this->GetApplicationLogic()->ResumeRender();
+  }
 }
 
 //---------------------------------------------------------------------------
@@ -551,7 +575,18 @@ void vtkSlicerSceneViewsModuleLogic::SetNthSceneViewScreenshot(int index, vtkIma
     vtkErrorMacro("GetNthSceneViewScreenshot: Failed to get screenshot data node.");
     return;
   }
-  screenshotDataNode->SetAndObserveImageData(screenshot);
+
+  if (screenshot)
+  {
+    screenshotDataNode->SetAndObserveImageData(screenshot);
+  }
+  else
+  {
+    vtkNew<vtkImageData> tempScreenshot;
+    tempScreenshot->SetDimensions(1, 1, 1);
+    tempScreenshot->AllocateScalars(VTK_UNSIGNED_CHAR, 3);
+    screenshotDataNode->SetAndObserveImageData(tempScreenshot);
+  }
 }
 
 //---------------------------------------------------------------------------
@@ -563,7 +598,19 @@ vtkImageData* vtkSlicerSceneViewsModuleLogic::GetNthSceneViewScreenshot(int inde
     vtkErrorMacro("GetNthSceneViewScreenshot: Failed to get screenshot data node.");
     return nullptr;
   }
-  return screenshotDataNode->GetImageData();
+
+  vtkImageData* screenshot = screenshotDataNode->GetImageData();
+  if (screenshot)
+  {
+    int dimensions[3] = { 0,0,0 };
+    screenshot->GetDimensions(dimensions);
+    if (dimensions[0] <= 1 && dimensions[1] <= 1 && dimensions[2] <= 1)
+    {
+      // Screenshot is not valid.
+      return nullptr;
+    }
+  }
+  return screenshot;
 }
 
 //---------------------------------------------------------------------------
@@ -626,6 +673,32 @@ bool vtkSlicerSceneViewsModuleLogic::RestoreSceneView(int sceneIndex)
   }
 
   return true;
+}
+
+//---------------------------------------------------------------------------
+bool vtkSlicerSceneViewsModuleLogic::RestoreSceneView(const char* name)
+{
+  int sceneIndex = this->GetSceneViewIndexByName(name);
+  if (sceneIndex < 0)
+  {
+    vtkErrorMacro("RestoreSceneView: Failed to get scene view index.");
+    return false;
+  }
+
+  return this->RestoreSceneView(sceneIndex);
+}
+
+//---------------------------------------------------------------------------
+int vtkSlicerSceneViewsModuleLogic::GetSceneViewIndexByName(const char* name)
+{
+  for (int i = 0; i < this->GetNumberOfSceneViews(); ++i)
+  {
+    if (this->GetNthSceneViewName(i).compare(name) == 0)
+    {
+      return i;
+    }
+  }
+  return -1;
 }
 
 //---------------------------------------------------------------------------

@@ -22,8 +22,6 @@
 #ifndef __vtkMRMLSequenceBrowserNode_h
 #define __vtkMRMLSequenceBrowserNode_h
 
-#include "vtkSlicerSequencesModuleMRMLExport.h"
-
 // MRML includes
 #include <vtkMRML.h>
 #include <vtkMRMLNode.h>
@@ -37,7 +35,7 @@ class vtkCollection;
 class vtkMRMLSequenceNode;
 class vtkIntArray;
 
-class VTK_SLICER_SEQUENCES_MODULE_MRML_EXPORT vtkMRMLSequenceBrowserNode : public vtkMRMLNode
+class VTK_MRML_EXPORT vtkMRMLSequenceBrowserNode : public vtkMRMLNode
 {
 public:
   static vtkMRMLSequenceBrowserNode *New();

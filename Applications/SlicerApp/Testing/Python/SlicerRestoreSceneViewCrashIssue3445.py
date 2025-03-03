@@ -121,7 +121,7 @@ class SlicerRestoreSceneViewCrashIssue3445Test(ScriptedLoadableModuleTest):
         ioManager.loadFile(filePath)
         ioManager.loadFile(filePath)
 
-        slicer.modules.sceneView.logic().RestoreSceneView(0)
+        slicer.modules.sceneviews.logic().RestoreSceneView(0)
 
         # If test reach this point without crashing it is a success
 
