@@ -909,9 +909,16 @@ void qMRMLSliceControllerWidgetPrivate::updateWidgetFromMRMLSliceNode()
   this->SliceOffsetSlider->setPrefix(QString("%1: ").arg(QString::fromStdString(positiveAxisLabel)));
 
   // Update slice visibility toggle
+  wasBlocked = this->actionShow_in_3D->blockSignals(true);
   this->actionShow_in_3D->setChecked(sliceNode->GetSliceVisible());
+  this->actionShow_in_3D->blockSignals(wasBlocked);
+  wasBlocked = this->SliceVisibilityButton->blockSignals(true);
+  this->SliceVisibilityButton->setChecked(sliceNode->GetSliceVisible());
+  this->SliceVisibilityButton->blockSignals(wasBlocked);
+  wasBlocked = this->actionShow_reformat_widget->blockSignals(true);
   this->actionLockNormalToCamera->setChecked(
     sliceNode->GetWidgetNormalLockedToCamera());
+  this->actionLockNormalToCamera->blockSignals(wasBlocked);
 
   // Label Outline
   bool showOutline = sliceNode->GetUseLabelOutline();

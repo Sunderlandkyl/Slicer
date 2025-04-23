@@ -215,10 +215,10 @@ protected:
   vtkMRMLSequenceBrowserNode* ConvertSceneViewNodeToSequenceBrowserNode(vtkMRMLSceneViewNode* sceneView, vtkMRMLSequenceBrowserNode* sequenceBrowserNode);
 
   /// Add all display-related nodes to the vector.
-  void GetDisplayNodes(std::vector<vtkMRMLNode*>& displayNodes);
+  void GetDisplayNodes(vtkMRMLScene* scene, std::vector<vtkMRMLNode*>& displayNodes);
 
   /// Add all view-related nodes to the vector.
-  void GetViewNodes(std::vector<vtkMRMLNode*>& viewNodes);
+  void GetViewNodes(vtkMRMLScene* scene, std::vector<vtkMRMLNode*>& viewNodes);
 
 private:
 

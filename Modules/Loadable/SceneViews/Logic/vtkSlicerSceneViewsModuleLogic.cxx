@@ -16,6 +16,7 @@
 #include <vtkMRMLVectorVolumeNode.h>
 
 // VTK includes
+#include <vtkFloatArray.h>
 #include <vtkImageData.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
@@ -50,11 +51,16 @@ void vtkSlicerSceneViewsModuleLogic::SetMRMLSceneInternal(vtkMRMLScene* newScene
   vtkDebugMacro("SetMRMLSceneInternal - listening to scene events");
 
   vtkNew<vtkIntArray> events;
+  vtkNew<vtkFloatArray> priorities;
   events->InsertNextValue(vtkMRMLScene::NodeAddedEvent);
+  priorities->InsertNextValue(0.0);
   events->InsertNextValue(vtkMRMLScene::EndCloseEvent);
+  priorities->InsertNextValue(0.0);
   events->InsertNextValue(vtkMRMLScene::EndImportEvent);
+  priorities->InsertNextValue(-10.0);
   events->InsertNextValue(vtkMRMLScene::EndRestoreEvent);
-  this->SetAndObserveMRMLSceneEventsInternal(newScene, events.GetPointer());
+  priorities->InsertNextValue(0.0);
+  this->SetAndObserveMRMLSceneEventsInternal(newScene, events, priorities);
 }
 
 //-----------------------------------------------------------------------------
@@ -134,11 +140,6 @@ void vtkSlicerSceneViewsModuleLogic::ConvertSceneViewNodesToSequenceBrowserNodes
 vtkMRMLSequenceBrowserNode* vtkSlicerSceneViewsModuleLogic::ConvertSceneViewNodeToSequenceBrowserNode(vtkMRMLSceneViewNode* sceneViewNode,
   vtkMRMLSequenceBrowserNode* sequenceBrowser)
 {
-  vtkMRMLScene* snapshotScene = sceneViewNode->GetStoredScene();
-
-  std::vector<vtkMRMLNode*> snapshotNodes;
-  snapshotScene->GetNodesByClass("vtkMRMLNode", snapshotNodes);
-
   if (!sequenceBrowser)
   {
     sequenceBrowser = this->AddNewSceneViewSequenceBrowserNode();
@@ -155,23 +156,23 @@ vtkMRMLSequenceBrowserNode* vtkSlicerSceneViewsModuleLogic::ConvertSceneViewNode
   wasDisabledModifiedEvents[sequenceBrowser] = sequenceBrowser->GetDisableModifiedEvent();
   sequenceBrowser->DisableModifiedEventOn();
 
+  vtkMRMLScene* snapshotScene = sceneViewNode->GetStoredScene();
+
+  std::vector<vtkMRMLNode*> snapshotNodes;
+  this->GetDisplayNodes(snapshotScene, snapshotNodes);
+  this->GetViewNodes(snapshotScene, snapshotNodes);
+
   std::vector<vtkMRMLNode*> proxyNodes;
   std::map<vtkMRMLNode*, vtkMRMLNode*> proxyNodeToSnapshotMap;
   for (vtkMRMLNode* snapshotNode : snapshotNodes)
   {
-    if (!snapshotNode->IsA("vtkMRMLDisplayNode"))
-    {
-      continue;
-    }
-
-    vtkMRMLNode* proxyNode = this->GetMRMLScene()->GetNodeByID(snapshotNode->GetID());
+    vtkSmartPointer<vtkMRMLNode> proxyNode = this->GetMRMLScene()->GetNodeByID(snapshotNode->GetID());
     if (!proxyNode)
     {
-      proxyNode = snapshotNode->CreateNodeInstance();
+      proxyNode = vtkSmartPointer<vtkMRMLNode>::Take(snapshotNode->CreateNodeInstance());
       this->GetMRMLScene()->AddNode(proxyNode);
       proxyNode->Copy(snapshotNode);
     }
-
     proxyNodes.push_back(proxyNode);
     proxyNodeToSnapshotMap[proxyNode] = snapshotNode;
   }
@@ -255,42 +256,42 @@ void vtkSlicerSceneViewsModuleLogic::RegisterNodes()
 }
 
 //---------------------------------------------------------------------------
-void vtkSlicerSceneViewsModuleLogic::GetDisplayNodes(std::vector<vtkMRMLNode*>& nodes)
+void vtkSlicerSceneViewsModuleLogic::GetDisplayNodes(vtkMRMLScene* scene, std::vector<vtkMRMLNode*>& nodes)
 {
   std::vector<vtkMRMLNode*> displayNodes;
-  this->GetMRMLScene()->GetNodesByClass("vtkMRMLDisplayNode", displayNodes);
+  scene->GetNodesByClass("vtkMRMLDisplayNode", displayNodes);
   nodes.insert(nodes.end(), displayNodes.begin(), displayNodes.end());
 
   std::vector<vtkMRMLNode*> volumePropertyNodes;
-  this->GetMRMLScene()->GetNodesByClass("vtkMRMLVolumePropertyNode", volumePropertyNodes);
+  scene->GetNodesByClass("vtkMRMLVolumePropertyNode", volumePropertyNodes);
   nodes.insert(nodes.end(), volumePropertyNodes.begin(), volumePropertyNodes.end());
 
   std::vector<vtkMRMLNode*> clipNodes;
-  this->GetMRMLScene()->GetNodesByClass("vtkMRMLClipNode", clipNodes);
+  scene->GetNodesByClass("vtkMRMLClipNode", clipNodes);
   nodes.insert(nodes.end(), clipNodes.begin(), clipNodes.end());
 
   std::vector<vtkMRMLNode*> crosshairNodes;
-  this->GetMRMLScene()->GetNodesByClass("vtkMRMLCrosshairNode", crosshairNodes);
+  scene->GetNodesByClass("vtkMRMLCrosshairNode", crosshairNodes);
   nodes.insert(nodes.end(), crosshairNodes.begin(), crosshairNodes.end());
 }
 
 //---------------------------------------------------------------------------
-void vtkSlicerSceneViewsModuleLogic::GetViewNodes(std::vector<vtkMRMLNode*>& nodes)
+void vtkSlicerSceneViewsModuleLogic::GetViewNodes(vtkMRMLScene* scene, std::vector<vtkMRMLNode*>& nodes)
 {
   std::vector<vtkMRMLNode*> viewNodes;
-  this->GetMRMLScene()->GetNodesByClass("vtkMRMLAbstractViewNode", viewNodes);
+  scene->GetNodesByClass("vtkMRMLAbstractViewNode", viewNodes);
   nodes.insert(nodes.end(), viewNodes.begin(), viewNodes.end());
 
   std::vector<vtkMRMLNode*> cameraNodes;
-  this->GetMRMLScene()->GetNodesByClass("vtkMRMLCameraNode", cameraNodes);
+  scene->GetNodesByClass("vtkMRMLCameraNode", cameraNodes);
   nodes.insert(nodes.end(), cameraNodes.begin(), cameraNodes.end());
 
   std::vector<vtkMRMLNode*> sliceCompositeNodes;
-  this->GetMRMLScene()->GetNodesByClass("vtkMRMLSliceCompositeNode", sliceCompositeNodes);
+  scene->GetNodesByClass("vtkMRMLSliceCompositeNode", sliceCompositeNodes);
   nodes.insert(nodes.end(), sliceCompositeNodes.begin(), sliceCompositeNodes.end());
 
   std::vector<vtkMRMLNode*> layoutNodes;
-  this->GetMRMLScene()->GetNodesByClass("vtkMRMLLayoutNode", layoutNodes);
+  scene->GetNodesByClass("vtkMRMLLayoutNode", layoutNodes);
   nodes.insert(nodes.end(), layoutNodes.begin(), layoutNodes.end());
 }
 
@@ -310,12 +311,12 @@ void vtkSlicerSceneViewsModuleLogic::CreateSceneView(std::string name, std::stri
 
   if (saveDisplayNodes)
   {
-    this->GetDisplayNodes(savedNodes);
+    this->GetDisplayNodes(this->GetMRMLScene(), savedNodes);
   }
 
   if (saveViewNodes)
   {
-    this->GetViewNodes(savedNodes);
+    this->GetViewNodes(this->GetMRMLScene(), savedNodes);
   }
 
   this->CreateSceneView(savedNodes, name, description, screenshotType, screenshot, sequenceBrowser);
@@ -687,6 +688,12 @@ bool vtkSlicerSceneViewsModuleLogic::RestoreSceneView(int sceneIndex)
     return -1;
   }
 
+  vtkSlicerApplicationLogic* applicationLogic = this->GetApplicationLogic();
+  if (applicationLogic)
+  {
+    applicationLogic->PauseRender();
+  }
+
   if (sequenceBrowser->GetSelectedItemNumber() != sequenceBrowserIndex)
   {
     sequenceBrowser->SetSelectedItemNumber(sequenceBrowserIndex);
@@ -695,6 +702,11 @@ bool vtkSlicerSceneViewsModuleLogic::RestoreSceneView(int sceneIndex)
   {
     vtkSlicerSequencesLogic* sequencesLogic = vtkSlicerSequencesLogic::SafeDownCast(this->GetModuleLogic("Sequences"));
     sequencesLogic->UpdateProxyNodesFromSequences(sequenceBrowser);
+  }
+
+  if (applicationLogic)
+  {
+    applicationLogic->ResumeRender();
   }
 
   return true;

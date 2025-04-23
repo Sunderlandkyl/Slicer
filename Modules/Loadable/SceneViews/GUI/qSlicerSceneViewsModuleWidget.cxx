@@ -248,18 +248,35 @@ void qSlicerSceneViewsModuleWidget::moveUpSelected(QString sceneViewName)
     this->updateFromMRMLScene();
   }
 }
-
+#include <qSlicerLayoutManager.h>
+#include <qMRMLThreeDWidget.h>
+#include <qMRMLThreeDView.h>
+#include <qMRMLSliceWidget.h>
+#include <qMRMLSliceView.h>
 //-----------------------------------------------------------------------------
 void qSlicerSceneViewsModuleWidget::restoreSceneView(const QString& sceneViewName)
 {
   Q_D(qSlicerSceneViewsModuleWidget);
 
+  qSlicerApplication::application()->pauseRender();
   if (!d->logic()->RestoreSceneView(sceneViewName.toStdString()))
   {
     qCritical() << "Failed to restore scene view " << sceneViewName;
   }
 
   qSlicerApplication::application()->mainWindow()->statusBar()->showMessage("The SceneView was restored including the attached scene.", 2000);
+  qSlicerLayoutManager* layoutManager = qSlicerApplication::application()->layoutManager();
+  for (int i = 0; i < layoutManager->threeDViewCount(); ++i)
+  {
+    auto threeDWidget = layoutManager->threeDWidget(i);
+    threeDWidget->threeDView()->scheduleRender();
+  }
+  for (QString sliceName : layoutManager->sliceViewNames())
+  {
+    auto sliceWidget = layoutManager->sliceWidget(sliceName);
+    sliceWidget->sliceView()->scheduleRender();
+  }
+  qSlicerApplication::application()->resumeRender();
 }
 
 //-----------------------------------------------------------------------------
@@ -434,9 +451,26 @@ void qSlicerSceneViewsModuleWidget::onRestoreButtonClicked()
     return;
   }
   int rowIndex = button->property(ROW_INDEX_PROPERTY).toInt();
+
+  //qSlicerApplication::application()->pauseRender();
+
   d->logic()->RestoreSceneView(rowIndex);
 
+  //qSlicerLayoutManager* layoutManager = qSlicerApplication::application()->layoutManager();
+  //for (int i = 0; i < layoutManager->threeDViewCount(); ++i)
+  //{
+  //  auto threeDWidget = layoutManager->threeDWidget(i);
+  //  threeDWidget->threeDView()->scheduleRender();
+  //}
+  //for (QString sliceName : layoutManager->sliceViewNames())
+  //{
+  //  auto sliceWidget = layoutManager->sliceWidget(sliceName);
+  //  sliceWidget->sliceView()->scheduleRender();
+  //}
+
   this->updateFromMRMLScene();
+
+  //qSlicerApplication::application()->resumeRender();
 }
 
 //-----------------------------------------------------------------------------

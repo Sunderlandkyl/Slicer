@@ -16,6 +16,7 @@ vtkMRMLNodeNewMacro(vtkMRMLLayoutNode);
 //----------------------------------------------------------------------------
 vtkMRMLLayoutNode::vtkMRMLLayoutNode()
 {
+  this->SetSingletonTag("vtkMRMLLayoutNode");
   this->GUIPanelVisibility = 1;
   this->BottomPanelVisibility = 1;
   this->GUIPanelLR = 0;
@@ -189,12 +190,11 @@ void vtkMRMLLayoutNode::Reset(vtkMRMLNode* defaultNode)
 void vtkMRMLLayoutNode::SetViewArrangement(int arrNew)
 {
   // if the view arrangement definition has not been changed, return
-  if ( this->ViewArrangement == arrNew
-    && this->GetCurrentLayoutDescription()
-    && this->GetCurrentLayoutDescription() == this->GetLayoutDescription(arrNew) )
+  if (this->ViewArrangement == arrNew)
   {
     return;
   }
+
   this->ViewArrangement = arrNew;
   int wasModifying = this->StartModify();
   this->UpdateCurrentLayoutDescription();
@@ -371,6 +371,10 @@ void vtkMRMLLayoutNode::CopyContent(vtkMRMLNode* anode, bool deepCopy/*=true*/)
   vtkMRMLCopyIntMacro(MainPanelSize);
   vtkMRMLCopyIntMacro(SecondaryPanelSize);
   vtkMRMLCopyStringMacro(SelectedModule);
+
+  this->UpdateCurrentLayoutDescription();
+  this->Modified();
+
   vtkMRMLCopyEndMacro();
 }
 
