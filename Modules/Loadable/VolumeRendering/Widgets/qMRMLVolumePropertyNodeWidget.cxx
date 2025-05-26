@@ -124,6 +124,10 @@ void qMRMLVolumePropertyNodeWidget::updateFromVolumePropertyNode()
   qvtkReconnect(d->VolumePropertyWidget->volumeProperty(), newVolumeProperty,
                 vtkCommand::ModifiedEvent, this, SIGNAL(volumePropertyChanged()));
   d->VolumePropertyWidget->setVolumeProperty(newVolumeProperty);
+
+  bool componentSpinBoxVisible = d->ComponentCount > 1 && newVolumeProperty->GetIndependentComponents();
+  d->ComponentLabel->setVisible(componentSpinBoxVisible);
+  d->ComponentSpinBox->setVisible(componentSpinBoxVisible);
 }
 
 // --------------------------------------------------------------------------
@@ -193,9 +197,14 @@ int qMRMLVolumePropertyNodeWidget::componentCount()const
 void qMRMLVolumePropertyNodeWidget::setComponentCount(int componentCount)
 {
   Q_D(qMRMLVolumePropertyNodeWidget);
-  d->ComponentCount = componentCount;
+
+  // Limit the component count to the max range for volume rendering in VTK
+  d->ComponentCount = std::clamp(componentCount, 0, VTK_MAX_VRCOMP);
+  d->ComponentSpinBox->setRange(0, d->ComponentCount - 1);
+
   int currentComponent = d->VolumePropertyWidget->currentComponent();
-  currentComponent = std::clamp(currentComponent, 0, componentCount);
+  currentComponent = std::clamp(currentComponent, 0, d->ComponentCount);
   d->VolumePropertyWidget->setCurrentComponent(currentComponent);
-  d->ComponentSpinBox->setRange(0, componentCount - 1);
+
+  d->ComponentSpinBox->setVisible(d->ComponentCount > 1);
 }

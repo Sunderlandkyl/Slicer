@@ -350,7 +350,8 @@ void qSlicerVolumeRenderingModuleWidget::onCurrentMRMLVolumeNodeChanged(vtkMRMLN
       numberOfComponents = imageData->GetNumberOfScalarComponents();
     }
   }
-  d->VolumePropertyNodeWidget->setComponentCount(numberOfComponents);
+  // Limit the component count to the max range for volume rendering in VTK
+  d->VolumePropertyNodeWidget->setComponentCount(qMin(numberOfComponents, VTK_MAX_VRCOMP));
 
   // Update widget from display node of the volume node
   this->updateWidgetFromMRML();
