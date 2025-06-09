@@ -32,6 +32,7 @@
 #include <vtkMRMLVectorVolumeDisplayNode.h>
 #include <vtkMRMLVectorVolumeNode.h>
 #include <vtkMRMLVolumePropertyNode.h>
+#include <vtkMRMLVolumePropertyJsonStorageNode.h>
 #include <vtkMRMLVolumePropertyStorageNode.h>
 #include <vtkMRMLShaderPropertyNode.h>
 #include <vtkMRMLShaderPropertyStorageNode.h>
@@ -110,6 +111,9 @@ void vtkSlicerVolumeRenderingLogic::RegisterNodes()
 
   vtkNew<vtkMRMLVolumePropertyStorageNode> vpsn;
   this->GetMRMLScene()->RegisterNodeClass( vpsn.GetPointer() );
+
+  vtkNew<vtkMRMLVolumePropertyJsonStorageNode> vpjsn;
+  this->GetMRMLScene()->RegisterNodeClass(vpjsn.GetPointer());
 
   vtkNew<vtkMRMLShaderPropertyNode> spn;
   this->GetMRMLScene()->RegisterNodeClass( spn.GetPointer() );
