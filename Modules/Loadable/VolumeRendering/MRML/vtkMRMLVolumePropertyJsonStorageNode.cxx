@@ -150,7 +150,6 @@ bool vtkMRMLVolumePropertyJsonStorageNode::ReadVolumeProperty(
 
   vtkSmartPointer<vtkDoubleArray> doubleArray = vtkSmartPointer<vtkDoubleArray>::Take(
     volumePropertyElement->GetDoubleArrayProperty("isoSurfaceValues"));
-  std::cout << doubleArray->GetNumberOfValues() << std::endl;
   volumeProperty->GetIsoSurfaceValues()->SetNumberOfContours(doubleArray->GetNumberOfValues());
   for (int i = 0; i < doubleArray->GetNumberOfValues(); ++i)
   {
@@ -620,14 +619,113 @@ bool vtkMRMLVolumePropertyJsonStorageNode::WriteTransferFunction(
 void vtkMRMLVolumePropertyJsonStorageNode::InitializeSupportedReadFileTypes()
 {
   //: File format name
-  this->SupportedReadFileTypes->InsertNextValue(vtkMRMLTr("vtkMRMLVolumePropertyJsonStorageNode", "MRML Volume Property") + " (.vp)");
+  this->SupportedReadFileTypes->InsertNextValue(vtkMRMLTr("vtkMRMLVolumePropertyJsonStorageNode", "MRML Volume Property") + " (.vp.json)");
 }
 
 //----------------------------------------------------------------------------
 void vtkMRMLVolumePropertyJsonStorageNode::InitializeSupportedWriteFileTypes()
 {
   //: File format name
-  this->SupportedWriteFileTypes->InsertNextValue(vtkMRMLTr("vtkMRMLVolumePropertyJsonStorageNode", "MRML Volume Property") + " (.vp)");
-  //: File format name
-  this->SupportedWriteFileTypes->InsertNextValue(vtkMRMLTr("vtkMRMLVolumePropertyJsonStorageNode", "MRML Volume Property") + " (.txt)");
+  this->SupportedWriteFileTypes->InsertNextValue(vtkMRMLTr("vtkMRMLVolumePropertyJsonStorageNode", "MRML Volume Property") + " (.vp.json)");
+}
+
+//----------------------------------------------------------------------------
+int vtkMRMLVolumePropertyJsonStorageNode::GetNumberOfVolumePropertiesInFile(const char* filePath)
+{
+  if (!filePath)
+  {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLVolumePropertyJsonStorageNode::GetNumberOfVolumePropertiesInFile",
+      "Getting number of volume properties in file failed: invalid filename.");
+    return 0;
+  }
+
+  vtkNew<vtkMRMLJsonReader> jsonReader;
+  vtkSmartPointer<vtkMRMLJsonElement> jsonElement = vtkSmartPointer<vtkMRMLJsonElement>::Take(jsonReader->ReadFromFile(filePath));
+  if (!jsonElement)
+  {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(),
+      "vtkMRMLVolumePropertyJsonStorageNode::GetNumberOfVolumePropertiesInFile",
+      jsonReader->GetUserMessages()->GetAllMessagesAsString());
+    return 0;
+  }
+
+  vtkSmartPointer<vtkMRMLJsonElement> volumeProperties = vtkSmartPointer<vtkMRMLJsonElement>::Take(
+    jsonElement->GetArrayProperty("volumeProperties"));
+  if (!volumeProperties)
+  {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLVolumePropertyJsonStorageNode::GetNumberOfVolumePropertiesInFile",
+      "Getting number of volume properties in file failed: 'volumeProperties' array not found.");
+    return 0;
+  }
+
+  return volumeProperties->GetArraySize();
+}
+
+//----------------------------------------------------------------------------
+vtkMRMLVolumePropertyNode* vtkMRMLVolumePropertyJsonStorageNode::AddNewVolumePropertyNodeFromFile(const char* filePath, const char* nodeName/*=nullptr*/,
+  int vpIndex/*=0*/)
+{
+  if (!filePath)
+  {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLVolumePropertyJsonStorageNode::AddNewVolumePropertyNodeFromFile",
+      "Reading volume property node file failed: invalid filename.");
+    return 0;
+  }
+
+  std::string newNodeName;
+  if (nodeName && strlen(nodeName) > 0)
+  {
+    newNodeName = this->GetScene()->GetUniqueNameByString(nodeName);
+  }
+  else
+  {
+    newNodeName = this->GetScene()->GetUniqueNameByString(this->GetFileNameWithoutExtension(filePath).c_str());
+  }
+
+  int result = 1;
+
+  vtkNew<vtkMRMLJsonReader> jsonReader;
+  vtkSmartPointer<vtkMRMLJsonElement> jsonElement = vtkSmartPointer<vtkMRMLJsonElement>::Take(jsonReader->ReadFromFile(filePath));
+  if (!jsonElement)
+  {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(),
+      "vtkMRMLVolumePropertyJsonStorageNode::AddNewVolumePropertyNodeFromFile",
+      jsonReader->GetUserMessages()->GetAllMessagesAsString());
+    return 0;
+  }
+
+  vtkSmartPointer<vtkMRMLJsonElement> volumeProperties = vtkSmartPointer<vtkMRMLJsonElement>::Take(
+    jsonElement->GetArrayProperty("volumeProperties"));
+  if (!volumeProperties)
+  {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLVolumePropertyJsonStorageNode::AddNewVolumePropertyNodeFromFile",
+      "Reading volume property node file failed: 'volumeProperties' array not found.");
+    return 0;
+  }
+
+  vtkSmartPointer<vtkMRMLJsonElement> volumePropertyElement = vtkSmartPointer<vtkMRMLJsonElement>::Take(
+    volumeProperties->GetArrayItem(vpIndex));
+  if (!volumePropertyElement)
+  {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLVolumePropertyJsonStorageNode::AddNewVolumePropertyNodeFromFile",
+      "Reading volume property node file failed: unable to read volume property node.");
+    return 0;
+  }
+  vtkMRMLVolumePropertyNode* volumePropertyNode = vtkMRMLVolumePropertyNode::SafeDownCast(
+    this->GetScene()->AddNewNodeByClass("vtkMRMLVolumePropertyNode", newNodeName));
+  if (!volumePropertyNode)
+  {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLVolumePropertyJsonStorageNode::AddNewVolumePropertyNodeFromFile",
+      "Adding new volume property node failed: unable to create volume property node.");
+    return nullptr;
+  }
+
+  if (!this->ReadVolumePropertyNode(volumePropertyNode, volumePropertyElement))
+  {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLVolumePropertyJsonStorageNode::AddNewVolumePropertyNodeFromFile",
+      "Adding new volume property node failed: unable to read volume property node from file.");
+    return nullptr;
+  }
+
+  return volumePropertyNode;
 }

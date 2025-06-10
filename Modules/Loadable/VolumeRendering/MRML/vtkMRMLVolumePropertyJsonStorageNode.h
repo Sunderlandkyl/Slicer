@@ -50,6 +50,9 @@ class VTK_SLICER_VOLUMERENDERING_MODULE_MRML_EXPORT vtkMRMLVolumePropertyJsonSto
   /// Return true if the node can be read in
   bool CanReadInReferenceNode(vtkMRMLNode *refNode) override;
 
+  int GetNumberOfVolumePropertiesInFile(const char* filePath);
+  vtkMRMLVolumePropertyNode* AddNewVolumePropertyNodeFromFile(const char* filePath, const char* nodeName=nullptr, int vpIndex=0);
+
 protected:
   vtkMRMLVolumePropertyJsonStorageNode();
   ~vtkMRMLVolumePropertyJsonStorageNode() override;
