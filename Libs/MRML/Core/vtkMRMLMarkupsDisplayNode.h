@@ -98,6 +98,16 @@ public:
     ComponentScaleHandle,
     Component_Last
   };
+
+  enum PropertiesLabelPositionType
+  {
+    PropertiesLabelPositionDefault = 0,
+    PropertiesLabelPositionLeft,
+    PropertiesLabelPositionRight,
+    PropertiesLabelPositionTop,
+    PropertiesLabelPositionBottom,
+    PropertiesLabelPosition_Last
+  };
   struct ComponentInfo
   {
     ComponentInfo()
@@ -177,6 +187,28 @@ public:
   vtkSetMacro(PropertiesLabelVisibility, bool);
   vtkGetMacro(PropertiesLabelVisibility, bool);
   vtkBooleanMacro(PropertiesLabelVisibility, bool);
+  //@}
+
+  //@{
+  /**
+   * Get/Set properties label position mode
+   */
+  vtkGetEnumMacro(PropertiesLabelPosition, int);
+  vtkSetEnumMacro(PropertiesLabelPosition, int);
+
+  /// Get properties label position as string
+  static const char* GetPropertiesLabelPositionAsString(int position);
+  /// Get properties label position from string
+  static int GetPropertiesLabelPositionFromString(const char* position);
+  //@}
+
+  //@{
+  /**
+   * Get/Set properties label line visibility (line from label to default position)
+   */
+  vtkGetMacro(PropertiesLabelLineVisibility, bool);
+  vtkSetMacro(PropertiesLabelLineVisibility, bool);
+  vtkBooleanMacro(PropertiesLabelLineVisibility, bool);
   //@}
 
   //@{
@@ -510,6 +542,8 @@ protected:
 
   bool PropertiesLabelVisibility;
   bool PointLabelsVisibility;
+  int PropertiesLabelPosition;
+  bool PropertiesLabelLineVisibility;
   bool FillVisibility;
   bool OutlineVisibility;
   double FillOpacity;

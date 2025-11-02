@@ -209,6 +209,10 @@ vtkSlicerMarkupsWidgetRepresentation3D::vtkSlicerMarkupsWidgetRepresentation3D()
   // and to other occluded actors.
   this->OccludedRelativeOffset = -25000;
 
+  this->PropertiesLabelLineMapper->SetInputData(this->PropertiesLabelLinePolyData);
+  this->PropertiesLabelLineActor->SetMapper(this->PropertiesLabelLineMapper);
+  this->PropertiesLabelLineActor->SetVisibility(false);
+
   this->RenderCompletedCallback = vtkSmartPointer<vtkCallbackCommand>::New();
   this->RenderCompletedCallback->SetClientData(this);
   this->RenderCompletedCallback->SetCallback(vtkSlicerMarkupsWidgetRepresentation3D::OnRenderCompleted);
@@ -668,6 +672,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::GetActors(vtkPropCollection* pc)
     controlPoints->LabelsOccludedActor->GetActors(pc);
   }
   this->TextActor->GetActors(pc);
+  this->PropertiesLabelLineActor->GetActors(pc);
 }
 
 //----------------------------------------------------------------------
@@ -760,6 +765,9 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOverlay(vtkViewport* viewport)
     double textActorPositionDisplay[3] = { 0.0 };
     this->Renderer->GetDisplayPoint(textActorPositionDisplay);
     this->TextActor->SetDisplayPosition(static_cast<int>(textActorPositionDisplay[0]), static_cast<int>(textActorPositionDisplay[1]));
+
+    // Update label position if custom positioning is enabled
+    this->UpdatePropertiesLabelPosition();
 
     if (!this->TextActorOccluded)
     {
@@ -903,6 +911,8 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOpaqueGeometry(vtkViewport* vi
     }
     count += this->TextActor->RenderOpaqueGeometry(viewport);
   }
+
+  count += this->PropertiesLabelLineActor->RenderOpaqueGeometry(viewport);
 
   return count;
 }
@@ -1235,4 +1245,116 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateRelativeCoincidentTopologyOff
   occludedMapper->SetRelativeCoincidentTopologyLineOffsetParameters(-1, this->OccludedRelativeOffset);
   occludedMapper->SetRelativeCoincidentTopologyPolygonOffsetParameters(-1, this->OccludedRelativeOffset);
   occludedMapper->SetRelativeCoincidentTopologyPointOffsetParameter(this->OccludedRelativeOffset);
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelPosition()
+{
+  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+  if (!displayNode || !this->Renderer || !this->TextActor)
+  {
+    return;
+  }
+
+  int labelPosition = displayNode->GetPropertiesLabelPosition();
+  if (labelPosition == vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionDefault)
+  {
+    this->PropertiesLabelLineActor->SetVisibility(false);
+    return; // Use default positioning logic
+  }
+
+  // Get viewport dimensions
+  int* viewportSize = this->Renderer->GetSize();
+  int margin = 10; // pixels from edge
+
+  // Get default position in display coordinates
+  this->Renderer->SetWorldPoint(this->TextActorPositionWorld);
+  this->Renderer->WorldToDisplay();
+  double defaultDisplayPos[3];
+  this->Renderer->GetDisplayPoint(defaultDisplayPos);
+
+  double newDisplayPos[2];
+
+  switch (labelPosition)
+  {
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionLeft:
+      newDisplayPos[0] = margin;
+      newDisplayPos[1] = defaultDisplayPos[1];
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionRight:
+      newDisplayPos[0] = viewportSize[0] - margin;
+      newDisplayPos[1] = defaultDisplayPos[1];
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionTop:
+      newDisplayPos[0] = defaultDisplayPos[0];
+      newDisplayPos[1] = viewportSize[1] - margin;
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionBottom:
+      newDisplayPos[0] = defaultDisplayPos[0];
+      newDisplayPos[1] = margin;
+      break;
+    default:
+      newDisplayPos[0] = defaultDisplayPos[0];
+      newDisplayPos[1] = defaultDisplayPos[1];
+  }
+
+  this->TextActor->SetDisplayPosition(
+    static_cast<int>(newDisplayPos[0]),
+    static_cast<int>(newDisplayPos[1]));
+
+  // Update line if needed
+  if (displayNode->GetPropertiesLabelLineVisibility())
+  {
+    this->UpdatePropertiesLabelLine();
+  }
+  else
+  {
+    this->PropertiesLabelLineActor->SetVisibility(false);
+  }
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelLine()
+{
+  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+  if (!displayNode || !this->Renderer || !this->TextActor)
+  {
+    this->PropertiesLabelLineActor->SetVisibility(false);
+    return;
+  }
+
+  // Get start point (default position in world coordinates)
+  double startWorld[3];
+  startWorld[0] = this->TextActorPositionWorld[0];
+  startWorld[1] = this->TextActorPositionWorld[1];
+  startWorld[2] = this->TextActorPositionWorld[2];
+
+  // Get end point (current text actor position converted to world)
+  int* textPos = this->TextActor->GetPositionCoordinate()->GetComputedDisplayValue(this->Renderer);
+  this->Renderer->SetDisplayPoint(textPos[0], textPos[1], 0);
+  this->Renderer->DisplayToWorld();
+  double endWorld[4];
+  this->Renderer->GetWorldPoint(endWorld);
+
+  // Create line
+  vtkNew<vtkPoints> points;
+  points->InsertNextPoint(startWorld);
+  points->InsertNextPoint(endWorld[0], endWorld[1], endWorld[2]);
+
+  vtkNew<vtkCellArray> lines;
+  lines->InsertNextCell(2);
+  lines->InsertCellPoint(0);
+  lines->InsertCellPoint(1);
+
+  this->PropertiesLabelLinePolyData->SetPoints(points);
+  this->PropertiesLabelLinePolyData->SetLines(lines);
+
+  // Set line appearance
+  int controlPointType = this->GetAllControlPointsSelected() ?
+    vtkSlicerMarkupsWidgetRepresentation::Selected :
+    vtkSlicerMarkupsWidgetRepresentation::Unselected;
+  this->PropertiesLabelLineActor->SetProperty(
+    this->GetControlPointsPipeline(controlPointType)->Property);
+
+  this->PropertiesLabelLineActor->SetVisibility(true);
 }

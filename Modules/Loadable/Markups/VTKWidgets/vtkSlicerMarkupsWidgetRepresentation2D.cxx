@@ -126,6 +126,10 @@ vtkSlicerMarkupsWidgetRepresentation2D::vtkSlicerMarkupsWidgetRepresentation2D()
 
   this->SlicePlane = vtkSmartPointer<vtkPlane>::New();
   this->WorldToSliceTransform = vtkSmartPointer<vtkTransform>::New();
+
+  this->PropertiesLabelLineMapper->SetInputData(this->PropertiesLabelLinePolyData);
+  this->PropertiesLabelLineActor->SetMapper(this->PropertiesLabelLineMapper);
+  this->PropertiesLabelLineActor->SetVisibility(false);
 }
 
 //----------------------------------------------------------------------
@@ -494,6 +498,9 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRMLInternal(vtkMRMLNode*
   double labelsOffset = this->ControlPointSize * 0.5 + this->PickingTolerance * 0.5 * this->GetScreenScaleFactor();
   this->UpdateAllPointsAndLabelsFromMRML(labelsOffset);
 
+  // Update label position if custom positioning is enabled
+  this->UpdatePropertiesLabelPosition();
+
   this->VisibilityOn();
 }
 
@@ -632,6 +639,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetActors(vtkPropCollection* pc)
     controlPoints->LabelsActor->GetActors(pc);
   }
   this->TextActor->GetActors(pc);
+  this->PropertiesLabelLineActor->GetActors(pc);
 }
 
 //----------------------------------------------------------------------
@@ -667,6 +675,7 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderOverlay(vtkViewport* viewport)
   {
     count += this->TextActor->RenderOverlay(viewport);
   }
+  count += this->PropertiesLabelLineActor->RenderOverlay(viewport);
   return count;
 }
 
@@ -1183,4 +1192,153 @@ bool vtkSlicerMarkupsWidgetRepresentation2D::IsRepresentationIntersectingSlice(v
     return false;
   }
   return true;
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation2D::UpdatePropertiesLabelPosition()
+{
+  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+  if (!displayNode || !this->Renderer || !this->TextActor)
+  {
+    return;
+  }
+
+  int labelPosition = displayNode->GetPropertiesLabelPosition();
+  if (labelPosition == vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionDefault)
+  {
+    this->PropertiesLabelLineActor->SetVisibility(false);
+    return; // Use default positioning logic
+  }
+
+  // Get viewport dimensions
+  int* viewportSize = this->Renderer->GetSize();
+  int margin = 10; // pixels from edge
+
+  // Get current text actor position (in display coordinates)
+  vtkCoordinate* textPositionCoordinate = this->TextActor->GetPositionCoordinate();
+  double* defaultDisplayPos = textPositionCoordinate->GetComputedDoubleDisplayValue(this->Renderer);
+
+  double newDisplayPos[2];
+
+  switch (labelPosition)
+  {
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionLeft:
+      newDisplayPos[0] = margin;
+      newDisplayPos[1] = defaultDisplayPos[1];
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionRight:
+      newDisplayPos[0] = viewportSize[0] - margin;
+      newDisplayPos[1] = defaultDisplayPos[1];
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionTop:
+      newDisplayPos[0] = defaultDisplayPos[0];
+      newDisplayPos[1] = viewportSize[1] - margin;
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionBottom:
+      newDisplayPos[0] = defaultDisplayPos[0];
+      newDisplayPos[1] = margin;
+      break;
+    default:
+      newDisplayPos[0] = defaultDisplayPos[0];
+      newDisplayPos[1] = defaultDisplayPos[1];
+  }
+
+  this->TextActor->SetDisplayPosition(
+    static_cast<int>(newDisplayPos[0]),
+    static_cast<int>(newDisplayPos[1]));
+
+  // Update line if needed
+  if (displayNode->GetPropertiesLabelLineVisibility())
+  {
+    this->UpdatePropertiesLabelLine();
+  }
+  else
+  {
+    this->PropertiesLabelLineActor->SetVisibility(false);
+  }
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation2D::UpdatePropertiesLabelLine()
+{
+  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+  if (!displayNode || !this->Renderer || !this->TextActor)
+  {
+    this->PropertiesLabelLineActor->SetVisibility(false);
+    return;
+  }
+
+  // Get start point (default position in display coordinates)
+  vtkCoordinate* defaultPositionCoordinate = vtkCoordinate::New();
+  defaultPositionCoordinate->SetCoordinateSystemToDisplay();
+
+  // The default position needs to be computed from the world position stored earlier
+  // For 2D views, we need to get the position from before repositioning
+  // We'll compute it from the current position coordinate
+  vtkCoordinate* textPositionCoordinate = this->TextActor->GetPositionCoordinate();
+
+  // Since we don't have a stored default position in 2D, we'll compute line endpoints differently
+  // Get the position coordinate value before our modification
+  double* currentDisplayPos = this->TextActor->GetPositionCoordinate()->GetComputedDoubleDisplayValue(this->Renderer);
+
+  // For simplicity in 2D, we'll draw the line based on the label position type
+  // We need to store the original position - for now, let's compute a reasonable endpoint
+  int labelPosition = displayNode->GetPropertiesLabelPosition();
+  int* viewportSize = this->Renderer->GetSize();
+
+  // Compute a default position based on the center of the view or markup bounds
+  double defaultDisplayPos[2];
+  defaultDisplayPos[0] = viewportSize[0] / 2.0;
+  defaultDisplayPos[1] = viewportSize[1] / 2.0;
+
+  // If we have points visible, use their centroid
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  if (markupsNode && markupsNode->GetNumberOfControlPoints() > 0)
+  {
+    double centroid[3] = {0, 0, 0};
+    int visibleCount = 0;
+    for (int i = 0; i < markupsNode->GetNumberOfControlPoints(); i++)
+    {
+      if (this->PointsVisibilityOnSlice->GetValue(i))
+      {
+        double worldPos[3];
+        markupsNode->GetNthControlPointPositionWorld(i, worldPos);
+        double slicePos[2];
+        this->GetWorldToSliceCoordinates(worldPos, slicePos);
+        defaultDisplayPos[0] += slicePos[0];
+        defaultDisplayPos[1] += slicePos[1];
+        visibleCount++;
+      }
+    }
+    if (visibleCount > 0)
+    {
+      defaultDisplayPos[0] /= visibleCount;
+      defaultDisplayPos[1] /= visibleCount;
+    }
+  }
+
+  // Create line in display coordinates
+  vtkNew<vtkPoints> points;
+  points->SetNumberOfPoints(2);
+  points->SetPoint(0, defaultDisplayPos[0], defaultDisplayPos[1], 0);
+  points->SetPoint(1, currentDisplayPos[0], currentDisplayPos[1], 0);
+
+  vtkNew<vtkCellArray> lines;
+  lines->InsertNextCell(2);
+  lines->InsertCellPoint(0);
+  lines->InsertCellPoint(1);
+
+  this->PropertiesLabelLinePolyData->SetPoints(points);
+  this->PropertiesLabelLinePolyData->SetLines(lines);
+
+  // Set line appearance
+  int controlPointType = this->GetAllControlPointsSelected() ?
+    vtkSlicerMarkupsWidgetRepresentation::Selected :
+    vtkSlicerMarkupsWidgetRepresentation::Unselected;
+  this->PropertiesLabelLineActor->SetProperty(
+    this->GetControlPointsPipeline(controlPointType)->Property);
+
+  this->PropertiesLabelLineActor->SetVisibility(true);
+
+  defaultPositionCoordinate->Delete();
 }

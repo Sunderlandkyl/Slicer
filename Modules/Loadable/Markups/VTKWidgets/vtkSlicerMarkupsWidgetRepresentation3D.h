@@ -154,6 +154,13 @@ protected:
   bool HideTextActorIfAllPointsOccluded;
   double OccludedRelativeOffset;
 
+  vtkNew<vtkPolyData> PropertiesLabelLinePolyData;
+  vtkNew<vtkPolyDataMapper> PropertiesLabelLineMapper;
+  vtkNew<vtkActor> PropertiesLabelLineActor;
+
+  void UpdatePropertiesLabelPosition();
+  void UpdatePropertiesLabelLine();
+
   static std::map<vtkRenderer*, vtkSmartPointer<vtkFloatArray>> CachedZBuffers;
 
   vtkSmartPointer<vtkCallbackCommand> RenderCompletedCallback;

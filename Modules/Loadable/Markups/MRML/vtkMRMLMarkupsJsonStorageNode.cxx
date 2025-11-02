@@ -619,6 +619,22 @@ bool vtkMRMLMarkupsJsonStorageNode::UpdateMarkupsDisplayNodeFromJsonValue(vtkMRM
     }
   }
 
+  if (displayItem->HasMember("propertiesLabelPosition"))
+  {
+    int position = vtkMRMLMarkupsDisplayNode::GetPropertiesLabelPositionFromString(
+      displayItem->GetStringProperty("propertiesLabelPosition").c_str());
+    if (position >= 0)
+    {
+      displayNode->SetPropertiesLabelPosition(position);
+    }
+  }
+
+  if (displayItem->HasMember("propertiesLabelLineVisibility"))
+  {
+    displayNode->SetPropertiesLabelLineVisibility(
+      displayItem->GetBoolProperty("propertiesLabelLineVisibility"));
+  }
+
   return true;
 }
 
@@ -1128,6 +1144,12 @@ bool vtkMRMLMarkupsJsonStorageNode::WriteDisplayProperties(vtkMRMLJsonWriter* wr
   writer->WriteDoubleProperty("interactionHandleScale", markupsDisplayNode->GetInteractionHandleScale());
 
   writer->WriteStringProperty("snapMode", markupsDisplayNode->GetSnapModeAsString(markupsDisplayNode->GetSnapMode()));
+
+  writer->WriteStringProperty("propertiesLabelPosition",
+    markupsDisplayNode->GetPropertiesLabelPositionAsString(
+      markupsDisplayNode->GetPropertiesLabelPosition()));
+  writer->WriteBoolProperty("propertiesLabelLineVisibility",
+    markupsDisplayNode->GetPropertiesLabelLineVisibility());
 
   writer->WriteObjectPropertyEnd();
   return true;
