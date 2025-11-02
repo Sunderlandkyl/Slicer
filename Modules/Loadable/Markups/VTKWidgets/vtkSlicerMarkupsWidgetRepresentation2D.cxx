@@ -126,6 +126,10 @@ vtkSlicerMarkupsWidgetRepresentation2D::vtkSlicerMarkupsWidgetRepresentation2D()
 
   this->SlicePlane = vtkSmartPointer<vtkPlane>::New();
   this->WorldToSliceTransform = vtkSmartPointer<vtkTransform>::New();
+
+  this->PropertiesLabelLineMapper->SetInputData(this->PropertiesLabelLinePolyData);
+  this->PropertiesLabelLineActor->SetMapper(this->PropertiesLabelLineMapper);
+  this->PropertiesLabelLineActor->SetVisibility(false);
 }
 
 //----------------------------------------------------------------------
@@ -494,6 +498,9 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRMLInternal(vtkMRMLNode*
   double labelsOffset = this->ControlPointSize * 0.5 + this->PickingTolerance * 0.5 * this->GetScreenScaleFactor();
   this->UpdateAllPointsAndLabelsFromMRML(labelsOffset);
 
+  // Update label position if custom positioning is enabled
+  this->UpdatePropertiesLabelPosition();
+
   this->VisibilityOn();
 }
 
@@ -632,6 +639,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetActors(vtkPropCollection* pc)
     controlPoints->LabelsActor->GetActors(pc);
   }
   this->TextActor->GetActors(pc);
+  this->PropertiesLabelLineActor->GetActors(pc);
 }
 
 //----------------------------------------------------------------------
@@ -663,10 +671,16 @@ int vtkSlicerMarkupsWidgetRepresentation2D::RenderOverlay(vtkViewport* viewport)
       count += controlPoints->LabelsActor->RenderOverlay(viewport);
     }
   }
-  if (this->TextActor->GetVisibility())
+
+  // Update label position if custom positioning is enabled
+  bool shouldRenderLabel = this->UpdatePropertiesLabelPosition();
+
+  if (this->TextActor->GetVisibility() && shouldRenderLabel)
   {
     count += this->TextActor->RenderOverlay(viewport);
   }
+
+  count += this->PropertiesLabelLineActor->RenderOverlay(viewport);
   return count;
 }
 
@@ -1183,4 +1197,153 @@ bool vtkSlicerMarkupsWidgetRepresentation2D::IsRepresentationIntersectingSlice(v
     return false;
   }
   return true;
+}
+
+//----------------------------------------------------------------------
+bool vtkSlicerMarkupsWidgetRepresentation2D::UpdatePropertiesLabelPosition()
+{
+  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+  if (!displayNode || !this->Renderer || !this->TextActor)
+  {
+    return true; // Render label with default behavior if no display node
+  }
+
+  int labelPosition = displayNode->GetPropertiesLabelPosition();
+  if (labelPosition == vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionDefault)
+  {
+    this->PropertiesLabelLineActor->SetVisibility(false);
+    // Clear the line geometry to ensure it doesn't persist
+    vtkNew<vtkPoints> emptyPoints;
+    this->PropertiesLabelLinePolyData->SetPoints(emptyPoints);
+    return true; // Use default positioning - render label normally
+  }
+
+  // Get viewport dimensions
+  int* viewportSize = this->Renderer->GetSize();
+  int margin = 10; // pixels from edge
+
+  // Get current text actor position (in display coordinates) BEFORE we modify it
+  vtkCoordinate* textPositionCoordinate = this->TextActor->GetPositionCoordinate();
+  double* defaultDisplayPos = textPositionCoordinate->GetComputedDoubleDisplayValue(this->Renderer);
+
+  // Store the default position to pass to the line update
+  double savedDefaultPos[2] = { defaultDisplayPos[0], defaultDisplayPos[1] };
+
+  // Calculate position in normalized viewport coordinates (0-1 range)
+  double normalizedMargin = static_cast<double>(margin) / viewportSize[0]; // approximate, using width
+  double newNormalizedPos[2];
+
+  // Get current normalized position
+  double currentNormalizedX = savedDefaultPos[0] / viewportSize[0];
+  double currentNormalizedY = savedDefaultPos[1] / viewportSize[1];
+
+  vtkTextProperty* textProperty = this->TextActor->GetTextProperty();
+
+  switch (labelPosition)
+  {
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionLeft:
+      newNormalizedPos[0] = normalizedMargin;
+      newNormalizedPos[1] = currentNormalizedY;
+      textProperty->SetJustificationToLeft();
+      textProperty->SetVerticalJustificationToCentered();
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionRight:
+      newNormalizedPos[0] = 1.0 - normalizedMargin;
+      newNormalizedPos[1] = currentNormalizedY;
+      textProperty->SetJustificationToRight();
+      textProperty->SetVerticalJustificationToCentered();
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionTop:
+      newNormalizedPos[0] = currentNormalizedX;
+      newNormalizedPos[1] = 1.0 - normalizedMargin;
+      textProperty->SetJustificationToCentered();
+      textProperty->SetVerticalJustificationToTop();
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionBottom:
+      newNormalizedPos[0] = currentNormalizedX;
+      newNormalizedPos[1] = normalizedMargin;
+      textProperty->SetJustificationToCentered();
+      textProperty->SetVerticalJustificationToBottom();
+      break;
+    default:
+      newNormalizedPos[0] = currentNormalizedX;
+      newNormalizedPos[1] = currentNormalizedY;
+  }
+
+  // Convert back to display coordinates for SetDisplayPosition
+  double newDisplayPos[2];
+  newDisplayPos[0] = newNormalizedPos[0] * viewportSize[0];
+  newDisplayPos[1] = newNormalizedPos[1] * viewportSize[1];
+
+  this->TextActor->SetDisplayPosition(
+    static_cast<int>(newDisplayPos[0]),
+    static_cast<int>(newDisplayPos[1]));
+
+  // Update line if needed
+  if (displayNode->GetPropertiesLabelLineVisibility())
+  {
+    this->UpdatePropertiesLabelLine(savedDefaultPos, newDisplayPos, labelPosition);
+  }
+  else
+  {
+    this->PropertiesLabelLineActor->SetVisibility(false);
+  }
+
+  return true; // Render the label
+}
+
+//----------------------------------------------------------------------
+void vtkSlicerMarkupsWidgetRepresentation2D::UpdatePropertiesLabelLine(const double defaultDisplayPosition[2], const double newDisplayPosition[2], int labelPosition)
+{
+  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+  if (!displayNode || !this->Renderer || !this->TextActor)
+  {
+    this->PropertiesLabelLineActor->SetVisibility(false);
+    return;
+  }
+
+  // Offset the end point away from the text to avoid collision
+  int textOffset = 15; // pixels offset from text
+  double offsetNewDisplayPosition[2];
+  offsetNewDisplayPosition[0] = newDisplayPosition[0];
+  offsetNewDisplayPosition[1] = newDisplayPosition[1];
+
+  switch (labelPosition)
+  {
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionLeft:
+      offsetNewDisplayPosition[0] += textOffset; // Move line endpoint toward center (right)
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionRight:
+      offsetNewDisplayPosition[0] -= textOffset; // Move line endpoint toward center (left)
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionTop:
+      offsetNewDisplayPosition[1] -= textOffset; // Move line endpoint toward center (down)
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionBottom:
+      offsetNewDisplayPosition[1] += textOffset; // Move line endpoint toward center (up)
+      break;
+  }
+
+  // Create line in display coordinates from default position to offset new position
+  vtkNew<vtkPoints> points;
+  points->SetNumberOfPoints(2);
+  points->SetPoint(0, defaultDisplayPosition[0], defaultDisplayPosition[1], 0);
+  points->SetPoint(1, offsetNewDisplayPosition[0], offsetNewDisplayPosition[1], 0);
+
+  vtkNew<vtkCellArray> lines;
+  lines->InsertNextCell(2);
+  lines->InsertCellPoint(0);
+  lines->InsertCellPoint(1);
+
+  this->PropertiesLabelLinePolyData->SetPoints(points);
+  this->PropertiesLabelLinePolyData->SetLines(lines);
+
+  // Set line appearance
+  int controlPointType = this->GetAllControlPointsSelected() ?
+    vtkSlicerMarkupsWidgetRepresentation::Selected :
+    vtkSlicerMarkupsWidgetRepresentation::Unselected;
+  this->PropertiesLabelLineActor->SetProperty(
+    this->GetControlPointsPipeline(controlPointType)->Property);
+
+  this->PropertiesLabelLineActor->SetVisibility(true);
 }

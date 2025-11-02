@@ -89,6 +89,8 @@ vtkMRMLMarkupsDisplayNode::vtkMRMLMarkupsDisplayNode()
 
   this->PropertiesLabelVisibility = true;
   this->PointLabelsVisibility = false;
+  this->PropertiesLabelPosition = vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionDefault;
+  this->PropertiesLabelLineVisibility = true;
   this->FillVisibility = true;
   this->OutlineVisibility = true;
   this->FillOpacity = 0.5;
@@ -291,6 +293,8 @@ void vtkMRMLMarkupsDisplayNode::CopyContent(vtkMRMLNode* anode, bool deepCopy /*
   vtkMRMLCopyBeginMacro(anode);
   vtkMRMLCopyBooleanMacro(PropertiesLabelVisibility);
   vtkMRMLCopyBooleanMacro(PointLabelsVisibility);
+  vtkMRMLCopyEnumMacro(PropertiesLabelPosition);
+  vtkMRMLCopyBooleanMacro(PropertiesLabelLineVisibility);
   vtkMRMLCopyFloatMacro(TextScale);
   vtkMRMLCopyFloatMacro(GlyphScale);
   vtkMRMLCopyFloatMacro(GlyphSize);
@@ -414,6 +418,42 @@ const char* vtkMRMLMarkupsDisplayNode::GetSnapModeAsString(int id)
   {
     case SnapModeUnconstrained: return "unconstrained";
     case SnapModeToVisibleSurface: return "toVisibleSurface";
+    default:
+      // invalid id
+      return "invalid";
+  }
+}
+
+//-----------------------------------------------------------
+int vtkMRMLMarkupsDisplayNode::GetPropertiesLabelPositionFromString(const char* name)
+{
+  if (name == nullptr)
+  {
+    // invalid name
+    return -1;
+  }
+  for (int ii = 0; ii < PropertiesLabelPosition_Last; ii++)
+  {
+    if (strcmp(name, GetPropertiesLabelPositionAsString(ii)) == 0)
+    {
+      // found a matching name
+      return ii;
+    }
+  }
+  // unknown name
+  return -1;
+}
+
+//---------------------------------------------------------------------------
+const char* vtkMRMLMarkupsDisplayNode::GetPropertiesLabelPositionAsString(int id)
+{
+  switch (id)
+  {
+    case PropertiesLabelPositionDefault: return "default";
+    case PropertiesLabelPositionLeft: return "left";
+    case PropertiesLabelPositionRight: return "right";
+    case PropertiesLabelPositionTop: return "top";
+    case PropertiesLabelPositionBottom: return "bottom";
     default:
       // invalid id
       return "invalid";

@@ -161,6 +161,13 @@ protected:
 
   double GetWidgetOpacity(int controlPointType);
 
+  vtkNew<vtkPolyData> PropertiesLabelLinePolyData;
+  vtkNew<vtkPolyDataMapper2D> PropertiesLabelLineMapper;
+  vtkNew<vtkActor2D> PropertiesLabelLineActor;
+
+  bool UpdatePropertiesLabelPosition();
+  void UpdatePropertiesLabelLine(const double defaultDisplayPosition[2], const double newDisplayPosition[2], int labelPosition);
+
 private:
   vtkSlicerMarkupsWidgetRepresentation2D(const vtkSlicerMarkupsWidgetRepresentation2D&) = delete;
   void operator=(const vtkSlicerMarkupsWidgetRepresentation2D&) = delete;

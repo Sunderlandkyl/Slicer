@@ -1199,6 +1199,9 @@ void vtkSlicerMarkupsLogic::CopyBasicDisplayProperties(vtkMRMLMarkupsDisplayNode
   targetDisplayNode->SetOpacity(sourceDisplayNode->GetOpacity());
 
   targetDisplayNode->SetInteractionHandleScale(sourceDisplayNode->GetInteractionHandleScale());
+
+  targetDisplayNode->SetPropertiesLabelPosition(sourceDisplayNode->GetPropertiesLabelPosition());
+  targetDisplayNode->SetPropertiesLabelLineVisibility(sourceDisplayNode->GetPropertiesLabelLineVisibility());
 }
 
 //---------------------------------------------------------------------------
