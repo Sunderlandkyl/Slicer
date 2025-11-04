@@ -49,6 +49,10 @@
 #include <vtkMRMLFolderDisplayNode.h>
 #include <vtkMRMLInteractionEventData.h>
 #include <vtkMRMLViewNode.h>
+#include <vtkMRMLScene.h>
+
+// STD includes
+#include <algorithm>
 
 std::map<vtkRenderer*, vtkSmartPointer<vtkFloatArray>> vtkSlicerMarkupsWidgetRepresentation3D::CachedZBuffers;
 
@@ -1263,6 +1267,86 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdateRelativeCoincidentTopologyOff
 }
 
 //----------------------------------------------------------------------
+int vtkSlicerMarkupsWidgetRepresentation3D::CalculatePropertiesLabelJitterOffset(int labelPosition)
+{
+  vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
+  if (!markupsNode)
+  {
+    return 0;
+  }
+
+  vtkMRMLScene* scene = markupsNode->GetScene();
+  if (!scene)
+  {
+    return 0;
+  }
+
+  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+  if (!displayNode)
+  {
+    return 0;
+  }
+
+  // Collect all markup nodes with the same label position that are visible
+  std::vector<std::string> nodeIDs;
+  std::vector<vtkMRMLNode*> markupNodes;
+  scene->GetNodesByClass("vtkMRMLMarkupsNode", markupNodes);
+
+  for (vtkMRMLNode* node : markupNodes)
+  {
+    vtkMRMLMarkupsNode* otherMarkupsNode = vtkMRMLMarkupsNode::SafeDownCast(node);
+    if (!otherMarkupsNode || otherMarkupsNode->GetNumberOfDefinedControlPoints() == 0)
+    {
+      continue;
+    }
+
+    // Check all display nodes for this markup
+    for (int i = 0; i < otherMarkupsNode->GetNumberOfDisplayNodes(); ++i)
+    {
+      vtkMRMLMarkupsDisplayNode* otherDisplayNode = vtkMRMLMarkupsDisplayNode::SafeDownCast(
+        otherMarkupsNode->GetNthDisplayNode(i));
+
+      if (!otherDisplayNode || !otherDisplayNode->GetVisibility() || !otherDisplayNode->GetPropertiesLabelVisibility())
+      {
+        continue;
+      }
+
+      // Check if this display node has the same label position
+      if (otherDisplayNode->GetPropertiesLabelPosition() == labelPosition)
+      {
+        nodeIDs.push_back(otherMarkupsNode->GetID());
+        break; // Only add each markup once
+      }
+    }
+  }
+
+  // Sort node IDs for consistent ordering
+  std::sort(nodeIDs.begin(), nodeIDs.end());
+
+  // Find this markup's index in the sorted list
+  std::string currentNodeID = markupsNode->GetID();
+  int index = 0;
+  for (size_t i = 0; i < nodeIDs.size(); ++i)
+  {
+    if (nodeIDs[i] == currentNodeID)
+    {
+      index = static_cast<int>(i);
+      break;
+    }
+  }
+
+  // Calculate jitter offset
+  // Spacing between labels (in pixels)
+  int labelSpacing = 30;
+
+  // Center the group of labels
+  int totalOffset = index * labelSpacing;
+  int groupCenterOffset = (static_cast<int>(nodeIDs.size()) - 1) * labelSpacing / 2;
+
+  return totalOffset - groupCenterOffset;
+}
+
+//----------------------------------------------------------------------
 bool vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelPosition(const double defaultDisplayPosition[2])
 {
   vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
@@ -1281,6 +1365,9 @@ bool vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelPosition(const
     return true; // Use default positioning - render label normally
   }
 
+  // Calculate jitter offset based on other markups with the same label position
+  int jitterOffset = this->CalculatePropertiesLabelJitterOffset(labelPosition);
+
   // Get viewport dimensions
   int* viewportSize = this->Renderer->GetSize();
   int margin = 10; // pixels from edge
@@ -1292,24 +1379,24 @@ bool vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelPosition(const
   {
     case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionLeft:
       newDisplayPos[0] = margin;
-      newDisplayPos[1] = defaultDisplayPosition[1];
+      newDisplayPos[1] = defaultDisplayPosition[1] + jitterOffset;
       textProperty->SetJustificationToLeft();
       textProperty->SetVerticalJustificationToCentered();
       break;
     case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionRight:
       newDisplayPos[0] = viewportSize[0] - margin;
-      newDisplayPos[1] = defaultDisplayPosition[1];
+      newDisplayPos[1] = defaultDisplayPosition[1] + jitterOffset;
       textProperty->SetJustificationToRight();
       textProperty->SetVerticalJustificationToCentered();
       break;
     case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionTop:
-      newDisplayPos[0] = defaultDisplayPosition[0];
+      newDisplayPos[0] = defaultDisplayPosition[0] + jitterOffset;
       newDisplayPos[1] = viewportSize[1] - margin;
       textProperty->SetJustificationToCentered();
       textProperty->SetVerticalJustificationToTop();
       break;
     case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionBottom:
-      newDisplayPos[0] = defaultDisplayPosition[0];
+      newDisplayPos[0] = defaultDisplayPosition[0] + jitterOffset;
       newDisplayPos[1] = margin;
       textProperty->SetJustificationToCentered();
       textProperty->SetVerticalJustificationToBottom();
@@ -1346,49 +1433,117 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelLine(const dou
     return;
   }
 
-  // Get start point (default position - where label would normally be - in world coordinates)
-  double startWorld[3];
-  startWorld[0] = this->TextActorPositionWorld[0];
-  startWorld[1] = this->TextActorPositionWorld[1];
-  startWorld[2] = this->TextActorPositionWorld[2];
+  // Get text bounds in display coordinates
+  double textSize[2];
+  this->TextActor->GetSize(this->Renderer, textSize);
 
-  // Offset the end point away from the text to avoid collision
-  int textOffset = 15; // pixels offset from text
-  double offsetNewDisplayPosition[2];
-  offsetNewDisplayPosition[0] = newDisplayPosition[0];
-  offsetNewDisplayPosition[1] = newDisplayPosition[1];
+  // Calculate the underline position (below the text)
+  double underlineY = newDisplayPosition[1];
+  double underlineOffset = 3.0; // pixels below text baseline
+
+  // Adjust underline Y position based on vertical justification
+  vtkTextProperty* textProperty = this->TextActor->GetTextProperty();
+  int verticalJustification = textProperty->GetVerticalJustification();
+  if (verticalJustification == VTK_TEXT_TOP)
+  {
+    underlineY -= textSize[1] + underlineOffset;
+  }
+  else if (verticalJustification == VTK_TEXT_CENTERED)
+  {
+    underlineY -= textSize[1] / 2.0 + underlineOffset;
+  }
+  else // VTK_TEXT_BOTTOM
+  {
+    underlineY -= underlineOffset;
+  }
+
+  // Calculate underline endpoints based on label position
+  double underlineStart[2], underlineEnd[2];
+  double underlineLength = textSize[0] * 0.8; // 80% of text width
 
   switch (labelPosition)
   {
     case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionLeft:
-      offsetNewDisplayPosition[0] += textOffset; // Move line endpoint toward center (right)
-      break;
     case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionRight:
-      offsetNewDisplayPosition[0] -= textOffset; // Move line endpoint toward center (left)
+      // Horizontal underline
+      if (textProperty->GetJustification() == VTK_TEXT_LEFT)
+      {
+        underlineStart[0] = newDisplayPosition[0];
+        underlineEnd[0] = newDisplayPosition[0] + underlineLength;
+      }
+      else if (textProperty->GetJustification() == VTK_TEXT_RIGHT)
+      {
+        underlineStart[0] = newDisplayPosition[0] - underlineLength;
+        underlineEnd[0] = newDisplayPosition[0];
+      }
+      else // VTK_TEXT_CENTERED
+      {
+        underlineStart[0] = newDisplayPosition[0] - underlineLength / 2.0;
+        underlineEnd[0] = newDisplayPosition[0] + underlineLength / 2.0;
+      }
+      underlineStart[1] = underlineY;
+      underlineEnd[1] = underlineY;
       break;
+
     case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionTop:
-      offsetNewDisplayPosition[1] -= textOffset; // Move line endpoint toward center (down)
-      break;
     case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionBottom:
-      offsetNewDisplayPosition[1] += textOffset; // Move line endpoint toward center (up)
+      // For top/bottom positions, use center of text for underline
+      underlineStart[0] = newDisplayPosition[0] - underlineLength / 2.0;
+      underlineEnd[0] = newDisplayPosition[0] + underlineLength / 2.0;
+      underlineStart[1] = underlineY;
+      underlineEnd[1] = underlineY;
       break;
+
+    default:
+      underlineStart[0] = newDisplayPosition[0];
+      underlineStart[1] = underlineY;
+      underlineEnd[0] = newDisplayPosition[0] + underlineLength;
+      underlineEnd[1] = underlineY;
   }
 
-  // Get end point (offset text actor position converted to world)
-  this->Renderer->SetDisplayPoint(offsetNewDisplayPosition[0], offsetNewDisplayPosition[1], 0);
-  this->Renderer->DisplayToWorld();
-  double endWorld[4];
-  this->Renderer->GetWorldPoint(endWorld);
+  // Get the center of the underline for the connecting line
+  double underlineCenter[2];
+  underlineCenter[0] = (underlineStart[0] + underlineEnd[0]) / 2.0;
+  underlineCenter[1] = underlineY;
 
-  // Create line from default position to modified position
+  // Convert display coordinates to world coordinates
+  this->Renderer->SetDisplayPoint(underlineStart[0], underlineStart[1], 0);
+  this->Renderer->DisplayToWorld();
+  double underlineStartWorld[4];
+  this->Renderer->GetWorldPoint(underlineStartWorld);
+
+  this->Renderer->SetDisplayPoint(underlineEnd[0], underlineEnd[1], 0);
+  this->Renderer->DisplayToWorld();
+  double underlineEndWorld[4];
+  this->Renderer->GetWorldPoint(underlineEndWorld);
+
+  this->Renderer->SetDisplayPoint(underlineCenter[0], underlineCenter[1], 0);
+  this->Renderer->DisplayToWorld();
+  double underlineCenterWorld[4];
+  this->Renderer->GetWorldPoint(underlineCenterWorld);
+
+  // Get default position in world coordinates
+  double defaultWorld[3];
+  defaultWorld[0] = this->TextActorPositionWorld[0];
+  defaultWorld[1] = this->TextActorPositionWorld[1];
+  defaultWorld[2] = this->TextActorPositionWorld[2];
+
+  // Create polydata with underline and connecting line
   vtkNew<vtkPoints> points;
-  points->InsertNextPoint(startWorld);
-  points->InsertNextPoint(endWorld[0], endWorld[1], endWorld[2]);
+  points->InsertNextPoint(underlineStartWorld[0], underlineStartWorld[1], underlineStartWorld[2]);
+  points->InsertNextPoint(underlineEndWorld[0], underlineEndWorld[1], underlineEndWorld[2]);
+  points->InsertNextPoint(underlineCenterWorld[0], underlineCenterWorld[1], underlineCenterWorld[2]);
+  points->InsertNextPoint(defaultWorld);
 
   vtkNew<vtkCellArray> lines;
+  // Underline
   lines->InsertNextCell(2);
   lines->InsertCellPoint(0);
   lines->InsertCellPoint(1);
+  // Connecting line from underline center to default position
+  lines->InsertNextCell(2);
+  lines->InsertCellPoint(2);
+  lines->InsertCellPoint(3);
 
   this->PropertiesLabelLinePolyData->SetPoints(points);
   this->PropertiesLabelLinePolyData->SetLines(lines);

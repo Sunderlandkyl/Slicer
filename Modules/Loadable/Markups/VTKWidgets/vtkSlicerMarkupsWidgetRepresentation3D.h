@@ -158,6 +158,7 @@ protected:
   vtkNew<vtkPolyDataMapper> PropertiesLabelLineMapper;
   vtkNew<vtkActor> PropertiesLabelLineActor;
 
+  int CalculatePropertiesLabelJitterOffset(int labelPosition);
   bool UpdatePropertiesLabelPosition(const double defaultDisplayPosition[2]);
   void UpdatePropertiesLabelLine(const double defaultDisplayPosition[2], const double newDisplayPosition[2], int labelPosition);
 
