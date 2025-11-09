@@ -503,8 +503,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRMLInternal(vtkMRMLNode*
   double labelsOffset = this->ControlPointSize * 0.5 + this->PickingTolerance * 0.5 * this->GetScreenScaleFactor();
   this->UpdateAllPointsAndLabelsFromMRML(labelsOffset);
 
-  // Update label position if custom positioning is enabled
-  this->UpdatePropertiesLabelPosition();
+  // Label position update is handled in RenderOverlay
 
   this->VisibilityOn();
 }
@@ -1409,16 +1408,32 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdatePropertiesLabelLine(const dou
     return;
   }
 
-  // Get text bounds in display coordinates
+  // Get text property and estimate text size
+  vtkTextProperty* textProperty = this->TextActor->GetTextProperty();
+
+  // Estimate text size based on text length and font size
+  // Using estimates is more reliable than GetSize() which can return 0 before rendering
   double textSize[2];
-  this->TextActor->GetSize(this->Renderer, textSize);
+  const char* textString = this->TextActor->GetInput();
+  int fontSize = textProperty->GetFontSize();
+
+  if (textString && fontSize > 0)
+  {
+    textSize[0] = strlen(textString) * fontSize * 0.6; // rough estimate
+    textSize[1] = fontSize * 1.2; // account for line height
+  }
+  else
+  {
+    // Fallback to reasonable defaults
+    textSize[0] = 100;
+    textSize[1] = 18;
+  }
 
   // Calculate the underline position (below the text)
   double underlineY = newDisplayPosition[1];
   double underlineOffset = 3.0; // pixels below text baseline
 
   // Adjust underline Y position based on vertical justification
-  vtkTextProperty* textProperty = this->TextActor->GetTextProperty();
   int verticalJustification = textProperty->GetVerticalJustification();
   if (verticalJustification == VTK_TEXT_TOP)
   {
@@ -1477,16 +1492,38 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdatePropertiesLabelLine(const dou
       underlineEnd[1] = underlineY;
   }
 
-  // Get the center of the underline for the connecting line
-  double underlineCenter[2];
-  underlineCenter[0] = (underlineStart[0] + underlineEnd[0]) / 2.0;
-  underlineCenter[1] = underlineY;
+  // Determine connection point on the underline
+  // For left/right positions, connect to the nearest edge
+  // For top/bottom positions, connect to the center
+  double connectionPoint[2];
+  switch (labelPosition)
+  {
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionLeft:
+      // Connect to the right edge of underline (closer to default position)
+      connectionPoint[0] = underlineEnd[0];
+      connectionPoint[1] = underlineY;
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionRight:
+      // Connect to the left edge of underline (closer to default position)
+      connectionPoint[0] = underlineStart[0];
+      connectionPoint[1] = underlineY;
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionTop:
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionBottom:
+      // Connect to the center of underline
+      connectionPoint[0] = (underlineStart[0] + underlineEnd[0]) / 2.0;
+      connectionPoint[1] = underlineY;
+      break;
+    default:
+      connectionPoint[0] = (underlineStart[0] + underlineEnd[0]) / 2.0;
+      connectionPoint[1] = underlineY;
+  }
 
   // Create polydata with underline and connecting line in display coordinates
   vtkNew<vtkPoints> points;
   points->InsertNextPoint(underlineStart[0], underlineStart[1], 0);
   points->InsertNextPoint(underlineEnd[0], underlineEnd[1], 0);
-  points->InsertNextPoint(underlineCenter[0], underlineCenter[1], 0);
+  points->InsertNextPoint(connectionPoint[0], connectionPoint[1], 0);
   points->InsertNextPoint(defaultDisplayPosition[0], defaultDisplayPosition[1], 0);
 
   vtkNew<vtkCellArray> lines;
@@ -1494,13 +1531,14 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdatePropertiesLabelLine(const dou
   lines->InsertNextCell(2);
   lines->InsertCellPoint(0);
   lines->InsertCellPoint(1);
-  // Connecting line from underline center to default position
+  // Connecting line from connection point to default position
   lines->InsertNextCell(2);
   lines->InsertCellPoint(2);
   lines->InsertCellPoint(3);
 
   this->PropertiesLabelLinePolyData->SetPoints(points);
   this->PropertiesLabelLinePolyData->SetLines(lines);
+  this->PropertiesLabelLinePolyData->Modified();
 
   // Set line appearance
   int controlPointType = this->GetAllControlPointsSelected() ?

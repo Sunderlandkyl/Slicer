@@ -920,17 +920,31 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOpaqueGeometry(vtkViewport* vi
     count += this->TextActor->RenderOpaqueGeometry(viewport);
   }
 
-    // Update displayed properties text position from 3D position
+  // Update the properties label line geometry in RenderOpaqueGeometry
+  // (text position was updated in RenderOverlay)
+  if (this->MarkupsDisplayNode && this->MarkupsDisplayNode->GetPropertiesLabelVisibility())
+  {
+    // Get the text actor's current display position (already updated in RenderOverlay)
+    vtkCoordinate* coord = this->TextActor->GetPositionCoordinate();
+    double* newDisplayPos = coord->GetComputedDoubleDisplayValue(this->Renderer);
+
+    // Get the default display position from world coordinates
     this->Renderer->SetWorldPoint(this->TextActorPositionWorld);
     this->Renderer->WorldToDisplay();
     double textActorPositionDisplay[3] = { 0.0 };
     this->Renderer->GetDisplayPoint(textActorPositionDisplay);
-
-    // Store the default display position before potentially modifying it
     double defaultDisplayPosition[2] = { textActorPositionDisplay[0], textActorPositionDisplay[1] };
 
-  // Update label position if custom positioning is enabled
-  this->UpdatePropertiesLabelPosition(defaultDisplayPosition);
+    // Update the line geometry
+    int labelPosition = this->MarkupsDisplayNode->GetPropertiesLabelPosition();
+    if (labelPosition != vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionDefault &&
+        this->MarkupsDisplayNode->GetPropertiesLabelLineVisibility())
+    {
+      this->UpdatePropertiesLabelLine(defaultDisplayPosition, newDisplayPos, labelPosition);
+    }
+  }
+
+  // Render the properties label line
   count += this->PropertiesLabelLineActor->RenderOpaqueGeometry(viewport);
 
   return count;
@@ -1361,7 +1375,11 @@ bool vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelPosition(const
     this->PropertiesLabelLineActor->SetVisibility(false);
     // Clear the line geometry to ensure it doesn't persist
     vtkNew<vtkPoints> emptyPoints;
+    vtkNew<vtkCellArray> emptyLines;
     this->PropertiesLabelLinePolyData->SetPoints(emptyPoints);
+    this->PropertiesLabelLinePolyData->SetLines(emptyLines);
+    this->PropertiesLabelLinePolyData->Modified();
+    this->NeedToRenderOn();
     return true; // Use default positioning - render label normally
   }
 
@@ -1410,10 +1428,11 @@ bool vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelPosition(const
     static_cast<int>(newDisplayPos[0]),
     static_cast<int>(newDisplayPos[1]));
 
-  // Update line if needed
+  // Line geometry will be updated in RenderOpaqueGeometry
+  // Just set visibility here
   if (displayNode->GetPropertiesLabelLineVisibility())
   {
-    this->UpdatePropertiesLabelLine(defaultDisplayPosition, newDisplayPos, labelPosition);
+    this->PropertiesLabelLineActor->SetVisibility(true);
   }
   else
   {
@@ -1433,16 +1452,32 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelLine(const dou
     return;
   }
 
-  // Get text bounds in display coordinates
+  // Get text property and estimate text size
+  vtkTextProperty* textProperty = this->TextActor->GetTextProperty();
+
+  // Estimate text size based on text length and font size
+  // Using estimates is more reliable than GetSize() which can return 0 before rendering
   double textSize[2];
-  this->TextActor->GetSize(this->Renderer, textSize);
+  const char* textString = this->TextActor->GetInput();
+  int fontSize = textProperty->GetFontSize();
+
+  if (textString && fontSize > 0)
+  {
+    textSize[0] = strlen(textString) * fontSize * 0.6; // rough estimate
+    textSize[1] = fontSize * 1.2; // account for line height
+  }
+  else
+  {
+    // Fallback to reasonable defaults
+    textSize[0] = 100;
+    textSize[1] = 18;
+  }
 
   // Calculate the underline position (below the text)
   double underlineY = newDisplayPosition[1];
   double underlineOffset = 3.0; // pixels below text baseline
 
   // Adjust underline Y position based on vertical justification
-  vtkTextProperty* textProperty = this->TextActor->GetTextProperty();
   int verticalJustification = textProperty->GetVerticalJustification();
   if (verticalJustification == VTK_TEXT_TOP)
   {
@@ -1501,10 +1536,32 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelLine(const dou
       underlineEnd[1] = underlineY;
   }
 
-  // Get the center of the underline for the connecting line
-  double underlineCenter[2];
-  underlineCenter[0] = (underlineStart[0] + underlineEnd[0]) / 2.0;
-  underlineCenter[1] = underlineY;
+  // Determine connection point on the underline
+  // For left/right positions, connect to the nearest edge
+  // For top/bottom positions, connect to the center
+  double connectionPoint[2];
+  switch (labelPosition)
+  {
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionLeft:
+      // Connect to the right edge of underline (closer to default position)
+      connectionPoint[0] = underlineEnd[0];
+      connectionPoint[1] = underlineY;
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionRight:
+      // Connect to the left edge of underline (closer to default position)
+      connectionPoint[0] = underlineStart[0];
+      connectionPoint[1] = underlineY;
+      break;
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionTop:
+    case vtkMRMLMarkupsDisplayNode::PropertiesLabelPositionBottom:
+      // Connect to the center of underline
+      connectionPoint[0] = (underlineStart[0] + underlineEnd[0]) / 2.0;
+      connectionPoint[1] = underlineY;
+      break;
+    default:
+      connectionPoint[0] = (underlineStart[0] + underlineEnd[0]) / 2.0;
+      connectionPoint[1] = underlineY;
+  }
 
   // Convert display coordinates to world coordinates
   this->Renderer->SetDisplayPoint(underlineStart[0], underlineStart[1], 0);
@@ -1517,10 +1574,10 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelLine(const dou
   double underlineEndWorld[4];
   this->Renderer->GetWorldPoint(underlineEndWorld);
 
-  this->Renderer->SetDisplayPoint(underlineCenter[0], underlineCenter[1], 0);
+  this->Renderer->SetDisplayPoint(connectionPoint[0], connectionPoint[1], 0);
   this->Renderer->DisplayToWorld();
-  double underlineCenterWorld[4];
-  this->Renderer->GetWorldPoint(underlineCenterWorld);
+  double connectionPointWorld[4];
+  this->Renderer->GetWorldPoint(connectionPointWorld);
 
   // Get default position in world coordinates
   double defaultWorld[3];
@@ -1532,7 +1589,7 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelLine(const dou
   vtkNew<vtkPoints> points;
   points->InsertNextPoint(underlineStartWorld[0], underlineStartWorld[1], underlineStartWorld[2]);
   points->InsertNextPoint(underlineEndWorld[0], underlineEndWorld[1], underlineEndWorld[2]);
-  points->InsertNextPoint(underlineCenterWorld[0], underlineCenterWorld[1], underlineCenterWorld[2]);
+  points->InsertNextPoint(connectionPointWorld[0], connectionPointWorld[1], connectionPointWorld[2]);
   points->InsertNextPoint(defaultWorld);
 
   vtkNew<vtkCellArray> lines;
@@ -1540,13 +1597,14 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelLine(const dou
   lines->InsertNextCell(2);
   lines->InsertCellPoint(0);
   lines->InsertCellPoint(1);
-  // Connecting line from underline center to default position
+  // Connecting line from connection point to default position
   lines->InsertNextCell(2);
   lines->InsertCellPoint(2);
   lines->InsertCellPoint(3);
 
   this->PropertiesLabelLinePolyData->SetPoints(points);
   this->PropertiesLabelLinePolyData->SetLines(lines);
+  this->PropertiesLabelLinePolyData->Modified();
 
   // Set line appearance
   int controlPointType = this->GetAllControlPointsSelected() ?
@@ -1556,4 +1614,5 @@ void vtkSlicerMarkupsWidgetRepresentation3D::UpdatePropertiesLabelLine(const dou
     this->GetControlPointsPipeline(controlPointType)->Property);
 
   this->PropertiesLabelLineActor->SetVisibility(true);
+  this->NeedToRenderOn();
 }
