@@ -84,6 +84,8 @@ set(DisplayableManager_SRCS
   vtkMRMLVolumeGlyphSliceDisplayableManager.cxx
 
   # DisplayableManager common between ThreeDView and SliceView
+  vtkMRMLNodeLabelsDisplayableManager2D.cxx
+  vtkMRMLNodeLabelsDisplayableManager3D.cxx
   vtkMRMLOrientationMarkerDisplayableManager.cxx
   vtkMRMLRulerDisplayableManager.cxx
   vtkMRMLScalarBarDisplayableManager.cxx

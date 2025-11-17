@@ -1,0 +1,635 @@
+/*==============================================================================
+
+  Program: 3D Slicer
+
+  Copyright (c) Brigham and Women's Hospital
+
+  See COPYRIGHT.txt
+  or http://www.slicer.org/copyright/copyright.txt for details.
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+==============================================================================*/
+
+// MRMLDisplayableManager includes
+#include "vtkMRMLNodeLabelsDisplayableManager2D.h"
+#include "vtkMRMLLabelDisplayNode.h"
+
+// MRML includes
+#include <vtkMRMLDisplayableNode.h>
+#include <vtkMRMLScene.h>
+#include <vtkMRMLSegmentationNode.h>
+#include <vtkMRMLSegmentationDisplayNode.h>
+#include <vtkMRMLSliceNode.h>
+#include <vtkMRMLTransformNode.h>
+
+// VTK includes
+#include <vtkActor2D.h>
+#include <vtkCellArray.h>
+#include <vtkCoordinate.h>
+#include <vtkLine.h>
+#include <vtkMatrix4x4.h>
+#include <vtkNew.h>
+#include <vtkObjectFactory.h>
+#include <vtkPoints.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataMapper2D.h>
+#include <vtkProperty2D.h>
+#include <vtkRenderer.h>
+#include <vtkRenderWindow.h>
+#include <vtkSmartPointer.h>
+#include <vtkTextActor.h>
+#include <vtkTextProperty.h>
+#include <vtkTransform.h>
+
+// STD includes
+#include <algorithm>
+#include <map>
+#include <string>
+#include <vector>
+
+//----------------------------------------------------------------------------
+vtkStandardNewMacro(vtkMRMLNodeLabelsDisplayableManager2D);
+
+//----------------------------------------------------------------------------
+// vtkInternal helper class
+
+//---------------------------------------------------------------------------
+class vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal
+{
+public:
+  vtkInternal(vtkMRMLNodeLabelsDisplayableManager2D* external);
+  ~vtkInternal();
+
+  struct LabelInfo
+  {
+    vtkSmartPointer<vtkTextActor> TextActor;
+    vtkSmartPointer<vtkPolyDataMapper2D> LineMapper;
+    vtkSmartPointer<vtkActor2D> LineActor;
+    vtkSmartPointer<vtkPolyData> LinePolyData;
+    vtkMRMLLabelDisplayNode* DisplayNode;
+    int LabelIndex{0};
+    std::string Key; // nodeID#index
+    double AnchorPosition[3]; // World coordinates
+    double DisplayPosition[2]; // Display coordinates
+    int AssignedPosition[2];  // Final position after collision avoidance
+  };
+
+  typedef std::map<std::string, LabelInfo> LabelsMapType;
+  LabelsMapType Labels;
+
+  vtkMRMLNodeLabelsDisplayableManager2D* External;
+
+  void AddLabel(vtkMRMLLabelDisplayNode* displayNode);
+  void UpdateLabel(vtkMRMLLabelDisplayNode* displayNode);
+  void RemoveLabel(vtkMRMLLabelDisplayNode* displayNode);
+  void RemoveAllLabels();
+
+  void WorldToDisplay(const double worldPos[3], double displayPos[2]);
+  void DisplayToWorld(const double displayPos[2], double worldPos[3]);
+
+  void UpdateLabelPositions();
+  void AdjustLabelPositionForCollision(LabelInfo& label);
+  bool CheckCollision(const double pos1[2], const double size1[2],
+                      const double pos2[2], const double size2[2]);
+
+  void UpdateLabelActors();
+  void UpdateLineGeometry(LabelInfo& label);
+};
+
+//---------------------------------------------------------------------------
+vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::vtkInternal(
+  vtkMRMLNodeLabelsDisplayableManager2D* external)
+{
+  this->External = external;
+}
+
+//---------------------------------------------------------------------------
+vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::~vtkInternal()
+{
+  this->RemoveAllLabels();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::AddLabel(
+  vtkMRMLLabelDisplayNode* displayNode)
+{
+  if (!displayNode || !displayNode->GetID())
+  {
+    return;
+  }
+
+  // Create actors for each label exposed by the display node
+  int count = displayNode->GetNumberOfLabels();
+  for (int i = 0; i < count; ++i)
+  {
+    LabelInfo info;
+    info.DisplayNode = displayNode;
+    info.LabelIndex = i;
+    info.Key = std::string(displayNode->GetID()) + "#" + std::to_string(i);
+
+    // Create text actor
+    info.TextActor = vtkSmartPointer<vtkTextActor>::New();
+    info.TextActor->SetTextScaleModeToProp();
+    // Text property will be set during update from LabelInfo
+
+    // Create line actor for connecting label to anchor
+    info.LinePolyData = vtkSmartPointer<vtkPolyData>::New();
+    vtkNew<vtkPoints> linePoints;
+    linePoints->SetNumberOfPoints(2);
+    info.LinePolyData->SetPoints(linePoints);
+
+    vtkNew<vtkCellArray> lines;
+    vtkNew<vtkLine> line;
+    line->GetPointIds()->SetId(0, 0);
+    line->GetPointIds()->SetId(1, 1);
+    lines->InsertNextCell(line);
+    info.LinePolyData->SetLines(lines);
+
+    info.LineMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+    info.LineMapper->SetInputData(info.LinePolyData);
+
+    info.LineActor = vtkSmartPointer<vtkActor2D>::New();
+    info.LineActor->SetMapper(info.LineMapper);
+    info.LineActor->GetProperty()->SetLineWidth(2.0);
+
+    // Add actors to renderer
+    if (this->External->GetRenderer())
+    {
+      this->External->GetRenderer()->AddActor2D(info.TextActor);
+      this->External->GetRenderer()->AddActor2D(info.LineActor);
+    }
+
+    this->Labels[info.Key] = info;
+  }
+
+  this->UpdateLabel(displayNode);
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLabel(
+  vtkMRMLLabelDisplayNode* displayNode)
+{
+  if (!displayNode || !displayNode->GetID())
+  {
+    return;
+  }
+
+  // Synchronize number of label actors with display node
+  int desired = displayNode->GetNumberOfLabels();
+  std::vector<std::string> presentKeys;
+  presentKeys.reserve(this->Labels.size());
+  const std::string nodeID = displayNode->GetID();
+  for (auto const& itPair : this->Labels)
+  {
+    if (itPair.second.DisplayNode == displayNode)
+    {
+      presentKeys.push_back(itPair.first);
+    }
+  }
+  // Remove any actors that exceed desired count
+  for (const std::string& key : presentKeys)
+  {
+    const LabelInfo& li = this->Labels[key];
+    if (li.LabelIndex >= desired)
+    {
+      // Remove actors from renderer
+      if (this->External->GetRenderer())
+      {
+        this->External->GetRenderer()->RemoveActor2D(li.TextActor);
+        this->External->GetRenderer()->RemoveActor2D(li.LineActor);
+      }
+      this->Labels.erase(key);
+    }
+  }
+  // Ensure we have actors for all needed indices
+  for (int i = 0; i < desired; ++i)
+  {
+    std::string key = nodeID + "#" + std::to_string(i);
+    if (this->Labels.find(key) == this->Labels.end())
+    {
+      // Create new entry
+      LabelInfo info;
+      info.DisplayNode = displayNode;
+      info.LabelIndex = i;
+      info.Key = key;
+
+      info.TextActor = vtkSmartPointer<vtkTextActor>::New();
+      info.TextActor->SetTextScaleModeToProp();
+      // Text property will be set during update from LabelInfo
+
+      info.LinePolyData = vtkSmartPointer<vtkPolyData>::New();
+      vtkNew<vtkPoints> linePoints;
+      linePoints->SetNumberOfPoints(2);
+      info.LinePolyData->SetPoints(linePoints);
+      vtkNew<vtkCellArray> lines;
+      vtkNew<vtkLine> line;
+      line->GetPointIds()->SetId(0, 0);
+      line->GetPointIds()->SetId(1, 1);
+      lines->InsertNextCell(line);
+      info.LinePolyData->SetLines(lines);
+      info.LineMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+      info.LineMapper->SetInputData(info.LinePolyData);
+      info.LineActor = vtkSmartPointer<vtkActor2D>::New();
+      info.LineActor->SetMapper(info.LineMapper);
+      info.LineActor->GetProperty()->SetLineWidth(2.0);
+      if (this->External->GetRenderer())
+      {
+        this->External->GetRenderer()->AddActor2D(info.TextActor);
+        this->External->GetRenderer()->AddActor2D(info.LineActor);
+      }
+      this->Labels[key] = info;
+    }
+  }
+
+  // Update properties for all labels
+  for (int i = 0; i < desired; ++i)
+  {
+    std::string key = nodeID + "#" + std::to_string(i);
+    LabelInfo& info = this->Labels[key];
+
+    vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
+    bool ok = displayNode->GetLabelInfo(i, baseInfo);
+    if (!ok)
+    {
+      info.TextActor->SetVisibility(false);
+      info.LineActor->SetVisibility(false);
+      continue;
+    }
+
+    // Update text & styling
+    info.TextActor->SetInput(baseInfo.Text.c_str());
+    if (baseInfo.TextPropertyPtr)
+    {
+      info.TextActor->GetTextProperty()->ShallowCopy(baseInfo.TextPropertyPtr);
+    }
+    info.TextActor->GetTextProperty()->SetColor(baseInfo.Color);
+
+    // Visibility
+    info.TextActor->SetVisibility(baseInfo.Visible);
+    info.LineActor->SetVisibility(baseInfo.Visible && baseInfo.LineVisible);
+    info.LineActor->GetProperty()->SetColor(baseInfo.Color);
+
+    // Anchor/display position
+    if (baseInfo.Visible)
+    {
+      info.AnchorPosition[0] = baseInfo.AnchorPosition[0];
+      info.AnchorPosition[1] = baseInfo.AnchorPosition[1];
+      info.AnchorPosition[2] = baseInfo.AnchorPosition[2];
+      this->WorldToDisplay(info.AnchorPosition, info.DisplayPosition);
+      info.AssignedPosition[0] = static_cast<int>(info.DisplayPosition[0]);
+      info.AssignedPosition[1] = static_cast<int>(info.DisplayPosition[1]);
+    }
+  }
+
+  this->External->RequestRender();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::RemoveLabel(
+  vtkMRMLLabelDisplayNode* displayNode)
+{
+  if (!displayNode || !displayNode->GetID())
+  {
+    return;
+  }
+
+  const std::string nodeID = displayNode->GetID();
+  std::vector<std::string> toErase;
+  for (auto const& it : this->Labels)
+  {
+    if (it.second.DisplayNode == displayNode)
+    {
+      // Remove actors from renderer
+      if (this->External->GetRenderer())
+      {
+        this->External->GetRenderer()->RemoveActor2D(it.second.TextActor);
+        this->External->GetRenderer()->RemoveActor2D(it.second.LineActor);
+      }
+      toErase.push_back(it.first);
+    }
+  }
+  for (const std::string& k : toErase)
+  {
+    this->Labels.erase(k);
+  }
+  this->External->RequestRender();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::RemoveAllLabels()
+{
+  LabelsMapType::iterator it;
+  for (it = this->Labels.begin(); it != this->Labels.end(); ++it)
+  {
+    LabelInfo& info = it->second;
+    if (this->External->GetRenderer())
+    {
+      this->External->GetRenderer()->RemoveActor2D(info.TextActor);
+      this->External->GetRenderer()->RemoveActor2D(info.LineActor);
+    }
+  }
+  this->Labels.clear();
+}
+
+//---------------------------------------------------------------------------
+// (Removed segmentation-specific anchor calculations; anchor now comes from display node label info)
+
+//---------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::WorldToDisplay(
+  const double worldPos[3], double displayPos[2])
+{
+  vtkMRMLSliceNode* sliceNode = this->External->GetMRMLSliceNode();
+  if (!sliceNode || !this->External->GetRenderer())
+  {
+    displayPos[0] = 0;
+    displayPos[1] = 0;
+    return;
+  }
+
+  // Get the slice to RAS transform
+  vtkMatrix4x4* xyToRAS = sliceNode->GetXYToRAS();
+
+  // Invert to get RAS to XY
+  vtkNew<vtkMatrix4x4> rasToXY;
+  vtkMatrix4x4::Invert(xyToRAS, rasToXY);
+
+  // Transform world position to slice XY coordinates
+  double xyzw[4] = {worldPos[0], worldPos[1], worldPos[2], 1.0};
+  double xyPos[4];
+  rasToXY->MultiplyPoint(xyzw, xyPos);
+
+  // Convert slice XY to display coordinates
+  vtkNew<vtkCoordinate> coordinate;
+  coordinate->SetCoordinateSystemToWorld();
+  coordinate->SetValue(xyPos[0], xyPos[1], 0.0);
+  int* display = coordinate->GetComputedDisplayValue(this->External->GetRenderer());
+  displayPos[0] = display[0];
+  displayPos[1] = display[1];
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::DisplayToWorld(
+  const double displayPos[2], double worldPos[3])
+{
+  vtkMRMLSliceNode* sliceNode = this->External->GetMRMLSliceNode();
+  if (!sliceNode || !this->External->GetRenderer())
+  {
+    worldPos[0] = 0;
+    worldPos[1] = 0;
+    worldPos[2] = 0;
+    return;
+  }
+
+  // Convert display to world coordinates (simplified version)
+  vtkNew<vtkCoordinate> coordinate;
+  coordinate->SetCoordinateSystemToDisplay();
+  coordinate->SetValue(displayPos[0], displayPos[1], 0.0);
+  double* world = coordinate->GetComputedWorldValue(this->External->GetRenderer());
+
+  // Get the slice to RAS transform
+  vtkMatrix4x4* xyToRAS = sliceNode->GetXYToRAS();
+
+  // Transform from slice coordinates to RAS
+  double xyzw[4] = {world[0], world[1], 0.0, 1.0};
+  double rasPos[4];
+  xyToRAS->MultiplyPoint(xyzw, rasPos);
+
+  worldPos[0] = rasPos[0];
+  worldPos[1] = rasPos[1];
+  worldPos[2] = rasPos[2];
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLabelPositions()
+{
+  if (!this->External->GetRenderer())
+  {
+    return;
+  }
+
+  int* viewportSize = this->External->GetRenderer()->GetSize();
+  int margin = 10;
+
+  // Update each label based on its position preference
+  for (LabelsMapType::iterator it = this->Labels.begin(); it != this->Labels.end(); ++it)
+  {
+    LabelInfo& info = it->second;
+
+    if (!info.TextActor->GetVisibility())
+    {
+      continue;
+    }
+
+    vtkMRMLLabelDisplayNode* displayNode = info.DisplayNode;
+    vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
+    int labelPosition = vtkMRMLLabelDisplayNode::LabelPositionDefault;
+    if (displayNode->GetLabelInfo(info.LabelIndex, baseInfo))
+    {
+      labelPosition = baseInfo.LabelPosition;
+    }
+
+    // Calculate base position
+    switch (labelPosition)
+    {
+      case vtkMRMLLabelDisplayNode::LabelPositionLeft:
+        info.AssignedPosition[0] = margin;
+        info.AssignedPosition[1] = static_cast<int>(info.DisplayPosition[1]);
+        info.TextActor->GetTextProperty()->SetJustificationToLeft();
+        info.TextActor->GetTextProperty()->SetVerticalJustificationToCentered();
+        break;
+
+      case vtkMRMLLabelDisplayNode::LabelPositionRight:
+        info.AssignedPosition[0] = viewportSize[0] - margin;
+        info.AssignedPosition[1] = static_cast<int>(info.DisplayPosition[1]);
+        info.TextActor->GetTextProperty()->SetJustificationToRight();
+        info.TextActor->GetTextProperty()->SetVerticalJustificationToCentered();
+        break;
+
+      case vtkMRMLLabelDisplayNode::LabelPositionTop:
+        info.AssignedPosition[0] = static_cast<int>(info.DisplayPosition[0]);
+        info.AssignedPosition[1] = viewportSize[1] - margin;
+        info.TextActor->GetTextProperty()->SetJustificationToCentered();
+        info.TextActor->GetTextProperty()->SetVerticalJustificationToTop();
+        break;
+
+      case vtkMRMLLabelDisplayNode::LabelPositionBottom:
+        info.AssignedPosition[0] = static_cast<int>(info.DisplayPosition[0]);
+        info.AssignedPosition[1] = margin;
+        info.TextActor->GetTextProperty()->SetJustificationToCentered();
+        info.TextActor->GetTextProperty()->SetVerticalJustificationToBottom();
+        break;
+
+      default: // LabelPositionDefault
+        info.AssignedPosition[0] = static_cast<int>(info.DisplayPosition[0]);
+        info.AssignedPosition[1] = static_cast<int>(info.DisplayPosition[1]);
+        info.TextActor->GetTextProperty()->SetJustificationToCentered();
+        info.TextActor->GetTextProperty()->SetVerticalJustificationToCentered();
+        break;
+    }
+  }
+
+  // Perform collision avoidance for labels with the same position preference
+  this->UpdateLabelActors();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLabelActors()
+{
+  // Update all label actor positions and line geometry
+  for (LabelsMapType::iterator it = this->Labels.begin(); it != this->Labels.end(); ++it)
+  {
+    LabelInfo& info = it->second;
+
+    if (!info.TextActor->GetVisibility())
+    {
+      continue;
+    }
+
+    // Set text actor position
+    info.TextActor->SetDisplayPosition(info.AssignedPosition[0], info.AssignedPosition[1]);
+
+    // Update line geometry
+    this->UpdateLineGeometry(info);
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLineGeometry(LabelInfo& label)
+{
+  if (!label.DisplayNode)
+  {
+    return;
+  }
+
+  // Check if line should be visible for this specific label
+  vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
+  if (!label.DisplayNode->GetLabelInfo(label.LabelIndex, baseInfo) || !baseInfo.LineVisible)
+  {
+    return;
+  }
+
+  // Set line from anchor position to label position
+  vtkPoints* points = label.LinePolyData->GetPoints();
+  points->SetPoint(0, label.DisplayPosition[0], label.DisplayPosition[1], 0.0);
+  points->SetPoint(1, label.AssignedPosition[0], label.AssignedPosition[1], 0.0);
+  points->Modified();
+  label.LinePolyData->Modified();
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::CheckCollision(
+  const double pos1[2], const double size1[2],
+  const double pos2[2], const double size2[2])
+{
+  // Simple bounding box collision detection
+  bool xCollision = (pos1[0] < pos2[0] + size2[0]) && (pos1[0] + size1[0] > pos2[0]);
+  bool yCollision = (pos1[1] < pos2[1] + size2[1]) && (pos1[1] + size1[1] > pos2[1]);
+  return xCollision && yCollision;
+}
+
+//----------------------------------------------------------------------------
+// vtkMRMLNodeLabelsDisplayableManager2D methods
+
+//----------------------------------------------------------------------------
+vtkMRMLNodeLabelsDisplayableManager2D::vtkMRMLNodeLabelsDisplayableManager2D()
+{
+  this->Internal = new vtkInternal(this);
+}
+
+//----------------------------------------------------------------------------
+vtkMRMLNodeLabelsDisplayableManager2D::~vtkMRMLNodeLabelsDisplayableManager2D()
+{
+  delete this->Internal;
+  this->Internal = nullptr;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::PrintSelf(ostream& os, vtkIndent indent)
+{
+  this->Superclass::PrintSelf(os, indent);
+  os << indent << "NodeLabelsDisplayableManager2D" << std::endl;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::Create()
+{
+  this->Superclass::Create();
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::AdditionalInitializeStep()
+{
+  // Observe all node label display nodes in the scene
+  /*this->AddMRMLSceneObservation();*/
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::UnobserveMRMLScene()
+{
+  this->Internal->RemoveAllLabels();
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::OnMRMLSceneNodeAdded(vtkMRMLNode* node)
+{
+  if (!node || !this->GetMRMLScene())
+  {
+    return;
+  }
+
+  if (node->IsA("vtkMRMLLabelDisplayNode"))
+  {
+    vtkMRMLLabelDisplayNode* displayNode = vtkMRMLLabelDisplayNode::SafeDownCast(node);
+    this->Internal->AddLabel(displayNode);
+
+    // Observe the display node
+    vtkNew<vtkIntArray> events;
+    events->InsertNextValue(vtkCommand::ModifiedEvent);
+    events->InsertNextValue(vtkMRMLLabelDisplayNode::LabelTextModifiedEvent);
+    events->InsertNextValue(vtkMRMLLabelDisplayNode::AnchorPositionModifiedEvent);
+    events->InsertNextValue(vtkMRMLLabelDisplayNode::LabelPropertiesModifiedEvent);
+    vtkObserveMRMLNodeEventsMacro(displayNode, events);
+  }
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::OnMRMLSceneNodeRemoved(vtkMRMLNode* node)
+{
+  if (!node)
+  {
+    return;
+  }
+
+  if (node->IsA("vtkMRMLLabelDisplayNode"))
+  {
+    vtkMRMLLabelDisplayNode* displayNode = vtkMRMLLabelDisplayNode::SafeDownCast(node);
+    this->Internal->RemoveLabel(displayNode);
+    vtkUnObserveMRMLNodeMacro(displayNode);
+  }
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::ProcessMRMLNodesEvents(
+  vtkObject* caller, unsigned long event, void* callData)
+{
+  vtkMRMLLabelDisplayNode* displayNode = vtkMRMLLabelDisplayNode::SafeDownCast(caller);
+  if (displayNode)
+  {
+    this->Internal->UpdateLabel(displayNode);
+  }
+
+  this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::OnMRMLDisplayableNodeModifiedEvent(vtkObject* caller)
+{
+  // Update all labels when view is modified
+  this->Internal->UpdateLabelPositions();
+  this->RequestRender();
+}

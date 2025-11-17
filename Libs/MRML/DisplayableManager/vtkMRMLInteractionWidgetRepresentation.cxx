@@ -1280,10 +1280,8 @@ void vtkMRMLInteractionWidgetRepresentation::CreateScaleHandles()
   vtkNew<vtkDoubleArray> orientationArray;
   orientationArray->SetName("orientation");
   orientationArray->SetNumberOfComponents(9);
-  orientationArray->InsertNextTuple9(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
-  orientationArray->InsertNextTuple9(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
-  orientationArray->InsertNextTuple9(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
-  orientationArray->InsertNextTuple9(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0); // Free translation
+  orientationArray->SetNumberOfTuples(points->GetNumberOfPoints());
+  orientationArray->Fill(0.0);
   this->Pipeline->ScaleHandlePoints->GetPointData()->AddArray(orientationArray);
 
   vtkNew<vtkIdTypeArray> visibilityArray;

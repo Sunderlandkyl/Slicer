@@ -697,28 +697,28 @@ void vtkSlicerMarkupsWidgetRepresentation3D::ReleaseGraphicsResources(vtkWindow*
 //----------------------------------------------------------------------
 int vtkSlicerMarkupsWidgetRepresentation3D::RenderOverlay(vtkViewport* viewport)
 {
-  vtkFloatArray* zBuffer = vtkSlicerMarkupsWidgetRepresentation3D::GetCachedZBuffer(this->Renderer);
+  //vtkFloatArray* zBuffer = vtkSlicerMarkupsWidgetRepresentation3D::GetCachedZBuffer(this->Renderer);
   int count = Superclass::RenderOverlay(viewport);
   for (int i = 0; i < NumberOfControlPointTypes; i++)
   {
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
     if (controlPoints->ControlPoints->GetNumberOfPoints() > 0)
     {
-      if (!this->MarkupsDisplayNode->GetOccludedVisibility())
-      {
-        if (!zBuffer)
-        {
-          controlPoints->SelectVisiblePoints->UpdateZBuffer();
-          zBuffer = controlPoints->SelectVisiblePoints->GetZBuffer();
-          vtkSlicerMarkupsWidgetRepresentation3D::CachedZBuffers[this->Renderer] = zBuffer;
-        }
-        else
-        {
-          controlPoints->SelectVisiblePoints->SetZBuffer(zBuffer);
-        }
-        controlPoints->SelectVisiblePoints->Update();
-      }
-      else
+      //if (!this->MarkupsDisplayNode->GetOccludedVisibility())
+      //{
+      //  if (!zBuffer)
+      //  {
+      //    controlPoints->SelectVisiblePoints->UpdateZBuffer();
+      //    zBuffer = controlPoints->SelectVisiblePoints->GetZBuffer();
+      //    vtkSlicerMarkupsWidgetRepresentation3D::CachedZBuffers[this->Renderer] = zBuffer;
+      //  }
+      //  else
+      //  {
+      //    controlPoints->SelectVisiblePoints->SetZBuffer(zBuffer);
+      //  }
+      //  controlPoints->SelectVisiblePoints->Update();
+      //}
+      //else
       {
         if (controlPoints->VisiblePointsPolyData->GetMTime() < controlPoints->LabelControlPointsPolyData->GetMTime())
         {

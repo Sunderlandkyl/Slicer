@@ -230,6 +230,12 @@ set(MRMLCore_SRCS
   vtkMRMLModelNode.cxx
   vtkMRMLModelStorageNode.cxx
   vtkMRMLNode.cxx
+  vtkMRMLLabelDisplayNode.cxx
+  vtkMRMLLabelDisplayNode.h
+  vtkMRMLSegmentationLabelDisplayNode.cxx
+  vtkMRMLSegmentationLabelDisplayNode.h
+  vtkMRMLMarkupsLabelDisplayNode.cxx
+  vtkMRMLMarkupsLabelDisplayNode.h
   vtkMRMLPETProceduralColorNode.cxx
   vtkMRMLParser.cxx
   vtkMRMLPlotChartNode.cxx

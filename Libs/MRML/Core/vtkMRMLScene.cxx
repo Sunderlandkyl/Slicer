@@ -34,6 +34,9 @@ Version:   $Revision: 1.18 $
 #include "vtkMRMLHierarchyNode.h"
 #include "vtkMRMLHierarchyStorageNode.h"
 #include "vtkMRMLInteractionNode.h"
+#include "vtkMRMLLabelDisplayNode.h"
+#include "vtkMRMLSegmentationLabelDisplayNode.h"
+#include "vtkMRMLMarkupsLabelDisplayNode.h"
 #include "vtkMRMLLabelMapVolumeDisplayNode.h"
 #include "vtkMRMLLabelMapVolumeNode.h"
 #include "vtkMRMLLayoutNode.h"
@@ -206,6 +209,9 @@ vtkMRMLScene::vtkMRMLScene()
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLHierarchyNode>::New());
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLHierarchyStorageNode>::New());
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLInteractionNode>::New());
+  this->RegisterNodeClass(vtkSmartPointer<vtkMRMLLabelDisplayNode>::New());
+  this->RegisterNodeClass(vtkSmartPointer<vtkMRMLSegmentationLabelDisplayNode>::New());
+  this->RegisterNodeClass(vtkSmartPointer<vtkMRMLMarkupsLabelDisplayNode>::New());
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLLabelMapVolumeDisplayNode>::New());
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLLabelMapVolumeNode>::New());
   this->RegisterNodeClass(vtkSmartPointer<vtkMRMLLayoutNode>::New());
