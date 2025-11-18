@@ -159,7 +159,7 @@ bool vtkMRMLLabelDisplayNode::GetLabelInfo(int labelIndex, LabelInfo& info)
   {
     info.LabelPosition = LabelPositionDefault;
   }
-  info.TextScale = 1.5;
+  info.TextScale = 1.0;
   info.TextPropertyPtr = nullptr;
 
   return true;

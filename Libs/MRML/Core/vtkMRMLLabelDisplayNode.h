@@ -97,7 +97,7 @@ public:
     bool Visible { true };     ///< Overall visibility of this label
     bool LineVisible { true }; ///< Whether the connecting line is visible
     int LabelPosition { LabelPositionDefault }; ///< Placement preference in view
-    double TextScale { 3.0 };  ///< Relative text scale
+  double TextScale { 1.0 };  ///< Relative text scale (mapped to font size)
     vtkTextProperty* TextPropertyPtr { nullptr }; ///< Optional per-label text property (non-owning)
   };
 
