@@ -130,6 +130,9 @@ public:
   void AddRendererUpdateObserver(vtkRenderer* renderer);
   void RemoveRendererUpdateObserver();
 
+  // Helper to safely get renderer (uses cached pointer instead of calling through External)
+  vtkRenderer* GetRenderer() { return this->ObservedRenderer; }
+
   vtkSmartPointer<vtkRendererUpdateObserver2D> RendererUpdateObserver;
   vtkWeakPointer<vtkRenderer> ObservedRenderer;
   unsigned long RendererUpdateObservationId{ 0 };
@@ -146,8 +149,9 @@ vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::vtkInternal(vtkMRMLNodeLabel
 //---------------------------------------------------------------------------
 vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::~vtkInternal()
 {
-  this->RemoveAllLabels();
+  // Remove observer first to prevent callbacks during destruction
   this->RemoveRendererUpdateObserver();
+  this->RemoveAllLabels();
 }
 
 //---------------------------------------------------------------------------
@@ -198,10 +202,10 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::AddLabel(vtkMRMLLabelDi
     info.LineActor->GetProperty()->SetLineWidth(2.0);
 
     // Add actors to renderer
-    if (this->External->GetRenderer())
+    if (this->GetRenderer())
     {
-      this->External->GetRenderer()->AddActor2D(info.TextActor);
-      this->External->GetRenderer()->AddActor2D(info.LineActor);
+      this->GetRenderer()->AddActor2D(info.TextActor);
+      this->GetRenderer()->AddActor2D(info.LineActor);
     }
 
     this->Labels[info.Key] = info;
@@ -237,10 +241,10 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLabel(vtkMRMLLabe
     if (li.LabelIndex >= desired)
     {
       // Remove actors from renderer
-      if (this->External->GetRenderer())
+      if (this->GetRenderer())
       {
-        this->External->GetRenderer()->RemoveActor2D(li.TextActor);
-        this->External->GetRenderer()->RemoveActor2D(li.LineActor);
+        this->GetRenderer()->RemoveActor2D(li.TextActor);
+        this->GetRenderer()->RemoveActor2D(li.LineActor);
       }
       this->Labels.erase(key);
     }
@@ -280,10 +284,10 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLabel(vtkMRMLLabe
       info.LineActor = vtkSmartPointer<vtkActor2D>::New();
       info.LineActor->SetMapper(info.LineMapper);
       info.LineActor->GetProperty()->SetLineWidth(2.0);
-      if (this->External->GetRenderer())
+      if (this->GetRenderer())
       {
-        this->External->GetRenderer()->AddActor2D(info.TextActor);
-        this->External->GetRenderer()->AddActor2D(info.LineActor);
+        this->GetRenderer()->AddActor2D(info.TextActor);
+        this->GetRenderer()->AddActor2D(info.LineActor);
       }
       this->Labels[key] = info;
     }
@@ -360,10 +364,10 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::RemoveLabel(vtkMRMLLabe
     if (it.second.DisplayNode == displayNode)
     {
       // Remove actors from renderer
-      if (this->External->GetRenderer())
+      if (this->GetRenderer())
       {
-        this->External->GetRenderer()->RemoveActor2D(it.second.TextActor);
-        this->External->GetRenderer()->RemoveActor2D(it.second.LineActor);
+        this->GetRenderer()->RemoveActor2D(it.second.TextActor);
+        this->GetRenderer()->RemoveActor2D(it.second.LineActor);
       }
       toErase.push_back(it.first);
     }
@@ -382,10 +386,10 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::RemoveAllLabels()
   for (it = this->Labels.begin(); it != this->Labels.end(); ++it)
   {
     LabelInfo& info = it->second;
-    if (this->External->GetRenderer())
+    if (this->GetRenderer())
     {
-      this->External->GetRenderer()->RemoveActor2D(info.TextActor);
-      this->External->GetRenderer()->RemoveActor2D(info.LineActor);
+      this->GetRenderer()->RemoveActor2D(info.TextActor);
+      this->GetRenderer()->RemoveActor2D(info.LineActor);
     }
   }
   this->Labels.clear();
@@ -398,39 +402,32 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::RemoveAllLabels()
 void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::WorldToDisplay(const double worldPos[3], double displayPos[2])
 {
   vtkMRMLSliceNode* sliceNode = this->External->GetMRMLSliceNode();
-  if (!sliceNode || !this->External->GetRenderer())
+  if (!sliceNode || !this->GetRenderer())
   {
     displayPos[0] = 0;
     displayPos[1] = 0;
     return;
   }
 
-  // Get the slice to RAS transform
+  // Compute slice XY coordinates directly (these are in the slice view's display coordinate system)
   vtkMatrix4x4* xyToRAS = sliceNode->GetXYToRAS();
-
-  // Invert to get RAS to XY
   vtkNew<vtkMatrix4x4> rasToXY;
   vtkMatrix4x4::Invert(xyToRAS, rasToXY);
 
-  // Transform world position to slice XY coordinates
   double xyzw[4] = { worldPos[0], worldPos[1], worldPos[2], 1.0 };
-  double xyPos[4];
+  double xyPos[4] = {0,0,0,1};
   rasToXY->MultiplyPoint(xyzw, xyPos);
 
-  // Convert slice XY to display coordinates
-  vtkNew<vtkCoordinate> coordinate;
-  coordinate->SetCoordinateSystemToWorld();
-  coordinate->SetValue(xyPos[0], xyPos[1], 0.0);
-  int* display = coordinate->GetComputedDisplayValue(this->External->GetRenderer());
-  displayPos[0] = display[0];
-  displayPos[1] = display[1];
+  // Use XY as display coordinates
+  displayPos[0] = xyPos[0];
+  displayPos[1] = xyPos[1];
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::DisplayToWorld(const double displayPos[2], double worldPos[3])
 {
   vtkMRMLSliceNode* sliceNode = this->External->GetMRMLSliceNode();
-  if (!sliceNode || !this->External->GetRenderer())
+  if (!sliceNode || !this->GetRenderer())
   {
     worldPos[0] = 0;
     worldPos[1] = 0;
@@ -442,7 +439,7 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::DisplayToWorld(const do
   vtkNew<vtkCoordinate> coordinate;
   coordinate->SetCoordinateSystemToDisplay();
   coordinate->SetValue(displayPos[0], displayPos[1], 0.0);
-  double* world = coordinate->GetComputedWorldValue(this->External->GetRenderer());
+  double* world = coordinate->GetComputedWorldValue(this->GetRenderer());
 
   // Get the slice to RAS transform
   vtkMatrix4x4* xyToRAS = sliceNode->GetXYToRAS();
@@ -460,12 +457,12 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::DisplayToWorld(const do
 //---------------------------------------------------------------------------
 void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLabelPositions()
 {
-  if (!this->External->GetRenderer())
+  if (!this->GetRenderer())
   {
     return;
   }
 
-  int* viewportSize = this->External->GetRenderer()->GetSize();
+  int* viewportSize = this->GetRenderer()->GetSize();
   int margin = 10;
 
   // Update each label based on its position preference
@@ -501,9 +498,9 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLabelPositions()
     this->WorldToDisplay(info.AnchorPosition, info.DisplayPosition);
 
     // Cache viewport size changes
-    if (this->External->GetRenderer())
+    if (this->GetRenderer())
     {
-      int* vs = this->External->GetRenderer()->GetSize();
+      int* vs = this->GetRenderer()->GetSize();
       if (vs[0] != info.CachedViewportSize[0] || vs[1] != info.CachedViewportSize[1])
       {
         info.CachedViewportSize[0] = vs[0];
@@ -516,7 +513,7 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLabelPositions()
     if (info.SizeDirty)
     {
       double bbox[4] = { 0, 0, 0, 0 };
-      info.TextActor->GetBoundingBox(this->External->GetRenderer(), bbox);
+      info.TextActor->GetBoundingBox(this->GetRenderer(), bbox);
       info.CachedTextWidth = std::max(0.0, bbox[1] - bbox[0]);
       info.CachedTextHeight = std::max(0.0, bbox[3] - bbox[2]);
       info.SizeDirty = false;
@@ -834,6 +831,11 @@ void vtkMRMLNodeLabelsDisplayableManager2D::AdditionalInitializeStep()
 //----------------------------------------------------------------------------
 void vtkMRMLNodeLabelsDisplayableManager2D::UpdateFromRenderer()
 {
+  // Safety check: don't update if being destroyed
+  if (!this->Internal || !this->GetRenderer())
+  {
+    return;
+  }
   // Update label positions when view changes
   this->Internal->UpdateLabelPositions();
   this->RequestRender();
