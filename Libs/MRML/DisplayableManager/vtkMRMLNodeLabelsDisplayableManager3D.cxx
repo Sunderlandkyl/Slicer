@@ -89,6 +89,18 @@ public:
     double AnchorPosition[3];  // World coordinates
     double DisplayPosition[2]; // Display coordinates
     int AssignedPosition[2];   // Final position after collision avoidance
+
+    // Caching to reduce per-frame work
+    std::string CachedText;
+    int CachedFontSize{0};
+    double CachedTextWidth{0.0};
+    double CachedTextHeight{0.0};
+    int CachedViewportSize[2]{0,0};
+    bool SizeDirty{true};
+    bool StyleDirty{true};
+
+    int PrevAssignedPosition[2]{INT_MIN, INT_MIN};
+    double PrevAnchorDisplay[2]{std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()};
   };
 
   typedef std::map<std::string, LabelInfo> LabelsMapType;
@@ -282,15 +294,40 @@ void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabel(vtkMRMLLabe
       info.LineActor->SetVisibility(false);
       continue;
     }
-    info.TextActor->SetInput(baseInfo.Text.c_str());
-    if (baseInfo.TextPropertyPtr)
+
+    // Text content
+    if (info.CachedText != baseInfo.Text)
     {
-      info.TextActor->GetTextProperty()->ShallowCopy(baseInfo.TextPropertyPtr);
+      info.TextActor->SetInput(baseInfo.Text.c_str());
+      info.CachedText = baseInfo.Text;
+      info.SizeDirty = true;
     }
+
+    // Font size mapping
+    int fontSize = static_cast<int>(std::max(1.0, baseInfo.TextScale * 10.0));
+    if (info.CachedFontSize != fontSize)
+    {
+      info.TextActor->GetTextProperty()->SetFontSize(fontSize);
+      info.CachedFontSize = fontSize;
+      info.SizeDirty = true;
+    }
+
+    // Color (cheap)
     info.TextActor->GetTextProperty()->SetColor(baseInfo.Color);
-    info.TextActor->SetVisibility(baseInfo.Visible);
-    info.LineActor->SetVisibility(baseInfo.Visible && baseInfo.LineVisible);
     info.LineActor->GetProperty()->SetColor(baseInfo.Color);
+
+    // Visibility
+    if (info.TextActor->GetVisibility() != (baseInfo.Visible ? 1 : 0))
+    {
+      info.TextActor->SetVisibility(baseInfo.Visible);
+    }
+    int lineVis = (baseInfo.Visible && baseInfo.LineVisible) ? 1 : 0;
+    if (info.LineActor->GetVisibility() != lineVis)
+    {
+      info.LineActor->SetVisibility(lineVis);
+    }
+
+    // Anchor/display
     if (baseInfo.Visible)
     {
       info.AnchorPosition[0] = baseInfo.AnchorPosition[0];
@@ -416,26 +453,30 @@ void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabelPositions()
     info.AnchorPosition[2] = baseInfo.AnchorPosition[2];
     this->WorldToDisplay(info.AnchorPosition, info.DisplayPosition);
 
-    // Update text actor core properties
-    info.TextActor->SetInput(baseInfo.Text.c_str());
-    info.TextActor->GetTextProperty()->SetColor(baseInfo.Color[0], baseInfo.Color[1], baseInfo.Color[2]);
-    // Map TextScale to font size (base size 10)
-    int fontSize = static_cast<int>(std::max(1.0, baseInfo.TextScale * 10.0));
-    info.TextActor->GetTextProperty()->SetFontSize(fontSize);
-    info.TextActor->SetVisibility(baseInfo.Visible);
-
-    // Line actor visibility
-    if (info.LineActor)
+    // Update cached viewport change -> size dirty
+    if (this->External->GetRenderer())
     {
-      info.LineActor->SetVisibility(baseInfo.Visible && baseInfo.LineVisible);
+      int* vs = this->External->GetRenderer()->GetSize();
+      if (vs[0] != info.CachedViewportSize[0] || vs[1] != info.CachedViewportSize[1])
+      {
+        info.CachedViewportSize[0] = vs[0];
+        info.CachedViewportSize[1] = vs[1];
+        info.SizeDirty = true;
+      }
     }
 
     int labelPosition = baseInfo.LabelPosition;
-    // Bounding box for width/height adjustments at edges
-    double bbox[4] = { 0, 0, 0, 0 };
-    info.TextActor->GetBoundingBox(this->External->GetRenderer(), bbox);
-    int textW = bbox[1] - bbox[0];
-    int textH = bbox[3] - bbox[2];
+    // Get cached text size (compute lazily if dirty)
+    if (info.SizeDirty)
+    {
+      double bbox[4] = { 0, 0, 0, 0 };
+      info.TextActor->GetBoundingBox(this->External->GetRenderer(), bbox);
+      info.CachedTextWidth = std::max(0.0, bbox[1] - bbox[0]);
+      info.CachedTextHeight = std::max(0.0, bbox[3] - bbox[2]);
+      info.SizeDirty = false;
+    }
+    int textW = static_cast<int>(info.CachedTextWidth);
+    int textH = static_cast<int>(info.CachedTextHeight);
     switch (labelPosition)
     {
       case vtkMRMLLabelDisplayNode::LabelPositionLeft:
@@ -498,9 +539,7 @@ void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabelPositions()
       std::sort(group.begin(), group.end(), [](LabelInfo* a, LabelInfo* b) { return a->AssignedPosition[1] < b->AssignedPosition[1]; });
       for (size_t i = 1; i < group.size(); ++i)
       {
-        double bboxPrev[4] = { 0, 0, 0, 0 };
-        group[i - 1]->TextActor->GetBoundingBox(this->External->GetRenderer(), bboxPrev);
-        int prevH = bboxPrev[3] - bboxPrev[2];
+        int prevH = static_cast<int>(group[i - 1]->CachedTextHeight);
         int neededY = group[i - 1]->AssignedPosition[1] + prevH + minGap;
         if (group[i]->AssignedPosition[1] < neededY)
         {
@@ -513,9 +552,7 @@ void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabelPositions()
       std::sort(group.begin(), group.end(), [](LabelInfo* a, LabelInfo* b) { return a->AssignedPosition[0] < b->AssignedPosition[0]; });
       for (size_t i = 1; i < group.size(); ++i)
       {
-        double bboxPrev[4] = { 0, 0, 0, 0 };
-        group[i - 1]->TextActor->GetBoundingBox(this->External->GetRenderer(), bboxPrev);
-        int prevW = bboxPrev[1] - bboxPrev[0];
+        int prevW = static_cast<int>(group[i - 1]->CachedTextWidth);
         int neededX = group[i - 1]->AssignedPosition[0] + prevW + minGap;
         if (group[i]->AssignedPosition[0] < neededX)
         {
@@ -546,11 +583,26 @@ void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabelActors()
       continue;
     }
 
-    // Set text actor position
-    info.TextActor->SetDisplayPosition(info.AssignedPosition[0], info.AssignedPosition[1]);
+    // Only update actor position if changed
+    if (info.PrevAssignedPosition[0] != info.AssignedPosition[0]
+      || info.PrevAssignedPosition[1] != info.AssignedPosition[1])
+    {
+      info.TextActor->SetDisplayPosition(info.AssignedPosition[0], info.AssignedPosition[1]);
+      info.PrevAssignedPosition[0] = info.AssignedPosition[0];
+      info.PrevAssignedPosition[1] = info.AssignedPosition[1];
+    }
 
     // Update line geometry
-    this->UpdateLineGeometry(info);
+    if (info.PrevAnchorDisplay[0] != info.DisplayPosition[0]
+      || info.PrevAnchorDisplay[1] != info.DisplayPosition[1]
+      || info.PrevAssignedPosition[0] != info.AssignedPosition[0]
+      || info.PrevAssignedPosition[1] != info.AssignedPosition[1]
+      || info.SizeDirty)
+    {
+      this->UpdateLineGeometry(info);
+      info.PrevAnchorDisplay[0] = info.DisplayPosition[0];
+      info.PrevAnchorDisplay[1] = info.DisplayPosition[1];
+    }
   }
 }
 
@@ -578,11 +630,9 @@ void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLineGeometry(Labe
 
   // Determine which side bounding edge should be drawn on (opposite of screen edge)
   int labelPosition = baseInfo.LabelPosition;
-  // Compute text size and derive bounding box from assigned position
-  double bbox[4] = { 0, 0, 0, 0 };
-  label.TextActor->GetBoundingBox(this->External->GetRenderer(), bbox);
-  double textW = bbox[1] - bbox[0];
-  double textH = bbox[3] - bbox[2];
+  // Use cached text size and derive bounding box from assigned position
+  double textW = label.CachedTextWidth;
+  double textH = label.CachedTextHeight;
   double leftX = static_cast<double>(label.AssignedPosition[0]);
   double bottomY = static_cast<double>(label.AssignedPosition[1]);
   double rightX = leftX + textW;
