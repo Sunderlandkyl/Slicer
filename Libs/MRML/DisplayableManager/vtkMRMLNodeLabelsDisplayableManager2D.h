@@ -39,6 +39,9 @@ public:
   vtkTypeMacro(vtkMRMLNodeLabelsDisplayableManager2D, vtkMRMLAbstractSliceViewDisplayableManager);
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
+  /// Update labels when renderer/view changes
+  void UpdateFromRenderer();
+
 protected:
   vtkMRMLNodeLabelsDisplayableManager2D();
   ~vtkMRMLNodeLabelsDisplayableManager2D() override;

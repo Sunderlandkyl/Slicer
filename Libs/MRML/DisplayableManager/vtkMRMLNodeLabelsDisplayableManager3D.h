@@ -39,6 +39,9 @@ public:
   vtkTypeMacro(vtkMRMLNodeLabelsDisplayableManager3D, vtkMRMLAbstractThreeDViewDisplayableManager);
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
+  /// Update labels when renderer/camera changes
+  void UpdateFromRenderer();
+
 protected:
   vtkMRMLNodeLabelsDisplayableManager3D();
   ~vtkMRMLNodeLabelsDisplayableManager3D() override;

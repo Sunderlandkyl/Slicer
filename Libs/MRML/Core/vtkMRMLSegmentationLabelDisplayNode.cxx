@@ -160,7 +160,7 @@ bool vtkMRMLSegmentationLabelDisplayNode::GetLabelInfo(int labelIndex, LabelInfo
   {
     info.LabelPosition = vtkMRMLLabelDisplayNode::LabelPositionDefault;
   }
-  info.TextScale = 3.0;
+  info.TextScale = 1.5;
   info.TextPropertyPtr = nullptr;
 
   return true;
