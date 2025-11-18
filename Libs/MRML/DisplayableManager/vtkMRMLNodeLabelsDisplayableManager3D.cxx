@@ -28,19 +28,27 @@
 // VTK includes
 #include <vtkActor2D.h>
 #include <vtkCellArray.h>
+#include <vtkCellData.h>
 #include <vtkCoordinate.h>
+#include <vtkDoubleArray.h>
+#include <vtkFloatArray.h>
+#include <vtkLabelPlacementMapper.h>
 #include <vtkLine.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
+#include <vtkPointData.h>
 #include <vtkPoints.h>
+#include <vtkPointSetToLabelHierarchy.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataMapper2D.h>
 #include <vtkProperty2D.h>
 #include <vtkRenderer.h>
 #include <vtkRenderWindow.h>
 #include <vtkSmartPointer.h>
+#include <vtkStringArray.h>
 #include <vtkTextActor.h>
 #include <vtkTextProperty.h>
+#include <vtkUnsignedCharArray.h>
 
 // STD includes
 #include <algorithm>
@@ -77,48 +85,47 @@ public:
   vtkInternal(vtkMRMLNodeLabelsDisplayableManager3D* external);
   ~vtkInternal();
 
-  struct LabelInfo
+  struct DisplayNodeInfo
   {
-    vtkSmartPointer<vtkTextActor> TextActor;
+    vtkMRMLLabelDisplayNode* DisplayNode{nullptr};
+
+    // Label rendering using vtkLabelPlacementMapper (efficient!)
+    vtkSmartPointer<vtkPolyData> LabelPolyData;
+    vtkSmartPointer<vtkPoints> LabelPoints;
+    vtkSmartPointer<vtkStringArray> Labels;
+    vtkSmartPointer<vtkFloatArray> LabelPriority;
+    vtkSmartPointer<vtkPointSetToLabelHierarchy> LabelHierarchy;
+    vtkSmartPointer<vtkLabelPlacementMapper> LabelMapper;
+    vtkSmartPointer<vtkActor2D> LabelActor;
+
+    // Lines from anchor to label
+    vtkSmartPointer<vtkPolyData> LinePolyData;
     vtkSmartPointer<vtkPolyDataMapper2D> LineMapper;
     vtkSmartPointer<vtkActor2D> LineActor;
-    vtkSmartPointer<vtkPolyData> LinePolyData;
-    vtkMRMLLabelDisplayNode* DisplayNode;
-    int LabelIndex{ 0 };
-    std::string Key;           // nodeID#index
-    double AnchorPosition[3];  // World coordinates
-    double DisplayPosition[2]; // Display coordinates
-    int AssignedPosition[2];   // Final position after collision avoidance
 
-    // Caching to reduce per-frame work
-    std::string CachedText;
-    int CachedFontSize{0};
-    double CachedTextWidth{0.0};
-    double CachedTextHeight{0.0};
-    int CachedViewportSize[2]{0,0};
-    bool SizeDirty{true};
-    bool StyleDirty{true};
-
-    int PrevAssignedPosition[2]{INT_MIN, INT_MIN};
-    double PrevAnchorDisplay[2]{std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()};
+    // Cache for collision avoidance
+    struct LabelCache
+    {
+      double AnchorWorld[3]{0,0,0};
+      double AnchorDisplay[2]{0,0};
+      double AssignedDisplay[2]{0,0};
+      int LabelPosition{0};
+      bool Visible{false};
+    };
+    std::vector<LabelCache> CachedLabels;
   };
 
-  typedef std::map<std::string, LabelInfo> LabelsMapType;
-  LabelsMapType Labels;
+  std::map<vtkMRMLLabelDisplayNode*, DisplayNodeInfo> DisplayNodes;
 
   vtkMRMLNodeLabelsDisplayableManager3D* External;
 
-  void AddLabel(vtkMRMLLabelDisplayNode* displayNode);
-  void UpdateLabel(vtkMRMLLabelDisplayNode* displayNode);
-  void RemoveLabel(vtkMRMLLabelDisplayNode* displayNode);
-  void RemoveAllLabels();
+  void AddDisplayNode(vtkMRMLLabelDisplayNode* displayNode);
+  void UpdateDisplayNode(vtkMRMLLabelDisplayNode* displayNode);
+  void RemoveDisplayNode(vtkMRMLLabelDisplayNode* displayNode);
+  void RemoveAllDisplayNodes();
 
-  // Anchor now comes from display node label info
   void WorldToDisplay(const double worldPos[3], double displayPos[2]);
-
-  void UpdateLabelPositions();
-  void UpdateLabelActors();
-  void UpdateLineGeometry(LabelInfo& label);
+  void UpdateLabels();
 
   void AddRendererUpdateObserver(vtkRenderer* renderer);
   void RemoveRendererUpdateObserver();
@@ -144,256 +151,140 @@ vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::~vtkInternal()
 {
   // Remove observer first to prevent callbacks during destruction
   this->RemoveRendererUpdateObserver();
-  this->RemoveAllLabels();
+  this->RemoveAllDisplayNodes();
   this->RendererUpdateObserver = nullptr;
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::AddLabel(vtkMRMLLabelDisplayNode* displayNode)
+void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::AddDisplayNode(vtkMRMLLabelDisplayNode* displayNode)
 {
   if (!displayNode || !displayNode->GetID())
   {
     return;
   }
 
-  // Create actors for each label exposed by the display node
-  int count = displayNode->GetNumberOfLabels();
-  for (int i = 0; i < count; ++i)
+  if (this->DisplayNodes.find(displayNode) != this->DisplayNodes.end())
   {
-    LabelInfo info;
-    info.DisplayNode = displayNode;
-    info.LabelIndex = i;
-
-    vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
-    bool ok = displayNode->GetLabelInfo(i, baseInfo);
-
-    info.Key = std::string(displayNode->GetID()) + "#" + std::to_string(i);
-
-    // Create text actor
-    info.TextActor = vtkSmartPointer<vtkTextActor>::New();
-    info.TextActor->SetTextScaleModeToViewport();
-    info.TextActor->GetTextProperty()->ShallowCopy(baseInfo.TextPropertyPtr);
-
-    // Create line actor (bounding edge + connector). 4 points, 2 line segments.
-    info.LinePolyData = vtkSmartPointer<vtkPolyData>::New();
-    vtkNew<vtkPoints> linePoints;
-    linePoints->SetNumberOfPoints(4); // 0-1: bounding edge, 2-3: connector
-    info.LinePolyData->SetPoints(linePoints);
-    vtkNew<vtkCellArray> lines;
-    {
-      vtkNew<vtkLine> edgeLine; // bounding edge
-      edgeLine->GetPointIds()->SetId(0, 0);
-      edgeLine->GetPointIds()->SetId(1, 1);
-      lines->InsertNextCell(edgeLine);
-      vtkNew<vtkLine> connectorLine; // anchor to projection point
-      connectorLine->GetPointIds()->SetId(0, 2);
-      connectorLine->GetPointIds()->SetId(1, 3);
-      lines->InsertNextCell(connectorLine);
-    }
-    info.LinePolyData->SetLines(lines);
-    info.LineMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-    info.LineMapper->SetInputData(info.LinePolyData);
-    info.LineActor = vtkSmartPointer<vtkActor2D>::New();
-    info.LineActor->SetMapper(info.LineMapper);
-    info.LineActor->GetProperty()->SetLineWidth(2.0);
-
-    if (this->GetRenderer())
-    {
-      this->GetRenderer()->AddActor2D(info.TextActor);
-      this->GetRenderer()->AddActor2D(info.LineActor);
-    }
-
-    this->Labels[info.Key] = info;
+    return; // Already exists
   }
 
-  this->UpdateLabel(displayNode);
+  DisplayNodeInfo info;
+  info.DisplayNode = displayNode;
+
+  // Create polydata for labels
+  info.LabelPolyData = vtkSmartPointer<vtkPolyData>::New();
+  info.LabelPoints = vtkSmartPointer<vtkPoints>::New();
+  info.LabelPolyData->SetPoints(info.LabelPoints);
+
+  info.Labels = vtkSmartPointer<vtkStringArray>::New();
+  info.Labels->SetName("labels");
+  info.LabelPolyData->GetPointData()->AddArray(info.Labels);
+
+  info.LabelPriority = vtkSmartPointer<vtkFloatArray>::New();
+  info.LabelPriority->SetName("priority");
+  info.LabelPolyData->GetPointData()->AddArray(info.LabelPriority);
+
+  // Set up label hierarchy and mapper
+  info.LabelHierarchy = vtkSmartPointer<vtkPointSetToLabelHierarchy>::New();
+  info.LabelHierarchy->SetInputData(info.LabelPolyData);
+  info.LabelHierarchy->SetLabelArrayName("labels");
+  info.LabelHierarchy->SetPriorityArrayName("priority");
+
+  info.LabelMapper = vtkSmartPointer<vtkLabelPlacementMapper>::New();
+  info.LabelMapper->SetInputConnection(info.LabelHierarchy->GetOutputPort());
+  info.LabelMapper->PlaceAllLabelsOn(); // We want all labels shown
+
+  // Set default text property
+  vtkNew<vtkTextProperty> textProperty;
+  textProperty->SetFontSize(10); // Base font size
+  textProperty->SetColor(displayNode->GetColor()); // Use display node color
+  textProperty->SetBold(0);
+  textProperty->SetItalic(0);
+  textProperty->SetShadow(1);
+  textProperty->SetFontFamilyToArial();
+  info.LabelHierarchy->SetTextProperty(textProperty);
+
+  info.LabelActor = vtkSmartPointer<vtkActor2D>::New();
+  info.LabelActor->SetMapper(info.LabelMapper);
+  info.LabelActor->PickableOff();
+  info.LabelActor->DragableOff();
+
+  // Create polydata for lines
+  info.LinePolyData = vtkSmartPointer<vtkPolyData>::New();
+  vtkNew<vtkPoints> linePoints;
+  info.LinePolyData->SetPoints(linePoints);
+  vtkNew<vtkCellArray> lines;
+  info.LinePolyData->SetLines(lines);
+
+  info.LineMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
+  info.LineMapper->SetInputData(info.LinePolyData);
+
+  info.LineActor = vtkSmartPointer<vtkActor2D>::New();
+  info.LineActor->SetMapper(info.LineMapper);
+  info.LineActor->GetProperty()->SetLineWidth(2.0);
+  info.LineActor->PickableOff();
+  info.LineActor->DragableOff();
+
+  if (this->GetRenderer())
+  {
+    this->GetRenderer()->AddActor2D(info.LabelActor);
+    this->GetRenderer()->AddActor2D(info.LineActor);
+  }
+
+  this->DisplayNodes[displayNode] = info;
+  this->UpdateDisplayNode(displayNode);
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabel(vtkMRMLLabelDisplayNode* displayNode)
+void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateDisplayNode(vtkMRMLLabelDisplayNode* displayNode)
 {
-  if (!displayNode || !displayNode->GetID())
+  if (!displayNode)
   {
     return;
   }
 
-  // Synchronize number of label actors with display node
-  int desired = displayNode->GetNumberOfLabels();
-  std::vector<std::string> presentKeys;
-  presentKeys.reserve(this->Labels.size());
-  const std::string nodeID = displayNode->GetID();
-  for (const auto& itPair : this->Labels)
+  auto it = this->DisplayNodes.find(displayNode);
+  if (it == this->DisplayNodes.end())
   {
-    if (itPair.second.DisplayNode == displayNode)
-    {
-      presentKeys.push_back(itPair.first);
-    }
-  }
-  for (const std::string& key : presentKeys)
-  {
-    const LabelInfo& li = this->Labels[key];
-    if (li.LabelIndex >= desired)
-    {
-      if (this->GetRenderer())
-      {
-        this->GetRenderer()->RemoveActor2D(li.TextActor);
-        this->GetRenderer()->RemoveActor2D(li.LineActor);
-      }
-      this->Labels.erase(key);
-    }
-  }
-  for (int i = 0; i < desired; ++i)
-  {
-    std::string key = nodeID + "#" + std::to_string(i);
-    if (this->Labels.find(key) == this->Labels.end())
-    {
-      vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
-      displayNode->GetLabelInfo(i, baseInfo);
-
-      LabelInfo info;
-      info.DisplayNode = displayNode;
-      info.LabelIndex = i;
-      info.Key = key;
-  info.TextActor = vtkSmartPointer<vtkTextActor>::New();
-  info.TextActor->SetTextScaleModeToViewport();
-      info.TextActor->GetTextProperty()->ShallowCopy(baseInfo.TextPropertyPtr);
-      info.LinePolyData = vtkSmartPointer<vtkPolyData>::New();
-      vtkNew<vtkPoints> linePoints;
-      linePoints->SetNumberOfPoints(4); // 0-1 bounding edge, 2 anchor, 3 projection
-      info.LinePolyData->SetPoints(linePoints);
-      vtkNew<vtkCellArray> lines;
-      {
-        vtkNew<vtkLine> edgeLine;
-        edgeLine->GetPointIds()->SetId(0, 0);
-        edgeLine->GetPointIds()->SetId(1, 1);
-        lines->InsertNextCell(edgeLine);
-        vtkNew<vtkLine> connectorLine;
-        connectorLine->GetPointIds()->SetId(0, 2);
-        connectorLine->GetPointIds()->SetId(1, 3);
-        lines->InsertNextCell(connectorLine);
-      }
-      info.LinePolyData->SetLines(lines);
-      info.LineMapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
-      info.LineMapper->SetInputData(info.LinePolyData);
-      info.LineActor = vtkSmartPointer<vtkActor2D>::New();
-      info.LineActor->SetMapper(info.LineMapper);
-      info.LineActor->GetProperty()->SetLineWidth(2.0);
-      if (this->GetRenderer())
-      {
-        this->GetRenderer()->AddActor2D(info.TextActor);
-        this->GetRenderer()->AddActor2D(info.LineActor);
-      }
-      this->Labels[key] = info;
-    }
+    return;
   }
 
-  for (int i = 0; i < desired; ++i)
-  {
-    std::string key = nodeID + "#" + std::to_string(i);
-    LabelInfo& info = this->Labels[key];
-    vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
-    bool ok = displayNode->GetLabelInfo(i, baseInfo);
-    if (!ok)
-    {
-      info.TextActor->SetVisibility(false);
-      info.LineActor->SetVisibility(false);
-      continue;
-    }
-
-    // Text content
-    if (info.CachedText != baseInfo.Text)
-    {
-      info.TextActor->SetInput(baseInfo.Text.c_str());
-      info.CachedText = baseInfo.Text;
-      info.SizeDirty = true;
-    }
-
-    // Font size mapping
-    int fontSize = static_cast<int>(std::max(1.0, baseInfo.TextScale * 10.0));
-    if (info.CachedFontSize != fontSize)
-    {
-      info.TextActor->GetTextProperty()->SetFontSize(fontSize);
-      info.CachedFontSize = fontSize;
-      info.SizeDirty = true;
-    }
-
-    // Color (cheap)
-    info.TextActor->GetTextProperty()->SetColor(baseInfo.Color);
-    info.LineActor->GetProperty()->SetColor(baseInfo.Color);
-
-    // Visibility
-    if (info.TextActor->GetVisibility() != (baseInfo.Visible ? 1 : 0))
-    {
-      info.TextActor->SetVisibility(baseInfo.Visible);
-    }
-    int lineVis = (baseInfo.Visible && baseInfo.LineVisible) ? 1 : 0;
-    if (info.LineActor->GetVisibility() != lineVis)
-    {
-      info.LineActor->SetVisibility(lineVis);
-    }
-
-    // Anchor/display
-    if (baseInfo.Visible)
-    {
-      info.AnchorPosition[0] = baseInfo.AnchorPosition[0];
-      info.AnchorPosition[1] = baseInfo.AnchorPosition[1];
-      info.AnchorPosition[2] = baseInfo.AnchorPosition[2];
-      this->WorldToDisplay(info.AnchorPosition, info.DisplayPosition);
-      info.AssignedPosition[0] = static_cast<int>(info.DisplayPosition[0]);
-      info.AssignedPosition[1] = static_cast<int>(info.DisplayPosition[1]);
-    }
-  }
-
+  // Just mark for update; actual update happens in UpdateLabels()
   this->External->RequestRender();
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::RemoveLabel(vtkMRMLLabelDisplayNode* displayNode)
+void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::RemoveDisplayNode(vtkMRMLLabelDisplayNode* displayNode)
 {
-  if (!displayNode || !displayNode->GetID())
+  auto it = this->DisplayNodes.find(displayNode);
+  if (it == this->DisplayNodes.end())
   {
     return;
   }
 
-  const std::string nodeID = displayNode->GetID();
-  std::vector<std::string> toErase;
-  for (const auto& it : this->Labels)
+  if (this->GetRenderer())
   {
-    if (it.second.DisplayNode == displayNode)
-    {
-      if (this->GetRenderer())
-      {
-        this->GetRenderer()->RemoveActor2D(it.second.TextActor);
-        this->GetRenderer()->RemoveActor2D(it.second.LineActor);
-      }
-      toErase.push_back(it.first);
-    }
+    this->GetRenderer()->RemoveActor2D(it->second.LabelActor);
+    this->GetRenderer()->RemoveActor2D(it->second.LineActor);
   }
-  for (const std::string& k : toErase)
-  {
-    this->Labels.erase(k);
-  }
+
+  this->DisplayNodes.erase(it);
   this->External->RequestRender();
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::RemoveAllLabels()
+void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::RemoveAllDisplayNodes()
 {
-  LabelsMapType::iterator it;
-  for (it = this->Labels.begin(); it != this->Labels.end(); ++it)
+  for (auto& pair : this->DisplayNodes)
   {
-    LabelInfo& info = it->second;
     if (this->GetRenderer())
     {
-      this->GetRenderer()->RemoveActor2D(info.TextActor);
-      this->GetRenderer()->RemoveActor2D(info.LineActor);
+      this->GetRenderer()->RemoveActor2D(pair.second.LabelActor);
+      this->GetRenderer()->RemoveActor2D(pair.second.LineActor);
     }
   }
-  this->Labels.clear();
+  this->DisplayNodes.clear();
 }
-
-//---------------------------------------------------------------------------
-// (Removed segmentation-specific anchor calculations; anchor now comes from display node label info)
 
 //---------------------------------------------------------------------------
 void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::WorldToDisplay(const double worldPos[3], double displayPos[2])
@@ -405,7 +296,6 @@ void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::WorldToDisplay(const do
     return;
   }
 
-  // Use VTK coordinate conversion
   vtkNew<vtkCoordinate> coordinate;
   coordinate->SetCoordinateSystemToWorld();
   coordinate->SetValue(worldPos[0], worldPos[1], worldPos[2]);
@@ -415,7 +305,7 @@ void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::WorldToDisplay(const do
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabelPositions()
+void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabels()
 {
   if (!this->GetRenderer())
   {
@@ -425,308 +315,209 @@ void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabelPositions()
   int* viewportSize = this->GetRenderer()->GetSize();
   int margin = 10;
 
-  // Update each label based on its position preference
-  for (LabelsMapType::iterator it = this->Labels.begin(); it != this->Labels.end(); ++it)
+  // Update all display nodes
+  for (auto& pair : this->DisplayNodes)
   {
-    LabelInfo& info = it->second;
-    vtkMRMLLabelDisplayNode* displayNode = info.DisplayNode;
+    vtkMRMLLabelDisplayNode* displayNode = pair.first;
+    DisplayNodeInfo& info = pair.second;
+
     if (!displayNode)
     {
-      info.TextActor->SetVisibility(false);
-      if (info.LineActor)
-      {
-        info.LineActor->SetVisibility(false);
-      }
       continue;
     }
 
-    vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
-    if (!displayNode->GetLabelInfo(info.LabelIndex, baseInfo))
+    int labelCount = displayNode->GetNumberOfLabels();
+    info.CachedLabels.resize(labelCount);
+
+    // Clear arrays
+    info.LabelPoints->Reset();
+    info.Labels->Reset();
+    info.LabelPriority->Reset();
+
+    // Build label data
+    for (int i = 0; i < labelCount; ++i)
     {
-      // Hide if label cannot be resolved
-      info.TextActor->SetVisibility(false);
-      if (info.LineActor)
+      vtkMRMLLabelDisplayNode::LabelInfo labelInfo;
+      if (!displayNode->GetLabelInfo(i, labelInfo) || !labelInfo.Visible)
       {
-        info.LineActor->SetVisibility(false);
+        info.CachedLabels[i].Visible = false;
+        continue;
       }
-      continue;
+
+      // Store cache
+      auto& cache = info.CachedLabels[i];
+      cache.Visible = true;
+      cache.AnchorWorld[0] = labelInfo.AnchorPosition[0];
+      cache.AnchorWorld[1] = labelInfo.AnchorPosition[1];
+      cache.AnchorWorld[2] = labelInfo.AnchorPosition[2];
+      cache.LabelPosition = labelInfo.LabelPosition;
+
+      // Convert to display
+      this->WorldToDisplay(cache.AnchorWorld, cache.AnchorDisplay);
+
+      // Initial assigned position (will be adjusted for collision)
+      cache.AssignedDisplay[0] = cache.AnchorDisplay[0];
+      cache.AssignedDisplay[1] = cache.AnchorDisplay[1];
     }
 
-    // Update anchor and display position from latest info
-    info.AnchorPosition[0] = baseInfo.AnchorPosition[0];
-    info.AnchorPosition[1] = baseInfo.AnchorPosition[1];
-    info.AnchorPosition[2] = baseInfo.AnchorPosition[2];
-    this->WorldToDisplay(info.AnchorPosition, info.DisplayPosition);
-
-    // Update cached viewport change -> size dirty
-    if (this->GetRenderer())
+    // Apply edge positioning and collision avoidance
+    const int minGap = 4;
+    auto adjustGroup = [&](int side, bool verticalStack)
     {
-      int* vs = this->GetRenderer()->GetSize();
-      if (vs[0] != info.CachedViewportSize[0] || vs[1] != info.CachedViewportSize[1])
+      std::vector<int> indices;
+      for (int i = 0; i < labelCount; ++i)
       {
-        info.CachedViewportSize[0] = vs[0];
-        info.CachedViewportSize[1] = vs[1];
-        info.SizeDirty = true;
+        if (info.CachedLabels[i].Visible && info.CachedLabels[i].LabelPosition == side)
+        {
+          indices.push_back(i);
+        }
       }
-    }
 
-    int labelPosition = baseInfo.LabelPosition;
-    // Get cached text size (compute lazily if dirty)
-    if (info.SizeDirty)
-    {
-      double bbox[4] = { 0, 0, 0, 0 };
-      info.TextActor->GetBoundingBox(this->GetRenderer(), bbox);
-      info.CachedTextWidth = std::max(0.0, bbox[1] - bbox[0]);
-      info.CachedTextHeight = std::max(0.0, bbox[3] - bbox[2]);
-      info.SizeDirty = false;
-    }
-    int textW = static_cast<int>(info.CachedTextWidth);
-    int textH = static_cast<int>(info.CachedTextHeight);
-    switch (labelPosition)
-    {
-      case vtkMRMLLabelDisplayNode::LabelPositionLeft:
-        info.AssignedPosition[0] = margin;
-        info.AssignedPosition[1] = static_cast<int>(info.DisplayPosition[1]);
-        info.TextActor->GetTextProperty()->SetJustificationToLeft();
-        info.TextActor->GetTextProperty()->SetVerticalJustificationToCentered();
-        break;
-      case vtkMRMLLabelDisplayNode::LabelPositionRight:
-        info.AssignedPosition[0] = viewportSize[0] - margin - textW;
-        info.AssignedPosition[1] = static_cast<int>(info.DisplayPosition[1]);
-        info.TextActor->GetTextProperty()->SetJustificationToLeft(); // manual x placement
-        info.TextActor->GetTextProperty()->SetVerticalJustificationToCentered();
-        break;
-      case vtkMRMLLabelDisplayNode::LabelPositionTop:
-        info.AssignedPosition[0] = static_cast<int>(info.DisplayPosition[0]);
-        info.AssignedPosition[1] = viewportSize[1] - margin - textH;
-        info.TextActor->GetTextProperty()->SetJustificationToCentered();
-        info.TextActor->GetTextProperty()->SetVerticalJustificationToBottom();
-        break;
-      case vtkMRMLLabelDisplayNode::LabelPositionBottom:
-        info.AssignedPosition[0] = static_cast<int>(info.DisplayPosition[0]);
-        info.AssignedPosition[1] = margin;
-        info.TextActor->GetTextProperty()->SetJustificationToCentered();
-        info.TextActor->GetTextProperty()->SetVerticalJustificationToBottom();
-        break;
-      default:
-        info.AssignedPosition[0] = static_cast<int>(info.DisplayPosition[0]);
-        info.AssignedPosition[1] = static_cast<int>(info.DisplayPosition[1]);
-        info.TextActor->GetTextProperty()->SetJustificationToCentered();
-        info.TextActor->GetTextProperty()->SetVerticalJustificationToCentered();
-        break;
-    }
-  }
+      if (indices.size() < 2)
+      {
+        return;
+      }
 
-  // Collision avoidance after initial assignments
-  const int minGap = 4; // pixels
-  auto adjustGroup = [&](int side, bool verticalStack)
-  {
-    std::vector<LabelInfo*> group;
-    for (auto& kv : this->Labels)
+      if (verticalStack)
+      {
+        std::sort(indices.begin(), indices.end(), [&](int a, int b) {
+          return info.CachedLabels[a].AnchorDisplay[1] < info.CachedLabels[b].AnchorDisplay[1];
+        });
+
+        for (size_t j = 1; j < indices.size(); ++j)
+        {
+          int prevIdx = indices[j - 1];
+          int currIdx = indices[j];
+          int neededY = static_cast<int>(info.CachedLabels[prevIdx].AssignedDisplay[1]) + minGap + 15; // Assume ~15px label height
+          if (info.CachedLabels[currIdx].AssignedDisplay[1] < neededY)
+          {
+            info.CachedLabels[currIdx].AssignedDisplay[1] = neededY;
+          }
+        }
+      }
+      else
+      {
+        std::sort(indices.begin(), indices.end(), [&](int a, int b) {
+          return info.CachedLabels[a].AnchorDisplay[0] < info.CachedLabels[b].AnchorDisplay[0];
+        });
+
+        for (size_t j = 1; j < indices.size(); ++j)
+        {
+          int prevIdx = indices[j - 1];
+          int currIdx = indices[j];
+          int neededX = static_cast<int>(info.CachedLabels[prevIdx].AssignedDisplay[0]) + minGap + 50; // Assume ~50px label width
+          if (info.CachedLabels[currIdx].AssignedDisplay[0] < neededX)
+          {
+            info.CachedLabels[currIdx].AssignedDisplay[0] = neededX;
+          }
+        }
+      }
+    };
+
+    // Apply edge snapping
+    for (int i = 0; i < labelCount; ++i)
     {
-      vtkMRMLLabelDisplayNode::LabelInfo bi;
-      if (!kv.second.DisplayNode)
+      if (!info.CachedLabels[i].Visible)
       {
         continue;
       }
-      kv.second.DisplayNode->GetLabelInfo(kv.second.LabelIndex, bi);
-      if (bi.LabelPosition == side && kv.second.TextActor->GetVisibility())
+
+      auto& cache = info.CachedLabels[i];
+      switch (cache.LabelPosition)
       {
-        group.push_back(&kv.second);
+        case vtkMRMLLabelDisplayNode::LabelPositionLeft:
+          cache.AssignedDisplay[0] = margin;
+          cache.AssignedDisplay[1] = cache.AnchorDisplay[1];
+          break;
+        case vtkMRMLLabelDisplayNode::LabelPositionRight:
+          cache.AssignedDisplay[0] = viewportSize[0] - margin - 50; // Approx label width
+          cache.AssignedDisplay[1] = cache.AnchorDisplay[1];
+          break;
+        case vtkMRMLLabelDisplayNode::LabelPositionTop:
+          cache.AssignedDisplay[0] = cache.AnchorDisplay[0];
+          cache.AssignedDisplay[1] = viewportSize[1] - margin - 15; // Approx label height
+          break;
+        case vtkMRMLLabelDisplayNode::LabelPositionBottom:
+          cache.AssignedDisplay[0] = cache.AnchorDisplay[0];
+          cache.AssignedDisplay[1] = margin;
+          break;
       }
     }
-    if (group.size() < 2)
+
+    // Apply collision avoidance
+    adjustGroup(vtkMRMLLabelDisplayNode::LabelPositionLeft, true);
+    adjustGroup(vtkMRMLLabelDisplayNode::LabelPositionRight, true);
+    adjustGroup(vtkMRMLLabelDisplayNode::LabelPositionTop, false);
+    adjustGroup(vtkMRMLLabelDisplayNode::LabelPositionBottom, false);
+
+    // Now populate the label polydata and line polydata
+    vtkNew<vtkPoints> linePoints;
+    vtkNew<vtkCellArray> lines;
+    vtkNew<vtkUnsignedCharArray> lineColors;
+    lineColors->SetNumberOfComponents(3);
+    lineColors->SetName("Colors");
+
+    for (int i = 0; i < labelCount; ++i)
     {
-      return;
-    }
-    if (verticalStack)
-    {
-      std::sort(group.begin(), group.end(), [](LabelInfo* a, LabelInfo* b) { return a->AssignedPosition[1] < b->AssignedPosition[1]; });
-      for (size_t i = 1; i < group.size(); ++i)
+      if (!info.CachedLabels[i].Visible)
       {
-        int prevH = static_cast<int>(group[i - 1]->CachedTextHeight);
-        int neededY = group[i - 1]->AssignedPosition[1] + prevH + minGap;
-        if (group[i]->AssignedPosition[1] < neededY)
-        {
-          group[i]->AssignedPosition[1] = neededY;
-        }
+        continue;
+      }
+
+      vtkMRMLLabelDisplayNode::LabelInfo labelInfo;
+      displayNode->GetLabelInfo(i, labelInfo);
+      auto& cache = info.CachedLabels[i];
+
+      // Convert assigned display position back to world coordinates for 3D
+      // Use the anchor's world position but shift it to the display offset
+      double labelWorldPos[3];
+      labelWorldPos[0] = cache.AnchorWorld[0];
+      labelWorldPos[1] = cache.AnchorWorld[1];
+      labelWorldPos[2] = cache.AnchorWorld[2];
+
+      // For 3D, we need to place the label in world space at a position that appears
+      // at the assigned display position. We'll use the anchor world Z and offset in screen space.
+      // Simple approach: just use anchor world position (the mapper will handle placement)
+      info.LabelPoints->InsertNextPoint(labelWorldPos[0], labelWorldPos[1], labelWorldPos[2]);
+      info.Labels->InsertNextValue(labelInfo.Text);
+      info.LabelPriority->InsertNextValue(static_cast<float>(i));
+
+      // Add line from anchor to label (in display coordinates for 2D polydata mapper)
+      if (labelInfo.LineVisible)
+      {
+        vtkIdType ptId0 = linePoints->InsertNextPoint(cache.AnchorDisplay[0], cache.AnchorDisplay[1], 0.0);
+        vtkIdType ptId1 = linePoints->InsertNextPoint(cache.AssignedDisplay[0], cache.AssignedDisplay[1], 0.0);
+        vtkNew<vtkLine> line;
+        line->GetPointIds()->SetId(0, ptId0);
+        line->GetPointIds()->SetId(1, ptId1);
+        lines->InsertNextCell(line);
+
+        // Add line color
+        unsigned char color[3];
+        color[0] = static_cast<unsigned char>(labelInfo.Color[0] * 255);
+        color[1] = static_cast<unsigned char>(labelInfo.Color[1] * 255);
+        color[2] = static_cast<unsigned char>(labelInfo.Color[2] * 255);
+        lineColors->InsertNextTypedTuple(color);
       }
     }
-    else
-    {
-      std::sort(group.begin(), group.end(), [](LabelInfo* a, LabelInfo* b) { return a->AssignedPosition[0] < b->AssignedPosition[0]; });
-      for (size_t i = 1; i < group.size(); ++i)
-      {
-        int prevW = static_cast<int>(group[i - 1]->CachedTextWidth);
-        int neededX = group[i - 1]->AssignedPosition[0] + prevW + minGap;
-        if (group[i]->AssignedPosition[0] < neededX)
-        {
-          group[i]->AssignedPosition[0] = neededX;
-        }
-      }
-    }
-  };
 
-  adjustGroup(vtkMRMLLabelDisplayNode::LabelPositionLeft, true);
-  adjustGroup(vtkMRMLLabelDisplayNode::LabelPositionRight, true);
-  adjustGroup(vtkMRMLLabelDisplayNode::LabelPositionTop, false);
-  adjustGroup(vtkMRMLLabelDisplayNode::LabelPositionBottom, false);
+    // Update polydata
+    info.LabelPoints->Modified();
+    info.LabelPolyData->Modified();
 
-  this->UpdateLabelActors();
-}
+    info.LinePolyData->SetPoints(linePoints);
+    info.LinePolyData->SetLines(lines);
+    info.LinePolyData->GetCellData()->SetScalars(lineColors);
+    info.LinePolyData->Modified();
 
-//---------------------------------------------------------------------------
-void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLabelActors()
-{
-  // Update all label actor positions and line geometry
-  for (LabelsMapType::iterator it = this->Labels.begin(); it != this->Labels.end(); ++it)
-  {
-    LabelInfo& info = it->second;
+    // Enable scalar coloring for lines
+    info.LineMapper->SetScalarModeToUseCellData();
+    info.LineMapper->ScalarVisibilityOn();
 
-    if (!info.TextActor->GetVisibility())
-    {
-      continue;
-    }
-
-    // Only update actor position if changed
-    if (info.PrevAssignedPosition[0] != info.AssignedPosition[0]
-      || info.PrevAssignedPosition[1] != info.AssignedPosition[1])
-    {
-      info.TextActor->SetDisplayPosition(info.AssignedPosition[0], info.AssignedPosition[1]);
-      info.PrevAssignedPosition[0] = info.AssignedPosition[0];
-      info.PrevAssignedPosition[1] = info.AssignedPosition[1];
-    }
-
-    // Update line geometry
-    if (info.PrevAnchorDisplay[0] != info.DisplayPosition[0]
-      || info.PrevAnchorDisplay[1] != info.DisplayPosition[1]
-      || info.PrevAssignedPosition[0] != info.AssignedPosition[0]
-      || info.PrevAssignedPosition[1] != info.AssignedPosition[1]
-      || info.SizeDirty)
-    {
-      this->UpdateLineGeometry(info);
-      info.PrevAnchorDisplay[0] = info.DisplayPosition[0];
-      info.PrevAnchorDisplay[1] = info.DisplayPosition[1];
-    }
+    // Set visibility
+    info.LabelActor->SetVisibility(labelCount > 0);
+    info.LineActor->SetVisibility(labelCount > 0);
   }
-}
-
-//---------------------------------------------------------------------------
-void vtkMRMLNodeLabelsDisplayableManager3D::vtkInternal::UpdateLineGeometry(LabelInfo& label)
-{
-  if (!label.DisplayNode)
-  {
-    return;
-  }
-
-  // Check if line should be visible for this specific label
-  vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
-  if (!label.DisplayNode->GetLabelInfo(label.LabelIndex, baseInfo) || !baseInfo.LineVisible)
-  {
-    return;
-  }
-
-  vtkPoints* points = label.LinePolyData->GetPoints();
-  if (!points || points->GetNumberOfPoints() < 4)
-  {
-    // Unexpected polydata layout; skip
-    return;
-  }
-
-  // Determine which side bounding edge should be drawn on (opposite of screen edge)
-  int labelPosition = baseInfo.LabelPosition;
-  // Use cached text size and derive bounding box from assigned position
-  double textW = label.CachedTextWidth;
-  double textH = label.CachedTextHeight;
-  double leftX = static_cast<double>(label.AssignedPosition[0]);
-  double bottomY = static_cast<double>(label.AssignedPosition[1]);
-  double rightX = leftX + textW;
-  double topY = bottomY + textH;
-
-  // Bounding edge endpoints (A,B)
-  double Ax = 0, Ay = 0, Bx = 0, By = 0;
-  switch (labelPosition)
-  {
-    case vtkMRMLLabelDisplayNode::LabelPositionLeft: // bounding line on right side of text
-      Ax = rightX;
-      Ay = bottomY;
-      Bx = rightX;
-      By = topY;
-      break;
-    case vtkMRMLLabelDisplayNode::LabelPositionRight: // bounding line on left side
-      Ax = leftX;
-      Ay = bottomY;
-      Bx = leftX;
-      By = topY;
-      break;
-    case vtkMRMLLabelDisplayNode::LabelPositionTop: // bounding line bottom side
-      Ax = leftX;
-      Ay = bottomY;
-      Bx = rightX;
-      By = bottomY;
-      break;
-    case vtkMRMLLabelDisplayNode::LabelPositionBottom: // bounding line top side
-      Ax = leftX;
-      Ay = topY;
-      Bx = rightX;
-      By = topY;
-      break;
-    default:
-      // Default: no bounding edge; draw simple connector only
-      points->SetPoint(0, label.DisplayPosition[0], label.DisplayPosition[1], 0.0);
-      points->SetPoint(1, label.AssignedPosition[0], label.AssignedPosition[1], 0.0);
-      points->SetPoint(2, label.DisplayPosition[0], label.DisplayPosition[1], 0.0);
-      points->SetPoint(3, label.AssignedPosition[0], label.AssignedPosition[1], 0.0);
-      points->Modified();
-      label.LinePolyData->Modified();
-      return;
-  }
-
-  // Anchor display position (world->display) is label.DisplayPosition
-  double anchorX = label.DisplayPosition[0];
-  double anchorY = label.DisplayPosition[1];
-
-  // Project anchor onto bounding edge segment (A,B)
-  double ABx = Bx - Ax;
-  double ABy = By - Ay;
-  double ABlen2 = ABx * ABx + ABy * ABy;
-  double t = 0.0;
-  if (ABlen2 > 0.0)
-  {
-    double APx = anchorX - Ax;
-    double APy = anchorY - Ay;
-    t = (APx * ABx + APy * ABy) / ABlen2;
-    if (t < 0.0)
-    {
-      t = 0.0;
-    }
-    else if (t > 1.0)
-    {
-      t = 1.0;
-    }
-  }
-  double projX = Ax + t * ABx;
-  double projY = Ay + t * ABy;
-
-  // Fallback: if projected point very close to anchor, connect to text box center for visibility
-  double centerX = (leftX + rightX) * 0.5;
-  double centerY = (bottomY + topY) * 0.5;
-  double dx = projX - anchorX;
-  double dy = projY - anchorY;
-  double dist2 = dx*dx + dy*dy;
-  if (dist2 < 9.0) // <3px length
-  {
-    projX = centerX;
-    projY = centerY;
-  }
-
-  // Set polydata points: 0-1 bounding edge, 2 anchor, 3 projection (or center fallback)
-  points->SetPoint(0, Ax, Ay, 0.0);
-  points->SetPoint(1, Bx, By, 0.0);
-  points->SetPoint(2, anchorX, anchorY, 0.0);
-  points->SetPoint(3, projX, projY, 0.0);
-  points->Modified();
-  label.LinePolyData->Modified();
 }
 
 //---------------------------------------------------------------------------
@@ -797,14 +588,14 @@ void vtkMRMLNodeLabelsDisplayableManager3D::UpdateFromRenderer()
     return;
   }
   // Update label positions when camera moves
-  this->Internal->UpdateLabelPositions();
+  this->Internal->UpdateLabels();
   this->RequestRender();
 }
 
 //----------------------------------------------------------------------------
 void vtkMRMLNodeLabelsDisplayableManager3D::UnobserveMRMLScene()
 {
-  this->Internal->RemoveAllLabels();
+  this->Internal->RemoveAllDisplayNodes();
 }
 
 //----------------------------------------------------------------------------
@@ -818,7 +609,7 @@ void vtkMRMLNodeLabelsDisplayableManager3D::OnMRMLSceneNodeAdded(vtkMRMLNode* no
   if (node->IsA("vtkMRMLLabelDisplayNode"))
   {
     vtkMRMLLabelDisplayNode* displayNode = vtkMRMLLabelDisplayNode::SafeDownCast(node);
-    this->Internal->AddLabel(displayNode);
+    this->Internal->AddDisplayNode(displayNode);
 
     // Observe the display node
     vtkNew<vtkIntArray> events;
@@ -841,7 +632,7 @@ void vtkMRMLNodeLabelsDisplayableManager3D::OnMRMLSceneNodeRemoved(vtkMRMLNode* 
   if (node->IsA("vtkMRMLLabelDisplayNode"))
   {
     vtkMRMLLabelDisplayNode* displayNode = vtkMRMLLabelDisplayNode::SafeDownCast(node);
-    this->Internal->RemoveLabel(displayNode);
+    this->Internal->RemoveDisplayNode(displayNode);
     vtkUnObserveMRMLNodeMacro(displayNode);
   }
 }
@@ -852,9 +643,8 @@ void vtkMRMLNodeLabelsDisplayableManager3D::ProcessMRMLNodesEvents(vtkObject* ca
   vtkMRMLLabelDisplayNode* displayNode = vtkMRMLLabelDisplayNode::SafeDownCast(caller);
   if (displayNode)
   {
-    this->Internal->UpdateLabel(displayNode);
-    this->Internal->UpdateLabelPositions();
-    /*this->Internal->UpdateLabelActors();*/
+    this->Internal->UpdateDisplayNode(displayNode);
+    this->Internal->UpdateLabels();
   }
 
   this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
@@ -864,6 +654,6 @@ void vtkMRMLNodeLabelsDisplayableManager3D::ProcessMRMLNodesEvents(vtkObject* ca
 void vtkMRMLNodeLabelsDisplayableManager3D::OnMRMLDisplayableNodeModifiedEvent(vtkObject* caller)
 {
   // Update all labels when view is modified
-  this->Internal->UpdateLabelPositions();
+  this->Internal->UpdateLabels();
   this->RequestRender();
 }
