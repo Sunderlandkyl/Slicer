@@ -39,6 +39,9 @@ public:
   vtkTypeMacro(vtkMRMLNodeLabelsDisplayableManager2D, vtkMRMLAbstractSliceViewDisplayableManager);
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
+  /// Called from RequestRender() path when UpdateFromMRML was requested
+  void UpdateFromMRML() override;
+
   /// Update labels when renderer/view changes
   void UpdateFromRenderer();
 
@@ -57,6 +60,9 @@ protected:
   /// Called each time the view node is modified.
   /// Internally update the renderer from the view node.
   void OnMRMLDisplayableNodeModifiedEvent(vtkObject* caller) override;
+
+  /// Called when the slice node is modified (slice offset, zoom, etc.)
+  void OnMRMLSliceNodeModifiedEvent() override;
 
   /// Method to perform additional initialization
   void AdditionalInitializeStep() override;

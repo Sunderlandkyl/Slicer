@@ -130,8 +130,8 @@ public:
   void AddRendererUpdateObserver(vtkRenderer* renderer);
   void RemoveRendererUpdateObserver();
 
-  // Helper to safely get renderer (uses cached pointer instead of calling through External)
-  vtkRenderer* GetRenderer() { return this->ObservedRenderer; }
+  // Helper to safely get renderer from external displayable manager
+  vtkRenderer* GetRenderer() { return this->External ? this->External->GetRenderer() : nullptr; }
 
   vtkSmartPointer<vtkRendererUpdateObserver2D> RendererUpdateObserver;
   vtkWeakPointer<vtkRenderer> ObservedRenderer;
@@ -346,6 +346,8 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::UpdateLabel(vtkMRMLLabe
     }
   }
 
+  // Schedule update on next render
+  this->External->SetUpdateFromMRMLRequested(true);
   this->External->RequestRender();
 }
 
@@ -376,6 +378,8 @@ void vtkMRMLNodeLabelsDisplayableManager2D::vtkInternal::RemoveLabel(vtkMRMLLabe
   {
     this->Labels.erase(k);
   }
+  // Schedule update on next render
+  this->External->SetUpdateFromMRMLRequested(true);
   this->External->RequestRender();
 }
 
@@ -829,6 +833,19 @@ void vtkMRMLNodeLabelsDisplayableManager2D::AdditionalInitializeStep()
 }
 
 //----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::UpdateFromMRML()
+{
+  // Called by the displayable manager framework when a render is requested.
+  if (!this->Internal || !this->GetRenderer())
+  {
+    return;
+  }
+  this->Internal->UpdateLabelPositions();
+  this->Internal->UpdateLabelActors();
+  // Do not call RequestRender() here; we're already in the render request path.
+}
+
+//----------------------------------------------------------------------------
 void vtkMRMLNodeLabelsDisplayableManager2D::UpdateFromRenderer()
 {
   // Safety check: don't update if being destroyed
@@ -838,7 +855,7 @@ void vtkMRMLNodeLabelsDisplayableManager2D::UpdateFromRenderer()
   }
   // Update label positions when view changes
   this->Internal->UpdateLabelPositions();
-  this->RequestRender();
+  // No RequestRender() here; this method is not used when observers are disabled.
 }
 
 //----------------------------------------------------------------------------
@@ -893,6 +910,9 @@ void vtkMRMLNodeLabelsDisplayableManager2D::ProcessMRMLNodesEvents(vtkObject* ca
   if (displayNode)
   {
     this->Internal->UpdateLabel(displayNode);
+    // Ensure UpdateFromMRML runs during the next render
+    this->SetUpdateFromMRMLRequested(true);
+    this->RequestRender();
   }
 
   this->Superclass::ProcessMRMLNodesEvents(caller, event, callData);
@@ -901,7 +921,15 @@ void vtkMRMLNodeLabelsDisplayableManager2D::ProcessMRMLNodesEvents(vtkObject* ca
 //----------------------------------------------------------------------------
 void vtkMRMLNodeLabelsDisplayableManager2D::OnMRMLDisplayableNodeModifiedEvent(vtkObject* caller)
 {
-  // Update all labels when view is modified
-  this->Internal->UpdateLabelPositions();
+  // Let base class handle slice node events
+  this->Superclass::OnMRMLDisplayableNodeModifiedEvent(caller);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLNodeLabelsDisplayableManager2D::OnMRMLSliceNodeModifiedEvent()
+{
+  // Update all labels when slice view is modified (slice offset, zoom, etc.)
+  // Schedule update on next render to avoid redundant updates
+  this->SetUpdateFromMRMLRequested(true);
   this->RequestRender();
 }

@@ -125,15 +125,15 @@ void qMRMLThreeDViewPrivate::initDisplayableManagers()
   vtkMRMLThreeDViewDisplayableManagerFactory* factory = vtkMRMLThreeDViewDisplayableManagerFactory::GetInstance();
 
   QStringList displayableManagers;
-  displayableManagers << "vtkMRMLCameraDisplayableManager"
-                      << "vtkMRMLViewDisplayableManager"
-                      << "vtkMRMLModelDisplayableManager"
-                      << "vtkMRMLThreeDReformatDisplayableManager"
-                      << "vtkMRMLThreeDSliceEdgeDisplayableManager"
-                      << "vtkMRMLCrosshairDisplayableManager3D"
-                      << "vtkMRMLOrientationMarkerDisplayableManager"
-                      << "vtkMRMLRulerDisplayableManager"
-                      << "vtkMRMLNodeLabelsDisplayableManager3D";
+  displayableManagers << "vtkMRMLCameraDisplayableManager";
+  displayableManagers << "vtkMRMLViewDisplayableManager";
+  displayableManagers << "vtkMRMLModelDisplayableManager";
+  displayableManagers << "vtkMRMLThreeDReformatDisplayableManager";
+  displayableManagers << "vtkMRMLThreeDSliceEdgeDisplayableManager";
+  displayableManagers << "vtkMRMLCrosshairDisplayableManager3D";
+  displayableManagers << "vtkMRMLOrientationMarkerDisplayableManager";
+  displayableManagers << "vtkMRMLRulerDisplayableManager";
+  //displayableManagers << "vtkMRMLNodeLabelsDisplayableManager3D";
   for (const QString& displayableManager : displayableManagers)
   {
     if (!factory->IsDisplayableManagerRegistered(displayableManager.toUtf8()))

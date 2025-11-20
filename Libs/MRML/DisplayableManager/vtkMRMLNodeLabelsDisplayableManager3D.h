@@ -39,6 +39,9 @@ public:
   vtkTypeMacro(vtkMRMLNodeLabelsDisplayableManager3D, vtkMRMLAbstractThreeDViewDisplayableManager);
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
+  /// Called from RequestRender() path when UpdateFromMRML was requested
+  void UpdateFromMRML() override;
+
   /// Update labels when renderer/camera changes
   void UpdateFromRenderer();
 
@@ -56,6 +59,9 @@ protected:
 
   /// Called each time the view node is modified.
   void OnMRMLDisplayableNodeModifiedEvent(vtkObject* caller) override;
+
+  /// Called when the view node is modified (camera, viewport, etc.)
+  void OnMRMLViewNodeModifiedEvent() override;
 
   /// Method to perform additional initialization
   void AdditionalInitializeStep() override;
