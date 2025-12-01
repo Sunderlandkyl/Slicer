@@ -499,6 +499,11 @@ void vtkMRMLInteractionWidgetRepresentation::UpdateHandlePolyData()
   HandleInfoList handleInfoList = this->GetHandleInfoList();
   for (HandleInfo handleInfo : handleInfoList)
   {
+    if (!handleInfo.IsVisible())
+    {
+      continue;
+    }
+
     switch (handleInfo.GlyphType)
     {
       case GlyphArrow:

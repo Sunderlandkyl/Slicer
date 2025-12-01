@@ -61,6 +61,13 @@
       "default": 1,
       "minimum": 1,
       "maximum": 5
+    },
+    "dicom_support_rule": {
+      "$id": "#dicom_support_rule",
+      "type": "array",
+      "title": "List of DICOM support rules for determining if this extension can handle specific DICOM data.",
+      "additionalItems": false,
+      "items": { "type": "string" }
     }
   }
 }
