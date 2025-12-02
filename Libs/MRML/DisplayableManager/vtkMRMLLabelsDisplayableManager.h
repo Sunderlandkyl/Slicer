@@ -15,39 +15,40 @@
 
 ==============================================================================*/
 
-#ifndef __vtkMRMLNodeLabelsDisplayableManager3D_h
-#define __vtkMRMLNodeLabelsDisplayableManager3D_h
+#ifndef __vtkMRMLLabelsDisplayableManager_h
+#define __vtkMRMLLabelsDisplayableManager_h
 
 // MRMLDisplayableManager includes
-#include "vtkMRMLAbstractThreeDViewDisplayableManager.h"
-
+#include "vtkMRMLAbstractDisplayableManager.h"
 #include "vtkMRMLDisplayableManagerExport.h"
 
+// Forward declarations
 class vtkMRMLLabelDisplayNode;
+class vtkMRMLLabelsWidget;
 
-/// \brief Displayable manager for showing node labels in 3D views.
+/// \brief Base class for displaying node labels in views
 ///
-/// Displays text labels for any MRML node at specified anchor positions in 3D viewers.
+/// Displays text labels for any MRML node at specified anchor positions.
 /// Handles automatic collision avoidance to prevent label overlap.
+/// Subclasses implement view-specific functionality (2D slice vs 3D).
 ///
-class VTK_MRML_DISPLAYABLEMANAGER_EXPORT vtkMRMLNodeLabelsDisplayableManager3D
-  : public vtkMRMLAbstractThreeDViewDisplayableManager
+class VTK_MRML_DISPLAYABLEMANAGER_EXPORT vtkMRMLLabelsDisplayableManager
+  : public vtkMRMLAbstractDisplayableManager
 {
 
 public:
-  static vtkMRMLNodeLabelsDisplayableManager3D* New();
-  vtkTypeMacro(vtkMRMLNodeLabelsDisplayableManager3D, vtkMRMLAbstractThreeDViewDisplayableManager);
+  vtkTypeMacro(vtkMRMLLabelsDisplayableManager, vtkMRMLAbstractDisplayableManager);
   void PrintSelf(ostream& os, vtkIndent indent) override;
 
   /// Called from RequestRender() path when UpdateFromMRML was requested
   void UpdateFromMRML() override;
 
-  /// Update labels when renderer/camera changes
+  /// Update labels when renderer/view changes
   void UpdateFromRenderer();
 
 protected:
-  vtkMRMLNodeLabelsDisplayableManager3D();
-  ~vtkMRMLNodeLabelsDisplayableManager3D() override;
+  vtkMRMLLabelsDisplayableManager();
+  ~vtkMRMLLabelsDisplayableManager() override;
 
   void UnobserveMRMLScene() override;
   void OnMRMLSceneNodeAdded(vtkMRMLNode* node) override;
@@ -58,17 +59,30 @@ protected:
   void Create() override;
 
   /// Called each time the view node is modified.
+  /// Internally update the renderer from the view node.
   void OnMRMLDisplayableNodeModifiedEvent(vtkObject* caller) override;
-
-  /// Called when the view node is modified (camera, viewport, etc.)
-  void OnMRMLViewNodeModifiedEvent() override;
 
   /// Method to perform additional initialization
   void AdditionalInitializeStep() override;
 
+  /// Create a widget for a label display node (subclasses override)
+  virtual vtkMRMLLabelsWidget* CreateWidget(vtkMRMLLabelDisplayNode* displayNode) = 0;
+
+  /// Get widget for a display node
+  vtkMRMLLabelsWidget* GetWidget(vtkMRMLLabelDisplayNode* displayNode);
+
+  /// Add a widget
+  void AddWidget(vtkMRMLLabelDisplayNode* displayNode);
+
+  /// Remove a widget
+  void RemoveWidget(vtkMRMLLabelDisplayNode* displayNode);
+
+  /// Remove all widgets
+  void RemoveAllWidgets();
+
 private:
-  vtkMRMLNodeLabelsDisplayableManager3D(const vtkMRMLNodeLabelsDisplayableManager3D&) = delete;
-  void operator=(const vtkMRMLNodeLabelsDisplayableManager3D&) = delete;
+  vtkMRMLLabelsDisplayableManager(const vtkMRMLLabelsDisplayableManager&) = delete;
+  void operator=(const vtkMRMLLabelsDisplayableManager&) = delete;
 
   class vtkInternal;
   vtkInternal* Internal;

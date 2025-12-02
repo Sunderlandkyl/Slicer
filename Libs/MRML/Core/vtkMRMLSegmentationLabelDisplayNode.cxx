@@ -32,6 +32,8 @@
 // STD includes
 #include <vector>
 #include <string>
+#include <map>
+#include <array>
 
 //----------------------------------------------------------------------------
 vtkMRMLNodeNewMacro(vtkMRMLSegmentationLabelDisplayNode);
@@ -117,9 +119,13 @@ bool vtkMRMLSegmentationLabelDisplayNode::GetLabelInfo(int labelIndex, LabelInfo
   // Stable label identifier
   info.LabelID = segmentID;
 
-  // Anchor position: segment center in RAS
+  // Anchor position: segment center in RAS (use cached value for performance)
   double centerRAS[3] = {0.0, 0.0, 0.0};
-  segNode->GetSegmentCenterRAS(segmentID, centerRAS);
+  if (!this->GetCachedSegmentCenter(segmentID, centerRAS))
+  {
+    // Cache miss or invalid - calculate and cache
+    segNode->GetSegmentCenterRAS(segmentID, centerRAS);
+  }
   info.AnchorPosition[0] = centerRAS[0];
   info.AnchorPosition[1] = centerRAS[1];
   info.AnchorPosition[2] = centerRAS[2];
@@ -181,8 +187,45 @@ void vtkMRMLSegmentationLabelDisplayNode::ProcessMRMLEvents(vtkObject* caller, u
 {
   if (caller == this->GetTargetNode())
   {
-    // Any change in the target segmentation should refresh labels
+    // Any change in the target segmentation should refresh labels and invalidate cache
+    this->InvalidateSegmentCenterCache();
     this->Modified();
   }
   this->Superclass::ProcessMRMLEvents(caller, event, callData);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSegmentationLabelDisplayNode::InvalidateSegmentCenterCache()
+{
+  this->SegmentCenterCache.clear();
+}
+
+//----------------------------------------------------------------------------
+bool vtkMRMLSegmentationLabelDisplayNode::GetCachedSegmentCenter(const std::string& segmentID, double center[3])
+{
+  // Check if this segment is in the cache
+  auto it = this->SegmentCenterCache.find(segmentID);
+  if (it != this->SegmentCenterCache.end())
+  {
+    center[0] = it->second[0];
+    center[1] = it->second[1];
+    center[2] = it->second[2];
+    return true;
+  }
+
+  // Not in cache - calculate it
+  vtkMRMLSegmentationNode* segNode = vtkMRMLSegmentationNode::SafeDownCast(this->GetTargetNode());
+  if (!segNode)
+  {
+    center[0] = 0.0;
+    center[1] = 0.0;
+    center[2] = 0.0;
+    return false;
+  }
+
+  // Calculate and cache the center
+  segNode->GetSegmentCenterRAS(segmentID, center);
+  this->SegmentCenterCache[segmentID] = {center[0], center[1], center[2]};
+
+  return true;
 }

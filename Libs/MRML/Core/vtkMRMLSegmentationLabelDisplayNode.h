@@ -51,7 +51,16 @@ protected:
   // Cache of current visible segment IDs; rebuilt on each query
   std::vector<std::string> GetSegmentIDs();
 
+  // Invalidate the segment center cache when segmentation changes
+  void InvalidateSegmentCenterCache();
+
+  // Get cached segment center (calculates and caches if needed)
+  bool GetCachedSegmentCenter(const std::string& segmentID, double center[3]);
+
   vtkSmartPointer<vtkIntArray> TargetEvents;
+
+  // Cache for segment centers to avoid expensive recalculation
+  std::map<std::string, std::array<double, 3>> SegmentCenterCache;
 };
 
 #endif
