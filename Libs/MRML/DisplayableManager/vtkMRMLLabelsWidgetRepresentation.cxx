@@ -417,26 +417,26 @@ void vtkMRMLLabelsWidgetRepresentation::UpdateLineGeometry(LabelInfo& label)
   {
     case vtkMRMLLabelDisplayNode::LabelPositionLeft:
       Ax = rightX;
-      Ay = bottomY;
+      Ay = bottomY - 0.5 * textH;
       Bx = rightX;
-      By = topY;
+      By = topY - 0.5 * textH;
       break;
     case vtkMRMLLabelDisplayNode::LabelPositionRight:
       Ax = leftX;
-      Ay = bottomY;
+      Ay = bottomY - 0.5 * textH;
       Bx = leftX;
-      By = topY;
+      By = topY - 0.5 * textH;
       break;
     case vtkMRMLLabelDisplayNode::LabelPositionTop:
-      Ax = leftX;
+      Ax = leftX - 0.5 * textW;
       Ay = bottomY;
-      Bx = rightX;
+      Bx = rightX - 0.5 * textW;
       By = bottomY;
       break;
     case vtkMRMLLabelDisplayNode::LabelPositionBottom:
-      Ax = leftX;
+      Ax = leftX - 0.5 * textW;
       Ay = topY;
-      Bx = rightX;
+      Bx = rightX - 0.5 * textW;
       By = topY;
       break;
     default:
