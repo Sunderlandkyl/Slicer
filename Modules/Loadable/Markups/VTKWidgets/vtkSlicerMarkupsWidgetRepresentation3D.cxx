@@ -104,7 +104,8 @@ vtkSlicerMarkupsWidgetRepresentation3D::ControlPointsPipeline3D::ControlPointsPi
   this->ControlPointIndices->SetValue(0, 0);
   this->LabelControlPointsPolyData->GetPointData()->AddArray(this->ControlPointIndices);
 
-  this->VisiblePointsPolyData = vtkSmartPointer<vtkPolyData>::New();
+  /*this->VisiblePointsPolyData = vtkSmartPointer<vtkPolyData>::New();*/
+  this->VisiblePointsPolyData = this->LabelControlPointsPolyData;
 
   this->SelectVisiblePoints = vtkSmartPointer<vtkFastSelectVisiblePoints>::New();
   this->SelectVisiblePoints->SetInputData(this->LabelControlPointsPolyData);
@@ -695,24 +696,24 @@ int vtkSlicerMarkupsWidgetRepresentation3D::RenderOverlay(vtkViewport* viewport)
     ControlPointsPipeline3D* controlPoints = reinterpret_cast<ControlPointsPipeline3D*>(this->ControlPoints[i]);
     if (controlPoints->ControlPoints->GetNumberOfPoints() > 0)
     {
-      if (!this->MarkupsDisplayNode->GetOccludedVisibility())
-      {
-        if (!zBuffer)
-        {
-          controlPoints->SelectVisiblePoints->UpdateZBuffer();
-          zBuffer = controlPoints->SelectVisiblePoints->GetZBuffer();
-          vtkSlicerMarkupsWidgetRepresentation3D::CachedZBufferEntry zBufferEntry;
-          zBufferEntry.ZBuffer = zBuffer;
-          zBufferEntry.Timestamp = std::chrono::system_clock::now();
-          vtkSlicerMarkupsWidgetRepresentation3D::CachedZBuffers[this->Renderer] = zBufferEntry;
-        }
-        else
-        {
-          controlPoints->SelectVisiblePoints->SetZBuffer(zBuffer);
-        }
-        controlPoints->SelectVisiblePoints->Update();
-      }
-      else
+      //if (!this->MarkupsDisplayNode->GetOccludedVisibility())
+      //{
+      //  if (!zBuffer)
+      //  {
+      //    controlPoints->SelectVisiblePoints->UpdateZBuffer();
+      //    zBuffer = controlPoints->SelectVisiblePoints->GetZBuffer();
+      //    vtkSlicerMarkupsWidgetRepresentation3D::CachedZBufferEntry zBufferEntry;
+      //    zBufferEntry.ZBuffer = zBuffer;
+      //    zBufferEntry.Timestamp = std::chrono::system_clock::now();
+      //    vtkSlicerMarkupsWidgetRepresentation3D::CachedZBuffers[this->Renderer] = zBufferEntry;
+      //  }
+      //  else
+      //  {
+      //    controlPoints->SelectVisiblePoints->SetZBuffer(zBuffer);
+      //  }
+      //  controlPoints->SelectVisiblePoints->Update();
+      //}
+      //else
       {
         if (controlPoints->VisiblePointsPolyData->GetMTime() < controlPoints->LabelControlPointsPolyData->GetMTime())
         {
