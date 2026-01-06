@@ -38,6 +38,12 @@ set(include_dirs
   ${MRMLCore_INCLUDE_DIRS}
   ${MRMLLogic_INCLUDE_DIRS}
   )
+
+# Optional: Add Segmentations module MRMLDM directory if available (for soft dependency)
+if(EXISTS "${Slicer_SOURCE_DIR}/Modules/Loadable/Segmentations/MRMLDM")
+  list(APPEND include_dirs "${Slicer_SOURCE_DIR}/Modules/Loadable/Segmentations/MRMLDM")
+endif()
+
 if(MRMLDisplayableManager_USE_PYTHON)
   list(APPEND include_dirs ${PYTHON_INCLUDE_DIR})
 endif()

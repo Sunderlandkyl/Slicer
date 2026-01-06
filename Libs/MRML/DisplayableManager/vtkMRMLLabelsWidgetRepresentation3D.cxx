@@ -19,6 +19,7 @@
 
 // MRML includes
 #include <vtkMRMLLabelDisplayNode.h>
+#include <vtkMRMLLabelsDisplayableManager.h>
 
 // VTK includes
 #include <vtkCoordinate.h>
@@ -94,7 +95,17 @@ void vtkMRMLLabelsWidgetRepresentation3D::UpdateLabelPositions()
     }
 
     vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
-    if (!displayNode->GetLabelInfo(info.LabelIndex, baseInfo))
+    bool ok = false;
+    if (this->DisplayableManager.GetPointer())
+    {
+      ok = this->DisplayableManager.GetPointer()->GetLabelInfo(displayNode, info.LabelIndex, baseInfo);
+    }
+    else
+    {
+      // Fallback if no displayable manager is set
+      ok = displayNode->GetLabelInfo(info.LabelIndex, baseInfo);
+    }
+    if (!ok)
     {
       // Hide if label cannot be resolved
       info.TextActor->SetVisibility(false);

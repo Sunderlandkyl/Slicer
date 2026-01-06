@@ -280,6 +280,45 @@ vtkMRMLLabelsWidget* vtkMRMLLabelsDisplayableManager::GetWidget(vtkMRMLLabelDisp
 }
 
 //----------------------------------------------------------------------------
+bool vtkMRMLLabelsDisplayableManager::GetLabelInfo(vtkMRMLLabelDisplayNode* displayNode,
+                                                     int labelIndex,
+                                                     vtkMRMLLabelDisplayNode::LabelInfo& info)
+{
+  if (!displayNode)
+  {
+    return false;
+  }
+
+  // Query other displayable managers for view-specific label information.
+  // For example, a segmentation label display node should query the segmentation
+  // displayable manager to determine if a segment is visible on the current slice.
+
+  // Subclasses can override this method to implement specific lookup logic
+  // that queries appropriate displayable managers based on the target node type.
+
+  // For now, this base implementation provides a framework that subclasses can use:
+  // 1. Get the displayable manager group
+  // 2. Query for a specific displayable manager by class name
+  // 3. Call a method on that DM to get view-specific label info
+  //
+  // Example for segmentation (to be implemented in subclass):
+  //   vtkMRMLDisplayableManagerGroup* group = this->GetMRMLDisplayableManagerGroup();
+  //   if (group)
+  //   {
+  //     vtkMRMLSegmentationsDisplayableManager* segDM =
+  //       vtkMRMLSegmentationsDisplayableManager::SafeDownCast(
+  //         group->GetDisplayableManagerByClassName("vtkMRMLSegmentationsDisplayableManager2D"));
+  //     if (segDM)
+  //     {
+  //       return segDM->GetSegmentLabelInfo(displayNode, labelIndex, info);
+  //     }
+  //   }
+
+  // Fallback: delegate to display node's own GetLabelInfo
+  return displayNode->GetLabelInfo(labelIndex, info);
+}
+
+//----------------------------------------------------------------------------
 void vtkMRMLLabelsDisplayableManager::AddWidget(vtkMRMLLabelDisplayNode* displayNode)
 {
   if (!displayNode)
@@ -301,6 +340,7 @@ void vtkMRMLLabelsDisplayableManager::AddWidget(vtkMRMLLabelDisplayNode* display
   }
 
   widget->SetLabelDisplayNode(displayNode);
+  widget->SetDisplayableManager(this);
   widget->SetRenderer(this->GetRenderer());
   widget->CreateDefaultRepresentation();
 

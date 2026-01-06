@@ -294,6 +294,7 @@ vtkMRMLLabelsWidget* vtkMRMLLabelsDisplayableManager3D::CreateWidget(vtkMRMLLabe
   vtkMRMLLabelsWidgetRepresentation3D* rep = vtkMRMLLabelsWidgetRepresentation3D::New();
   rep->SetRenderer(this->GetRenderer());
   rep->SetLabelDisplayNode(displayNode);
+  rep->SetDisplayableManager(this);
 
   widget->SetRepresentation(rep);
   rep->Delete();

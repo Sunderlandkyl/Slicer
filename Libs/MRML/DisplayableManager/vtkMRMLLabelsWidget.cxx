@@ -17,6 +17,7 @@
 
 #include "vtkMRMLLabelsWidget.h"
 #include "vtkMRMLLabelsWidgetRepresentation.h"
+#include "vtkMRMLAbstractDisplayableManager.h"
 
 // MRML includes
 #include <vtkMRMLLabelDisplayNode.h>
@@ -58,6 +59,7 @@ void vtkMRMLLabelsWidget::SetLabelDisplayNode(vtkMRMLLabelDisplayNode* displayNo
   if (rep)
   {
     rep->SetLabelDisplayNode(displayNode);
+    rep->SetDisplayableManager(this->DisplayableManager);
   }
 
   this->Modified();
@@ -67,6 +69,31 @@ void vtkMRMLLabelsWidget::SetLabelDisplayNode(vtkMRMLLabelDisplayNode* displayNo
 vtkMRMLLabelDisplayNode* vtkMRMLLabelsWidget::GetLabelDisplayNode()
 {
   return this->LabelDisplayNode;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLLabelsWidget::SetDisplayableManager(vtkMRMLAbstractDisplayableManager* dm)
+{
+  if (this->DisplayableManager == dm)
+  {
+    return;
+  }
+
+  this->DisplayableManager = dm;
+
+  vtkMRMLLabelsWidgetRepresentation* rep = this->GetLabelsRepresentation();
+  if (rep)
+  {
+    rep->SetDisplayableManager(dm);
+  }
+
+  this->Modified();
+}
+
+//----------------------------------------------------------------------------
+vtkMRMLAbstractDisplayableManager* vtkMRMLLabelsWidget::GetDisplayableManager()
+{
+  return this->DisplayableManager.GetPointer();
 }
 
 //----------------------------------------------------------------------------

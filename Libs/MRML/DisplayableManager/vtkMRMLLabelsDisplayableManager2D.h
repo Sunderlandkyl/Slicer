@@ -21,10 +21,9 @@
 // MRMLDisplayableManager includes
 #include "vtkMRMLAbstractSliceViewDisplayableManager.h"
 #include "vtkMRMLLabelsDisplayableManager.h"
+#include "vtkMRMLLabelDisplayNode.h"
 
 #include "vtkMRMLDisplayableManagerExport.h"
-
-class vtkMRMLLabelDisplayNode;
 
 /// \brief Displayable manager for showing node labels in slice (2D) views.
 ///
@@ -70,6 +69,12 @@ protected:
 
   /// Create a widget for a label display node
   vtkMRMLLabelsWidget* CreateWidget(vtkMRMLLabelDisplayNode* displayNode);
+
+  /// Get label information with view-specific context.
+  /// For segmentation labels, queries the segmentation displayable manager
+  /// to determine if the segment is visible on the current slice.
+  bool GetLabelInfo(vtkMRMLLabelDisplayNode* displayNode, int labelIndex,
+                    vtkMRMLLabelDisplayNode::LabelInfo& info);
 
 private:
   vtkMRMLLabelsDisplayableManager2D(const vtkMRMLLabelsDisplayableManager2D&) = delete;

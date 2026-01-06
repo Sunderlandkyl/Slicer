@@ -21,9 +21,9 @@
 // MRMLDisplayableManager includes
 #include "vtkMRMLAbstractDisplayableManager.h"
 #include "vtkMRMLDisplayableManagerExport.h"
+#include "vtkMRMLLabelDisplayNode.h"
 
 // Forward declarations
-class vtkMRMLLabelDisplayNode;
 class vtkMRMLLabelsWidget;
 
 /// \brief Base class for displaying node labels in views
@@ -45,6 +45,14 @@ public:
 
   /// Update labels when renderer/view changes
   void UpdateFromRenderer();
+
+  /// Get label information for a specific label index from a display node.
+  /// This method queries the appropriate displayable manager (e.g., segmentation DM)
+  /// for view-specific label information. If no specialized manager provides the info,
+  /// falls back to the display node's GetLabelInfo method.
+  /// Subclasses can override to customize the lookup strategy.
+  virtual bool GetLabelInfo(vtkMRMLLabelDisplayNode* displayNode, int labelIndex,
+                            vtkMRMLLabelDisplayNode::LabelInfo& info);
 
 protected:
   vtkMRMLLabelsDisplayableManager();

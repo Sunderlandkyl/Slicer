@@ -33,6 +33,7 @@ class vtkMRMLDisplayableManagerGroup;
 class vtkMRMLNode;
 class vtkMRMLScene;
 class vtkMRMLLightBoxRendererManagerProxy;
+#include <vtkMRMLLabelDisplayNode.h>
 
 class vtkRenderer;
 class vtkRenderWindowInteractor;
@@ -88,6 +89,17 @@ public:
   /// Assemble and return info string to display in Data probe for a given viewer XYZ position.
   /// \return Invalid string by default, meaning no information to display.
   virtual std::string GetDataProbeInfoStringForPosition(double vtkNotUsed(xyz)[3]) { return ""; }
+
+  /// Get label information for a display node and label index.
+  /// Returns false by default. Subclasses can override to provide view-specific label info.
+  /// This allows displayable managers to provide view-specific label information
+  /// (e.g., slice-specific visibility and positioning for segmentations).
+  /// \param displayNode The label display node
+  /// \param labelIndex The index of the label
+  /// \param info Output parameter for label information
+  /// \return true if label info was provided, false otherwise
+  virtual bool GetLabelInfo(vtkMRMLLabelDisplayNode* displayNode, int labelIndex,
+                            vtkMRMLLabelDisplayNode::LabelInfo& info);
 
   /// Return true if the displayable manager can process the event.
   /// Distance2 is the squared distance in display coordinates from the closest interaction position.

@@ -50,6 +50,24 @@ public:
   /// segmentValues is optional, if not nullptr then it returns value for each segment for fractional representations
   virtual void GetVisibleSegmentsForPosition(double ras[3], vtkMRMLSegmentationDisplayNode* displayNode, vtkStringArray* segmentIDs, vtkDoubleArray* segmentValues = nullptr);
 
+  /// Check if a specific segment is visible on the current slice.
+  /// This is useful for label displayable managers to determine if a segment label should be shown.
+  /// \param segmentationNode The segmentation node containing the segment (will be safely downcast from vtkMRMLNode*)
+  /// \param segmentID The ID of the segment to check
+  /// \return true if the segment intersects and is visible on the current slice
+  virtual bool IsSegmentVisibleOnSlice(vtkMRMLNode* segmentationNode, const std::string& segmentID);
+
+  /// Get the center position of a segment on the current slice in RAS coordinates.
+  /// \param segmentationNode The segmentation node containing the segment (will be safely downcast from vtkMRMLNode*)
+  /// \param segmentID The ID of the segment
+  /// \param centerRAS Output: center position in RAS coordinates (only XY are meaningful, Z is slice position)
+  /// \return true if the segment is visible on slice and center was computed
+  virtual bool GetSegmentCenterOnSlice(vtkMRMLNode* segmentationNode, const std::string& segmentID, double centerRAS[3]);
+
+  /// Override to provide slice-specific label information for segmentation labels
+  bool GetLabelInfo(vtkMRMLLabelDisplayNode* displayNode, int labelIndex,
+                    vtkMRMLLabelDisplayNode::LabelInfo& info) override;
+
   /// Specify that a segment is temporarily displayed with a custom renderer, so that this displayable manager should not display it.
   /// Only one custom renderer can be added for a specific segment for each segmentation display node.
   /// \return An integer tag that can be used for removing the custom renderer using RemoveCustomRenderer().

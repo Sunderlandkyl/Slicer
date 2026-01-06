@@ -24,6 +24,13 @@
 // MRML includes
 #include <vtkMRMLScene.h>
 #include <vtkMRMLSliceNode.h>
+#include <vtkMRMLSegmentationLabelDisplayNode.h>
+#include <vtkMRMLDisplayableManagerGroup.h>
+#include <vtkMRMLDisplayableNode.h>
+
+// Forward declare the segmentation displayable manager class
+// We'll use runtime type checking instead of compile-time includes
+class vtkMRMLSegmentationsDisplayableManager2D;
 
 // VTK includes
 #include <vtkCommand.h>
@@ -293,6 +300,7 @@ vtkMRMLLabelsWidget* vtkMRMLLabelsDisplayableManager2D::CreateWidget(vtkMRMLLabe
   rep->SetRenderer(this->GetRenderer());
   rep->SetLabelDisplayNode(displayNode);
   rep->SetSliceNode(this->GetMRMLSliceNode());
+  rep->SetDisplayableManager(this);
 
   widget->SetRepresentation(rep);
   rep->Delete();
@@ -301,4 +309,40 @@ vtkMRMLLabelsWidget* vtkMRMLLabelsDisplayableManager2D::CreateWidget(vtkMRMLLabe
   widget->UpdateFromRenderer();
 
   return widget;
+}
+
+//----------------------------------------------------------------------------
+bool vtkMRMLLabelsDisplayableManager2D::GetLabelInfo(vtkMRMLLabelDisplayNode* displayNode,
+                                                      int labelIndex,
+                                                      vtkMRMLLabelDisplayNode::LabelInfo& info)
+{  if (!displayNode)
+  {
+    return false;
+  }
+
+  // First try to get label info from other displayable managers
+  // They can provide view-specific information (e.g., slice intersection for segmentations)
+  vtkMRMLDisplayableManagerGroup* group = this->GetMRMLDisplayableManagerGroup();
+  if (group)
+  {
+    // Query all displayable managers to see if any can provide label info
+    int numDMs = group->GetDisplayableManagerCount();
+    for (int i = 0; i < numDMs; ++i)
+    {
+      vtkMRMLAbstractDisplayableManager* dm =
+        vtkMRMLAbstractDisplayableManager::SafeDownCast(group->GetNthDisplayableManager(i));
+      if (dm && dm != this)
+      {
+        // Try to get label info from this displayable manager
+        if (dm->GetLabelInfo(displayNode, labelIndex, info))
+        {
+          // This displayable manager provided the info
+          return true;
+        }
+      }
+    }
+  }
+
+  // No other displayable manager provided info, get it from the display node
+  return displayNode->GetLabelInfo(labelIndex, info);
 }

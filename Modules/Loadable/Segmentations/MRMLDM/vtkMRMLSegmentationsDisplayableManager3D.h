@@ -50,6 +50,10 @@ public:
   /// Get the ID of the picked segment, returns empty string if no pick
   virtual const char* GetPickedSegmentID();
 
+  /// Override to provide label information for segmentation labels in 3D
+  bool GetLabelInfo(vtkMRMLLabelDisplayNode* displayNode, int labelIndex,
+                    vtkMRMLLabelDisplayNode::LabelInfo& info) override;
+
 protected:
   vtkMRMLSegmentationsDisplayableManager3D();
   ~vtkMRMLSegmentationsDisplayableManager3D() override;

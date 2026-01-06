@@ -19,6 +19,7 @@
 
 // MRML includes
 #include <vtkMRMLLabelDisplayNode.h>
+#include "vtkMRMLAbstractDisplayableManager.h"
 
 // VTK includes
 #include <vtkActor2D.h>
@@ -73,6 +74,24 @@ void vtkMRMLLabelsWidgetRepresentation::SetLabelDisplayNode(vtkMRMLLabelDisplayN
 vtkMRMLLabelDisplayNode* vtkMRMLLabelsWidgetRepresentation::GetLabelDisplayNode()
 {
   return this->LabelDisplayNode;
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLLabelsWidgetRepresentation::SetDisplayableManager(vtkMRMLAbstractDisplayableManager* dm)
+{
+  if (this->DisplayableManager == dm)
+  {
+    return;
+  }
+
+  this->DisplayableManager = dm;
+  this->Modified();
+}
+
+//----------------------------------------------------------------------------
+vtkMRMLAbstractDisplayableManager* vtkMRMLLabelsWidgetRepresentation::GetDisplayableManager()
+{
+  return this->DisplayableManager.GetPointer();
 }
 
 //----------------------------------------------------------------------------
@@ -247,7 +266,16 @@ void vtkMRMLLabelsWidgetRepresentation::UpdateLabel(vtkMRMLLabelDisplayNode* dis
     LabelInfo& info = this->Labels[key];
 
     vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
-    bool ok = displayNode->GetLabelInfo(i, baseInfo);
+    bool ok = false;
+    if (this->DisplayableManager.GetPointer())
+    {
+      ok = this->DisplayableManager.GetPointer()->GetLabelInfo(displayNode, i, baseInfo);
+    }
+    else
+    {
+      // Fallback if no displayable manager is set
+      ok = displayNode->GetLabelInfo(i, baseInfo);
+    }
     if (!ok)
     {
       info.TextActor->SetVisibility(false);
@@ -393,7 +421,17 @@ void vtkMRMLLabelsWidgetRepresentation::UpdateLineGeometry(LabelInfo& label)
 
   // Check if line should be visible for this specific label
   vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
-  if (!label.DisplayNode->GetLabelInfo(label.LabelIndex, baseInfo) || !baseInfo.LineVisible)
+  bool ok = false;
+  if (this->DisplayableManager.GetPointer())
+  {
+    ok = this->DisplayableManager.GetPointer()->GetLabelInfo(label.DisplayNode, label.LabelIndex, baseInfo);
+  }
+  else
+  {
+    // Fallback if no displayable manager is set
+    ok = label.DisplayNode->GetLabelInfo(label.LabelIndex, baseInfo);
+  }
+  if (!ok || !baseInfo.LineVisible)
   {
     return;
   }
@@ -514,8 +552,17 @@ void vtkMRMLLabelsWidgetRepresentation::AdjustLabelsForCollision()
       {
         continue;
       }
-      kv.second.DisplayNode->GetLabelInfo(kv.second.LabelIndex, bi);
-      if (bi.LabelPosition == side && kv.second.TextActor->GetVisibility())
+      bool ok = false;
+      if (this->DisplayableManager.GetPointer())
+      {
+        ok = this->DisplayableManager.GetPointer()->GetLabelInfo(kv.second.DisplayNode, kv.second.LabelIndex, bi);
+      }
+      else
+      {
+        // Fallback if no displayable manager is set
+        ok = kv.second.DisplayNode->GetLabelInfo(kv.second.LabelIndex, bi);
+      }
+      if (ok && bi.LabelPosition == side && kv.second.TextActor->GetVisibility())
       {
         group.push_back(&kv.second);
       }

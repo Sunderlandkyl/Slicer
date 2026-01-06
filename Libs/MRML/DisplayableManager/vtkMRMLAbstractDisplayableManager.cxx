@@ -29,6 +29,7 @@
 // MRML includes
 #include <vtkMRMLAbstractViewNode.h>
 #include <vtkMRMLInteractionNode.h>
+#include <vtkMRMLLabelDisplayNode.h>
 #include <vtkMRMLScene.h>
 #include <vtkMRMLSelectionNode.h>
 
@@ -903,4 +904,12 @@ void vtkMRMLAbstractDisplayableManager::SetMouseCursor(int cursor)
   {
     this->GetRenderer()->GetRenderWindow()->SetCurrentCursor(cursor);
   }
+}
+
+//----------------------------------------------------------------------------
+bool vtkMRMLAbstractDisplayableManager::GetLabelInfo(vtkMRMLLabelDisplayNode* vtkNotUsed(displayNode),
+                                                      int vtkNotUsed(labelIndex),
+                                                      vtkMRMLLabelDisplayNode::LabelInfo& vtkNotUsed(info))
+{
+  return false; // Default: no label info provided
 }

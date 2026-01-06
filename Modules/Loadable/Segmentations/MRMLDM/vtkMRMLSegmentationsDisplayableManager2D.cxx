@@ -26,6 +26,7 @@
 #include <vtkMRMLScene.h>
 #include <vtkMRMLSliceNode.h>
 #include <vtkMRMLSegmentationDisplayNode.h>
+#include <vtkMRMLSegmentationLabelDisplayNode.h>
 #include <vtkMRMLSegmentationNode.h>
 #include <vtkMRMLTransformNode.h>
 
@@ -56,12 +57,14 @@
 #include <vtkImageReslice.h>
 #include <vtkIntArray.h>
 #include <vtkLookupTable.h>
+#include <vtkMath.h>
 #include <vtkMatrix4x4.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
 #include <vtkPlane.h>
 #include <vtkPointData.h>
 #include <vtkPointLocator.h>
+#include <vtkPolyDataConnectivityFilter.h>
 #include <vtkPolyDataMapper2D.h>
 #include <vtkProperty2D.h>
 #include <vtkRenderer.h>
@@ -1762,6 +1765,399 @@ void vtkMRMLSegmentationsDisplayableManager2D::GetVisibleSegmentsForPosition(dou
       segmentValues->InsertNextValue(valueForSegment[*segmentIt]);
     }
   }
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLSegmentationsDisplayableManager2D::IsSegmentVisibleOnSlice(vtkMRMLNode* node, const std::string& segmentID)
+{
+  vtkMRMLSegmentationNode* segmentationNode = vtkMRMLSegmentationNode::SafeDownCast(node);
+  if (!segmentationNode || segmentID.empty())
+  {
+    return false;
+  }
+
+  // Find the display node for this segmentation
+  vtkMRMLSegmentationDisplayNode* displayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(segmentationNode->GetDisplayNode());
+  if (!displayNode)
+  {
+    return false;
+  }
+
+  // Check if display node is in our pipelines
+  vtkInternal::PipelinesCacheType::iterator pipelinesIter = this->Internal->DisplayPipelines.find(displayNode);
+  if (pipelinesIter == this->Internal->DisplayPipelines.end())
+  {
+    return false;
+  }
+
+  // Check overall display node visibility
+  if (!this->Internal->IsVisible(displayNode))
+  {
+    return false;
+  }
+
+  // Check segment-specific visibility
+  vtkMRMLSegmentationDisplayNode::SegmentDisplayProperties properties;
+  displayNode->GetSegmentDisplayProperties(segmentID, properties);
+  if (!properties.Visible || (!properties.Visible2DOutline && !properties.Visible2DFill))
+  {
+    return false;
+  }
+
+  // Find the pipeline for this segment
+  vtkSegmentation* segmentation = segmentationNode->GetSegmentation();
+  if (!segmentation)
+  {
+    return false;
+  }
+
+  vtkSegment* segment = segmentation->GetSegment(segmentID);
+  if (!segment)
+  {
+    return false;
+  }
+
+  std::string representationName = displayNode->GetDisplayRepresentationName2D();
+  vtkDataObject* representationData = segment->GetRepresentation(representationName);
+  if (!representationData)
+  {
+    return false;
+  }
+
+  // Find the pipeline for this representation
+  vtkInternal::Pipeline* pipeline = nullptr;
+  for (vtkInternal::PipelineMapType::iterator pipelineIt = pipelinesIter->second.begin();
+       pipelineIt != pipelinesIter->second.end(); ++pipelineIt)
+  {
+    if (pipelineIt->first == representationData)
+    {
+      pipeline = pipelineIt->second;
+      break;
+    }
+  }
+
+  if (!pipeline)
+  {
+    return false;
+  }
+
+  // Use the internal method to check if segment is visible on current slice
+  return this->Internal->IsSegmentVisibleInCurrentSlice(displayNode, pipeline, segmentID);
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLSegmentationsDisplayableManager2D::GetSegmentCenterOnSlice(vtkMRMLNode* node,
+                                                                        const std::string& segmentID,
+                                                                        double centerRAS[3])
+{
+  if (!centerRAS)
+  {
+    return false;
+  }
+
+  centerRAS[0] = centerRAS[1] = centerRAS[2] = 0.0;
+
+  vtkMRMLSegmentationNode* segmentationNode = vtkMRMLSegmentationNode::SafeDownCast(node);
+  if (!segmentationNode || segmentID.empty())
+  {
+    return false;
+  }
+
+  // Check if segment is visible on slice first
+  if (!this->IsSegmentVisibleOnSlice(node, segmentID))
+  {
+    return false;
+  }
+
+  vtkSegmentation* segmentation = segmentationNode->GetSegmentation();
+  if (!segmentation)
+  {
+    return false;
+  }
+
+  vtkSegment* segment = segmentation->GetSegment(segmentID);
+  if (!segment)
+  {
+    return false;
+  }
+
+  vtkMRMLSegmentationDisplayNode* displayNode = vtkMRMLSegmentationDisplayNode::SafeDownCast(segmentationNode->GetDisplayNode());
+  if (!displayNode)
+  {
+    return false;
+  }
+
+  vtkMRMLSliceNode* sliceNode = this->GetMRMLSliceNode();
+  if (!sliceNode)
+  {
+    return false;
+  }
+
+  std::string representationName = displayNode->GetDisplayRepresentationName2D();
+
+  // Get the segment representation
+  vtkDataObject* representationData = segment->GetRepresentation(representationName);
+  if (!representationData)
+  {
+    return false;
+  }
+
+  // Find the pipeline for this segment
+  vtkInternal::PipelinesCacheType::iterator pipelinesIter = this->Internal->DisplayPipelines.find(displayNode);
+  if (pipelinesIter == this->Internal->DisplayPipelines.end())
+  {
+    return false;
+  }
+
+  vtkInternal::Pipeline* pipeline = nullptr;
+  for (vtkInternal::PipelineMapType::iterator pipelineIt = pipelinesIter->second.begin();
+       pipelineIt != pipelinesIter->second.end(); ++pipelineIt)
+  {
+    if (pipelineIt->first == representationData)
+    {
+      pipeline = pipelineIt->second;
+      break;
+    }
+  }
+
+  if (!pipeline || !pipeline->NodeToWorldTransform)
+  {
+    return false;
+  }
+
+  // Get slice-to-RAS matrix
+  vtkMatrix4x4* sliceToRAS = sliceNode->GetSliceToRAS();
+  if (!sliceToRAS)
+  {
+    return false;
+  }
+
+  // Get slice position (origin) and normal
+  double sliceOrigin[3] = {sliceToRAS->GetElement(0, 3), sliceToRAS->GetElement(1, 3), sliceToRAS->GetElement(2, 3)};
+  double sliceNormal[3] = {sliceToRAS->GetElement(0, 2), sliceToRAS->GetElement(1, 2), sliceToRAS->GetElement(2, 2)};
+
+  double centerSegment[3] = {0.0, 0.0, 0.0};
+
+  if (representationName == vtkSegmentationConverter::GetClosedSurfaceRepresentationName())
+  {
+    // For closed surface, slice it with the current slice plane and find center of resulting contours
+    vtkPolyData* polyData = vtkPolyData::SafeDownCast(representationData);
+    if (!polyData || polyData->GetNumberOfPoints() == 0)
+    {
+      return false;
+    }
+
+    // Create a plane for slicing
+    vtkNew<vtkPlane> plane;
+    plane->SetOrigin(sliceOrigin);
+    plane->SetNormal(sliceNormal);
+
+    // Slice the surface with the plane
+    vtkNew<vtkPlaneCutter> cutter;
+    cutter->SetInputData(polyData);
+    cutter->SetPlane(plane);
+    cutter->Update();
+
+    vtkPolyData* sliceContours = vtkPolyData::SafeDownCast(cutter->GetOutput());
+    if (!sliceContours || sliceContours->GetNumberOfPoints() == 0)
+    {
+      return false;
+    }
+
+    // Extract the largest connected component on the slice
+    vtkNew<vtkPolyDataConnectivityFilter> connectivity;
+    connectivity->SetInputData(sliceContours);
+    connectivity->SetExtractionModeToLargestRegion();
+    connectivity->Update();
+
+    vtkPolyData* largestIsland = connectivity->GetOutput();
+    if (!largestIsland || largestIsland->GetNumberOfPoints() == 0)
+    {
+      return false;
+    }
+
+    // Calculate center of mass of the largest island
+    double sumX = 0.0, sumY = 0.0, sumZ = 0.0;
+    vtkIdType numPoints = largestIsland->GetNumberOfPoints();
+    for (vtkIdType i = 0; i < numPoints; ++i)
+    {
+      double point[3];
+      largestIsland->GetPoint(i, point);
+      sumX += point[0];
+      sumY += point[1];
+      sumZ += point[2];
+    }
+
+    centerSegment[0] = sumX / numPoints;
+    centerSegment[1] = sumY / numPoints;
+    centerSegment[2] = sumZ / numPoints;
+  }
+  else if (representationName == vtkSegmentationConverter::GetBinaryLabelmapRepresentationName() ||
+           representationName == vtkSegmentationConverter::GetFractionalLabelmapRepresentationName())
+  {
+    // For labelmap, extract the slice and find center of visible voxels
+    vtkOrientedImageData* imageData = vtkOrientedImageData::SafeDownCast(representationData);
+    if (!imageData)
+    {
+      return false;
+    }
+
+    // Transform slice plane to image coordinate system
+    vtkNew<vtkGeneralTransform> worldToImageTransform;
+    worldToImageTransform->Identity();
+    worldToImageTransform->PostMultiply();
+    if (pipeline->NodeToWorldTransform)
+    {
+      worldToImageTransform->Concatenate(pipeline->NodeToWorldTransform->GetInverse());
+    }
+
+    // Transform slice normal and origin to image space
+    double sliceOriginImage[3], sliceNormalImage[3];
+    worldToImageTransform->TransformPoint(sliceOrigin, sliceOriginImage);
+
+    double sliceNormalEndPoint[3] = {sliceOrigin[0] + sliceNormal[0],
+                                       sliceOrigin[1] + sliceNormal[1],
+                                       sliceOrigin[2] + sliceNormal[2]};
+    double sliceNormalEndPointImage[3];
+    worldToImageTransform->TransformPoint(sliceNormalEndPoint, sliceNormalEndPointImage);
+    sliceNormalImage[0] = sliceNormalEndPointImage[0] - sliceOriginImage[0];
+    sliceNormalImage[1] = sliceNormalEndPointImage[1] - sliceOriginImage[1];
+    sliceNormalImage[2] = sliceNormalEndPointImage[2] - sliceOriginImage[2];
+    vtkMath::Normalize(sliceNormalImage);
+
+    // Get image properties
+    int* dims = imageData->GetDimensions();
+    double* spacing = imageData->GetSpacing();
+    double* origin = imageData->GetOrigin();
+
+    // Get image direction matrix
+    vtkNew<vtkMatrix4x4> imageToWorldMatrix;
+    imageData->GetImageToWorldMatrix(imageToWorldMatrix);
+
+    // Iterate through the image and find voxels on the current slice
+    double sliceThickness = std::min(std::min(spacing[0], spacing[1]), spacing[2]) * 0.5;
+    double sumX = 0.0, sumY = 0.0, sumZ = 0.0;
+    vtkIdType count = 0;
+
+    for (int z = 0; z < dims[2]; ++z)
+    {
+      for (int y = 0; y < dims[1]; ++y)
+      {
+        for (int x = 0; x < dims[0]; ++x)
+        {
+          // Check if voxel is non-zero
+          double* voxelValue = static_cast<double*>(imageData->GetScalarPointer(x, y, z));
+          if (!voxelValue || *voxelValue <= 0.0)
+          {
+            continue;
+          }
+
+          // Get voxel position in image coordinates
+          double indexPos[4] = {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z), 1.0};
+          double voxelPos[4];
+          imageToWorldMatrix->MultiplyPoint(indexPos, voxelPos);
+
+          // Calculate distance from slice plane
+          double vectorToVoxel[3] = {voxelPos[0] - sliceOriginImage[0],
+                                      voxelPos[1] - sliceOriginImage[1],
+                                      voxelPos[2] - sliceOriginImage[2]};
+          double distanceToSlice = std::abs(vtkMath::Dot(vectorToVoxel, sliceNormalImage));
+
+          // Check if voxel is on the current slice
+          if (distanceToSlice <= sliceThickness)
+          {
+            sumX += voxelPos[0];
+            sumY += voxelPos[1];
+            sumZ += voxelPos[2];
+            count++;
+          }
+        }
+      }
+    }
+
+    if (count == 0)
+    {
+      return false;
+    }
+
+    centerSegment[0] = sumX / count;
+    centerSegment[1] = sumY / count;
+    centerSegment[2] = sumZ / count;
+  }
+  else
+  {
+    // Fallback to segment bounds
+    double segmentBounds_Segment[6] = { 0 };
+    segment->GetBounds(segmentBounds_Segment);
+    centerSegment[0] = (segmentBounds_Segment[0] + segmentBounds_Segment[1]) / 2.0;
+    centerSegment[1] = (segmentBounds_Segment[2] + segmentBounds_Segment[3]) / 2.0;
+    centerSegment[2] = (segmentBounds_Segment[4] + segmentBounds_Segment[5]) / 2.0;
+  }
+
+  // Transform center to RAS
+  pipeline->NodeToWorldTransform->TransformPoint(centerSegment, centerRAS);
+
+  // Project onto the slice plane to ensure it's exactly on the slice
+  double vectorToCenter[3];
+  for (int i = 0; i < 3; i++)
+  {
+    vectorToCenter[i] = centerRAS[i] - sliceOrigin[i];
+  }
+
+  double distance = vtkMath::Dot(vectorToCenter, sliceNormal);
+
+  for (int i = 0; i < 3; i++)
+  {
+    centerRAS[i] = centerRAS[i] - distance * sliceNormal[i];
+  }
+
+  return true;
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLSegmentationsDisplayableManager2D::GetLabelInfo(vtkMRMLLabelDisplayNode* displayNode,
+                                                             int labelIndex,
+                                                             vtkMRMLLabelDisplayNode::LabelInfo& info)
+{
+  // Check if this is a segmentation label display node
+  vtkMRMLSegmentationLabelDisplayNode* segLabelDisplayNode =
+    vtkMRMLSegmentationLabelDisplayNode::SafeDownCast(displayNode);
+
+  if (!segLabelDisplayNode)
+  {
+    return false; // Not a segmentation label, can't handle it
+  }
+
+  // Get base label info from display node first
+  if (!displayNode->GetLabelInfo(labelIndex, info))
+  {
+    return false;
+  }
+
+  // Now add slice-specific visibility and positioning
+  vtkMRMLNode* targetNode = segLabelDisplayNode->GetTargetNode();
+  if (targetNode)
+  {
+    // Check if this segment is visible on the current slice
+    bool visibleOnSlice = this->IsSegmentVisibleOnSlice(targetNode, info.LabelID);
+
+    // Update visibility based on slice intersection
+    info.Visible = info.Visible && visibleOnSlice;
+
+    // If visible, update anchor position to slice-specific location
+    if (visibleOnSlice)
+    {
+      double centerOnSlice[3];
+      if (this->GetSegmentCenterOnSlice(targetNode, info.LabelID, centerOnSlice))
+      {
+        info.AnchorPosition[0] = centerOnSlice[0];
+        info.AnchorPosition[1] = centerOnSlice[1];
+        info.AnchorPosition[2] = centerOnSlice[2];
+      }
+    }
+  }
+
+  return true;
 }
 
 //---------------------------------------------------------------------------

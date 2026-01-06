@@ -34,6 +34,8 @@
 
 class vtkMRMLLabelsWidgetRepresentation;
 class vtkMRMLLabelDisplayNode;
+class vtkMRMLAbstractDisplayableManager;
+class vtkMRMLLabelsDisplayableManager;
 
 class VTK_MRML_DISPLAYABLEMANAGER_EXPORT vtkMRMLLabelsWidget : public vtkMRMLAbstractWidget
 {
@@ -45,6 +47,10 @@ public:
   /// Set the label display node
   virtual void SetLabelDisplayNode(vtkMRMLLabelDisplayNode* displayNode);
   vtkMRMLLabelDisplayNode* GetLabelDisplayNode();
+
+  /// Set the displayable manager (so representation can call GetLabelInfo on it)
+  virtual void SetDisplayableManager(vtkMRMLAbstractDisplayableManager* dm);
+  vtkMRMLAbstractDisplayableManager* GetDisplayableManager();
 
   /// Get the widget representation
   vtkMRMLLabelsWidgetRepresentation* GetLabelsRepresentation();
@@ -60,6 +66,7 @@ protected:
   ~vtkMRMLLabelsWidget() override;
 
   vtkWeakPointer<vtkMRMLLabelDisplayNode> LabelDisplayNode;
+  vtkWeakPointer<vtkMRMLAbstractDisplayableManager> DisplayableManager;
 
 private:
   vtkMRMLLabelsWidget(const vtkMRMLLabelsWidget&) = delete;

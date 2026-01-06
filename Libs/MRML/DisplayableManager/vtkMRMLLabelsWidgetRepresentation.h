@@ -36,6 +36,8 @@
 // MRML includes
 #include "vtkMRMLLabelDisplayNode.h"
 
+class vtkMRMLAbstractDisplayableManager;
+
 // VTK includes
 #include <vtkActor2D.h>
 #include <vtkPolyData.h>
@@ -69,6 +71,10 @@ public:
   /// Set the label display node
   virtual void SetLabelDisplayNode(vtkMRMLLabelDisplayNode* displayNode);
   vtkMRMLLabelDisplayNode* GetLabelDisplayNode();
+
+  /// Set the displayable manager (provides GetLabelInfo)
+  virtual void SetDisplayableManager(vtkMRMLAbstractDisplayableManager* dm);
+  vtkMRMLAbstractDisplayableManager* GetDisplayableManager();
 
   /// Update all labels from the display node
   virtual void UpdateLabels();
@@ -140,6 +146,7 @@ protected:
                       const double pos2[2], const double size2[2]);
 
   vtkWeakPointer<vtkMRMLLabelDisplayNode> LabelDisplayNode;
+  vtkWeakPointer<vtkMRMLAbstractDisplayableManager> DisplayableManager;
 
 private:
   vtkMRMLLabelsWidgetRepresentation(const vtkMRMLLabelsWidgetRepresentation&) = delete;

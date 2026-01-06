@@ -24,6 +24,7 @@
 // Segmentations includes
 #include "vtkMRMLSegmentationNode.h"
 #include "vtkMRMLSegmentationDisplayNode.h"
+#include "vtkMRMLSegmentationLabelDisplayNode.h"
 
 // MRML includes
 #include <vtkEventBroker.h>
@@ -1057,4 +1058,31 @@ const char* vtkMRMLSegmentationsDisplayableManager3D::GetPickedNodeID()
 const char* vtkMRMLSegmentationsDisplayableManager3D::GetPickedSegmentID()
 {
   return this->Internal->PickedSegmentID.c_str();
+}
+
+//---------------------------------------------------------------------------
+bool vtkMRMLSegmentationsDisplayableManager3D::GetLabelInfo(vtkMRMLLabelDisplayNode* displayNode,
+                                                             int labelIndex,
+                                                             vtkMRMLLabelDisplayNode::LabelInfo& info)
+{
+  // Check if this is a segmentation label display node
+  vtkMRMLSegmentationLabelDisplayNode* segLabelDisplayNode =
+    vtkMRMLSegmentationLabelDisplayNode::SafeDownCast(displayNode);
+
+  if (!segLabelDisplayNode)
+  {
+    return false; // Not a segmentation label, can't handle it
+  }
+
+  // Get base label info from display node first
+  if (!displayNode->GetLabelInfo(labelIndex, info))
+  {
+    return false;
+  }
+
+  // For 3D views, segments are always "visible" (not slice-dependent)
+  // The anchor position from the display node (segment center) is already correct
+  // No need to modify anything - just return true to indicate we handled it
+
+  return true;
 }

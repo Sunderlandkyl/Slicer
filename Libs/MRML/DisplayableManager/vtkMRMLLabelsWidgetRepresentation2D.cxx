@@ -20,6 +20,7 @@
 // MRML includes
 #include <vtkMRMLLabelDisplayNode.h>
 #include <vtkMRMLSliceNode.h>
+#include <vtkMRMLLabelsDisplayableManager.h>
 
 // VTK includes
 #include <vtkMatrix4x4.h>
@@ -118,7 +119,17 @@ void vtkMRMLLabelsWidgetRepresentation2D::UpdateLabelPositions()
     }
 
     vtkMRMLLabelDisplayNode::LabelInfo baseInfo;
-    if (!displayNode->GetLabelInfo(info.LabelIndex, baseInfo))
+    bool ok = false;
+    if (this->DisplayableManager.GetPointer())
+    {
+      ok = this->DisplayableManager.GetPointer()->GetLabelInfo(displayNode, info.LabelIndex, baseInfo);
+    }
+    else
+    {
+      // Fallback if no displayable manager is set
+      ok = displayNode->GetLabelInfo(info.LabelIndex, baseInfo);
+    }
+    if (!ok)
     {
       info.TextActor->SetVisibility(false);
       if (info.LineActor)
