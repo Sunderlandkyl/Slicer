@@ -298,6 +298,14 @@ public:
   vtkSetMacro(ScreenScaleFactor, double);
   //@}
 
+  //@{
+  /// Get/Set whether or not markup occlusion is enabled in this view.
+  /// If enabled, markup labels that are occluded by other objects are not shown and cannnot be picked
+  /// Otherwise all markup labels are shown and points can be picked regardless of occlusion.
+  vtkGetMacro(MarkupsOcclusionEnabled, bool);
+  vtkSetMacro(MarkupsOcclusionEnabled, bool);
+  //@}
+
 protected:
   vtkMRMLAbstractViewNode();
   ~vtkMRMLAbstractViewNode() override;
@@ -362,6 +370,8 @@ protected:
 
   static const char* ParentLayoutNodeReferenceRole;
   static const char* InteractionNodeReferenceRole;
+
+  bool MarkupsOcclusionEnabled;
 };
 
 //------------------------------------------------------------------------------

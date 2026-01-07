@@ -30,8 +30,6 @@
 #include "vtkSlicerMarkupsModuleVTKWidgetsExport.h"
 #include "vtkSlicerMarkupsWidgetRepresentation.h"
 
-// std includes
-#include <chrono>
 #include <map>
 
 class vtkActor;
@@ -156,12 +154,7 @@ protected:
   bool HideTextActorIfAllPointsOccluded;
   double OccludedRelativeOffset;
 
-  struct CachedZBufferEntry
-  {
-    vtkSmartPointer<vtkFloatArray> ZBuffer;
-    std::chrono::time_point<std::chrono::system_clock> Timestamp;
-  };
-  static std::map<vtkRenderer*, CachedZBufferEntry> CachedZBuffers;
+  static std::map<vtkRenderer*, vtkSmartPointer<vtkFloatArray>> CachedZBuffers;
 
   vtkSmartPointer<vtkCallbackCommand> RenderCompletedCallback;
   static void OnRenderCompleted(vtkObject* caller, unsigned long event, void* clientData, void* callData);
