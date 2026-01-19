@@ -20,6 +20,8 @@ if(Slicer_USE_SYSTEM_${proj})
   foreach(module_name IN ITEMS
     pydicom
     six
+    ply
+    rule-engine
     )
     ExternalProject_FindPythonPackage(
       MODULE_NAME "${module_name}"
@@ -75,6 +77,7 @@ if(NOT Slicer_USE_SYSTEM_${proj})
   # [dicomweb-client]
   dicomweb-client==0.60.1 --hash=sha256:e128866a797b7acdcd4ad280a10ebced5af77a3ce1d1bde709389ad56583955d
   # [/dicomweb-client]
+  # [rule-engine]
   ]===])
 
   ExternalProject_Add(${proj}
