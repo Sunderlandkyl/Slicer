@@ -22,6 +22,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMessageBox>
@@ -123,6 +124,7 @@ public:
     InstalledColumn,  // extension files are in place
     LoadedColumn,     // extension actually loaded into the application
     BookmarkedColumn, // extension is bookmarked
+    DicomSupportRuleColumn,
   };
 
   enum ItemDataRole
@@ -151,6 +153,7 @@ public:
     InstalledRole,
     LoadedRole,
     BookmarkedRole,
+    DicomSupportRuleRole,
   };
 
   typedef qSlicerExtensionsManagerModelPrivate Self;
@@ -308,6 +311,7 @@ void qSlicerExtensionsManagerModelPrivate::init()
   this->initializeColumnIdToNameMap(Self::InstalledColumn, "installed");
   this->initializeColumnIdToNameMap(Self::LoadedColumn, "loaded");
   this->initializeColumnIdToNameMap(Self::BookmarkedColumn, "bookmarked");
+  this->initializeColumnIdToNameMap(Self::DicomSupportRuleColumn, "dicom_support_rule");
 
   // See https://www.developer.nokia.com/Community/Wiki/Using_QStandardItemModel_in_QML
   QHash<int, QByteArray> roleNames;
@@ -405,11 +409,50 @@ void qSlicerExtensionsManagerModelPrivate::saveExtensionsMetadataFromServerToCac
   extensionSettings.setValue("Extensions/MetadataFromServerUpdateTime", currentTime.toString(Qt::ISODate));
   extensionSettings.setValue("Extensions/MetadataFromServerUrl", q->serverUrl().toString());
 
+  // print extension metadata to log
+  this->debug(QString("Caching %1 extensions metadata retrieved from server %2:").arg(this->ExtensionsMetadataFromServer.size()).arg(q->serverUrl().toString()));
+  // ExtensionsMetadataFromServer contents
+  this->debug("Extension metadata:");
+  for (const QString& extensionName : this->ExtensionsMetadataFromServer.keys())
+  {
+    const QVariantMap& metadata = this->ExtensionsMetadataFromServer[extensionName];
+    QStringList metadataItems;
+    for (const QString& key : metadata.keys())
+    {
+      metadataItems << QString("%1: %2").arg(key).arg(metadata.value(key).toString());
+    }
+    this->debug(QString("  %1: {%2}").arg(extensionName).arg(metadataItems.join(", ")));
+  }
+
   // Convert to json to allow writing to settings TODO: use filename instead?
   QJsonObject jsonExtensionsMetadata;
   for (const QString& extensionName : this->ExtensionsMetadataFromServer.keys())
   {
-    QJsonObject metadata = QJsonObject::fromVariantMap(this->ExtensionsMetadataFromServer[extensionName]);
+    const QVariantMap& variantMetadata = this->ExtensionsMetadataFromServer[extensionName];
+    QJsonObject metadata;
+
+    // Convert QVariantMap to QJsonObject, handling arrays properly
+    for (const QString& key : variantMetadata.keys())
+    {
+      const QVariant& value = variantMetadata[key];
+      if (value.canConvert<QVariantList>() && value.type() == QVariant::List)
+      {
+        // Handle array values (like dicom_support_rule)
+        QJsonArray jsonArray;
+        QVariantList variantList = value.toList();
+        for (const QVariant& item : variantList)
+        {
+          jsonArray.append(QJsonValue::fromVariant(item));
+        }
+        metadata.insert(key, jsonArray);
+      }
+      else
+      {
+        // Handle scalar values
+        metadata.insert(key, QJsonValue::fromVariant(value));
+      }
+    }
+
     jsonExtensionsMetadata.insert(extensionName, metadata);
   }
   // Write to json file
@@ -971,6 +1014,7 @@ bool qSlicerExtensionsManagerModelPrivate::validateExtensionMetadata(const Exten
                          << "meta.repository_type"
                          << "meta.repository_url"
                          << "meta.revision"
+                         << "meta.dicom_support_rule"
                          << "meta.screenshots";
   }
   else
@@ -2067,6 +2111,7 @@ bool qSlicerExtensionsManagerModel::updateExtensionsMetadataFromServer(bool forc
 
   if (!force && !d->isExtensionsMetadataUpdateDue())
   {
+
     return true;
   }
 
@@ -2076,7 +2121,7 @@ bool qSlicerExtensionsManagerModel::updateExtensionsMetadataFromServer(bool forc
     qRestAPI::Parameters parameters;
     if (this->serverAPI() == qSlicerExtensionsManagerModel::Girder_v1)
     {
-      QString appID = "5f4474d0e1d8c75dfc705482";
+      QString appID = "696ea9dc5efce88cc8e174c5";
       if (this->serverUrl().toString().isEmpty())
       {
         // server address has not been specified, normal at very first startup
@@ -2084,9 +2129,9 @@ bool qSlicerExtensionsManagerModel::updateExtensionsMetadataFromServer(bool forc
         return false;
       }
       d->ExtensionsMetadataFromServerAPI.setServerUrl(this->serverUrl().toString() + QString("/api/v1/app/%1/extension").arg(appID));
-      parameters["app_revision"] = this->slicerRevision();
-      parameters["os"] = this->slicerOs();
-      parameters["arch"] = this->slicerArch();
+      parameters["app_revision"] = "32516";
+      parameters["os"] = "linux";
+      parameters["arch"] = "amd64";
       // request all metadata in a single response (it makes synchronous query simpler)
       parameters["limit"] = QString::number(0);
     }
@@ -2179,8 +2224,32 @@ bool qSlicerExtensionsManagerModel::onExtensionsMetadataFromServerQueryFinished(
   // Process response
   for (const QVariantMap& result : restResult->results())
   {
+    // Preserve array-typed metadata fields before flattening
+    // (qVariantMapFlattened may convert arrays to strings)
+    QVariantMap arrayFields;
+    if (result.contains("meta") && result["meta"].canConvert<QVariantMap>())
+    {
+      QVariantMap metaMap = result["meta"].toMap();
+      for (const QString& key : metaMap.keys())
+      {
+        const QVariant& value = metaMap[key];
+        if (value.canConvert<QVariantList>() && value.type() == QVariant::List)
+        {
+          // Store array field with flattened key name for later restoration
+          arrayFields.insert("meta." + key, value);
+        }
+      }
+    }
+
     // Get extension information from server response
     ExtensionMetadataType serverExtensionMetadata = qRestAPI::qVariantMapFlattened(result);
+
+    // Restore array fields that may have been converted to strings
+    for (const QString& key : arrayFields.keys())
+    {
+      serverExtensionMetadata.insert(key, arrayFields[key]);
+    }
+
     ExtensionMetadataType extensionMetadata = Self::filterExtensionMetadata(serverExtensionMetadata, this->serverAPI());
     extensionMetadata = Self::convertExtensionMetadata(extensionMetadata, this->serverAPI());
     QString extensionName = extensionMetadata["extensionname"].toString();
@@ -2965,6 +3034,7 @@ QHash<QString, QString> qSlicerExtensionsManagerModel::serverToExtensionDescript
   //  |                      |                   |                    | meta.app_id          |
   //  |                      |                   |                    | name                 |
   //  |                      |                   |                    | size                 |
+  //  | DicomSupportRuleColumn | dicom_support_rule | dicom_support_rule | meta.dicom_support_rule |
 
   if (serverAPI == Self::Girder_v1)
   {
@@ -2985,6 +3055,7 @@ QHash<QString, QString> qSlicerExtensionsManagerModel::serverToExtensionDescript
     serverToExtensionDescriptionKey.insert("meta.contributors", "contributors");
     serverToExtensionDescriptionKey.insert("meta.description", "description");
     serverToExtensionDescriptionKey.insert("meta.screenshots", "screenshots");
+    serverToExtensionDescriptionKey.insert("meta.dicom_support_rule", "dicom_support_rule");
     // enabled
     // archivename
     // md5
