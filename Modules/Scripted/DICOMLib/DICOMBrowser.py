@@ -298,11 +298,12 @@ class SlicerDICOMBrowser(VTKObservationMixin, qt.QWidget):
     def promptForExtensions(self):
         extensionsToOffer = self.checkForExtensions()
         if len(extensionsToOffer) != 0:
-            displayedTypeDescriptions = []
+            displayedDescriptions = []
             for extension in extensionsToOffer:
-                typeDescription = extension["typeDescription"]
-                if typeDescription not in displayedTypeDescriptions:
-                    displayedTypeDescriptions.append(typeDescription)
+                # Use extension description from metadata
+                description = extension.get("metadata", {}).get("description", "")
+                if description and description not in displayedDescriptions:
+                    displayedDescriptions.append(description)
             displayedExtensionNames = []
             for extension in extensionsToOffer:
                 extensionName = extension["name"]
@@ -311,13 +312,14 @@ class SlicerDICOMBrowser(VTKObservationMixin, qt.QWidget):
                     displayedExtensionNames.append(extensionName)
 
             message = ""
-            if len(displayedTypeDescriptions) == 1:
-                message += _("The following data type is in your database:")
-            else:
-                message += _("The following data types are in your database:")
-            message += " <b>" + ", ".join(displayedTypeDescriptions) + "</b>."
+            if displayedDescriptions:
+                if len(displayedDescriptions) == 1:
+                    message += _("The following data type is in your database:")
+                else:
+                    message += _("The following data types are in your database:")
+                message += " <b>" + ", ".join(displayedDescriptions) + "</b>."
+                message += "<p><p>"
 
-            message += "<p><p>"
             if len(displayedExtensionNames) == 1:
                 message += _("The following extension is not installed, but may help you work with this data:")
             else:
@@ -327,39 +329,48 @@ class SlicerDICOMBrowser(VTKObservationMixin, qt.QWidget):
             message += "<p><p>"
             message += _("You can install extensions using the Extensions Manager option from the View menu.")
             slicer.util.infoDisplay(message, parent=self, windowTitle=_("DICOM"))
+        else:
+            # Check if there's any data that couldn't be loaded by plugins
+            # by checking if all series have at least one loadable
+            hasUnloadableData = False
+            for patient in slicer.dicomDatabase.patients():
+                for study in slicer.dicomDatabase.studiesForPatient(patient):
+                    for series in slicer.dicomDatabase.seriesForStudy(study):
+                        files = slicer.dicomDatabase.filesForSeries(series)
+                        if files:
+                            # Quick check: see if any plugin can handle this
+                            loadablesByPlugin, loadEnabled = DICOMUtils.getLoadablesFromFileLists([files])
+                            if not loadEnabled:
+                                hasUnloadableData = True
+                                break
+                    if hasUnloadableData:
+                        break
+                if hasUnloadableData:
+                    break
+
+            if hasUnloadableData:
+                message = _("Some DICOM data in your database cannot be loaded by the installed plugins.")
+                message += "<p><p>"
+                message += _("No extensions are currently available to handle this data type.")
+                message += "<p><p>"
+                message += _("You may need to install additional extensions or contact support.")
+                slicer.util.warningDisplay(message, parent=self, windowTitle=_("DICOM"))
 
     def checkForExtensions(self):
-        """Check to see if there
-        are any registered extensions that might be available to
+        """Check to see if there are any registered extensions that might be available to
         help the user work with data in the database.
 
-        1) load extension json description
-        2) load info for each series
-        3) check if data matches
+        This collects DICOM attributes from the database and checks if any available extensions
+        can handle the data types found.
 
-        then return matches
-
-        See
-        https://mantisarchive.slicer.org/view.php?id=4146
+        Returns a list of extension info dictionaries with 'name' and 'metadata' keys.
         """
-
-        # 1 - load json
-        import logging, os, json
+        import logging
+        from DICOMLib import DICOMUtils
 
         logging.info("Imported a DICOM directory, checking for extensions")
-        modulePath = os.path.dirname(slicer.modules.dicom.path)
-        extensionDescriptorPath = os.path.join(modulePath, "DICOMExtensions.json")
-        try:
-            with open(extensionDescriptorPath) as extensionDescriptorFP:
-                extensionDescriptor = extensionDescriptorFP.read()
-                dicomExtensions = json.loads(extensionDescriptor)
-        except:
-            logging.error("Cannot access DICOMExtensions.json file")
-            return
 
-        # 2 - get series info
-        #  - iterate though metadata - should be fast even with large database
-        #  - the fileValue call checks the tag cache so it's fast
+        # Get DICOM attributes from database
         modalityTag = "0008,0060"
         sopClassUIDTag = "0008,0016"
         sopClassUIDs = set()
@@ -373,23 +384,97 @@ class SlicerDICOMBrowser(VTKObservationMixin, qt.QWidget):
                     modalities.add(modality)
                     sopClassUIDs.add(sopClassUID)
 
-        # 3 - check if data matches
-        extensionsManagerModel = slicer.app.extensionsManagerModel()
-        installedExtensions = extensionsManagerModel.installedExtensions
-        extensionsToOffer = []
-        for extension in dicomExtensions["extensions"]:
-            extensionName = extension["name"]
-            if extensionName not in installedExtensions:
-                tagValues = extension["tagValues"]
-                if "Modality" in tagValues:
-                    for modality in tagValues["Modality"]:
-                        if modality in modalities:
-                            extensionsToOffer.append(extension)
-                if "SOPClassUID" in tagValues:
-                    for sopClassUID in tagValues["SOPClassUID"]:
-                        if sopClassUID in sopClassUIDs:
-                            extensionsToOffer.append(extension)
-        return extensionsToOffer
+        # Use centralized function to check for matching extensions
+        dicomAttributes = {
+            "modalities": list(modalities),
+            "sopClassUIDs": list(sopClassUIDs),
+        }
+
+        # Get suggested extension (without offering install - we'll handle that in promptForExtensions)
+        extensionName = DICOMUtils.suggestExtensionForDICOMData(
+            dicomAttributes,
+            "DICOM data in this database",
+            offerInstall=False
+        )
+
+        if extensionName:
+            # Get extension metadata to return
+            extensionsManagerModel = slicer.app.extensionsManagerModel()
+            metadata = extensionsManagerModel.extensionMetadata(extensionName, 2)
+            return [{
+                "name": extensionName,
+                "metadata": metadata
+            }]
+
+        return []
+
+    def checkAndOfferExtensionsForFileLists(self, fileLists):
+        """Check if extensions are available for the given file lists and offer to install them.
+        This is called when attempting to load data that no plugin can handle.
+        """
+        import logging
+        logging.info(f"checkAndOfferExtensionsForFileLists called with {len(fileLists)} file list(s)")
+
+        if not hasattr(slicer.app, "extensionsManagerModel"):
+            logging.info("No extensions manager model available")
+            return
+
+        # Collect DICOM attributes from the file lists
+        modalityTag = "0008,0060"
+        sopClassUIDTag = "0008,0016"
+        sopClassUIDs = set()
+        modalities = set()
+
+        for fileList in fileLists:
+            if fileList:
+                # Get attributes from first file in each series
+                instance0 = fileList[0]
+                modality = slicer.dicomDatabase.fileValue(instance0, modalityTag)
+                sopClassUID = slicer.dicomDatabase.fileValue(instance0, sopClassUIDTag)
+                logging.info(f"File {instance0}: Modality={modality}, SOPClassUID={sopClassUID}")
+                modalities.add(modality)
+                sopClassUIDs.add(sopClassUID)
+
+        if not modalities and not sopClassUIDs:
+            logging.info("No DICOM attributes found")
+            return
+
+        # Use centralized function to check for matching extensions (with install offer)
+        dicomAttributes = {
+            "modalities": list(modalities),
+            "sopClassUIDs": list(sopClassUIDs),
+        }
+
+        logging.info(f"Checking for extensions with attributes: {dicomAttributes}")
+
+        # Offer to install extension if available
+        extensionName = DICOMUtils.suggestExtensionForDICOMData(
+            dicomAttributes,
+            "selected DICOM data",
+            offerInstall=True
+        )
+
+        if extensionName:
+            logging.info(f"Extension suggested: {extensionName}")
+        else:
+            logging.info("No matching extension found")
+            # Show a message to the user that no extension is available
+            message = _("The selected DICOM data cannot be loaded by the installed plugins.")
+            message += "<p><p>"
+
+            # Add details about the data type
+            if modalities or sopClassUIDs:
+                message += _("Data type information:") + "<br>"
+                if modalities:
+                    message += _("Modality: ") + ", ".join([str(m) for m in modalities if m]) + "<br>"
+                if sopClassUIDs:
+                    message += _("SOP Class UID: ") + ", ".join([str(s) for s in sopClassUIDs if s]) + "<br>"
+                message += "<p>"
+
+            message += _("No extensions are currently available to handle this data type.")
+            message += "<p><p>"
+            message += _("You may need to contact the extension developer or check for updates in the Extensions Manager.")
+            slicer.util.warningDisplay(message, parent=self, windowTitle=_("DICOM"))
 
     def setBrowserPersistence(self, state):
         self.browserPersistent = state
@@ -450,6 +535,10 @@ class SlicerDICOMBrowser(VTKObservationMixin, qt.QWidget):
         DICOMLib.selectHighestConfidenceLoadables(self.loadablesByPlugin)
         self.loadableTable.setLoadables(self.loadablesByPlugin)
         self.updateButtonStates()
+
+        # Check if we need to suggest extensions for data that couldn't be loaded
+        if not _loadEnabled:
+            self.checkAndOfferExtensionsForFileLists(self.fileLists)
 
     def getLoadablesFromFileLists(self, fileLists):
         """Take list of file lists, return loadables by plugin dictionary"""
