@@ -2111,6 +2111,7 @@ bool qSlicerExtensionsManagerModel::updateExtensionsMetadataFromServer(bool forc
 
   if (!force && !d->isExtensionsMetadataUpdateDue())
   {
+
     return true;
   }
 
@@ -2120,7 +2121,7 @@ bool qSlicerExtensionsManagerModel::updateExtensionsMetadataFromServer(bool forc
     qRestAPI::Parameters parameters;
     if (this->serverAPI() == qSlicerExtensionsManagerModel::Girder_v1)
     {
-      QString appID = "69601af86476b5d8d7412a97";
+      QString appID = "696ea9dc5efce88cc8e174c5";
       if (this->serverUrl().toString().isEmpty())
       {
         // server address has not been specified, normal at very first startup

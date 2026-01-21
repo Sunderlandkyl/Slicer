@@ -1227,81 +1227,125 @@ def suggestExtensionForDICOMData(dicomAttributes, dataDescription="this DICOM da
             except Exception as e:
                 logging.debug(f"Failed to evaluate rule '{dicomSupportRule}' for extension '{extensionName}': {e}")
 
-    # If no managed extension was found, check the server for other available extensions
-    # by iterating through the model
+    # If no managed extension was found, check ALL available extensions from the server
+    # The model only contains managed extensions, we need to read the server metadata file directly
     try:
-        model = extensionsManagerModel.model()
-        if model:
-            extensionCount = model.rowCount()
-            logging.debug(f"Checking {extensionCount} extensions from model for DICOM support")
-            for row in range(extensionCount):
-                index = model.index(row, 0)
-                extensionName = model.data(index)
+        import json
 
-                if not extensionName or extensionName in installedExtensions:
-                    continue
+        # Try to find the server metadata file
+        # It's typically in the extensions installation path
+        extensionsInstallPath = extensionsManagerModel.extensionsInstallPath()
+        logging.info(f"Extensions install path: {extensionsInstallPath}")
 
-                # Get extension metadata from server
-                metadata = extensionsManagerModel.extensionMetadata(extensionName, 2)
-                if not metadata:
-                    continue
+        # The server metadata is stored in a parallel directory structure
+        # Typically: <slicerHome>/slicer.org/Extensions-<revisionID>/ExtensionsMetadataFromServer.json
+        serverMetadataFile = None
+        if extensionsInstallPath:
+            # Go up to parent and look for server metadata
+            parentDir = os.path.dirname(extensionsInstallPath)
+            for item in os.listdir(parentDir) if os.path.exists(parentDir) else []:
+                itemPath = os.path.join(parentDir, item)
+                if os.path.isdir(itemPath):
+                    metadataPath = os.path.join(itemPath, "ExtensionsMetadataFromServer.json")
+                    if os.path.exists(metadataPath):
+                        serverMetadataFile = metadataPath
+                        break
 
-                # Get dicom_support_rule from metadata
-                # metadata is a QVariantMap, use bracket notation to avoid Qt kwargs issues
-                # The value may be a string, list, or tuple - normalize to list
-                dicomSupportRules = []
-                if "dicom_support_rule" in metadata:
-                    ruleValue = metadata["dicom_support_rule"]
-                    if isinstance(ruleValue, (list, tuple)):
-                        # Convert each element to string - force Python str type
-                        dicomSupportRules = [str(r) if r else "" for r in ruleValue]
-                    else:
-                        # Single rule string - force Python str type
-                        dicomSupportRules = [str(ruleValue) if ruleValue else ""]
+        if not serverMetadataFile:
+            logging.info("Could not find server metadata file, falling back to managed extensions only")
+            return None
 
-                    # Additional safety: ensure we have plain Python strings
-                    dicomSupportRules = [r for r in dicomSupportRules if r and isinstance(r, str)]
+        logging.info(f"Reading server metadata from: {serverMetadataFile}")
 
-                if not dicomSupportRules:
-                    continue
+        # Read all available extensions from the server metadata
+        with open(serverMetadataFile, 'r') as f:
+            serverMetadata = json.load(f)
 
-                # Evaluate each rule with each combination of our values
-                for dicomSupportRule in dicomSupportRules:
-                    matched = False
-                    try:
-                        # Force complete detachment from Qt types by reconstructing the string
-                        ruleStr = "".join([c for c in dicomSupportRule])
-                        rule = rule_engine.Rule(ruleStr)
+        extensionNames = list(serverMetadata.keys())
+        logging.info(f"Found {len(extensionNames)} extensions in server metadata")
+        logging.info(f"Installed extensions: {installedExtensions}")
 
-                        for sopClassUID in (sopClassUIDs if sopClassUIDs else [None]):
-                            for modality in (modalities if modalities else [None]):
-                                # Build context as plain dict with guaranteed Python strings
-                                context = {}
-                                if sopClassUID is not None:
-                                    context["SOPClassUID"] = "".join([c for c in str(sopClassUID)])
-                                if modality is not None:
-                                    context["Modality"] = "".join([c for c in str(modality)])
+        for extensionName in extensionNames:
+            if not extensionName or extensionName in installedExtensions:
+                continue
 
-                                try:
-                                    if rule.matches(context):
-                                        matched = True
-                                        break
-                                except Exception:
-                                    # Any error during matching (Qt types, missing symbols, etc) - treat as non-match
-                                    continue
-                            if matched:
-                                break
+            logging.info(f"Checking extension: '{extensionName}'")
 
+            # Get extension metadata from server
+            metadata = extensionsManagerModel.extensionMetadata(extensionName, 2)
+            if not metadata:
+                logging.info(f"  No metadata for '{extensionName}'")
+                continue
+
+            # Get dicom_support_rule from metadata
+            # metadata is a QVariantMap, use bracket notation to avoid Qt kwargs issues
+            # The value may be a string, list, or tuple - normalize to list
+            dicomSupportRules = []
+            if "dicom_support_rule" in metadata:
+                ruleValue = metadata["dicom_support_rule"]
+                if isinstance(ruleValue, (list, tuple)):
+                    # Convert each element to string - force Python str type
+                    dicomSupportRules = [str(r) if r else "" for r in ruleValue]
+                else:
+                    # Single rule string - force Python str type
+                    dicomSupportRules = [str(ruleValue) if ruleValue else ""]
+
+                # Additional safety: ensure we have plain Python strings
+                dicomSupportRules = [r for r in dicomSupportRules if r and isinstance(r, str)]
+
+            if extensionName == "QuantitativeReporting":
+                logging.info(f"QuantitativeReporting: dicom_support_rule = {dicomSupportRules}")
+
+            if not dicomSupportRules:
+                continue
+
+            # Evaluate each rule with each combination of our values
+            for dicomSupportRule in dicomSupportRules:
+                matched = False
+                try:
+                    # Force complete detachment from Qt types by reconstructing the string
+                    ruleStr = "".join([c for c in dicomSupportRule])
+                    rule = rule_engine.Rule(ruleStr)
+
+                    if extensionName == "QuantitativeReporting":
+                        logging.info(f"QuantitativeReporting: Testing rule '{ruleStr}'")
+
+                    for sopClassUID in (sopClassUIDs if sopClassUIDs else [None]):
+                        for modality in (modalities if modalities else [None]):
+                            # Build context as plain dict with guaranteed Python strings
+                            context = {}
+                            if sopClassUID is not None:
+                                context["SOPClassUID"] = "".join([c for c in str(sopClassUID)])
+                            if modality is not None:
+                                context["Modality"] = "".join([c for c in str(modality)])
+
+                            if extensionName == "QuantitativeReporting":
+                                logging.info(f"QuantitativeReporting: Testing context {context}")
+
+                            try:
+                                if rule.matches(context):
+                                    matched = True
+                                    if extensionName == "QuantitativeReporting":
+                                        logging.info(f"QuantitativeReporting: MATCHED!")
+                                    break
+                            except Exception as e:
+                                # Any error during matching (Qt types, missing symbols, etc) - treat as non-match
+                                if extensionName == "QuantitativeReporting":
+                                    logging.info(f"QuantitativeReporting: Match error: {e}")
+                                continue
                         if matched:
-                            # Extension matches
-                            logging.info(f"Found matching extension: {extensionName} for {dataDescription}")
-                            if offerInstall:
-                                logging.info(f"Offering to install {extensionName}")
-                                _offerExtensionInstall(extensionName, dataDescription)
-                            return extensionName
-                    except Exception as e:
-                        # Log rule-level errors but continue checking other extensions
-                        logging.debug(f"Skipping rule '{dicomSupportRule}' for extension '{extensionName}': {e}")
+                            break
+
+                    if matched:
+                        # Extension matches
+                        logging.info(f"Found matching extension: {extensionName} for {dataDescription}")
+                        if offerInstall:
+                            logging.info(f"Offering to install {extensionName}")
+                            _offerExtensionInstall(extensionName, dataDescription)
+                        return extensionName
+                except Exception as e:
+                    # Log rule-level errors but continue checking other extensions
+                    logging.debug(f"Skipping rule '{dicomSupportRule}' for extension '{extensionName}': {e}")
     except Exception as e:
         logging.debug(f"Failed to check extensions model: {e}")
 
@@ -1316,14 +1360,6 @@ def _offerExtensionInstall(extensionName, dataDescription="this data"):
     :param dataDescription: Description of the data type that needs the extension
     """
     logging.info(f"_offerExtensionInstall called for {extensionName}")
-    # Check if user has previously chosen "Don't ask again" for this extension
-    settings = qt.QSettings()
-    settingsKey = f"DICOM/DontOfferExtension/{extensionName}"
-    # Qt methods don't support keyword arguments - use positional args only
-    dontAsk = settings.value(settingsKey, False)
-    if slicer.util.toBool(dontAsk):
-        logging.debug(f"Not offering to install {extensionName} extension (user chose 'Don't ask again')")
-        return
 
     # Create message box
     msgBox = qt.QMessageBox()
@@ -1335,21 +1371,16 @@ def _offerExtensionInstall(extensionName, dataDescription="this data"):
 
     # Add buttons
     installButton = msgBox.addButton("Install", qt.QMessageBox.AcceptRole)
-    notNowButton = msgBox.addButton("Not Now", qt.QMessageBox.RejectRole)
-    dontAskButton = msgBox.addButton("Don't Ask Again", qt.QMessageBox.RejectRole)
+    msgBox.addButton("Cancel", qt.QMessageBox.RejectRole)
 
     msgBox.setDefaultButton(installButton)
     msgBox.exec_()
 
     clickedButton = msgBox.clickedButton()
 
-    if clickedButton == dontAskButton:
-        # Save user's preference to not ask again
-        settings.setValue(settingsKey, True)
-        logging.info(f"User chose not to be asked about installing {extensionName} extension")
-    elif clickedButton == installButton:
+    if clickedButton == installButton:
         # Install the extension
-        logging.info(f"User chose to install {extensionName} extension")
+        logging.info(f"Installing extension: {extensionName}")
         extensionsManagerModel = slicer.app.extensionsManagerModel()
 
         if not extensionsManagerModel.isExtensionInstalled(extensionName):
@@ -1357,9 +1388,8 @@ def _offerExtensionInstall(extensionName, dataDescription="this data"):
             # The extension manager will handle the restart prompt
             success = extensionsManagerModel.downloadAndInstallExtensionByName(extensionName)
             if not success:
-                slicer.util.errorDisplay(f"Failed to install {extensionName} extension. Please try installing it manually from the Extensions Manager.")
+                slicer.util.errorDisplay(f"Failed to install {extensionName} extension.")
         else:
             logging.warning(f"{extensionName} extension is already installed")
     else:
-        # User clicked "Not Now"
-        logging.info(f"User chose not to install {extensionName} extension at this time")
+        logging.info(f"User chose not to install extension: {extensionName}")
