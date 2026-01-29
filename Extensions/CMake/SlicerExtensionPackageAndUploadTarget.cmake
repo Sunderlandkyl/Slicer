@@ -336,6 +336,7 @@ foreach(p ${package_list})
             --homepage "${EXTENSION_EXT_HOMEPAGE}"
             --screenshots "${EXTENSION_EXT_SCREENSHOTURLS}"
             --contributors "${EXTENSION_EXT_CONTRIBUTORS}"
+            --dicom_support_rule "${EXTENSION_EXT_DICOM_SUPPORT_RULE}"
       RESULT_VARIABLE slicer_extension_manager_upload_status
       ERROR_FILE ${error_file}
       )
