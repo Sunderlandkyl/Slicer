@@ -79,6 +79,11 @@ _define_metadata("DEPENDS"
   0
   "NA")
 
+_define_metadata("RECOMMENDS"
+  "Space separated list of extensions recommended to use this extension"
+  0
+  "NA")
+
 _define_metadata("BUILD_SUBDIRECTORY"
   "Name of the inner build directory in case of superbuild based extension"
   0
@@ -126,6 +131,11 @@ _define_metadata("STATUS"
 
 _define_metadata("DICOM_SUPPORT_RULE"
   "Rule expression to determine if extension should handle specific DICOM data"
+  0
+  "")
+
+_define_metadata("KEYWORDS"
+  "Space-separated list of keywords to help when searching for extensions"
   0
   "")
 

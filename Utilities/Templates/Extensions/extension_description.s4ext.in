@@ -14,6 +14,11 @@ scmrevision ${MY_EXTENSION_WC_REVISION}
 # - The dependencies will be built first
 depends ${MY_EXTENSION_DEPENDS}
 
+# list recommendations
+# - These should be names of other modules that have .s4ext files
+# - The user is recommended to install the extensions
+recommends ${MY_EXTENSION_RECOMMENDS}
+
 # Inner build directory (default is ".")
 build_subdirectory ${MY_EXTENSION_BUILD_SUBDIRECTORY}
 
@@ -45,3 +50,6 @@ enabled ${MY_EXTENSION_ENABLED}
 
 # Rule expression to determine if extension should handle specific DICOM data
 dicom_support_rule ${MY_EXTENSION_DICOM_SUPPORT_RULE}
+
+# Space separated list of keywords to help when searching for extensions
+keywords ${MY_EXTENSION_KEYWORDS}

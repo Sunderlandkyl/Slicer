@@ -40,6 +40,7 @@ function(slicerFunctionGenerateExtensionDescription)
     EXTENSION_ENABLED
     EXTENSION_HOMEPAGE
     EXTENSION_ICONURL
+    EXTENSION_KEYWORDS
     EXTENSION_NAME
     EXTENSION_STATUS
     EXTENSION_WC_REVISION
@@ -52,6 +53,7 @@ function(slicerFunctionGenerateExtensionDescription)
   set(multiValueArgs
     EXTENSION_CONTRIBUTORS
     EXTENSION_DEPENDS
+    EXTENSION_RECOMMENDS
     EXTENSION_SCREENSHOTURLS
     )
   cmake_parse_arguments(MY "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
@@ -98,6 +100,7 @@ function(slicerFunctionGenerateExtensionDescription)
 
   # depends: Convert to space separated list
   list_to_string(" " "${MY_EXTENSION_DEPENDS}" MY_EXTENSION_DEPENDS)
+  list_to_string(" " "${MY_EXTENSION_RECOMMENDS}" MY_EXTENSION_RECOMMENDS)
 
   set(expected_existing_vars DESTINATION_DIR)
   foreach(var ${expected_existing_vars})
