@@ -149,11 +149,13 @@ function(slicerFunctionExtractExtensionDescriptionFromJson)
     "BUILD_SUBDIRECTORY"
     "BUILD_DEPENDENCIES"
     "ENABLED"
+    "DICOM_SUPPORT_RULE"
     )
   set(SCM_TYPE_DEFAULT "git")
   set(BUILD_SUBDIRECTORY_DEFAULT ".")
   set(BUILD_DEPENDENCIES_DEFAULT "")
   set(ENABLED_DEFAULT "1")
+  set(DICOM_SUPPORT_RULE_DEFAULT "")
 
   foreach(name IN LISTS Slicer_EXT_REQUIRED_METADATA_NAMES Slicer_EXT_OPTIONAL_METADATA_NAMES)
     set(upper_case_token ${name})
@@ -220,6 +222,7 @@ function(slicer_extract_extension_description_test)
     ICONURL
     DESCRIPTION
     SCREENSHOTURLS
+    DICOM_SUPPORT_RULE
     ENABLED
     STATUS
     )
@@ -330,6 +333,7 @@ function(slicer_extract_extension_description_from_json_test)
     SCM_TYPE
     BUILD_DEPENDENCIES
     BUILD_SUBDIRECTORY
+    DICOM_SUPPORT_RULE
     ENABLED
     )
 
