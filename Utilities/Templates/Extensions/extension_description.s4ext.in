@@ -48,8 +48,5 @@ screenshoturls ${MY_EXTENSION_SCREENSHOTURLS}
 # 0 or 1: Define if the extension should be enabled after its installation.
 enabled ${MY_EXTENSION_ENABLED}
 
-# Rule expression to determine if extension should handle specific DICOM data
-dicom_support_rule ${MY_EXTENSION_DICOM_SUPPORT_RULE}
-
 # Space separated list of keywords to help when searching for extensions
 keywords ${MY_EXTENSION_KEYWORDS}
