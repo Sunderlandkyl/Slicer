@@ -190,6 +190,13 @@ public:
   bool IsSceneViewNode(vtkMRMLNode* node);
   //@}
 
+  /// Returns true if all proxy nodes for the Nth scene view are still present in the scene.
+  /// Returns false if any proxy node has been removed (e.g., because its associated data was deleted).
+  bool IsNthSceneViewValid(int index);
+
+  /// Returns the index of the currently active (most recently restored) scene view, or -1 if none.
+  int GetCurrentSceneViewIndex();
+
   /// Add all display-related nodes to the vector.
   void GetDisplayNodes(std::vector<vtkMRMLNode*>& displayNodes);
 
@@ -209,6 +216,7 @@ protected:
 
   /// Called when MRMLScene events are invoked
   void OnMRMLSceneNodeAdded(vtkMRMLNode* node) override;
+  void OnMRMLSceneNodeRemoved(vtkMRMLNode* node) override;
   void OnMRMLSceneEndImport() override;
   void OnMRMLSceneEndRestore() override;
   void OnMRMLSceneEndClose() override;

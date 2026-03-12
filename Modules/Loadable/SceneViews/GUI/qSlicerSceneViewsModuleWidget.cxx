@@ -7,7 +7,9 @@
 
 // Qt includes
 #include <QDebug>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QStyle>
 #include <QMainWindow>
 #include <QPointer>
 #include <QPushButton>
@@ -59,8 +61,13 @@ public:
   vtkSlicerSceneViewsModuleLogic* logic() const;
   qSlicerSceneViewsModuleDialog* sceneViewDialog();
   void updateTableRowFromSceneView(int row);
+  void updateNavigationBar();
 
   QPointer<qSlicerSceneViewsModuleDialog> SceneViewDialog;
+
+  QToolButton* PrevSceneViewButton{ nullptr };
+  QLabel* SceneViewIndexLabel{ nullptr };
+  QToolButton* NextSceneViewButton{ nullptr };
 };
 
 //-----------------------------------------------------------------------------
@@ -127,6 +134,71 @@ void qSlicerSceneViewsModuleWidgetPrivate::setupUi(qSlicerWidget* widget)
 
   // listen for click on a markup
   QObject::connect(this->SceneViewTableWidget, SIGNAL(cellDoubleClicked(int, int)), q, SLOT(onSceneViewDoubleClicked(int, int)));
+
+  // Navigation bar: [< Prev]  "2 of 5"  [Next >]
+  QWidget* navBar = new QWidget(widget);
+  QHBoxLayout* navLayout = new QHBoxLayout(navBar);
+  navLayout->setContentsMargins(0, 0, 0, 0);
+
+  this->PrevSceneViewButton = new QToolButton(navBar);
+  this->PrevSceneViewButton->setText(qSlicerSceneViewsModuleWidget::tr("< Prev"));
+  this->PrevSceneViewButton->setToolTip(qSlicerSceneViewsModuleWidget::tr("Restore previous scene view"));
+  this->PrevSceneViewButton->setEnabled(false);
+  QObject::connect(this->PrevSceneViewButton, SIGNAL(clicked()), q, SLOT(onPrevSceneViewClicked()));
+
+  this->SceneViewIndexLabel = new QLabel(navBar);
+  this->SceneViewIndexLabel->setAlignment(Qt::AlignCenter);
+
+  this->NextSceneViewButton = new QToolButton(navBar);
+  this->NextSceneViewButton->setText(qSlicerSceneViewsModuleWidget::tr("Next >"));
+  this->NextSceneViewButton->setToolTip(qSlicerSceneViewsModuleWidget::tr("Restore next scene view"));
+  this->NextSceneViewButton->setEnabled(false);
+  QObject::connect(this->NextSceneViewButton, SIGNAL(clicked()), q, SLOT(onNextSceneViewClicked()));
+
+  navLayout->addWidget(this->PrevSceneViewButton);
+  navLayout->addStretch(1);
+  navLayout->addWidget(this->SceneViewIndexLabel);
+  navLayout->addStretch(1);
+  navLayout->addWidget(this->NextSceneViewButton);
+
+  // Insert nav bar above the table widget inside the collapsible button's layout
+  QVBoxLayout* collapsibleLayout = qobject_cast<QVBoxLayout*>(this->CTKCollapsibleButton->layout());
+  if (collapsibleLayout)
+  {
+    collapsibleLayout->insertWidget(0, navBar);
+  }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSceneViewsModuleWidgetPrivate::updateNavigationBar()
+{
+  if (!this->PrevSceneViewButton || !this->SceneViewIndexLabel || !this->NextSceneViewButton)
+  {
+    return;
+  }
+
+  int numSceneViews = this->logic()->GetNumberOfSceneViews();
+  int currentIndex = this->logic()->GetCurrentSceneViewIndex();
+
+  if (numSceneViews == 0)
+  {
+    this->SceneViewIndexLabel->setText(QString());
+    this->PrevSceneViewButton->setEnabled(false);
+    this->NextSceneViewButton->setEnabled(false);
+    return;
+  }
+
+  if (currentIndex < 0)
+  {
+    this->SceneViewIndexLabel->setText(qSlicerSceneViewsModuleWidget::tr("— of %1").arg(numSceneViews));
+  }
+  else
+  {
+    this->SceneViewIndexLabel->setText(qSlicerSceneViewsModuleWidget::tr("%1 of %2").arg(currentIndex + 1).arg(numSceneViews));
+  }
+
+  this->PrevSceneViewButton->setEnabled(currentIndex > 0);
+  this->NextSceneViewButton->setEnabled(currentIndex < numSceneViews - 1);
 }
 
 //-----------------------------------------------------------------------------
@@ -138,6 +210,8 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
     return;
   }
 
+  bool isValid = this->logic()->IsNthSceneViewValid(row);
+
   // Thumbnail
   vtkImageData* thumbnailImage = this->logic()->GetNthSceneViewScreenshot(row);
   QLabel* thumbnailWidget = dynamic_cast<QLabel*>(this->SceneViewTableWidget->cellWidget(row, SCENE_VIEW_THUMBNAIL_COLUMN));
@@ -146,15 +220,24 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
     thumbnailWidget = new QLabel;
     this->SceneViewTableWidget->setCellWidget(row, SCENE_VIEW_THUMBNAIL_COLUMN, thumbnailWidget);
   }
-  if (thumbnailImage)
+  if (!isValid)
+  {
+    // Use Qt's standard warning icon since the view contains missing data
+    QIcon warningIcon = thumbnailWidget->style()->standardIcon(QStyle::SP_MessageBoxWarning);
+    thumbnailWidget->setPixmap(warningIcon.pixmap(100, 100));
+    thumbnailWidget->setToolTip(qSlicerSceneViewsModuleWidget::tr("Scene view contains missing data and cannot be restored."));
+  }
+  else if (thumbnailImage)
   {
     QImage qimage;
     qMRMLUtils::vtkImageDataToQImage(thumbnailImage, qimage);
     thumbnailWidget->setPixmap(QPixmap::fromImage(qimage).scaled(100, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    thumbnailWidget->setToolTip(QString());
   }
   else
   {
     thumbnailWidget->setPixmap(QPixmap(":/Icons/Extension.png"));
+    thumbnailWidget->setToolTip(QString());
   }
 
   // Description
@@ -170,8 +253,17 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
     descriptionWidget->setAutoFillBackground(false);
     this->SceneViewTableWidget->setCellWidget(row, SCENE_VIEW_DESCRIPTION_COLUMN, descriptionWidget);
   }
-  descriptionWidget->setHtml("<h3>" + name + "</h3>\n" + description);
+  if (!isValid)
+  {
+    descriptionWidget->setHtml("<h3>" + name + "</h3>\n<p style=\"color:orange\">"
+      + qSlicerSceneViewsModuleWidget::tr("Missing data") + "</p>\n" + description);
+  }
+  else
+  {
+    descriptionWidget->setHtml("<h3>" + name + "</h3>\n" + description);
+  }
 
+  static const char RESTORE_BUTTON_PROPERTY[] = "RestoreButton";
   QFrame* actionsWidget = dynamic_cast<QFrame*>(this->SceneViewTableWidget->cellWidget(row, SCENE_VIEW_ACTIONS_COLUMN));
   if (actionsWidget == nullptr)
   {
@@ -179,6 +271,7 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
     QVBoxLayout* actionsLayout = new QVBoxLayout;
     actionsWidget->setLayout(actionsLayout);
     QToolButton* restoreButton = new QToolButton;
+    restoreButton->setObjectName(RESTORE_BUTTON_PROPERTY);
     restoreButton->setText(qSlicerSceneViewsModuleWidget::tr("Restore"));
     restoreButton->setToolTip(qSlicerSceneViewsModuleWidget::tr("Restore"));
     restoreButton->setIcon(QIcon(":/Icons/Restore.png"));
@@ -200,6 +293,15 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
     actionsLayout->addWidget(editButton);
     actionsLayout->addWidget(deleteButton);
     this->SceneViewTableWidget->setCellWidget(row, SCENE_VIEW_ACTIONS_COLUMN, actionsWidget);
+  }
+
+  // Update restore button enabled state based on validity
+  QToolButton* restoreButton = actionsWidget->findChild<QToolButton*>(RESTORE_BUTTON_PROPERTY);
+  if (restoreButton)
+  {
+    restoreButton->setEnabled(isValid);
+    restoreButton->setToolTip(isValid ? qSlicerSceneViewsModuleWidget::tr("Restore")
+                                      : qSlicerSceneViewsModuleWidget::tr("Cannot restore: scene view contains missing data"));
   }
 }
 
@@ -291,6 +393,7 @@ void qSlicerSceneViewsModuleWidget::updateFromMRMLScene()
     d->updateTableRowFromSceneView(rowIndex);
   }
   d->SceneViewTableWidget->resizeRowsToContents();
+  d->updateNavigationBar();
 }
 
 //-----------------------------------------------------------------------------
@@ -334,6 +437,8 @@ void qSlicerSceneViewsModuleWidget::onMRMLSceneEvent(vtkObject*, vtkObject* node
   {
     this->updateSceneViewObservers();
   }
+  // Refresh the table to update validity indicators whenever any node is added or removed
+  this->updateFromMRMLScene();
 }
 
 //-----------------------------------------------------------------------------
@@ -451,4 +556,29 @@ void qSlicerSceneViewsModuleWidget::onDeleteButtonClicked()
   d->logic()->RemoveSceneView(rowIndex);
 
   this->updateFromMRMLScene();
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSceneViewsModuleWidget::onPrevSceneViewClicked()
+{
+  Q_D(qSlicerSceneViewsModuleWidget);
+  int currentIndex = d->logic()->GetCurrentSceneViewIndex();
+  if (currentIndex > 0)
+  {
+    d->logic()->RestoreSceneView(currentIndex - 1);
+    this->updateFromMRMLScene();
+  }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSceneViewsModuleWidget::onNextSceneViewClicked()
+{
+  Q_D(qSlicerSceneViewsModuleWidget);
+  int currentIndex = d->logic()->GetCurrentSceneViewIndex();
+  int numSceneViews = d->logic()->GetNumberOfSceneViews();
+  if (currentIndex < numSceneViews - 1)
+  {
+    d->logic()->RestoreSceneView(currentIndex + 1);
+    this->updateFromMRMLScene();
+  }
 }

@@ -20,10 +20,12 @@
 
 // Qt includes
 #include <QDebug>
+#include <QLabel>
 #include <QMenu>
 #include <QInputDialog>
 #include <QTimer>
 #include <QToolButton>
+#include <QWidgetAction>
 
 // CTK includes
 #include <ctkMessageBox.h>
@@ -64,6 +66,11 @@ public:
   QAction* ScreenshotAction;
   QAction* SceneViewAction;
   qMRMLSceneViewMenu* SceneViewMenu;
+  QAction* PrevSceneViewAction{ nullptr };
+  QAction* NextSceneViewAction{ nullptr };
+  QLabel* SceneViewIndexLabel{ nullptr };
+
+  vtkWeakPointer<vtkSlicerSceneViewsModuleLogic> SceneViewsLogic;
 
   // TODO In LayoutManager, use GetActive/IsActive flag ...
   vtkWeakPointer<vtkMRMLViewNode> ActiveMRMLThreeDViewNode;
@@ -72,6 +79,9 @@ public:
 public slots:
   void updateWidgetFromMRML();
   void createSceneView();
+  void updateSceneViewNavigation();
+  void onPrevSceneView();
+  void onNextSceneView();
 };
 
 //--------------------------------------------------------------------------
@@ -85,6 +95,82 @@ qMRMLCaptureToolBarPrivate::qMRMLCaptureToolBarPrivate(qMRMLCaptureToolBar& obje
   this->SceneViewAction = nullptr;
   this->SceneViewMenu = nullptr;
   this->timeOutFlag = false;
+}
+
+// --------------------------------------------------------------------------
+void qMRMLCaptureToolBarPrivate::updateSceneViewNavigation()
+{
+  Q_Q(qMRMLCaptureToolBar);
+  if (!this->PrevSceneViewAction || !this->NextSceneViewAction || !this->SceneViewIndexLabel)
+  {
+    return;
+  }
+
+  if (!this->SceneViewsLogic)
+  {
+    this->PrevSceneViewAction->setEnabled(false);
+    this->NextSceneViewAction->setEnabled(false);
+    this->SceneViewIndexLabel->setText(QString());
+    return;
+  }
+
+  int numSceneViews = this->SceneViewsLogic->GetNumberOfSceneViews();
+  int currentIndex = this->SceneViewsLogic->GetCurrentSceneViewIndex();
+
+  if (numSceneViews == 0)
+  {
+    this->SceneViewIndexLabel->setText(QString());
+    this->PrevSceneViewAction->setEnabled(false);
+    this->NextSceneViewAction->setEnabled(false);
+    return;
+  }
+
+  if (currentIndex < 0)
+  {
+    this->SceneViewIndexLabel->setText(qMRMLCaptureToolBar::tr("— / %1").arg(numSceneViews));
+  }
+  else
+  {
+    this->SceneViewIndexLabel->setText(qMRMLCaptureToolBar::tr("%1 / %2").arg(currentIndex + 1).arg(numSceneViews));
+  }
+
+  this->PrevSceneViewAction->setEnabled(currentIndex > 0);
+  this->NextSceneViewAction->setEnabled(currentIndex < numSceneViews - 1);
+}
+
+// --------------------------------------------------------------------------
+void qMRMLCaptureToolBarPrivate::onPrevSceneView()
+{
+  Q_Q(qMRMLCaptureToolBar);
+  if (!this->SceneViewsLogic)
+  {
+    return;
+  }
+  int currentIndex = this->SceneViewsLogic->GetCurrentSceneViewIndex();
+  if (currentIndex > 0)
+  {
+    this->SceneViewsLogic->RestoreSceneView(currentIndex - 1);
+    this->updateSceneViewNavigation();
+    emit q->prevSceneViewClicked();
+  }
+}
+
+// --------------------------------------------------------------------------
+void qMRMLCaptureToolBarPrivate::onNextSceneView()
+{
+  Q_Q(qMRMLCaptureToolBar);
+  if (!this->SceneViewsLogic)
+  {
+    return;
+  }
+  int currentIndex = this->SceneViewsLogic->GetCurrentSceneViewIndex();
+  int numSceneViews = this->SceneViewsLogic->GetNumberOfSceneViews();
+  if (currentIndex < numSceneViews - 1)
+  {
+    this->SceneViewsLogic->RestoreSceneView(currentIndex + 1);
+    this->updateSceneViewNavigation();
+    emit q->nextSceneViewClicked();
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -129,6 +215,31 @@ void qMRMLCaptureToolBarPrivate::init()
   QObject::connect(q, SIGNAL(mrmlSceneChanged(vtkMRMLScene*)), this->SceneViewMenu, SLOT(setMRMLScene(vtkMRMLScene*)));
   q->addWidget(sceneViewMenuButton);
   QObject::connect(q, SIGNAL(toolButtonStyleChanged(Qt::ToolButtonStyle)), sceneViewMenuButton, SLOT(setToolButtonStyle(Qt::ToolButtonStyle)));
+
+  // Prev/Next scene view navigation
+  q->addSeparator();
+
+  this->PrevSceneViewAction = new QAction(q);
+  this->PrevSceneViewAction->setText(qMRMLCaptureToolBar::tr("< Prev"));
+  this->PrevSceneViewAction->setToolTip(qMRMLCaptureToolBar::tr("Restore previous scene view"));
+  this->PrevSceneViewAction->setEnabled(false);
+  QObject::connect(this->PrevSceneViewAction, SIGNAL(triggered()), this, SLOT(onPrevSceneView()));
+  q->addAction(this->PrevSceneViewAction);
+
+  // Current/total label as a widget action
+  this->SceneViewIndexLabel = new QLabel(q);
+  this->SceneViewIndexLabel->setAlignment(Qt::AlignCenter);
+  this->SceneViewIndexLabel->setMinimumWidth(50);
+  QWidgetAction* labelAction = new QWidgetAction(q);
+  labelAction->setDefaultWidget(this->SceneViewIndexLabel);
+  q->addAction(labelAction);
+
+  this->NextSceneViewAction = new QAction(q);
+  this->NextSceneViewAction->setText(qMRMLCaptureToolBar::tr("Next >"));
+  this->NextSceneViewAction->setToolTip(qMRMLCaptureToolBar::tr("Restore next scene view"));
+  this->NextSceneViewAction->setEnabled(false);
+  QObject::connect(this->NextSceneViewAction, SIGNAL(triggered()), this, SLOT(onNextSceneView()));
+  q->addAction(this->NextSceneViewAction);
 }
 // --------------------------------------------------------------------------
 void qMRMLCaptureToolBarPrivate::setMRMLScene(vtkMRMLScene* newScene)
@@ -142,6 +253,9 @@ void qMRMLCaptureToolBarPrivate::setMRMLScene(vtkMRMLScene* newScene)
 
   qvtkReconnect(this->MRMLScene, newScene, vtkMRMLScene::StartBatchProcessEvent, q, SLOT(OnMRMLSceneStartBatchProcessing()));
   qvtkReconnect(this->MRMLScene, newScene, vtkMRMLScene::EndBatchProcessEvent, q, SLOT(OnMRMLSceneEndBatchProcessing()));
+  qvtkReconnect(this->MRMLScene, newScene, vtkMRMLScene::EndImportEvent, q, SLOT(updateSceneViewNavigationFromScene()));
+  qvtkReconnect(this->MRMLScene, newScene, vtkMRMLScene::EndCloseEvent, q, SLOT(updateSceneViewNavigationFromScene()));
+  qvtkReconnect(this->MRMLScene, newScene, vtkMRMLScene::EndRestoreEvent, q, SLOT(updateSceneViewNavigationFromScene()));
 
   this->MRMLScene = newScene;
 
@@ -163,6 +277,7 @@ void qMRMLCaptureToolBar::OnMRMLSceneEndBatchProcessing()
 {
   Q_D(qMRMLCaptureToolBar);
   d->updateWidgetFromMRML();
+  d->updateSceneViewNavigation();
 }
 
 // --------------------------------------------------------------------------
@@ -236,4 +351,25 @@ void qMRMLCaptureToolBar::setPopupsTimeOut(bool flag)
   Q_D(qMRMLCaptureToolBar);
 
   d->timeOutFlag = flag;
+}
+
+// --------------------------------------------------------------------------
+void qMRMLCaptureToolBar::setSceneViewsLogic(vtkSlicerSceneViewsModuleLogic* logic)
+{
+  Q_D(qMRMLCaptureToolBar);
+  // Disconnect from old logic
+  this->qvtkDisconnect(d->SceneViewsLogic, vtkSlicerSceneViewsModuleLogic::SceneViewsModifiedEvent,
+                        this, SLOT(updateSceneViewNavigationFromScene()));
+  d->SceneViewsLogic = logic;
+  // Connect to new logic so navigation updates whenever scene views change
+  this->qvtkConnect(d->SceneViewsLogic, vtkSlicerSceneViewsModuleLogic::SceneViewsModifiedEvent,
+                    this, SLOT(updateSceneViewNavigationFromScene()));
+  d->updateSceneViewNavigation();
+}
+
+// --------------------------------------------------------------------------
+void qMRMLCaptureToolBar::updateSceneViewNavigationFromScene()
+{
+  Q_D(qMRMLCaptureToolBar);
+  d->updateSceneViewNavigation();
 }

@@ -82,47 +82,48 @@ void qSlicerSceneViewsModuleDialogPrivate::setupUi(QDialog* dialog)
   gridLayout->getItemPosition(index, &newRowIndex, &column, &rowSpan, &columnSpan);
   gridLayout->removeWidget(buttonBox);
 
-  this->UpdateExistingNodesCheckBox = new QCheckBox(dialog);
-  this->UpdateExistingNodesCheckBox->setObjectName(QString::fromUtf8("UpdateExistingNodesCheckBox"));
-  this->UpdateExistingNodesCheckBox->setText(qSlicerSceneViewsModuleDialog::tr("Update existing nodes"));
-  this->UpdateExistingNodesCheckBox->setToolTip(
-    qSlicerSceneViewsModuleDialog::tr("If checked, the nodes already contained in the scene view will be updated to match the current state of the scene."));
-  QObject::connect(this->UpdateExistingNodesCheckBox, SIGNAL(clicked()), dialog, SLOT(onUpdateExistingNodesClicked()));
-  gridLayout->addWidget(this->UpdateExistingNodesCheckBox, newRowIndex++, 0, 1, 2);
-
-  this->CaptureDisplayNodesCheckBox = new QCheckBox(dialog);
-  this->CaptureDisplayNodesCheckBox->setObjectName(QString::fromUtf8("CaptureDisplayNodesCheckBox"));
-  this->CaptureDisplayNodesCheckBox->setText(qSlicerSceneViewsModuleDialog::tr("Capture display nodes"));
-  this->CaptureDisplayNodesCheckBox->setToolTip(
-    qSlicerSceneViewsModuleDialog::tr("If checked, all display nodes in the scene will be added or updated in the current scene view."));
-  QObject::connect(this->CaptureDisplayNodesCheckBox, SIGNAL(clicked()), dialog, SLOT(onCaptureDisplayNodesClicked()));
-  gridLayout->addWidget(this->CaptureDisplayNodesCheckBox, newRowIndex++, 0, 1, 2);
-
-  this->CaptureViewNodesCheckBox = new QCheckBox(dialog);
-  this->CaptureViewNodesCheckBox->setObjectName(QString::fromUtf8("CaptureViewNodesCheckBox"));
-  this->CaptureViewNodesCheckBox->setText(qSlicerSceneViewsModuleDialog::tr("Capture view nodes"));
-  this->CaptureViewNodesCheckBox->setToolTip(qSlicerSceneViewsModuleDialog::tr("If checked, all view nodes in the scene will be added or updated in the current scene view."));
-  QObject::connect(this->CaptureViewNodesCheckBox, SIGNAL(clicked()), dialog, SLOT(onCaptureViewNodesClicked()));
-  gridLayout->addWidget(this->CaptureViewNodesCheckBox, newRowIndex++, 0, 1, 2);
-
+  // Advanced section (collapsed by default) contains all node selection options
   this->AdvancedNodeSelectionGroupBox = new ctkCollapsibleGroupBox(dialog);
   this->AdvancedNodeSelectionGroupBox->setObjectName(QString::fromUtf8("AdvancedNodeSelectionGroupBox"));
   this->AdvancedNodeSelectionGroupBox->setTitle(qSlicerSceneViewsModuleDialog::tr("Advanced"));
   this->AdvancedNodeSelectionGroupBox->setToolTip(qSlicerSceneViewsModuleDialog::tr("Select the nodes to be captured in the scene view."));
   this->AdvancedNodeSelectionGroupBox->setCollapsed(true);
-  this->AdvancedNodeSelectionGroupBox->setLayout(new QGridLayout(this->AdvancedNodeSelectionGroupBox));
+  QGridLayout* advancedLayout = new QGridLayout;
+  this->AdvancedNodeSelectionGroupBox->setLayout(advancedLayout);
   gridLayout->addWidget(this->AdvancedNodeSelectionGroupBox, newRowIndex++, 0, 1, 2);
 
-  QGridLayout* advancedNodeSelectionLayout = qobject_cast<QGridLayout*>(this->AdvancedNodeSelectionGroupBox->layout());
+  // Checkboxes are inside the Advanced section so they are hidden by default
+  this->UpdateExistingNodesCheckBox = new QCheckBox(this->AdvancedNodeSelectionGroupBox);
+  this->UpdateExistingNodesCheckBox->setObjectName(QString::fromUtf8("UpdateExistingNodesCheckBox"));
+  this->UpdateExistingNodesCheckBox->setText(qSlicerSceneViewsModuleDialog::tr("Update existing nodes"));
+  this->UpdateExistingNodesCheckBox->setToolTip(
+    qSlicerSceneViewsModuleDialog::tr("If checked, the nodes already contained in the scene view will be updated to match the current state of the scene."));
+  QObject::connect(this->UpdateExistingNodesCheckBox, SIGNAL(clicked()), dialog, SLOT(onUpdateExistingNodesClicked()));
+  advancedLayout->addWidget(this->UpdateExistingNodesCheckBox, 0, 0, 1, 2);
 
-  this->NodeSelectorComboBox = new qMRMLCheckableNodeComboBox(dialog);
+  this->CaptureDisplayNodesCheckBox = new QCheckBox(this->AdvancedNodeSelectionGroupBox);
+  this->CaptureDisplayNodesCheckBox->setObjectName(QString::fromUtf8("CaptureDisplayNodesCheckBox"));
+  this->CaptureDisplayNodesCheckBox->setText(qSlicerSceneViewsModuleDialog::tr("Capture display nodes"));
+  this->CaptureDisplayNodesCheckBox->setToolTip(
+    qSlicerSceneViewsModuleDialog::tr("If checked, all display nodes in the scene will be added or updated in the current scene view."));
+  QObject::connect(this->CaptureDisplayNodesCheckBox, SIGNAL(clicked()), dialog, SLOT(onCaptureDisplayNodesClicked()));
+  advancedLayout->addWidget(this->CaptureDisplayNodesCheckBox, 1, 0, 1, 2);
+
+  this->CaptureViewNodesCheckBox = new QCheckBox(this->AdvancedNodeSelectionGroupBox);
+  this->CaptureViewNodesCheckBox->setObjectName(QString::fromUtf8("CaptureViewNodesCheckBox"));
+  this->CaptureViewNodesCheckBox->setText(qSlicerSceneViewsModuleDialog::tr("Capture view nodes"));
+  this->CaptureViewNodesCheckBox->setToolTip(qSlicerSceneViewsModuleDialog::tr("If checked, all view nodes in the scene will be added or updated in the current scene view."));
+  QObject::connect(this->CaptureViewNodesCheckBox, SIGNAL(clicked()), dialog, SLOT(onCaptureViewNodesClicked()));
+  advancedLayout->addWidget(this->CaptureViewNodesCheckBox, 2, 0, 1, 2);
+
+  this->NodeSelectorComboBox = new qMRMLCheckableNodeComboBox(this->AdvancedNodeSelectionGroupBox);
   this->NodeSelectorComboBox->setObjectName(QString::fromUtf8("NodeSelectorComboBox"));
   this->NodeSelectorComboBox->setToolTip(qSlicerSceneViewsModuleDialog::tr("Select the nodes to be captured in the scene view."));
   this->NodeSelectorComboBox->setShowHidden(true);
   this->NodeSelectorComboBox->setMRMLScene(qSlicerApplication::application()->mrmlScene());
   QObject::connect(this->NodeSelectorComboBox, SIGNAL(checkedNodesChanged()), dialog, SLOT(onNodeSelectionChanged()));
-  advancedNodeSelectionLayout->addWidget(new QLabel("Nodes to capture:"), 0, 0, 1, 1);
-  advancedNodeSelectionLayout->addWidget(this->NodeSelectorComboBox, 0, 1, 1, 1);
+  advancedLayout->addWidget(new QLabel(qSlicerSceneViewsModuleDialog::tr("Nodes to capture:"), this->AdvancedNodeSelectionGroupBox), 3, 0, 1, 1);
+  advancedLayout->addWidget(this->NodeSelectorComboBox, 3, 1, 1, 1);
 
   gridLayout->addWidget(buttonBox, newRowIndex++, 0, 1, 2);
 }

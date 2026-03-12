@@ -28,6 +28,8 @@
 // #include <QSignalMapper>
 #include <QToolBar>
 
+class vtkSlicerSceneViewsModuleLogic;
+
 // CTK includes
 #include <ctkPimpl.h>
 // no ui begin
@@ -65,6 +67,7 @@ public:
 public slots:
   virtual void setMRMLScene(vtkMRMLScene* newScene);
   void setActiveMRMLThreeDViewNode(vtkMRMLViewNode* newActiveMRMLThreeDViewNode);
+  void setSceneViewsLogic(vtkSlicerSceneViewsModuleLogic* logic);
 
   /// Set flag to time out pop ups, set from the qSlicerAppMainWindow according to the
   /// AA_EnableTesting attribute
@@ -73,9 +76,13 @@ public slots:
   void OnMRMLSceneStartBatchProcessing();
   void OnMRMLSceneEndBatchProcessing();
 
+  void updateSceneViewNavigationFromScene();
+
 signals:
   void screenshotButtonClicked();
   void sceneViewButtonClicked();
+  void prevSceneViewClicked();
+  void nextSceneViewClicked();
   void mrmlSceneChanged(vtkMRMLScene*);
 
 protected:

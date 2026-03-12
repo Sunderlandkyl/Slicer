@@ -51,6 +51,7 @@ void vtkSlicerSceneViewsModuleLogic::SetMRMLSceneInternal(vtkMRMLScene* newScene
 
   vtkNew<vtkIntArray> events;
   events->InsertNextValue(vtkMRMLScene::NodeAddedEvent);
+  events->InsertNextValue(vtkMRMLScene::NodeRemovedEvent);
   events->InsertNextValue(vtkMRMLScene::EndCloseEvent);
 
   // Using default priority for this event. The priority must be lower than the value
@@ -67,6 +68,14 @@ void vtkSlicerSceneViewsModuleLogic::SetMRMLSceneInternal(vtkMRMLScene* newScene
 void vtkSlicerSceneViewsModuleLogic::OnMRMLSceneNodeAdded(vtkMRMLNode* vtkNotUsed(node))
 {
   vtkDebugMacro("OnMRMLSceneNodeAddedEvent");
+}
+
+//-----------------------------------------------------------------------------
+void vtkSlicerSceneViewsModuleLogic::OnMRMLSceneNodeRemoved(vtkMRMLNode* vtkNotUsed(node))
+{
+  vtkDebugMacro("OnMRMLSceneNodeRemovedEvent");
+  // Notify observers so the GUI can update validity indicators for all scene views
+  this->InvokeEvent(vtkSlicerSceneViewsModuleLogic::SceneViewsModifiedEvent);
 }
 
 //-----------------------------------------------------------------------------
@@ -879,6 +888,7 @@ bool vtkSlicerSceneViewsModuleLogic::RestoreSceneView(int sceneIndex)
     sequencesLogic->UpdateProxyNodesFromSequences(sequenceBrowser);
   }
 
+  this->InvokeEvent(vtkSlicerSceneViewsModuleLogic::SceneViewsModifiedEvent);
   return true;
 }
 
@@ -1356,4 +1366,60 @@ std::vector<std::string> vtkSlicerSceneViewsModuleLogic::GetViewNodeClasses()
   std::vector<std::string> nodeTypes;
   this->GetViewNodeClasses(nodeTypes);
   return nodeTypes;
+}
+
+//---------------------------------------------------------------------------
+bool vtkSlicerSceneViewsModuleLogic::IsNthSceneViewValid(int index)
+{
+  vtkMRMLSequenceBrowserNode* sequenceBrowser = this->GetNthSceneViewSequenceBrowserNode(index);
+  if (!sequenceBrowser)
+  {
+    return false;
+  }
+
+  // Get the screenshot proxy node so we can skip it in the validity check
+  vtkMRMLNode* screenshotProxy = this->GetNthSceneViewScreenshotProxyNode(index);
+
+  std::vector<vtkMRMLSequenceNode*> sequenceNodes;
+  sequenceBrowser->GetSynchronizedSequenceNodes(sequenceNodes, /*includeMasterNode=*/true);
+  for (vtkMRMLSequenceNode* sequenceNode : sequenceNodes)
+  {
+    vtkMRMLNode* proxyNode = sequenceBrowser->GetProxyNode(sequenceNode);
+    if (proxyNode == screenshotProxy)
+    {
+      // Screenshot proxy is always managed internally — skip it
+      continue;
+    }
+    if (!proxyNode || !proxyNode->GetScene())
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+//---------------------------------------------------------------------------
+int vtkSlicerSceneViewsModuleLogic::GetCurrentSceneViewIndex()
+{
+  int numSceneViews = this->GetNumberOfSceneViews();
+  if (numSceneViews == 0)
+  {
+    return -1;
+  }
+
+  vtkMRMLSequenceBrowserNode* sequenceBrowser = this->GetNthSceneViewSequenceBrowserNode(0);
+  if (!sequenceBrowser)
+  {
+    return -1;
+  }
+
+  int selectedBrowserIndex = sequenceBrowser->GetSelectedItemNumber();
+  for (int i = 0; i < numSceneViews; ++i)
+  {
+    if (this->SceneViewIndexToSequenceBrowserIndex(i) == selectedBrowserIndex)
+    {
+      return i;
+    }
+  }
+  return -1;
 }

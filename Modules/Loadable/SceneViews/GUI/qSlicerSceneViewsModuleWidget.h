@@ -54,6 +54,9 @@ protected slots:
   void onEditButtonClicked();
   void onDeleteButtonClicked();
 
+  void onPrevSceneViewClicked();
+  void onNextSceneViewClicked();
+
   void moveDownSelected(QString mrmlId);
   void moveUpSelected(QString mrmlId);
 
