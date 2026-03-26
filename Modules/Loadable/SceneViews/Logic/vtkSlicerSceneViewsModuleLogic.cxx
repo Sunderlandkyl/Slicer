@@ -8,6 +8,7 @@
 #include <vtkMRMLSequenceNode.h>
 
 // MRML includes
+#include <vtkMRMLDisplayNode.h>
 #include <vtkMRMLScene.h>
 #include <vtkMRMLSceneViewNode.h>
 #include <vtkMRMLSceneViewStorageNode.h>
@@ -1392,6 +1393,13 @@ bool vtkSlicerSceneViewsModuleLogic::IsNthSceneViewValid(int index)
     }
     if (!proxyNode || !proxyNode->GetScene())
     {
+      return false;
+    }
+
+    vtkMRMLDisplayNode* displayNode = vtkMRMLDisplayNode::SafeDownCast(proxyNode);
+    if (displayNode && !displayNode->GetDisplayableNode())
+    {
+      // Display node without displayable node is not valid
       return false;
     }
   }

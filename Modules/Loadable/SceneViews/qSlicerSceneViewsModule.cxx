@@ -98,13 +98,8 @@ void qSlicerSceneViewsModulePrivate::addToolBar()
   // io manager will deal with the sceneviews module
   QObject::connect(this->CaptureToolBar, SIGNAL(sceneViewButtonClicked()), qSlicerApplication::application()->ioManager(), SLOT(openSceneViewsDialog()));
 
-    // Wire toolbar prev/next navigation to the scene views logic
-    vtkSlicerSceneViewsModuleLogic* sceneViewsLogic = vtkSlicerSceneViewsModuleLogic::SafeDownCast(this->logic());
-    d->CaptureToolBar->setSceneViewsLogic(sceneViewsLogic);
-
-    // Update nav indicator when the application-level scene pointer changes
-    QObject::connect(qSlicerApplication::application(), SIGNAL(mrmlSceneChanged(vtkMRMLScene*)),
-                     d->CaptureToolBar, SLOT(updateSceneViewNavigationFromScene()));
+  // Update nav indicator when the application-level scene pointer changes
+  QObject::connect(qSlicerApplication::application(), SIGNAL(mrmlSceneChanged(vtkMRMLScene*)), this->CaptureToolBar, SLOT(updateSceneViewNavigationFromScene()));
 
   // if testing is enabled on the application level, add a time out to the pop ups
   if (qSlicerApplication::application()->testAttribute(qSlicerCoreApplication::AA_EnableTesting))
@@ -152,8 +147,10 @@ qSlicerAbstractModuleRepresentation* qSlicerSceneViewsModule::createWidgetRepres
 //-----------------------------------------------------------------------------
 vtkMRMLAbstractLogic* qSlicerSceneViewsModule::createLogic()
 {
-
-  return vtkSlicerSceneViewsModuleLogic::New();
+  Q_D(qSlicerSceneViewsModule);
+  vtkSlicerSceneViewsModuleLogic* logic = vtkSlicerSceneViewsModuleLogic::New();
+  d->CaptureToolBar->setSceneViewsLogic(logic);
+  return logic;
 }
 
 //-----------------------------------------------------------------------------

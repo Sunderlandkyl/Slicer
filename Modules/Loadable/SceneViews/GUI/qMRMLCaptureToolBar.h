@@ -78,6 +78,9 @@ public slots:
 
   void updateSceneViewNavigationFromScene();
 
+  void onPrevSceneView();
+  void onNextSceneView();
+
 signals:
   void screenshotButtonClicked();
   void sceneViewButtonClicked();

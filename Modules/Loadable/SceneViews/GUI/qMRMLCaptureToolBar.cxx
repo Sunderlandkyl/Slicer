@@ -80,8 +80,6 @@ public slots:
   void updateWidgetFromMRML();
   void createSceneView();
   void updateSceneViewNavigation();
-  void onPrevSceneView();
-  void onNextSceneView();
 };
 
 //--------------------------------------------------------------------------
@@ -139,37 +137,37 @@ void qMRMLCaptureToolBarPrivate::updateSceneViewNavigation()
 }
 
 // --------------------------------------------------------------------------
-void qMRMLCaptureToolBarPrivate::onPrevSceneView()
+void qMRMLCaptureToolBar::onPrevSceneView()
 {
-  Q_Q(qMRMLCaptureToolBar);
-  if (!this->SceneViewsLogic)
+  Q_D(qMRMLCaptureToolBar);
+  if (!d->SceneViewsLogic)
   {
     return;
   }
-  int currentIndex = this->SceneViewsLogic->GetCurrentSceneViewIndex();
+  int currentIndex = d->SceneViewsLogic->GetCurrentSceneViewIndex();
   if (currentIndex > 0)
   {
-    this->SceneViewsLogic->RestoreSceneView(currentIndex - 1);
-    this->updateSceneViewNavigation();
-    emit q->prevSceneViewClicked();
+    d->SceneViewsLogic->RestoreSceneView(currentIndex - 1);
+    d->updateSceneViewNavigation();
+    emit this->prevSceneViewClicked();
   }
 }
 
 // --------------------------------------------------------------------------
-void qMRMLCaptureToolBarPrivate::onNextSceneView()
+void qMRMLCaptureToolBar::onNextSceneView()
 {
-  Q_Q(qMRMLCaptureToolBar);
-  if (!this->SceneViewsLogic)
+  Q_D(qMRMLCaptureToolBar);
+  if (!d->SceneViewsLogic)
   {
     return;
   }
-  int currentIndex = this->SceneViewsLogic->GetCurrentSceneViewIndex();
-  int numSceneViews = this->SceneViewsLogic->GetNumberOfSceneViews();
+  int currentIndex = d->SceneViewsLogic->GetCurrentSceneViewIndex();
+  int numSceneViews = d->SceneViewsLogic->GetNumberOfSceneViews();
   if (currentIndex < numSceneViews - 1)
   {
-    this->SceneViewsLogic->RestoreSceneView(currentIndex + 1);
-    this->updateSceneViewNavigation();
-    emit q->nextSceneViewClicked();
+    d->SceneViewsLogic->RestoreSceneView(currentIndex + 1);
+    d->updateSceneViewNavigation();
+    emit this->nextSceneViewClicked();
   }
 }
 
@@ -223,7 +221,7 @@ void qMRMLCaptureToolBarPrivate::init()
   this->PrevSceneViewAction->setText(qMRMLCaptureToolBar::tr("< Prev"));
   this->PrevSceneViewAction->setToolTip(qMRMLCaptureToolBar::tr("Restore previous scene view"));
   this->PrevSceneViewAction->setEnabled(false);
-  QObject::connect(this->PrevSceneViewAction, SIGNAL(triggered()), this, SLOT(onPrevSceneView()));
+  QObject::connect(this->PrevSceneViewAction, SIGNAL(triggered()), q, SLOT(onPrevSceneView()));
   q->addAction(this->PrevSceneViewAction);
 
   // Current/total label as a widget action
@@ -238,7 +236,7 @@ void qMRMLCaptureToolBarPrivate::init()
   this->NextSceneViewAction->setText(qMRMLCaptureToolBar::tr("Next >"));
   this->NextSceneViewAction->setToolTip(qMRMLCaptureToolBar::tr("Restore next scene view"));
   this->NextSceneViewAction->setEnabled(false);
-  QObject::connect(this->NextSceneViewAction, SIGNAL(triggered()), this, SLOT(onNextSceneView()));
+  QObject::connect(this->NextSceneViewAction, SIGNAL(triggered()), q, SLOT(onNextSceneView()));
   q->addAction(this->NextSceneViewAction);
 }
 // --------------------------------------------------------------------------
