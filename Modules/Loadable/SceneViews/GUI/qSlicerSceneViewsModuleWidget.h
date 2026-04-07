@@ -51,6 +51,7 @@ protected slots:
   void onSceneViewDoubleClicked(int row, int column);
 
   void onRestoreButtonClicked();
+  void onFixSceneViewButtonClicked();
   void onEditButtonClicked();
   void onDeleteButtonClicked();
 

@@ -295,6 +295,16 @@ public:
   /// Get all visible segment IDs.
   std::vector<std::string> GetVisibleSegmentIDs();
 
+  /// Get all segment IDs that have stored display properties, regardless of visibility.
+  /// Unlike GetVisibleSegmentIDs(), this iterates the display properties map directly and
+  /// does not require an associated segmentation node. This makes it safe to call on
+  /// disconnected copies such as nodes stored inside a sequence.
+  void GetAllSegmentIDs(std::vector<std::string>& segmentIDs);
+
+  /// Get all segment IDs that have stored display properties, regardless of visibility.
+  /// \sa GetAllSegmentIDs(std::vector<std::string>&)
+  std::vector<std::string> GetAllSegmentIDs();
+
   //@{
   /// Get/set flag to remove unused display properties when updating segment list.
   /// When enabled, prevents unused display properties from accumulating in the display node.

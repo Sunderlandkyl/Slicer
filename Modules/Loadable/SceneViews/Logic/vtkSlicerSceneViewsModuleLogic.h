@@ -190,9 +190,18 @@ public:
   bool IsSceneViewNode(vtkMRMLNode* node);
   //@}
 
-  /// Returns true if all proxy nodes for the Nth scene view are still present in the scene.
-  /// Returns false if any proxy node has been removed (e.g., because its associated data was deleted).
+  /// Returns true if all proxy nodes that have stored data at this scene view's timepoint are
+  /// still present in the scene. Sequences with no data at the timepoint are skipped (treated as
+  /// valid — analogous to "ignore" in sequences). Returns false if any tracked proxy node has been
+  /// removed (e.g., because its associated data was deleted).
   bool IsNthSceneViewValid(int index);
+
+  /// Removes orphaned node data from the Nth scene view by deleting the stored data at this
+  /// scene view's timepoint for any sequence whose proxy node is no longer in the scene.
+  /// This makes the scene view valid again while preserving data for other scene views that may
+  /// track the same nodes at other timepoints.
+  /// Returns true if any data was removed.
+  bool FixNthSceneView(int index);
 
   /// Returns the index of the currently active (most recently restored) scene view, or -1 if none.
   int GetCurrentSceneViewIndex();

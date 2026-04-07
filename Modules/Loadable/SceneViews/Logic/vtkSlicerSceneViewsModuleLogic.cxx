@@ -10,6 +10,8 @@
 // MRML includes
 #include <vtkMRMLDisplayNode.h>
 #include <vtkMRMLScene.h>
+#include <vtkMRMLSegmentationDisplayNode.h>
+#include <vtkMRMLSegmentationNode.h>
 #include <vtkMRMLSceneViewNode.h>
 #include <vtkMRMLSceneViewStorageNode.h>
 #include <vtkMRMLSequenceBrowserNode.h>
@@ -1378,8 +1380,21 @@ bool vtkSlicerSceneViewsModuleLogic::IsNthSceneViewValid(int index)
     return false;
   }
 
-  // Get the screenshot proxy node so we can skip it in the validity check
   vtkMRMLNode* screenshotProxy = this->GetNthSceneViewScreenshotProxyNode(index);
+
+  // Determine the index value for this scene view's timepoint so we can skip sequences
+  // that have no stored data here (analogous to "ignore" — no state to restore, so no
+  // requirement that the proxy exists).
+  std::string indexValue;
+  if (screenshotProxy)
+  {
+    vtkMRMLSequenceNode* screenshotSeqNode = sequenceBrowser->GetSequenceNode(screenshotProxy);
+    int seqBrowserIndex = this->SceneViewIndexToSequenceBrowserIndex(index);
+    if (screenshotSeqNode && seqBrowserIndex >= 0 && seqBrowserIndex < screenshotSeqNode->GetNumberOfDataNodes())
+    {
+      indexValue = screenshotSeqNode->GetNthIndexValue(seqBrowserIndex);
+    }
+  }
 
   std::vector<vtkMRMLSequenceNode*> sequenceNodes;
   sequenceBrowser->GetSynchronizedSequenceNodes(sequenceNodes, /*includeMasterNode=*/true);
@@ -1391,6 +1406,14 @@ bool vtkSlicerSceneViewsModuleLogic::IsNthSceneViewValid(int index)
       // Screenshot proxy is always managed internally — skip it
       continue;
     }
+
+    // If there is no stored data at this timepoint, there is nothing to restore for this
+    // node, so we do not require the proxy to exist.
+    if (!indexValue.empty() && !sequenceNode->GetDataNodeAtValue(indexValue))
+    {
+      continue;
+    }
+
     if (!proxyNode || !proxyNode->GetScene())
     {
       return false;
@@ -1402,8 +1425,108 @@ bool vtkSlicerSceneViewsModuleLogic::IsNthSceneViewValid(int index)
       // Display node without displayable node is not valid
       return false;
     }
+
+    // Segmentation-specific check: verify that every segment stored at this timepoint
+    // (visible or hidden) still exists in the live segmentation. Even hidden segments
+    // represent data the user captured intentionally, so their removal makes the scene
+    // view incomplete.
+    vtkMRMLNode* storedDataNode = sequenceNode->GetDataNodeAtValue(indexValue);
+    vtkMRMLSegmentationDisplayNode* storedSegDispNode =
+      vtkMRMLSegmentationDisplayNode::SafeDownCast(storedDataNode);
+    if (storedSegDispNode)
+    {
+      vtkMRMLSegmentationDisplayNode* liveSegDispProxy =
+        vtkMRMLSegmentationDisplayNode::SafeDownCast(proxyNode);
+      vtkMRMLSegmentationNode* segNode = liveSegDispProxy
+        ? vtkMRMLSegmentationNode::SafeDownCast(liveSegDispProxy->GetDisplayableNode())
+        : nullptr;
+      if (segNode && segNode->GetSegmentation())
+      {
+        std::vector<std::string> allSegmentIDs;
+        storedSegDispNode->GetAllSegmentIDs(allSegmentIDs);
+        for (const std::string& segID : allSegmentIDs)
+        {
+          if (!segNode->GetSegmentation()->GetSegment(segID))
+          {
+            return false;
+          }
+        }
+      }
+    }
   }
   return true;
+}
+
+//---------------------------------------------------------------------------
+bool vtkSlicerSceneViewsModuleLogic::FixNthSceneView(int index)
+{
+  vtkMRMLSequenceBrowserNode* sequenceBrowser = this->GetNthSceneViewSequenceBrowserNode(index);
+  if (!sequenceBrowser)
+  {
+    return false;
+  }
+
+  vtkMRMLNode* screenshotProxy = this->GetNthSceneViewScreenshotProxyNode(index);
+
+  // Get the index value for this scene view's timepoint
+  std::string indexValue;
+  if (screenshotProxy)
+  {
+    vtkMRMLSequenceNode* screenshotSeqNode = sequenceBrowser->GetSequenceNode(screenshotProxy);
+    int seqBrowserIndex = this->SceneViewIndexToSequenceBrowserIndex(index);
+    if (screenshotSeqNode && seqBrowserIndex >= 0 && seqBrowserIndex < screenshotSeqNode->GetNumberOfDataNodes())
+    {
+      indexValue = screenshotSeqNode->GetNthIndexValue(seqBrowserIndex);
+    }
+  }
+
+  if (indexValue.empty())
+  {
+    return false;
+  }
+
+  std::vector<vtkMRMLSequenceNode*> sequenceNodes;
+  sequenceBrowser->GetSynchronizedSequenceNodes(sequenceNodes, /*includeMasterNode=*/true);
+
+  bool removedAny = false;
+  for (vtkMRMLSequenceNode* sequenceNode : sequenceNodes)
+  {
+    vtkMRMLNode* proxyNode = sequenceBrowser->GetProxyNode(sequenceNode);
+    if (proxyNode == screenshotProxy)
+    {
+      continue;
+    }
+
+    // Only act on sequences that actually have data at this timepoint
+    if (!sequenceNode->GetDataNodeAtValue(indexValue))
+    {
+      continue;
+    }
+
+    bool isOrphaned = (!proxyNode || !proxyNode->GetScene());
+    if (!isOrphaned)
+    {
+      vtkMRMLDisplayNode* displayNode = vtkMRMLDisplayNode::SafeDownCast(proxyNode);
+      if (displayNode && !displayNode->GetDisplayableNode())
+      {
+        isOrphaned = true;
+      }
+    }
+
+    if (isOrphaned)
+    {
+      // Remove the stored data at this timepoint so the scene view no longer tracks the
+      // deleted node here. Data at other timepoints (other scene views) is preserved.
+      sequenceNode->RemoveDataNodeAtValue(indexValue);
+      removedAny = true;
+    }
+  }
+
+  if (removedAny)
+  {
+    this->InvokeEvent(vtkSlicerSceneViewsModuleLogic::SceneViewsModifiedEvent);
+  }
+  return removedAny;
 }
 
 //---------------------------------------------------------------------------

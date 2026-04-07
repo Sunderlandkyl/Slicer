@@ -44,6 +44,7 @@ enum
 };
 
 static const char ROW_INDEX_PROPERTY[] = "RowIndex";
+static const char FIX_BUTTON_PROPERTY[] = "FixButton";
 
 //-----------------------------------------------------------------------------
 class qSlicerSceneViewsModuleWidgetPrivate : public Ui_qSlicerSceneViewsModuleWidget
@@ -222,10 +223,9 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
   }
   if (!isValid)
   {
-    // Use Qt's standard warning icon since the view contains missing data
     QIcon warningIcon = thumbnailWidget->style()->standardIcon(QStyle::SP_MessageBoxWarning);
     thumbnailWidget->setPixmap(warningIcon.pixmap(100, 100));
-    thumbnailWidget->setToolTip(qSlicerSceneViewsModuleWidget::tr("Scene view contains missing data and cannot be restored."));
+    thumbnailWidget->setToolTip(qSlicerSceneViewsModuleWidget::tr("This scene view references data that no longer exists."));
   }
   else if (thumbnailImage)
   {
@@ -255,8 +255,9 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
   }
   if (!isValid)
   {
-    descriptionWidget->setHtml("<h3>" + name + "</h3>\n<p style=\"color:orange\">"
-      + qSlicerSceneViewsModuleWidget::tr("Missing data") + "</p>\n" + description);
+    descriptionWidget->setHtml("<h3>" + name + "</h3>\n"
+      "<p style=\"color:orange\">" + qSlicerSceneViewsModuleWidget::tr("Missing data") + "</p>\n"
+      + description);
   }
   else
   {
@@ -273,10 +274,18 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
     QToolButton* restoreButton = new QToolButton;
     restoreButton->setObjectName(RESTORE_BUTTON_PROPERTY);
     restoreButton->setText(qSlicerSceneViewsModuleWidget::tr("Restore"));
-    restoreButton->setToolTip(qSlicerSceneViewsModuleWidget::tr("Restore"));
     restoreButton->setIcon(QIcon(":/Icons/Restore.png"));
     restoreButton->setProperty(ROW_INDEX_PROPERTY, row);
     QObject::connect(restoreButton, SIGNAL(clicked()), q, SLOT(onRestoreButtonClicked()));
+    QToolButton* fixButton = new QToolButton;
+    fixButton->setObjectName(FIX_BUTTON_PROPERTY);
+    fixButton->setText(qSlicerSceneViewsModuleWidget::tr("Remove missing data"));
+    fixButton->setToolTip(
+      qSlicerSceneViewsModuleWidget::tr("Remove references to deleted data from this scene view. "
+                                        "This makes the scene view valid again while keeping other scene views intact."));
+    fixButton->setIcon(fixButton->style()->standardIcon(QStyle::SP_DialogApplyButton));
+    fixButton->setProperty(ROW_INDEX_PROPERTY, row);
+    QObject::connect(fixButton, SIGNAL(clicked()), q, SLOT(onFixSceneViewButtonClicked()));
     QToolButton* editButton = new QToolButton;
     editButton->setText(qSlicerSceneViewsModuleWidget::tr("Edit"));
     editButton->setToolTip(qSlicerSceneViewsModuleWidget::tr("Edit"));
@@ -290,18 +299,25 @@ void qSlicerSceneViewsModuleWidgetPrivate::updateTableRowFromSceneView(int row)
     deleteButton->setProperty(ROW_INDEX_PROPERTY, row);
     QObject::connect(deleteButton, SIGNAL(clicked()), q, SLOT(onDeleteButtonClicked()));
     actionsLayout->addWidget(restoreButton);
+    actionsLayout->addWidget(fixButton);
     actionsLayout->addWidget(editButton);
     actionsLayout->addWidget(deleteButton);
     this->SceneViewTableWidget->setCellWidget(row, SCENE_VIEW_ACTIONS_COLUMN, actionsWidget);
   }
 
-  // Update restore button enabled state based on validity
+  // Restore button is always enabled; update its tooltip to mention partial restore if invalid
   QToolButton* restoreButton = actionsWidget->findChild<QToolButton*>(RESTORE_BUTTON_PROPERTY);
   if (restoreButton)
   {
-    restoreButton->setEnabled(isValid);
     restoreButton->setToolTip(isValid ? qSlicerSceneViewsModuleWidget::tr("Restore")
-                                      : qSlicerSceneViewsModuleWidget::tr("Cannot restore: scene view contains missing data"));
+                                      : qSlicerSceneViewsModuleWidget::tr("Restore (missing data will be skipped)"));
+  }
+
+  // Show the "Remove missing nodes" fix button only when the view is invalid
+  QToolButton* fixButton = actionsWidget->findChild<QToolButton*>(FIX_BUTTON_PROPERTY);
+  if (fixButton)
+  {
+    fixButton->setVisible(!isValid);
   }
 }
 
@@ -524,6 +540,21 @@ void qSlicerSceneViewsModuleWidget::onRestoreButtonClicked()
   }
   int rowIndex = button->property(ROW_INDEX_PROPERTY).toInt();
   d->logic()->RestoreSceneView(rowIndex);
+
+  this->updateFromMRMLScene();
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSceneViewsModuleWidget::onFixSceneViewButtonClicked()
+{
+  Q_D(qSlicerSceneViewsModuleWidget);
+  QToolButton* button = qobject_cast<QToolButton*>(this->sender());
+  if (!button)
+  {
+    return;
+  }
+  int rowIndex = button->property(ROW_INDEX_PROPERTY).toInt();
+  d->logic()->FixNthSceneView(rowIndex);
 
   this->updateFromMRMLScene();
 }
