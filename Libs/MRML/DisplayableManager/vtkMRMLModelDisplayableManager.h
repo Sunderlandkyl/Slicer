@@ -15,10 +15,9 @@
 #include "vtkMRMLDisplayableManagerExport.h"
 
 // MRML includes
+#include <vtkMRMLModelDisplayNode.h>
 #include <vtkMRMLModelNode.h>
 class vtkMRMLClipNode;
-class vtkMRMLDisplayNode;
-class vtkMRMLDisplayableNode;
 class vtkMRMLTransformNode;
 
 // VTK includes
@@ -101,9 +100,9 @@ public:
   void SetPickedPointID(vtkIdType newPointID);
 
   /// Return true if the node can be represented as a model
-  bool IsModelDisplayable(vtkMRMLDisplayableNode* node) const;
+  bool IsModelDisplayable(vtkMRMLModelNode* node) const;
   /// Return true if the display node is a model
-  bool IsModelDisplayable(vtkMRMLDisplayNode* node) const;
+  bool IsModelDisplayable(vtkMRMLModelDisplayNode* node) const;
 
   /// Helper function for determining what type of scalar is active.
   /// \return True if attribute location in display node is vtkAssignAttribute::CELL_DATA
@@ -121,39 +120,45 @@ protected:
   void UpdateFromMRMLScene() override;
   void OnMRMLSceneNodeAdded(vtkMRMLNode* node) override;
   void OnMRMLSceneNodeRemoved(vtkMRMLNode* node) override;
+  void OnMRMLSceneEndBatchProcess() override;
 
   void OnInteractorStyleEvent(int eventId) override;
   void ProcessMRMLNodesEvents(vtkObject* caller, unsigned long event, void* callData) override;
 
   /// Returns true if something visible in modelNode has changed and would
   /// require a refresh.
-  bool OnMRMLDisplayableModelNodeModifiedEvent(vtkMRMLDisplayableNode* modelNode);
+  bool OnMRMLDisplayableModelNodeModifiedEvent(vtkMRMLModelNode* modelNode);
 
   /// Updates Actors based on models in the scene
   void UpdateFromMRML() override;
 
   void RemoveMRMLObservers() override;
+  void RemoveModelObservers();
+  void RemoveDisplayableNodeObservers(vtkMRMLModelNode* model);
 
-  void RemoveModelProps();
-  void RemoveModelObservers(int clearCache);
-  void RemoveDisplayable(vtkMRMLDisplayableNode* model);
-  void RemoveDisplayableNodeObservers(vtkMRMLDisplayableNode* model);
+  /// Remove display pipelines for nodes that are not in the scene anymore
+  /// (e.g. because they were removed during batch processing).
+  void PruneMissingNodes();
 
-  void UpdateModelsFromMRML();
-  void UpdateModel(vtkMRMLDisplayableNode* model);
-  void UpdateModelMesh(vtkMRMLDisplayableNode* model);
-  void UpdateModifiedModel(vtkMRMLDisplayableNode* model);
+  void UpdateModifiedModel(vtkMRMLModelNode* model);
+  void UpdateModelPipelines(vtkMRMLModelNode* model);
+  void UpdateModelObservers(vtkMRMLModelNode* model);
 
-  void SetModelDisplayProperty(vtkMRMLDisplayableNode* model);
-  int GetDisplayedModelsVisibility(vtkMRMLDisplayNode* displayNode);
+  void UpdateTransformPipeline(vtkMRMLModelDisplayNode* displayNode, vtkMRMLModelNode* modelNode);
+  bool UpdateClipperPipeline(vtkMRMLModelDisplayNode* displayNode, vtkMRMLModelNode* modelNode);
+  void UpdateMapperPipeline(vtkMRMLModelDisplayNode* displayNode, vtkMRMLModelNode* modelNode);
 
-  const char* GetActiveScalarName(vtkMRMLDisplayNode* displayNode, vtkMRMLModelNode* model = nullptr);
+  void SetModelDisplayProperty(vtkMRMLModelNode* model);
+  int GetDisplayedModelsVisibility(vtkMRMLModelDisplayNode* displayNode);
+
+  const char* GetActiveScalarName(vtkMRMLModelDisplayNode* displayNode, vtkMRMLModelNode* model = nullptr);
 
   /// Returns not null if modified
-  vtkAlgorithm* GetClipper(vtkMRMLDisplayNode* dnode, vtkMRMLModelNode::MeshTypeHint type, vtkImplicitFunction* clipFunction, int clipMethod);
+  vtkAlgorithm* GetClipper(vtkMRMLModelDisplayNode* dnode, vtkMRMLModelNode::MeshTypeHint type, vtkImplicitFunction* clipFunction, int clipMethod);
 
-  void RemoveDisplayedID(const std::string& id);
-  void ClearDisplayMaps();
+  void AddDisplayPipeline(const std::string& displayNodeID);
+  void RemoveDisplayPipeline(const std::string& displayNodeID);
+  void RemoveAllDisplayPipelines();
 
   void UpdateMapperProperties(vtkMRMLModelNode* modelNode, vtkMRMLDisplayNode* displayNode, vtkMapper* actor);
   void UpdateActorProperties(vtkMRMLModelNode* modelNode, vtkMRMLModelDisplayNode* modelDisplayNode, vtkMRMLDisplayNode* displayNode, vtkActor* actor, double opacity);
