@@ -370,7 +370,7 @@ void vtkMRMLModelDisplayableManager::ProcessMRMLNodesEvents(vtkObject* caller, u
     // volume rendering is on) if nothing visible has changed.
     bool requestRender = true;
     vtkMRMLModelNode* modelNode = vtkMRMLModelNode::SafeDownCast(caller);
-    vtkMRMLModelDisplayNode* displayNode = reinterpret_cast<vtkMRMLModelDisplayNode*>(callData);
+    vtkMRMLModelDisplayNode* displayNode = vtkMRMLModelDisplayNode::SafeDownCast(static_cast<vtkObjectBase*>(callData));
     switch (event)
     {
       case vtkMRMLDisplayableNode::DisplayModifiedEvent:
@@ -622,6 +622,11 @@ void vtkMRMLModelDisplayableManager::UpdateFromMRML()
   }
   this->PruneMissingNodes();
 
+  // Detect new slice display nodes that are not yet in the pipeline.
+  // When a new slice appears, all actors must be removed and re-added in the
+  // correct order (slices first so they render behind regular model actors).
+  bool reorderActors = false;
+
   std::vector<vtkMRMLNode*> modelNodes;
   scene->GetNodesByClass("vtkMRMLModelNode", modelNodes);
   for (vtkMRMLNode* node : modelNodes)
@@ -631,6 +636,17 @@ void vtkMRMLModelDisplayableManager::UpdateFromMRML()
     if (vtkMRMLSliceLogic::IsSliceModelNode(model))
     {
       slices.push_back(model);
+      // A new slice display node means existing non-slice actors are already in
+      // the renderer ahead of where this slice actor will land — reorder needed.
+      int ndnodes = model->GetNumberOfDisplayNodes();
+      for (int i = 0; i < ndnodes && !reorderActors; ++i)
+      {
+        vtkMRMLModelDisplayNode* displayNode = vtkMRMLModelDisplayNode::SafeDownCast(model->GetNthDisplayNode(i));
+        if (displayNode && !this->Internal->GetDisplayPipeline(displayNode->GetID()))
+        {
+          reorderActors = true;
+        }
+      }
     }
     else
     {
@@ -647,11 +663,34 @@ void vtkMRMLModelDisplayableManager::UpdateFromMRML()
       }
       this->AddDisplayPipeline(displayNode->GetID());
     }
-
-    this->UpdateModifiedModel(model);
   }
 
-  // TODO: Slice order?
+  if (reorderActors)
+  {
+    // Remove all actors so they are re-added in the correct order below.
+    for (auto& kvp : this->Internal->DisplayPipelines)
+    {
+      vtkInternal::ModelDisplayPipeline& pipeline = kvp.second;
+      if (pipeline.Actor)
+      {
+        this->GetRenderer()->RemoveViewProp(pipeline.Actor);
+        pipeline.Actor = nullptr;
+      }
+      if (pipeline.CapActor)
+      {
+        this->GetRenderer()->RemoveViewProp(pipeline.CapActor);
+        pipeline.CapActor = nullptr;
+      }
+    }
+  }
+  for (vtkMRMLModelNode* model : slices)
+  {
+    this->UpdateModifiedModel(model);
+  }
+  for (vtkMRMLModelNode* model : nonSlices)
+  {
+    this->UpdateModifiedModel(model);
+  }
 
   this->Internal->IsUpdatingModelsFromMRML = false;
   this->SetUpdateFromMRMLRequested(false);
@@ -1436,7 +1475,11 @@ const char* vtkMRMLModelDisplayableManager::GetActiveScalarName(vtkMRMLModelDisp
     vtkMRMLModelDisplayNode* modelDisplayNode = vtkMRMLModelDisplayNode::SafeDownCast(displayNode);
     if (modelDisplayNode && modelDisplayNode->GetOutputMesh())
     {
-      modelDisplayNode->GetOutputMeshConnection()->GetProducer()->Update();
+      vtkAlgorithmOutput* meshConnection = modelDisplayNode->GetOutputMeshConnection();
+      if (meshConnection && meshConnection->GetProducer())
+      {
+        meshConnection->GetProducer()->Update();
+      }
     }
     activeScalarName = displayNode->GetActiveScalarName();
   }
@@ -1449,7 +1492,7 @@ const char* vtkMRMLModelDisplayableManager::GetActiveScalarName(vtkMRMLModelDisp
     if (modelNode->GetMesh())
     {
       vtkAlgorithmOutput* meshConnection = modelNode->GetMeshConnection();
-      if (meshConnection != nullptr)
+      if (meshConnection && meshConnection->GetProducer())
       {
         meshConnection->GetProducer()->Update();
       }
@@ -1651,7 +1694,7 @@ int vtkMRMLModelDisplayableManager::Pick3D(double ras[3])
     this->Internal->FindFirstPickedDisplayNodeFromPickerProp3Ds();
     // Find picked point in mesh
     vtkMRMLModelDisplayNode* displayNode = vtkMRMLModelDisplayNode::SafeDownCast(this->GetMRMLScene()->GetNodeByID(this->Internal->PickedDisplayNodeID.c_str()));
-    if (displayNode)
+    if (displayNode && displayNode->GetOutputMesh())
     {
       this->Internal->FindPickedPointOnMeshAndCell(displayNode->GetOutputMesh(), ras);
     }
@@ -1835,7 +1878,7 @@ void vtkMRMLModelDisplayableManager::OnInteractorStyleEvent(int eventid)
       vtkMRMLDisplayNode* displayNode = nullptr;
 
       if (this->Pick(x, yNew) //
-          && strcmp(this->GetPickedNodeID(), "") != 0)
+          && !this->Internal->PickedDisplayNodeID.empty())
       {
         // find the node id, the picked node name is probably the display node
         const char* pickedNodeID = this->GetPickedNodeID();
