@@ -39,7 +39,7 @@ iconurl https://www.slicer.org/w/images/6/64/SlicerToKiwiExporterLogo.png
 #  - Is it just a test or something you stand behind?
 status Development
 
-# Extension tier: 1, 3, or 5
+# Extension tier: 1 to 5
 # See https://slicer.readthedocs.io/en/latest/developer_guide/extensions.html
 tier 5
 

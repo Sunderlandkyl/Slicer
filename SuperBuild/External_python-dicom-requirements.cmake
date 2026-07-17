@@ -77,7 +77,12 @@ if(NOT Slicer_USE_SYSTEM_${proj})
   # [dicomweb-client]
   dicomweb-client==0.60.1 --hash=sha256:e128866a797b7acdcd4ad280a10ebced5af77a3ce1d1bde709389ad56583955d
   # [/dicomweb-client]
+  # [ply]
+  ply==3.11 --hash=sha256:096f9b8350b65ebd2fd1346b12452efe5b9607f7482813ffca50c22722a807ce
+  # [/ply]
   # [rule-engine]
+  rule-engine==4.5.3 --hash=sha256:3d0215230ef0bdeb4e047331705dc772746d41161874b3639959ec76e327632f
+  # [/rule-engine]
   ]===])
 
   ExternalProject_Add(${proj}

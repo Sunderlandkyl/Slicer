@@ -134,7 +134,6 @@ public:
 
   Q_INVOKABLE QString extensionsInstallPath() const;
 
-
   Q_INVOKABLE QString extensionInstallPath(const QString& extensionName) const;
 
   Q_INVOKABLE QStringList extensionModulePaths(const QString& extensionName) const;

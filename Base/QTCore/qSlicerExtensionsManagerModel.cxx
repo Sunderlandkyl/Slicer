@@ -2111,7 +2111,6 @@ bool qSlicerExtensionsManagerModel::updateExtensionsMetadataFromServer(bool forc
 
   if (!force && !d->isExtensionsMetadataUpdateDue())
   {
-
     return true;
   }
 
@@ -2121,7 +2120,7 @@ bool qSlicerExtensionsManagerModel::updateExtensionsMetadataFromServer(bool forc
     qRestAPI::Parameters parameters;
     if (this->serverAPI() == qSlicerExtensionsManagerModel::Girder_v1)
     {
-      QString appID = "697a27134e55960dfc6707eb";
+      QString appID = "5f4474d0e1d8c75dfc705482";
       if (this->serverUrl().toString().isEmpty())
       {
         // server address has not been specified, normal at very first startup
@@ -2129,9 +2128,9 @@ bool qSlicerExtensionsManagerModel::updateExtensionsMetadataFromServer(bool forc
         return false;
       }
       d->ExtensionsMetadataFromServerAPI.setServerUrl(this->serverUrl().toString() + QString("/api/v1/app/%1/extension").arg(appID));
-      parameters["app_revision"] = "32516";
-      parameters["os"] = "linux";
-      parameters["arch"] = "amd64";
+      parameters["app_revision"] = "34491";
+      parameters["os"] = this->slicerOs();
+      parameters["arch"] = this->slicerArch();
       // request all metadata in a single response (it makes synchronous query simpler)
       parameters["limit"] = QString::number(0);
     }
