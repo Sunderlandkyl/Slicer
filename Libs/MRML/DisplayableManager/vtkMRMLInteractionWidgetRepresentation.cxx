@@ -19,6 +19,7 @@
 ==============================================================================*/
 
 // VTK includes
+#include <vtkCallbackCommand.h>
 #include <vtkCamera.h>
 #include <vtkDoubleArray.h>
 #include <vtkEllipseArcSource.h>
@@ -42,6 +43,160 @@
 #include <vtkMRMLTransformNode.h>
 
 #include <vtkMRMLInteractionWidgetRepresentation.h>
+
+#include <map>
+#include <set>
+
+//----------------------------------------------------------------------
+// Shared handle renderer: one per vtkRenderer, collects all interaction
+// handle instances from all representations and renders them in a single
+// GPU draw call (eliminating per-actor state-setup overhead).
+// Only used for 3D views; slice views keep per-representation rendering
+// because each representation has a unique WorldToSliceTransform Z-offset.
+//----------------------------------------------------------------------
+namespace {
+
+struct SharedHandleRenderer
+{
+  vtkSmartPointer<vtkPolyData> InstancePolyData;
+  vtkSmartPointer<vtkFloatArray> GlyphOrientationArray;
+  vtkSmartPointer<vtkFloatArray> GlyphScaleArray;
+  vtkSmartPointer<vtkIntArray> GlyphSourceIndexArray;
+  vtkSmartPointer<vtkUnsignedCharArray> GlyphMaskArray;
+  vtkSmartPointer<vtkUnsignedCharArray> ColorArray;
+
+  vtkSmartPointer<vtkGlyph3DMapper> Mapper;
+  vtkSmartPointer<vtkProperty> Property;
+  vtkSmartPointer<vtkActor> Actor;
+
+  std::set<vtkMRMLInteractionWidgetRepresentation*> Representations;
+  bool OpaqueRendered{ false };
+  bool OverlayRendered{ false };
+  bool GlyphSourcesInitialized{ false };
+  unsigned long StartEventTag{ 0 };
+  unsigned long DeleteEventTag{ 0 };
+};
+
+std::map<vtkRenderer*, SharedHandleRenderer*> g_SharedRenderers;
+
+void OnSharedRendererStartEvent(vtkObject*, unsigned long, void* clientData, void*)
+{
+  auto* shared = static_cast<SharedHandleRenderer*>(clientData);
+  shared->OpaqueRendered = false;
+  shared->OverlayRendered = false;
+}
+
+void OnSharedRendererDelete(vtkObject* caller, unsigned long, void*, void*)
+{
+  auto* renderer = static_cast<vtkRenderer*>(caller);
+  auto it = g_SharedRenderers.find(renderer);
+  if (it != g_SharedRenderers.end())
+  {
+    delete it->second;
+    g_SharedRenderers.erase(it);
+  }
+}
+
+SharedHandleRenderer* GetOrCreateSharedRenderer(vtkRenderer* renderer)
+{
+  if (!renderer)
+  {
+    return nullptr;
+  }
+
+  auto it = g_SharedRenderers.find(renderer);
+  if (it != g_SharedRenderers.end())
+  {
+    return it->second;
+  }
+
+  auto* shared = new SharedHandleRenderer();
+  g_SharedRenderers[renderer] = shared;
+
+  shared->InstancePolyData = vtkSmartPointer<vtkPolyData>::New();
+  shared->InstancePolyData->SetPoints(vtkSmartPointer<vtkPoints>::New());
+
+  shared->GlyphOrientationArray = vtkSmartPointer<vtkFloatArray>::New();
+  shared->GlyphOrientationArray->SetName("orientation");
+  shared->GlyphOrientationArray->SetNumberOfComponents(4);
+  shared->InstancePolyData->GetPointData()->AddArray(shared->GlyphOrientationArray);
+
+  shared->GlyphScaleArray = vtkSmartPointer<vtkFloatArray>::New();
+  shared->GlyphScaleArray->SetName("scale");
+  shared->GlyphScaleArray->SetNumberOfComponents(1);
+  shared->InstancePolyData->GetPointData()->AddArray(shared->GlyphScaleArray);
+
+  shared->GlyphSourceIndexArray = vtkSmartPointer<vtkIntArray>::New();
+  shared->GlyphSourceIndexArray->SetName("glyphType");
+  shared->GlyphSourceIndexArray->SetNumberOfComponents(1);
+  shared->InstancePolyData->GetPointData()->AddArray(shared->GlyphSourceIndexArray);
+
+  shared->GlyphMaskArray = vtkSmartPointer<vtkUnsignedCharArray>::New();
+  shared->GlyphMaskArray->SetName("mask");
+  shared->GlyphMaskArray->SetNumberOfComponents(1);
+  shared->InstancePolyData->GetPointData()->AddArray(shared->GlyphMaskArray);
+
+  shared->ColorArray = vtkSmartPointer<vtkUnsignedCharArray>::New();
+  shared->ColorArray->SetName("color");
+  shared->ColorArray->SetNumberOfComponents(4);
+  shared->InstancePolyData->GetPointData()->AddArray(shared->ColorArray);
+
+  shared->Mapper = vtkSmartPointer<vtkGlyph3DMapper>::New();
+  shared->Mapper->SetInputData(shared->InstancePolyData);
+  shared->Mapper->SetSourceIndexing(true);
+  shared->Mapper->SetSourceIndexArray("glyphType");
+  shared->Mapper->OrientOn();
+  shared->Mapper->SetOrientationModeToQuaternion();
+  shared->Mapper->SetOrientationArray("orientation");
+  shared->Mapper->ScalingOn();
+  shared->Mapper->SetScaleModeToScaleByMagnitude();
+  shared->Mapper->SetScaleArray("scale");
+  shared->Mapper->SetMasking(true);
+  shared->Mapper->SetMaskArray("mask");
+  shared->Mapper->SetColorModeToDirectScalars();
+  shared->Mapper->ScalarVisibilityOn();
+  shared->Mapper->SetScalarModeToUsePointFieldData();
+  shared->Mapper->SelectColorArray("color");
+
+  shared->Property = vtkSmartPointer<vtkProperty>::New();
+  shared->Property->SetPointSize(1.e-6);
+  shared->Property->SetLineWidth(1.0);
+  shared->Property->SetDiffuse(0.0);
+  shared->Property->SetAmbient(1.0);
+  shared->Property->SetMetallic(0.0);
+  shared->Property->SetSpecular(0.0);
+  shared->Property->SetEdgeVisibility(false);
+  shared->Property->SetOpacity(1.0);
+
+  shared->Actor = vtkSmartPointer<vtkActor>::New();
+  shared->Actor->SetProperty(shared->Property);
+  shared->Actor->SetMapper(shared->Mapper);
+  shared->Actor->ForceOpaqueOn();
+
+  vtkNew<vtkCallbackCommand> startCB;
+  startCB->SetCallback(OnSharedRendererStartEvent);
+  startCB->SetClientData(shared);
+  shared->StartEventTag = renderer->AddObserver(vtkCommand::StartEvent, startCB.Get());
+
+  vtkNew<vtkCallbackCommand> deleteCB;
+  deleteCB->SetCallback(OnSharedRendererDelete);
+  shared->DeleteEventTag = renderer->AddObserver(vtkCommand::DeleteEvent, deleteCB.Get());
+
+  return shared;
+}
+
+void UnregisterFromAllSharedRenderers(vtkMRMLInteractionWidgetRepresentation* rep)
+{
+  for (auto& pair : g_SharedRenderers)
+  {
+    if (pair.second->Representations.erase(rep) > 0)
+    {
+      pair.second->GlyphSourcesInitialized = false;
+    }
+  }
+}
+
+} // anonymous namespace
 
 //----------------------------------------------------------------------
 static const double INTERACTION_HANDLE_SCALE_RADIUS = 0.1;
@@ -103,6 +258,8 @@ void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
 //----------------------------------------------------------------------
 vtkMRMLInteractionWidgetRepresentation::~vtkMRMLInteractionWidgetRepresentation()
 {
+  UnregisterFromAllSharedRenderers(this);
+
   // Force deleting variables to prevent circular dependency keeping objects alive
   if (this->Pipeline != nullptr)
   {
@@ -753,13 +910,35 @@ void vtkMRMLInteractionWidgetRepresentation::ReleaseGraphicsResources(vtkWindow*
   {
     this->Pipeline->Actor->ReleaseGraphicsResources(window);
   }
+  if (this->Renderer)
+  {
+    auto it = g_SharedRenderers.find(this->Renderer);
+    if (it != g_SharedRenderers.end())
+    {
+      it->second->Actor->ReleaseGraphicsResources(window);
+    }
+  }
 }
 
 //----------------------------------------------------------------------
 int vtkMRMLInteractionWidgetRepresentation::RenderOverlay(vtkViewport* viewport)
 {
   int count = 0;
-  if (this->Pipeline && this->Pipeline->Actor->GetVisibility())
+  if (!this->Pipeline || !this->Pipeline->Actor->GetVisibility())
+  {
+    return count;
+  }
+
+  if (!this->GetSliceNode() && this->Renderer)
+  {
+    auto it = g_SharedRenderers.find(this->Renderer);
+    if (it != g_SharedRenderers.end() && !it->second->OverlayRendered)
+    {
+      it->second->OverlayRendered = true;
+      count += it->second->Actor->RenderOverlay(viewport);
+    }
+  }
+  else
   {
     count += this->Pipeline->Actor->RenderOverlay(viewport);
   }
@@ -775,12 +954,15 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
   }
 
   int count = 0;
-  if (this->Pipeline && this->Pipeline->Actor->GetVisibility())
+  if (!this->Pipeline || !this->Pipeline->Actor->GetVisibility())
   {
-    // Skip the update pipeline if nothing has changed since the last render.
-    // PostUpdatePipelineMTime is saved after the full update pipeline runs.
-    // External changes (UpdateFromMRML, display node modifications, NeedToRenderOff
-    // by the displayable manager) bump MTime and trigger a re-update.
+    return count;
+  }
+
+  // Slice views: per-representation rendering (each rep has a unique
+  // WorldToSliceTransform Z-offset so they cannot share a single actor).
+  if (this->GetSliceNode())
+  {
     vtkCamera* camera = this->Renderer ? this->Renderer->GetActiveCamera() : nullptr;
     vtkMTimeType cameraMTime = camera ? camera->GetMTime() : 0;
     int activeType = this->GetActiveComponentType();
@@ -811,7 +993,175 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
     {
       count += this->Pipeline->Actor->RenderOpaqueGeometry(viewport);
     }
+    return count;
   }
+
+  // 3D view: shared rendering — one draw call for ALL representations
+  SharedHandleRenderer* shared = GetOrCreateSharedRenderer(this->Renderer);
+  if (!shared)
+  {
+    return count;
+  }
+
+  shared->Representations.insert(this);
+
+  if (!shared->GlyphSourcesInitialized)
+  {
+    shared->Mapper->SetSourceData(GlyphArrow, this->Pipeline->ArrowPolyData);
+    shared->Mapper->SetSourceData(GlyphCircle, this->Pipeline->CirclePolyData);
+    shared->Mapper->SetSourceData(GlyphRing, this->Pipeline->RingPolyData);
+    shared->Mapper->SetSourceData(GlyphCrosshair, this->Pipeline->CrosshairPolyData);
+    shared->Mapper->SetSourceData(GlyphArrowOutline, this->Pipeline->ArrowOutlinePolyData);
+    shared->Mapper->SetSourceData(GlyphCircleOutline, this->Pipeline->CircleOutlinePolyData);
+    shared->Mapper->SetSourceData(GlyphRingOutline, this->Pipeline->RingOutlinePolyData);
+    shared->Mapper->SetSourceData(GlyphCrosshairOutline, this->Pipeline->CrosshairOutlinePolyData);
+    this->UpdateRelativeCoincidentTopologyOffsets(shared->Mapper);
+    shared->GlyphSourcesInitialized = true;
+  }
+
+  if (shared->OpaqueRendered)
+  {
+    return 0;
+  }
+  shared->OpaqueRendered = true;
+
+  // Pass 1: update all representations and count total instances
+  int totalInstances = 0;
+  bool anyVisible = false;
+  bool anyRepUpdated = false;
+
+  for (auto* rep : shared->Representations)
+  {
+    if (!rep->Pipeline || !rep->Pipeline->Actor->GetVisibility())
+    {
+      continue;
+    }
+
+    vtkCamera* camera = rep->Renderer ? rep->Renderer->GetActiveCamera() : nullptr;
+    vtkMTimeType cameraMTime = camera ? camera->GetMTime() : 0;
+    int activeType = rep->GetActiveComponentType();
+    int activeIndex = rep->GetActiveComponentIndex();
+
+    bool needsUpdate = (rep->GetMTime() != rep->PostUpdatePipelineMTime)
+      || (cameraMTime != rep->LastRenderCameraMTime)
+      || (activeType != rep->LastRenderActiveType)
+      || (activeIndex != rep->LastRenderActiveIndex);
+
+    if (needsUpdate)
+    {
+      anyRepUpdated = true;
+      rep->UpdateHandleToWorldTransform();
+      rep->UpdateSlicePlaneFromSliceNode();
+      rep->UpdateCameraState();
+      rep->UpdateViewScaleFactor();
+      rep->UpdateInteractionPipeline();
+      rep->UpdateHandleSize();
+      rep->UpdateInstanceArrays();
+      rep->UpdateActorTransform();
+
+      rep->PostUpdatePipelineMTime = rep->GetMTime();
+      rep->LastRenderCameraMTime = camera ? camera->GetMTime() : 0;
+      rep->LastRenderActiveType = activeType;
+      rep->LastRenderActiveIndex = activeIndex;
+    }
+
+    if (rep->HasVisibleHandles)
+    {
+      anyVisible = true;
+      totalInstances += rep->GetNumberOfHandles() * 2;
+    }
+  }
+
+  if (!anyVisible)
+  {
+    // Ensure shared actor has no stale geometry
+    if (shared->InstancePolyData->GetNumberOfPoints() > 0)
+    {
+      shared->InstancePolyData->GetPoints()->SetNumberOfPoints(0);
+      shared->InstancePolyData->Modified();
+    }
+    return 0;
+  }
+
+  if (!anyRepUpdated && shared->InstancePolyData->GetNumberOfPoints() == totalInstances)
+  {
+    shared->Actor->SetPropertyKeys(this->GetPropertyKeys());
+    count += shared->Actor->RenderOpaqueGeometry(viewport);
+    return count;
+  }
+
+  // Pass 2: build shared instance arrays (transform to world space)
+  vtkPoints* sharedPoints = shared->InstancePolyData->GetPoints();
+  sharedPoints->SetNumberOfPoints(totalInstances);
+  shared->GlyphOrientationArray->SetNumberOfTuples(totalInstances);
+  shared->GlyphScaleArray->SetNumberOfTuples(totalInstances);
+  shared->GlyphSourceIndexArray->SetNumberOfTuples(totalInstances);
+  shared->GlyphMaskArray->SetNumberOfTuples(totalInstances);
+  shared->ColorArray->SetNumberOfTuples(totalInstances);
+
+  int offset = 0;
+  for (auto* rep : shared->Representations)
+  {
+    if (!rep->Pipeline || !rep->Pipeline->Actor->GetVisibility() || !rep->HasVisibleHandles)
+    {
+      continue;
+    }
+
+    int repInstances = rep->GetNumberOfHandles() * 2;
+    vtkMatrix4x4* h2wMatrix = rep->Pipeline->HandleToWorldTransform->GetMatrix();
+
+    double h2w[4][4];
+    vtkMatrix4x4::DeepCopy(*h2w, h2wMatrix);
+
+    double h2w_rot[3][3];
+    for (int r = 0; r < 3; r++)
+    {
+      for (int c = 0; c < 3; c++)
+      {
+        h2w_rot[r][c] = h2w[r][c];
+      }
+    }
+    double q_h2w[4];
+    vtkMath::Matrix3x3ToQuaternion(h2w_rot, q_h2w);
+
+    vtkPoints* repPoints = rep->Pipeline->InstancePolyData->GetPoints();
+
+    for (int i = 0; i < repInstances; i++)
+    {
+      double lp[3];
+      repPoints->GetPoint(i, lp);
+
+      double wp[3] = {
+        h2w[0][0] * lp[0] + h2w[0][1] * lp[1] + h2w[0][2] * lp[2] + h2w[0][3],
+        h2w[1][0] * lp[0] + h2w[1][1] * lp[1] + h2w[1][2] * lp[2] + h2w[1][3],
+        h2w[2][0] * lp[0] + h2w[2][1] * lp[1] + h2w[2][2] * lp[2] + h2w[2][3]
+      };
+      sharedPoints->SetPoint(offset + i, wp);
+
+      float q_local_f[4];
+      rep->Pipeline->GlyphOrientationArray->GetTypedTuple(i, q_local_f);
+      double q_local[4] = { q_local_f[0], q_local_f[1], q_local_f[2], q_local_f[3] };
+      double q_world[4];
+      vtkMath::MultiplyQuaternion(q_h2w, q_local, q_world);
+      shared->GlyphOrientationArray->SetTuple4(
+        offset + i, q_world[0], q_world[1], q_world[2], q_world[3]);
+
+      shared->GlyphScaleArray->SetValue(offset + i, rep->Pipeline->GlyphScaleArray->GetValue(i));
+      shared->GlyphMaskArray->SetValue(offset + i, rep->Pipeline->GlyphMaskArray->GetValue(i));
+      shared->GlyphSourceIndexArray->SetValue(offset + i, rep->Pipeline->GlyphSourceIndexArray->GetValue(i));
+
+      unsigned char color[4];
+      rep->Pipeline->ColorArray->GetTypedTuple(i, color);
+      shared->ColorArray->SetTypedTuple(offset + i, color);
+    }
+
+    offset += repInstances;
+  }
+
+  shared->InstancePolyData->Modified();
+
+  shared->Actor->SetPropertyKeys(this->GetPropertyKeys());
+  count += shared->Actor->RenderOpaqueGeometry(viewport);
   return count;
 }
 
@@ -819,7 +1169,17 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
 int vtkMRMLInteractionWidgetRepresentation::RenderTranslucentPolygonalGeometry(vtkViewport* viewport)
 {
   int count = 0;
-  if (this->Pipeline && this->Pipeline->Actor->GetVisibility() && this->HasVisibleHandles)
+  if (!this->Pipeline || !this->Pipeline->Actor->GetVisibility())
+  {
+    return count;
+  }
+
+  if (!this->GetSliceNode() && this->Renderer)
+  {
+    // Shared actor is force-opaque — nothing to do in translucent pass.
+    return 0;
+  }
+  else if (this->HasVisibleHandles)
   {
     this->Pipeline->Actor->SetPropertyKeys(this->GetPropertyKeys());
     count += this->Pipeline->Actor->RenderTranslucentPolygonalGeometry(viewport);
@@ -830,12 +1190,21 @@ int vtkMRMLInteractionWidgetRepresentation::RenderTranslucentPolygonalGeometry(v
 //----------------------------------------------------------------------
 vtkTypeBool vtkMRMLInteractionWidgetRepresentation::HasTranslucentPolygonalGeometry()
 {
-  if (this->Pipeline && this->Pipeline->Actor->GetVisibility() && this->HasVisibleHandles)
+  if (!this->Pipeline || !this->Pipeline->Actor->GetVisibility())
   {
-    if (this->Pipeline->Actor->HasTranslucentPolygonalGeometry())
-    {
-      return true;
-    }
+    return false;
+  }
+
+  if (!this->GetSliceNode() && this->Renderer)
+  {
+    // Shared actor is force-opaque — always render in the opaque pass
+    // so that RenderOpaqueGeometry builds the shared arrays each frame.
+    return false;
+  }
+
+  if (this->HasVisibleHandles)
+  {
+    return this->Pipeline->Actor->HasTranslucentPolygonalGeometry();
   }
   return false;
 }
