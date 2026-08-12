@@ -19,33 +19,21 @@
 ==============================================================================*/
 
 // VTK includes
-#include <vtkAppendPolyData.h>
 #include <vtkCamera.h>
-#include <vtkCellData.h>
 #include <vtkDoubleArray.h>
 #include <vtkEllipseArcSource.h>
 #include <vtkFloatArray.h>
 #include <vtkFocalPlanePointPlacer.h>
-#include <vtkGlyph3D.h>
 #include <vtkLine.h>
-#include <vtkLineSource.h>
-#include <vtkLookupTable.h>
+#include <vtkMath.h>
 #include <vtkMRMLSliceNode.h>
 #include <vtkMRMLViewNode.h>
 #include <vtkPlane.h>
 #include <vtkPointData.h>
-#include <vtkPointSetToLabelHierarchy.h>
+#include <vtkPoints.h>
 #include <vtkRenderer.h>
 #include <vtkRenderWindow.h>
-#include <vtkSphereSource.h>
-#include <vtkStringArray.h>
-#include <vtkTextActor.h>
-#include <vtkTextProperty.h>
-#include <vtkTensorGlyph.h>
 #include <vtkTransform.h>
-#include <vtkTransformPolyDataFilter.h>
-#include <vtkTriangleFilter.h>
-#include <vtkTubeFilter.h>
 
 // MRML includes
 #include <vtkMRMLAbstractThreeDViewDisplayableManager.h>
@@ -109,11 +97,6 @@ void vtkMRMLInteractionWidgetRepresentation::SetupInteractionPipeline()
 {
   this->Pipeline = new InteractionPipeline();
   this->InitializePipeline();
-  if (this->GetSliceNode())
-  {
-    this->Pipeline->WorldToSliceTransformFilter->SetInputConnection(this->Pipeline->HandleToWorldTransformFilter->GetOutputPort());
-    this->Pipeline->Mapper3D->SetInputConnection(this->Pipeline->WorldToSliceTransformFilter->GetOutputPort());
-  }
   this->NeedToRenderOn();
 }
 
@@ -468,189 +451,277 @@ void vtkMRMLInteractionWidgetRepresentation::OrthoganalizeTransform(vtkTransform
 }
 
 //----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::UpdateHandlePolyData()
+void vtkMRMLInteractionWidgetRepresentation::UpdateInstanceArrays()
 {
-  vtkNew<vtkTransform> transform;
-  transform->PostMultiply();
+  int totalHandles = this->GetNumberOfHandles();
 
-  vtkNew<vtkTransformPolyDataFilter> transformArrowGlyph;
-  transformArrowGlyph->SetInputData(this->Pipeline->ArrowPolyData);
-  transformArrowGlyph->SetTransform(transform);
+  vtkPoints* points = this->Pipeline->InstancePolyData->GetPoints();
+  points->SetNumberOfPoints(totalHandles);
+  this->Pipeline->GlyphOrientationArray->SetNumberOfTuples(totalHandles);
+  this->Pipeline->GlyphScaleArray->SetNumberOfTuples(totalHandles);
+  this->Pipeline->GlyphSourceIndexArray->SetNumberOfTuples(totalHandles);
+  this->Pipeline->GlyphMaskArray->SetNumberOfTuples(totalHandles);
+  this->Pipeline->FillColorArray->SetNumberOfTuples(totalHandles);
+  this->Pipeline->OutlineColorArray->SetNumberOfTuples(totalHandles);
 
-  vtkNew<vtkTransformPolyDataFilter> transformArrowOutlineGlyph;
-  transformArrowOutlineGlyph->SetInputData(this->Pipeline->ArrowOutlinePolyData);
-  transformArrowOutlineGlyph->SetTransform(transform);
+  vtkTransform* worldToHandleTransform =
+    vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse());
 
-  vtkNew<vtkTransformPolyDataFilter> transformCircleGlyph;
-  transformCircleGlyph->SetInputData(this->Pipeline->CirclePolyData);
-  transformCircleGlyph->SetTransform(transform);
-
-  vtkNew<vtkTransformPolyDataFilter> transformCircleOutlineGlyph;
-  transformCircleOutlineGlyph->SetInputData(this->Pipeline->CircleOutlinePolyData);
-  transformCircleOutlineGlyph->SetTransform(transform);
-
-  vtkNew<vtkTransformPolyDataFilter> transformRingGlyph;
-  transformRingGlyph->SetInputData(this->Pipeline->RingPolyData);
-  transformRingGlyph->SetTransform(transform);
-
-  vtkNew<vtkTransformPolyDataFilter> transformRingOutlineGlyph;
-  transformRingOutlineGlyph->SetInputData(this->Pipeline->RingOutlinePolyData);
-  transformRingOutlineGlyph->SetTransform(transform);
-
-  vtkNew<vtkTransformPolyDataFilter> transformCrosshairGlyph;
-  transformCrosshairGlyph->SetInputData(this->Pipeline->CrosshairPolyData);
-  transformCrosshairGlyph->SetTransform(transform);
-
-  vtkNew<vtkTransformPolyDataFilter> transformCrosshairOutlineGlyph;
-  transformCrosshairOutlineGlyph->SetInputData(this->Pipeline->CrosshairOutlinePolyData);
-  transformCrosshairOutlineGlyph->SetTransform(transform);
-
-  vtkTransformPolyDataFilter* transformGlyph = transformCircleGlyph;
-  vtkTransformPolyDataFilter* transformOutlineGlyph = transformCircleOutlineGlyph;
-
-  bool initializeAppendFilter = this->Pipeline->Append->GetInput() == nullptr;
-  if (initializeAppendFilter)
+  double viewUp_Handle[3] = { 0.0, 1.0, 0.0 };
+  if (worldToHandleTransform)
   {
-    this->Pipeline->Append->RemoveAllInputs();
+    worldToHandleTransform->TransformVector(this->CachedViewUp_World, viewUp_Handle);
   }
 
-  HandleInfoList handleInfoList = this->GetHandleInfoList();
-  for (HandleInfo handleInfo : handleInfoList)
+  double viewDir_Handle_Const[3] = { 0.0, 0.0, 1.0 };
+  if (this->CachedParallelProjection && worldToHandleTransform)
   {
-    switch (handleInfo.GlyphType)
-    {
-      case GlyphArrow:
-        transformGlyph = transformArrowGlyph;
-        transformOutlineGlyph = transformArrowOutlineGlyph;
-        break;
-      case GlyphCircle:
-        transformGlyph = transformCircleGlyph;
-        transformOutlineGlyph = transformCircleOutlineGlyph;
-        break;
-      case GlyphRing:
-        transformGlyph = transformRingGlyph;
-        transformOutlineGlyph = transformRingOutlineGlyph;
-        break;
-      case GlyphCrosshair:
-        transformGlyph = transformCrosshairGlyph;
-        transformOutlineGlyph = transformCrosshairOutlineGlyph;
-        break;
-      default: break;
-    }
+    worldToHandleTransform->TransformVector(this->CachedCameraDirection, viewDir_Handle_Const);
+  }
 
-    vtkPolyData* handlePolyData = this->GetHandlePolydata(handleInfo.ComponentType);
-    if (!handlePolyData)
+  // Pre-extract HandleToWorldTransform matrix for fast per-handle opacity computation
+  double h2w[4][4];
+  vtkMatrix4x4::DeepCopy(*h2w, this->Pipeline->HandleToWorldTransform->GetMatrix());
+  double overallOpacity = this->GetInteractionHandleOpacity();
+  double fadeAngleRange = this->StartFadeAngleDegrees - this->EndFadeAngleDegrees;
+
+  int instanceIndex = 0;
+  int handleTypes[] = { InteractionRotationHandle, InteractionTranslationHandle, InteractionScaleHandle };
+
+  for (int type : handleTypes)
+  {
+    vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
+    if (!handlePolyData || !handlePolyData->GetPoints())
     {
       continue;
     }
 
-    double point[3] = { 0.0, 0.0, 0.0 };
-    handlePolyData->GetPoints()->GetPoint(handleInfo.Index, point);
-    if (handleInfo.ApplyScaleToPosition)
-    {
-      vtkMath::MultiplyScalar(point, this->WidgetScale);
-    }
+    vtkDoubleArray* orientationArray = vtkDoubleArray::SafeDownCast(
+      handlePolyData->GetPointData()->GetArray("orientation"));
 
-    transform->Identity();
-    vtkDoubleArray* orientationArray = vtkDoubleArray::SafeDownCast(handlePolyData->GetPointData()->GetArray("orientation"));
-    if (orientationArray)
+    int numHandles = handlePolyData->GetNumberOfPoints();
+    for (int index = 0; index < numHandles; ++index)
     {
-      double orientation[9] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
-      orientationArray->GetTuple(handleInfo.Index, orientation);
-      vtkNew<vtkMatrix4x4> orientationMatrix;
-      for (int i = 0; i < 9; ++i)
+      double point[3] = { 0.0, 0.0, 0.0 };
+      handlePolyData->GetPoints()->GetPoint(index, point);
+      if (this->GetApplyScaleToPosition(type, index))
       {
-        orientationMatrix->SetElement(i % 3, i / 3, orientation[i]);
+        vtkMath::MultiplyScalar(point, this->WidgetScale);
       }
-      transform->Concatenate(orientationMatrix);
-    }
+      points->SetPoint(instanceIndex, point);
 
-    double scale = this->WidgetScale;
-    if (handleInfo.ComponentType == InteractionRotationHandle && handleInfo.Index == 3)
-    {
-      scale *= 1.2;
-    }
-    if (!handleInfo.IsVisible())
-    {
-      // Collapse hidden handles to a single degenerate point at the origin instead of leaving their
-      // full-size geometry in place with zero opacity. Otherwise the invisible geometry can still
-      // interfere with depth testing/blending of other (visible) handles that overlap it on screen,
-      // showing up as a transparent gap cutting through them (e.g. a hidden rotation ring, viewed
-      // edge-on, cutting a line through the translation handles).
-      scale = 0.0;
-    }
-    transform->Scale(scale, scale, scale);
-    transform->Translate(point[0], point[1], point[2]);
+      double quat[4] = { 1.0, 0.0, 0.0, 0.0 };
 
-    vtkSmartPointer<vtkPolyData> handleGlyphPolyData = nullptr;
-    std::pair<int, int> handlePolyDataMapKey = std::make_pair(handleInfo.ComponentType, handleInfo.Index);
-    auto handlePolyDataMapIterator = this->Pipeline->HandleGlyphPolyDataMap.find(handlePolyDataMapKey);
-    if (handlePolyDataMapIterator != this->Pipeline->HandleGlyphPolyDataMap.end())
-    {
-      handleGlyphPolyData = handlePolyDataMapIterator->second;
-    }
-    else
-    {
-      handleGlyphPolyData = vtkSmartPointer<vtkPolyData>::New();
-      this->Pipeline->HandleGlyphPolyDataMap[handlePolyDataMapKey] = handleGlyphPolyData;
-    }
+      if (type == InteractionRotationHandle && index < 3)
+      {
+        if (orientationArray && index < orientationArray->GetNumberOfTuples())
+        {
+          double orient9[9] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
+          orientationArray->GetTuple(index, orient9);
+          double matrix3x3[3][3];
+          for (int i = 0; i < 3; ++i)
+          {
+            for (int j = 0; j < 3; ++j)
+            {
+              matrix3x3[j][i] = orient9[i * 3 + j];
+            }
+          }
+          vtkMath::Matrix3x3ToQuaternion(matrix3x3, quat);
+        }
+      }
+      else
+      {
+        double viewDir_Handle[3];
+        if (this->CachedParallelProjection)
+        {
+          viewDir_Handle[0] = viewDir_Handle_Const[0];
+          viewDir_Handle[1] = viewDir_Handle_Const[1];
+          viewDir_Handle[2] = viewDir_Handle_Const[2];
+        }
+        else if (worldToHandleTransform)
+        {
+          double posWorld[3] = {
+            h2w[0][0] * point[0] + h2w[0][1] * point[1] + h2w[0][2] * point[2] + h2w[0][3],
+            h2w[1][0] * point[0] + h2w[1][1] * point[1] + h2w[1][2] * point[2] + h2w[1][3],
+            h2w[2][0] * point[0] + h2w[2][1] * point[1] + h2w[2][2] * point[2] + h2w[2][3]
+          };
+          double viewDir_World[3];
+          this->GetHandleToCameraVectorWorld(posWorld, viewDir_World);
+          worldToHandleTransform->TransformVector(viewDir_World, viewDir_Handle);
+        }
+        else
+        {
+          viewDir_Handle[0] = 0.0;
+          viewDir_Handle[1] = 0.0;
+          viewDir_Handle[2] = 1.0;
+        }
 
-    transformGlyph->SetOutput(handleGlyphPolyData);
-    transformGlyph->Update();
-    if (initializeAppendFilter)
-    {
-      this->Pipeline->Append->AddInputData(handleGlyphPolyData);
-    }
+        double xAxis[3], yAxis[3], zAxis[3];
 
-    vtkSmartPointer<vtkPolyData> handleOutlineGlyphPolyData = nullptr;
-    std::pair<int, int> handleOutlinePolyDataMapKey = std::make_pair(handleInfo.ComponentType, handleInfo.Index);
-    auto handleOutlinePolyDataMapIterator = this->Pipeline->HandleOutlineGlyphPolyDataMap.find(handleOutlinePolyDataMapKey);
-    if (handleOutlinePolyDataMapIterator != this->Pipeline->HandleOutlineGlyphPolyDataMap.end())
-    {
-      handleOutlineGlyphPolyData = handleOutlinePolyDataMapIterator->second;
-    }
-    else
-    {
-      handleOutlineGlyphPolyData = vtkSmartPointer<vtkPolyData>::New();
-      this->Pipeline->HandleOutlineGlyphPolyDataMap[handleOutlinePolyDataMapKey] = handleOutlineGlyphPolyData;
-    }
-    transformOutlineGlyph->SetOutput(handleOutlineGlyphPolyData);
-    transformOutlineGlyph->Update();
-    if (initializeAppendFilter)
-    {
-      this->Pipeline->Append->AddInputData(handleOutlineGlyphPolyData);
-    }
+        if (type == InteractionTranslationHandle && index < 3)
+        {
+          xAxis[0] = xAxis[1] = xAxis[2] = 0.0;
+          xAxis[index] = 1.0;
+          vtkMath::Cross(viewDir_Handle, xAxis, yAxis);
+          vtkMath::Normalize(yAxis);
+          vtkMath::Cross(xAxis, yAxis, zAxis);
+          vtkMath::Normalize(zAxis);
+        }
+        else
+        {
+          zAxis[0] = viewDir_Handle[0];
+          zAxis[1] = viewDir_Handle[1];
+          zAxis[2] = viewDir_Handle[2];
+          vtkMath::Normalize(zAxis);
+          vtkMath::Cross(viewUp_Handle, viewDir_Handle, xAxis);
+          vtkMath::Normalize(xAxis);
+          vtkMath::Cross(viewDir_Handle, xAxis, yAxis);
+          vtkMath::Normalize(yAxis);
+        }
 
-    // Update color arrays
-    vtkSmartPointer<vtkFloatArray> handleColorArray = vtkFloatArray::SafeDownCast(handlePolyData->GetPointData()->GetAbstractArray("colorIndex"));
-    float handleColorIndex = handleColorArray->GetValue(handleInfo.Index);
+        double matrix3x3[3][3] = {
+          { xAxis[0], yAxis[0], zAxis[0] },
+          { xAxis[1], yAxis[1], zAxis[1] },
+          { xAxis[2], yAxis[2], zAxis[2] }
+        };
+        vtkMath::Matrix3x3ToQuaternion(matrix3x3, quat);
+      }
 
-    // Glyph color array
-    vtkSmartPointer<vtkFloatArray> glyphColorArray = vtkFloatArray::SafeDownCast(handleGlyphPolyData->GetPointData()->GetAbstractArray("colorIndex"));
-    if (!glyphColorArray)
-    {
-      glyphColorArray = vtkSmartPointer<vtkFloatArray>::New();
-      glyphColorArray->SetName("colorIndex");
-      handleGlyphPolyData->GetPointData()->AddArray(glyphColorArray);
-    }
-    glyphColorArray->SetNumberOfComponents(1);
-    glyphColorArray->SetNumberOfTuples(handleGlyphPolyData->GetNumberOfPoints());
-    glyphColorArray->Fill(handleColorIndex);
-    handleGlyphPolyData->GetPointData()->SetActiveScalars("colorIndex");
+      this->Pipeline->GlyphOrientationArray->SetTuple4(
+        instanceIndex, quat[0], quat[1], quat[2], quat[3]);
 
-    // Glyph outline color array
-    vtkSmartPointer<vtkFloatArray> outlineGlyphColorArray = vtkFloatArray::SafeDownCast(handleOutlineGlyphPolyData->GetPointData()->GetAbstractArray("colorIndex"));
-    if (!outlineGlyphColorArray)
-    {
-      outlineGlyphColorArray = vtkSmartPointer<vtkFloatArray>::New();
-      outlineGlyphColorArray->SetName("colorIndex");
-      handleOutlineGlyphPolyData->GetPointData()->AddArray(outlineGlyphColorArray);
+      double scale = this->WidgetScale;
+      if (type == InteractionRotationHandle && index == 3)
+      {
+        scale *= 1.2;
+      }
+
+      // Pre-compute opacity, avoiding the expensive GetHandleOpacity virtual dispatch chain
+      // (GetInteractionHandleAxisWorld → GetInteractionHandlePositionWorld).
+      // GetHandleVisibility is still called virtually to respect display node per-axis settings.
+      bool handleVisible = this->GetHandleVisibility(type, index);
+      double precomputedOpacity = 0.0;
+      if (handleVisible)
+      {
+        double axisWorld[3] = { 0.0, 0.0, 0.0 };
+        if (type == InteractionScaleHandle)
+        {
+          double axisLocal[3] = { 0.0, 0.0, 0.0 };
+          this->GetInteractionHandleAxisLocal(type, index, axisLocal);
+          axisWorld[0] = h2w[0][0] * axisLocal[0] + h2w[0][1] * axisLocal[1] + h2w[0][2] * axisLocal[2];
+          axisWorld[1] = h2w[1][0] * axisLocal[0] + h2w[1][1] * axisLocal[1] + h2w[1][2] * axisLocal[2];
+          axisWorld[2] = h2w[2][0] * axisLocal[0] + h2w[2][1] * axisLocal[1] + h2w[2][2] * axisLocal[2];
+        }
+        else if (index < 3)
+        {
+          axisWorld[0] = h2w[0][index];
+          axisWorld[1] = h2w[1][index];
+          axisWorld[2] = h2w[2][index];
+        }
+
+        if (axisWorld[0] == 0.0 && axisWorld[1] == 0.0 && axisWorld[2] == 0.0)
+        {
+          precomputedOpacity = overallOpacity;
+        }
+        else
+        {
+          double posWorld_Op[3] = {
+            h2w[0][0] * point[0] + h2w[0][1] * point[1] + h2w[0][2] * point[2] + h2w[0][3],
+            h2w[1][0] * point[0] + h2w[1][1] * point[1] + h2w[1][2] * point[2] + h2w[1][3],
+            h2w[2][0] * point[0] + h2w[2][1] * point[1] + h2w[2][2] * point[2] + h2w[2][3]
+          };
+          double viewNormal[3];
+          this->GetHandleToCameraVectorWorld(posWorld_Op, viewNormal);
+          if (vtkMath::Dot(viewNormal, axisWorld) < 0.0)
+          {
+            vtkMath::MultiplyScalar(axisWorld, -1.0);
+          }
+
+          double opacity = 1.0;
+          double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal, axisWorld));
+          if (type == InteractionRotationHandle)
+          {
+            if (angle > 90.0 - this->EndFadeAngleDegrees)
+            {
+              opacity = 0.0;
+            }
+            else if (angle > 90.0 - this->StartFadeAngleDegrees)
+            {
+              double difference = angle - (90.0 - this->StartFadeAngleDegrees);
+              opacity = 1.0 - (difference / fadeAngleRange);
+            }
+          }
+          else
+          {
+            if (angle < this->EndFadeAngleDegrees)
+            {
+              opacity = 0.0;
+            }
+            else if (angle < this->StartFadeAngleDegrees)
+            {
+              double difference = angle - this->EndFadeAngleDegrees;
+              opacity = (difference / fadeAngleRange);
+            }
+          }
+          precomputedOpacity = opacity * overallOpacity;
+        }
+      }
+
+      this->CachedHandleOpacity = precomputedOpacity;
+      double color[4] = { 0.0, 0.0, 0.0, 0.0 };
+      this->GetHandleColor(type, index, color);
+      this->CachedHandleOpacity = -1.0;
+      bool visible = color[3] > 0.001;
+
+      if (!visible)
+      {
+        scale = 0.0;
+      }
+      this->Pipeline->GlyphScaleArray->SetValue(instanceIndex, scale);
+      this->Pipeline->GlyphMaskArray->SetValue(instanceIndex, visible ? 1 : 0);
+
+      int glyphType = this->GetHandleGlyphType(type, index);
+      this->Pipeline->GlyphSourceIndexArray->SetValue(instanceIndex, glyphType);
+
+      unsigned char fillRGBA[4] = {
+        static_cast<unsigned char>(color[0] * 255),
+        static_cast<unsigned char>(color[1] * 255),
+        static_cast<unsigned char>(color[2] * 255),
+        static_cast<unsigned char>(color[3] * 255)
+      };
+      this->Pipeline->FillColorArray->SetTypedTuple(instanceIndex, fillRGBA);
+
+      bool selected = (this->GetActiveComponentType() == type && this->GetActiveComponentIndex() == index);
+      double grey = selected ? 0.0 : 0.3;
+      unsigned char outlineRGBA[4] = {
+        static_cast<unsigned char>(grey * 255),
+        static_cast<unsigned char>(grey * 255),
+        static_cast<unsigned char>(grey * 255),
+        static_cast<unsigned char>(color[3] * 255)
+      };
+      this->Pipeline->OutlineColorArray->SetTypedTuple(instanceIndex, outlineRGBA);
+
+      ++instanceIndex;
     }
-    outlineGlyphColorArray->SetNumberOfComponents(1);
-    outlineGlyphColorArray->SetNumberOfTuples(handleOutlineGlyphPolyData->GetNumberOfPoints());
-    outlineGlyphColorArray->Fill(handleColorIndex + 1);
-    handleOutlineGlyphPolyData->GetPointData()->SetActiveScalars("colorIndex");
   }
+
+  this->Pipeline->InstancePolyData->Modified();
+}
+
+//----------------------------------------------------------------------
+void vtkMRMLInteractionWidgetRepresentation::UpdateActorTransform()
+{
+  this->Pipeline->ActorTransform->Identity();
+  this->Pipeline->ActorTransform->PostMultiply();
+  this->Pipeline->ActorTransform->Concatenate(this->Pipeline->HandleToWorldTransform);
+
+  if (this->GetSliceNode())
+  {
+    this->Pipeline->ActorTransform->Concatenate(this->Pipeline->WorldToSliceTransform);
+  }
+
+  this->Pipeline->FillActor->SetUserTransform(this->Pipeline->ActorTransform);
+  this->Pipeline->OutlineActor->SetUserTransform(this->Pipeline->ActorTransform);
 }
 
 //----------------------------------------------------------------------
@@ -662,20 +733,20 @@ vtkPointPlacer* vtkMRMLInteractionWidgetRepresentation::GetPointPlacer()
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::GetActors(vtkPropCollection* pc)
 {
-  vtkProp* actor = this->GetInteractionActor();
-  if (actor)
+  if (this->Pipeline)
   {
-    actor->GetActors(pc);
+    this->Pipeline->FillActor->GetActors(pc);
+    this->Pipeline->OutlineActor->GetActors(pc);
   }
 }
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::ReleaseGraphicsResources(vtkWindow* window)
 {
-  vtkProp* actor = this->GetInteractionActor();
-  if (actor)
+  if (this->Pipeline)
   {
-    actor->ReleaseGraphicsResources(window);
+    this->Pipeline->FillActor->ReleaseGraphicsResources(window);
+    this->Pipeline->OutlineActor->ReleaseGraphicsResources(window);
   }
 }
 
@@ -683,10 +754,10 @@ void vtkMRMLInteractionWidgetRepresentation::ReleaseGraphicsResources(vtkWindow*
 int vtkMRMLInteractionWidgetRepresentation::RenderOverlay(vtkViewport* viewport)
 {
   int count = 0;
-  vtkProp* actor = this->GetInteractionActor();
-  if (this->Pipeline && actor->GetVisibility())
+  if (this->Pipeline && this->Pipeline->FillActor->GetVisibility())
   {
-    count += actor->RenderOverlay(viewport);
+    count += this->Pipeline->FillActor->RenderOverlay(viewport);
+    count += this->Pipeline->OutlineActor->RenderOverlay(viewport);
   }
   return count;
 }
@@ -700,19 +771,18 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
   }
 
   int count = 0;
-  vtkProp* actor = this->GetInteractionActor();
-  if (actor && actor->GetVisibility())
+  if (this->Pipeline && this->Pipeline->FillActor->GetVisibility())
   {
     this->UpdateHandleToWorldTransform();
     this->UpdateSlicePlaneFromSliceNode();
-    this->UpdateHandleColors();
+    this->UpdateCameraState();
     this->UpdateViewScaleFactor();
     this->UpdateInteractionPipeline();
-    this->UpdateHandleOrientation();
     this->UpdateHandleSize();
-    this->UpdateHandlePolyData();
-    count += actor->RenderOpaqueGeometry(viewport);
-    this->Pipeline->HandleToWorldTransformFilter->Update();
+    this->UpdateInstanceArrays();
+    this->UpdateActorTransform();
+    count += this->Pipeline->FillActor->RenderOpaqueGeometry(viewport);
+    count += this->Pipeline->OutlineActor->RenderOpaqueGeometry(viewport);
   }
   return count;
 }
@@ -721,11 +791,12 @@ int vtkMRMLInteractionWidgetRepresentation::RenderOpaqueGeometry(vtkViewport* vi
 int vtkMRMLInteractionWidgetRepresentation::RenderTranslucentPolygonalGeometry(vtkViewport* viewport)
 {
   int count = 0;
-  vtkProp* actor = this->GetInteractionActor();
-  if (actor && actor->GetVisibility())
+  if (this->Pipeline && this->Pipeline->FillActor->GetVisibility())
   {
-    actor->SetPropertyKeys(this->GetPropertyKeys());
-    count += actor->RenderTranslucentPolygonalGeometry(viewport);
+    this->Pipeline->FillActor->SetPropertyKeys(this->GetPropertyKeys());
+    this->Pipeline->OutlineActor->SetPropertyKeys(this->GetPropertyKeys());
+    count += this->Pipeline->FillActor->RenderTranslucentPolygonalGeometry(viewport);
+    count += this->Pipeline->OutlineActor->RenderTranslucentPolygonalGeometry(viewport);
   }
   return count;
 }
@@ -733,11 +804,13 @@ int vtkMRMLInteractionWidgetRepresentation::RenderTranslucentPolygonalGeometry(v
 //----------------------------------------------------------------------
 vtkTypeBool vtkMRMLInteractionWidgetRepresentation::HasTranslucentPolygonalGeometry()
 {
-  vtkProp* actor = this->GetInteractionActor();
-  if (actor && actor->GetVisibility() && //
-      actor->HasTranslucentPolygonalGeometry())
+  if (this->Pipeline && this->Pipeline->FillActor->GetVisibility())
   {
-    return true;
+    if (this->Pipeline->FillActor->HasTranslucentPolygonalGeometry() ||
+        this->Pipeline->OutlineActor->HasTranslucentPolygonalGeometry())
+    {
+      return true;
+    }
   }
   return false;
 }
@@ -973,41 +1046,103 @@ vtkMRMLInteractionWidgetRepresentation::InteractionPipeline::InteractionPipeline
 
   this->ScaleHandlePoints = vtkSmartPointer<vtkPolyData>::New();
 
-  this->Append = vtkSmartPointer<vtkAppendPolyData>::New();
-
   this->HandleToWorldTransform = vtkSmartPointer<vtkTransform>::New();
-  this->HandleToWorldTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->HandleToWorldTransformFilter->SetInputConnection(this->Append->GetOutputPort());
-  this->HandleToWorldTransformFilter->SetTransform(this->HandleToWorldTransform);
 
-  this->ColorTable = vtkSmartPointer<vtkLookupTable>::New();
+  this->InstancePolyData = vtkSmartPointer<vtkPolyData>::New();
+  this->InstancePolyData->SetPoints(vtkSmartPointer<vtkPoints>::New());
 
-  this->Mapper3D = vtkSmartPointer<vtkPolyDataMapper>::New();
-  this->Mapper3D->SetInputConnection(this->HandleToWorldTransformFilter->GetOutputPort());
-  this->Mapper3D->SetColorModeToMapScalars();
-  this->Mapper3D->ColorByArrayComponent("colorIndex", 0);
-  this->Mapper3D->SetLookupTable(this->ColorTable);
-  this->Mapper3D->ScalarVisibilityOn();
-  this->Mapper3D->UseLookupTableScalarRangeOn();
+  this->GlyphOrientationArray = vtkSmartPointer<vtkFloatArray>::New();
+  this->GlyphOrientationArray->SetName("orientation");
+  this->GlyphOrientationArray->SetNumberOfComponents(4);
+  this->InstancePolyData->GetPointData()->AddArray(this->GlyphOrientationArray);
 
-  this->Property3D = vtkSmartPointer<vtkProperty>::New();
-  this->Property3D->SetPointSize(1.e-6); // NOTE: The point size value must be greater than zero. Refer to vtkOpenGLState::vtkglPointSize(float).
-  this->Property3D->SetLineWidth(1.0);
-  this->Property3D->SetDiffuse(0.0);
-  this->Property3D->SetAmbient(1.0);
-  this->Property3D->SetMetallic(0.0);
-  this->Property3D->SetSpecular(0.0);
-  this->Property3D->SetEdgeVisibility(false);
-  this->Property3D->SetOpacity(1.0);
+  this->GlyphScaleArray = vtkSmartPointer<vtkFloatArray>::New();
+  this->GlyphScaleArray->SetName("scale");
+  this->GlyphScaleArray->SetNumberOfComponents(1);
+  this->InstancePolyData->GetPointData()->AddArray(this->GlyphScaleArray);
 
-  this->Actor3D = vtkSmartPointer<vtkActor>::New();
-  this->Actor3D->SetProperty(this->Property3D);
-  this->Actor3D->SetMapper(this->Mapper3D);
+  this->GlyphSourceIndexArray = vtkSmartPointer<vtkIntArray>::New();
+  this->GlyphSourceIndexArray->SetName("glyphType");
+  this->GlyphSourceIndexArray->SetNumberOfComponents(1);
+  this->InstancePolyData->GetPointData()->AddArray(this->GlyphSourceIndexArray);
+
+  this->GlyphMaskArray = vtkSmartPointer<vtkUnsignedCharArray>::New();
+  this->GlyphMaskArray->SetName("mask");
+  this->GlyphMaskArray->SetNumberOfComponents(1);
+  this->InstancePolyData->GetPointData()->AddArray(this->GlyphMaskArray);
+
+  this->FillColorArray = vtkSmartPointer<vtkUnsignedCharArray>::New();
+  this->FillColorArray->SetName("fillColor");
+  this->FillColorArray->SetNumberOfComponents(4);
+  this->InstancePolyData->GetPointData()->AddArray(this->FillColorArray);
+
+  this->OutlineColorArray = vtkSmartPointer<vtkUnsignedCharArray>::New();
+  this->OutlineColorArray->SetName("outlineColor");
+  this->OutlineColorArray->SetNumberOfComponents(4);
+  this->InstancePolyData->GetPointData()->AddArray(this->OutlineColorArray);
+
+  auto configureGlyph3DMapper = [this](vtkGlyph3DMapper* mapper, const char* colorArrayName,
+    vtkPolyData* circleSrc, vtkPolyData* arrowSrc, vtkPolyData* ringSrc, vtkPolyData* crosshairSrc)
+  {
+    mapper->SetInputData(this->InstancePolyData);
+    mapper->SetSourceData(GlyphArrow, arrowSrc);
+    mapper->SetSourceData(GlyphCircle, circleSrc);
+    mapper->SetSourceData(GlyphRing, ringSrc);
+    mapper->SetSourceData(GlyphCrosshair, crosshairSrc);
+    mapper->SetSourceIndexing(true);
+    mapper->SetSourceIndexArray("glyphType");
+    mapper->OrientOn();
+    mapper->SetOrientationModeToQuaternion();
+    mapper->SetOrientationArray("orientation");
+    mapper->ScalingOn();
+    mapper->SetScaleModeToScaleByMagnitude();
+    mapper->SetScaleArray("scale");
+    mapper->SetMasking(true);
+    mapper->SetMaskArray("mask");
+    mapper->SetColorModeToDirectScalars();
+    mapper->ScalarVisibilityOn();
+    mapper->SetScalarModeToUsePointFieldData();
+    mapper->SelectColorArray(colorArrayName);
+  };
+
+  this->FillMapper = vtkSmartPointer<vtkGlyph3DMapper>::New();
+  configureGlyph3DMapper(this->FillMapper,
+    "fillColor",
+    this->CirclePolyData, this->ArrowPolyData, this->RingPolyData, this->CrosshairPolyData);
+
+  this->OutlineMapper = vtkSmartPointer<vtkGlyph3DMapper>::New();
+  configureGlyph3DMapper(this->OutlineMapper,
+    "outlineColor",
+    this->CircleOutlinePolyData, this->ArrowOutlinePolyData, this->RingOutlinePolyData, this->CrosshairOutlinePolyData);
+
+  this->FillProperty = vtkSmartPointer<vtkProperty>::New();
+  this->FillProperty->SetPointSize(1.e-6);
+  this->FillProperty->SetDiffuse(0.0);
+  this->FillProperty->SetAmbient(1.0);
+  this->FillProperty->SetMetallic(0.0);
+  this->FillProperty->SetSpecular(0.0);
+  this->FillProperty->SetEdgeVisibility(false);
+  this->FillProperty->SetOpacity(1.0);
+
+  this->OutlineProperty = vtkSmartPointer<vtkProperty>::New();
+  this->OutlineProperty->SetLineWidth(1.0);
+  this->OutlineProperty->SetDiffuse(0.0);
+  this->OutlineProperty->SetAmbient(1.0);
+  this->OutlineProperty->SetMetallic(0.0);
+  this->OutlineProperty->SetSpecular(0.0);
+  this->OutlineProperty->SetEdgeVisibility(false);
+  this->OutlineProperty->SetOpacity(1.0);
+
+  this->FillActor = vtkSmartPointer<vtkActor>::New();
+  this->FillActor->SetProperty(this->FillProperty);
+  this->FillActor->SetMapper(this->FillMapper);
+
+  this->OutlineActor = vtkSmartPointer<vtkActor>::New();
+  this->OutlineActor->SetProperty(this->OutlineProperty);
+  this->OutlineActor->SetMapper(this->OutlineMapper);
 
   this->WorldToSliceTransform = vtkSmartPointer<vtkTransform>::New();
-
-  this->WorldToSliceTransformFilter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  this->WorldToSliceTransformFilter->SetTransform(this->WorldToSliceTransform);
+  this->ActorTransform = vtkSmartPointer<vtkTransform>::New();
 }
 
 //----------------------------------------------------------------------
@@ -1020,12 +1155,12 @@ void vtkMRMLInteractionWidgetRepresentation::InitializePipeline()
   {
     vtkGenericWarningMacro("Unexpected resolve coincident topology value: " << vtkMapper::GetResolveCoincidentTopology());
   }
-  this->UpdateRelativeCoincidentTopologyOffsets(this->Pipeline->Mapper3D);
+  this->UpdateRelativeCoincidentTopologyOffsets(this->Pipeline->FillMapper);
+  this->UpdateRelativeCoincidentTopologyOffsets(this->Pipeline->OutlineMapper);
 
   this->CreateRotationHandles();
   this->CreateTranslationHandles();
   this->CreateScaleHandles();
-  this->UpdateHandleColors();
 }
 
 //----------------------------------------------------------------------
@@ -1133,219 +1268,44 @@ vtkProp* vtkMRMLInteractionWidgetRepresentation::GetInteractionActor()
   {
     return nullptr;
   }
-  return this->Pipeline->Actor3D;
+  return this->Pipeline->FillActor;
 }
 
 //----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::UpdateHandleOrientation()
+void vtkMRMLInteractionWidgetRepresentation::UpdateCameraState()
 {
-  this->UpdateTranslationHandleOrientation();
-  this->UpdateScaleHandleOrientation();
-  this->UpdateRotationHandleOrientation();
-}
-
-//----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::UpdateTranslationHandleOrientation()
-{
-  vtkPolyData* handlePolyData = this->GetHandlePolydata(InteractionTranslationHandle);
-  if (!handlePolyData)
-  {
-    return;
-  }
-
-  vtkDoubleArray* orientationArray = vtkDoubleArray::SafeDownCast(handlePolyData->GetPointData()->GetAbstractArray("orientation"));
-  if (!orientationArray)
-  {
-    return;
-  }
-
-  vtkSmartPointer<vtkTransform> worldToHandleTransform = vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse());
-  vtkCamera* camera = this->GetRenderer()->GetActiveCamera();
-
-  double viewDirection_World[3] = { 0.0, 0.0, 0.0 };
-  double viewDirection_Handle[3] = { 0.0, 0.0, 0.0 };
-  double viewUp_World[3] = { 0.0, 1.0, 0.0 };
-  double viewUp_Handle[3] = { 0.0, 1.0, 0.0 };
   if (this->GetSliceNode())
   {
-    double viewUp[4] = { 0.0, 1.0, 0.0, 0.0 };
-    double viewUp2[4] = { 0.0, 1.0, 0.0, 0.0 };
-    this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(viewUp, viewUp2);
-    viewUp_World[0] = viewUp2[0];
-    viewUp_World[1] = viewUp2[1];
-    viewUp_World[2] = viewUp2[2];
+    this->CachedParallelProjection = true;
+    double normal4[4] = { 0.0, 0.0, 1.0, 0.0 };
+    this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(normal4, normal4);
+    this->CachedCameraDirection[0] = normal4[0];
+    this->CachedCameraDirection[1] = normal4[1];
+    this->CachedCameraDirection[2] = normal4[2];
+    vtkMath::Normalize(this->CachedCameraDirection);
+
+    double viewUp4[4] = { 0.0, 1.0, 0.0, 0.0 };
+    double viewUp4Out[4] = { 0.0, 1.0, 0.0, 0.0 };
+    this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(viewUp4, viewUp4Out);
+    this->CachedViewUp_World[0] = viewUp4Out[0];
+    this->CachedViewUp_World[1] = viewUp4Out[1];
+    this->CachedViewUp_World[2] = viewUp4Out[2];
   }
-  else
+  else if (this->GetRenderer() && this->GetRenderer()->GetActiveCamera())
   {
-    camera->GetViewUp(viewUp_World);
-  }
-  worldToHandleTransform->TransformVector(viewUp_World, viewUp_Handle);
-
-  for (int i = 0; i < 3; ++i)
-  {
-    double interactionHandlePosition[3] = { 0.0, 0.0, 0.0 };
-    this->GetInteractionHandlePositionWorld(InteractionTranslationHandle, i, interactionHandlePosition);
-    this->GetHandleToCameraVectorWorld(interactionHandlePosition, viewDirection_World);
-    worldToHandleTransform->TransformVector(viewDirection_World, viewDirection_Handle);
-
-    double xAxis[3] = { 0.0, 0.0, 0.0 };
-    double yAxis[3] = { 0.0, 0.0, 0.0 };
-    double zAxis[3] = { 0.0, 0.0, 0.0 };
-    xAxis[i] = 1.0;
-
-    vtkMath::Cross(viewDirection_Handle, xAxis, yAxis);
-    vtkMath::Normalize(yAxis);
-
-    vtkMath::Cross(xAxis, yAxis, zAxis);
-    vtkMath::Normalize(zAxis);
-
-    orientationArray->SetTuple9(i, xAxis[0], xAxis[1], xAxis[2], yAxis[0], yAxis[1], yAxis[2], zAxis[0], zAxis[1], zAxis[2]);
-  }
-
-  double interactionHandlePosition[3] = { 0.0, 0.0, 0.0 };
-  this->GetInteractionHandlePositionWorld(InteractionTranslationHandle, 3, interactionHandlePosition);
-  this->GetHandleToCameraVectorWorld(interactionHandlePosition, viewDirection_World);
-  worldToHandleTransform->TransformVector(viewDirection_World, viewDirection_Handle);
-
-  double xAxis[3] = { 0.0, 0.0, 0.0 };
-  double yAxis[3] = { 0.0, 0.0, 0.0 };
-  double zAxis[3] = { 0.0, 0.0, 0.0 };
-  zAxis[0] = viewDirection_Handle[0];
-  zAxis[1] = viewDirection_Handle[1];
-  zAxis[2] = viewDirection_Handle[2];
-  vtkMath::Normalize(zAxis);
-
-  vtkMath::Cross(viewUp_Handle, viewDirection_Handle, xAxis);
-  vtkMath::Normalize(xAxis);
-
-  vtkMath::Cross(viewDirection_Handle, xAxis, yAxis);
-  vtkMath::Normalize(yAxis);
-
-  orientationArray->SetTuple9(3, xAxis[0], xAxis[1], xAxis[2], yAxis[0], yAxis[1], yAxis[2], zAxis[0], zAxis[1], zAxis[2]);
-}
-
-//----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::UpdateScaleHandleOrientation()
-{
-  vtkPolyData* handlePolyData = this->GetHandlePolydata(InteractionScaleHandle);
-  if (!handlePolyData)
-  {
-    return;
-  }
-
-  vtkDoubleArray* orientationArray = vtkDoubleArray::SafeDownCast(handlePolyData->GetPointData()->GetAbstractArray("orientation"));
-  if (!orientationArray)
-  {
-    return;
-  }
-
-  vtkSmartPointer<vtkTransform> worldToHandleTransform = vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse());
-  vtkCamera* camera = this->GetRenderer()->GetActiveCamera();
-
-  double viewDirection_World[3] = { 0.0, 0.0, 0.0 };
-  double viewDirection_Handle[3] = { 0.0, 0.0, 0.0 };
-  double viewUp_World[3] = { 0.0, 1.0, 0.0 };
-  double viewUp_Handle[3] = { 0.0, 0.0, 0.0 };
-  if (this->GetSliceNode())
-  {
-    double viewUp[4] = { 0.0, 1.0, 0.0, 0.0 };
-    double viewUp2[4] = { 0.0, 1.0, 0.0, 0.0 };
-    this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(viewUp, viewUp2);
-    viewUp_World[0] = viewUp2[0];
-    viewUp_World[1] = viewUp2[1];
-    viewUp_World[2] = viewUp2[2];
-  }
-  else
-  {
-    camera->GetViewUp(viewUp_World);
-  }
-  worldToHandleTransform->TransformVector(viewUp_World, viewUp_Handle);
-
-  for (int i = 0; i < orientationArray->GetNumberOfTuples(); ++i)
-  {
-    double interactionHandlePosition[3] = { 0.0, 0.0, 0.0 };
-    this->GetInteractionHandlePositionWorld(InteractionScaleHandle, i, interactionHandlePosition);
-    this->GetHandleToCameraVectorWorld(interactionHandlePosition, viewDirection_World);
-    worldToHandleTransform->TransformVector(viewDirection_World, viewDirection_Handle);
-
-    double xAxis[3] = { 1.0, 0.0, 0.0 };
-    double yAxis[3] = { 0.0, 1.0, 0.0 };
-    double zAxis[3] = { 0.0, 0.0, 1.0 };
-    zAxis[0] = viewDirection_Handle[0];
-    zAxis[1] = viewDirection_Handle[1];
-    zAxis[2] = viewDirection_Handle[2];
-    vtkMath::Normalize(zAxis);
-
-    vtkMath::Cross(viewUp_Handle, viewDirection_Handle, xAxis);
-    vtkMath::Normalize(xAxis);
-
-    vtkMath::Cross(viewDirection_Handle, xAxis, yAxis);
-    vtkMath::Normalize(yAxis);
-
-    orientationArray->SetTuple9(i, xAxis[0], xAxis[1], xAxis[2], yAxis[0], yAxis[1], yAxis[2], zAxis[0], zAxis[1], zAxis[2]);
-  }
-}
-
-//----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::UpdateRotationHandleOrientation()
-{
-  vtkPolyData* handlePolyData = this->GetHandlePolydata(InteractionRotationHandle);
-  if (!handlePolyData)
-  {
-    return;
-  }
-
-  vtkDoubleArray* orientationArray = vtkDoubleArray::SafeDownCast(handlePolyData->GetPointData()->GetAbstractArray("orientation"));
-  if (!orientationArray)
-  {
-    return;
-  }
-
-  double viewDirection_World[3] = { 0.0, 0.0, 0.0 };
-  double viewUp_World[3] = { 0.0, 1.0, 0.0 };
-  if (this->GetSliceNode())
-  {
-    this->SlicePlane->GetNormal(viewDirection_World);
-    double viewup[4] = { 0.0, 1.0, 0.0, 0.0 };
-    double viewup2[4] = { 0.0, 1.0, 0.0, 0.0 };
-    this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(viewup, viewup2);
-    viewUp_World[0] = viewup2[0];
-    viewUp_World[1] = viewup2[1];
-    viewUp_World[2] = viewup2[2];
-  }
-  else
-  {
-    double handlePosition_World[3] = { 0.0, 0.0, 0.0 };
-    this->GetInteractionHandlePositionWorld(InteractionRotationHandle, 3, handlePosition_World);
-    this->GetHandleToCameraVectorWorld(handlePosition_World, viewDirection_World);
-
     vtkCamera* camera = this->GetRenderer()->GetActiveCamera();
-    camera->GetViewUp(viewUp_World);
+    if (camera->GetParallelProjection())
+    {
+      this->CachedParallelProjection = true;
+      camera->GetViewPlaneNormal(this->CachedCameraDirection);
+    }
+    else
+    {
+      this->CachedParallelProjection = false;
+      camera->GetPosition(this->CachedCameraPosition);
+    }
+    camera->GetViewUp(this->CachedViewUp_World);
   }
-
-  vtkSmartPointer<vtkTransform> worldToHandleTransform = vtkTransform::SafeDownCast(this->Pipeline->HandleToWorldTransform->GetInverse());
-
-  double viewDirection_Handle[3] = { 0.0, 0.0, 0.0 };
-  worldToHandleTransform->TransformVector(viewDirection_World, viewDirection_Handle);
-
-  double viewUp_Handle[3] = { 0.0, 0.0, 0.0 };
-  worldToHandleTransform->TransformVector(viewUp_World, viewUp_Handle);
-
-  double xAxis[3] = { 1.0, 0.0, 0.0 };
-  double yAxis[3] = { 0.0, 1.0, 0.0 };
-  double zAxis[3] = { 0.0, 0.0, 1.0 };
-  zAxis[0] = viewDirection_Handle[0];
-  zAxis[1] = viewDirection_Handle[1];
-  zAxis[2] = viewDirection_Handle[2];
-  vtkMath::Normalize(zAxis);
-
-  vtkMath::Cross(viewUp_Handle, viewDirection_Handle, xAxis);
-  vtkMath::Normalize(xAxis);
-
-  vtkMath::Cross(viewDirection_Handle, xAxis, yAxis);
-  vtkMath::Normalize(yAxis);
-
-  orientationArray->SetTuple9(3, xAxis[0], xAxis[1], xAxis[2], yAxis[0], yAxis[1], yAxis[2], zAxis[0], zAxis[1], zAxis[2]);
 }
 
 //----------------------------------------------------------------------
@@ -1414,71 +1374,6 @@ vtkPolyData* vtkMRMLInteractionWidgetRepresentation::GetHandlePolydata(int type)
   return nullptr;
 }
 
-//----------------------------------------------------------------------
-int vtkMRMLInteractionWidgetRepresentation::UpdateHandleColors(int type, int colorIndex)
-{
-  vtkPolyData* handlePolyData = this->GetHandlePolydata(type);
-  if (!handlePolyData)
-  {
-    return colorIndex;
-  }
-
-  vtkPointData* pointData = handlePolyData->GetPointData();
-  if (!pointData)
-  {
-    return colorIndex;
-  }
-
-  vtkSmartPointer<vtkFloatArray> colorArray = vtkFloatArray::SafeDownCast(pointData->GetAbstractArray("colorIndex"));
-  if (!colorArray)
-  {
-    colorArray = vtkSmartPointer<vtkFloatArray>::New();
-    colorArray->SetName("colorIndex");
-    colorArray->SetNumberOfComponents(1);
-    pointData->AddArray(colorArray);
-    pointData->SetActiveScalars("colorIndex");
-  }
-  colorArray->Initialize();
-  colorArray->SetNumberOfTuples(handlePolyData->GetNumberOfPoints() * 2);
-
-  double color[4] = { 0.0, 0.0, 0.0, 0.0 };
-  for (int i = 0; i < handlePolyData->GetNumberOfPoints(); ++i)
-  {
-    this->GetHandleColor(type, i, color);
-    this->Pipeline->ColorTable->SetTableValue(colorIndex, color);
-    colorArray->SetTuple1(i, colorIndex);
-    ++colorIndex;
-
-    double grey = 0.3;
-    bool selected = this->GetActiveComponentType() == type && this->GetActiveComponentIndex() == i;
-    if (selected)
-    {
-      grey = 0.0;
-    }
-    this->Pipeline->ColorTable->SetTableValue(colorIndex, grey, grey, grey, color[3]);
-    ++colorIndex;
-  }
-
-  return colorIndex;
-}
-
-//----------------------------------------------------------------------
-void vtkMRMLInteractionWidgetRepresentation::UpdateHandleColors()
-{
-  int numberOfHandles = this->GetNumberOfHandles();
-  int numberOfColors = numberOfHandles * 2; // alternate fill and outline colors
-  numberOfColors += 2;                      // Additional colors for minimal fill.
-
-  this->Pipeline->ColorTable->SetNumberOfTableValues(numberOfColors);
-  this->Pipeline->ColorTable->SetTableRange(0, double(numberOfColors) - 1);
-
-  int colorIndex = 0;
-  colorIndex = this->UpdateHandleColors(InteractionRotationHandle, colorIndex);
-  colorIndex = this->UpdateHandleColors(InteractionTranslationHandle, colorIndex);
-  colorIndex = this->UpdateHandleColors(InteractionScaleHandle, colorIndex);
-
-  this->Pipeline->ColorTable->Build();
-}
 
 //----------------------------------------------------------------------
 void vtkMRMLInteractionWidgetRepresentation::GetHandleColor(int type, int index, double color[4])
@@ -1558,7 +1453,13 @@ bool vtkMRMLInteractionWidgetRepresentation::GetHandleVisibility(int type, int i
 //----------------------------------------------------------------------
 double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int index)
 {
-  // Determine if the handle should be displayed
+  if (this->CachedHandleOpacity >= 0.0)
+  {
+    double result = this->CachedHandleOpacity;
+    this->CachedHandleOpacity = -1.0;
+    return result;
+  }
+
   bool handleVisible = this->GetHandleVisibility(type, index);
   if (!handleVisible)
   {
@@ -1571,7 +1472,6 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
   this->GetInteractionHandleAxisWorld(type, index, axis_World);
   if (axis_World[0] == 0.0 && axis_World[1] == 0.0 && axis_World[2] == 0.0)
   {
-    // No axis specified. The handle should be viewable from any direction.
     return opacity * this->GetInteractionHandleOpacity();
   }
 
@@ -1589,7 +1489,6 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
   double angle = vtkMath::DegreesFromRadians(vtkMath::AngleBetweenVectors(viewNormal_World, axis_World));
   if (type == InteractionRotationHandle)
   {
-    // Fade happens when the axis approaches 90 degrees from the view normal
     if (angle > 90.0 - this->EndFadeAngleDegrees)
     {
       opacity = 0.0;
@@ -1602,7 +1501,6 @@ double vtkMRMLInteractionWidgetRepresentation::GetHandleOpacity(int type, int in
   }
   else if (type == InteractionTranslationHandle || type == InteractionScaleHandle)
   {
-    // Fade happens when the axis approaches 0 degrees from the view normal
     if (angle < this->EndFadeAngleDegrees)
     {
       opacity = 0.0;
@@ -1625,34 +1523,16 @@ void vtkMRMLInteractionWidgetRepresentation::GetHandleToCameraVectorWorld(double
     return;
   }
 
-  if (this->GetSliceNode())
+  if (this->CachedParallelProjection)
   {
-    double slicePlaneNormalWorld4[4] = { 0.0, 0.0, 1.0, 0.0 };
-    vtkMRMLSliceNode* sliceNode = this->GetSliceNode();
-    if (sliceNode)
-    {
-      sliceNode->GetXYToRAS()->MultiplyPoint(slicePlaneNormalWorld4, slicePlaneNormalWorld4);
-    }
-    normal_World[0] = slicePlaneNormalWorld4[0];
-    normal_World[1] = slicePlaneNormalWorld4[1];
-    normal_World[2] = slicePlaneNormalWorld4[2];
-    vtkMath::Normalize(normal_World);
+    normal_World[0] = this->CachedCameraDirection[0];
+    normal_World[1] = this->CachedCameraDirection[1];
+    normal_World[2] = this->CachedCameraDirection[2];
   }
-  else if (this->GetRenderer() && this->GetRenderer()->GetActiveCamera())
+  else
   {
-    // 3D and VR views
-    vtkCamera* camera = this->GetRenderer()->GetActiveCamera();
-    if (camera->GetParallelProjection())
-    {
-      camera->GetViewPlaneNormal(normal_World);
-    }
-    else
-    {
-      double cameraPosition_World[3] = { 0.0, 0.0, 0.0 };
-      camera->GetPosition(cameraPosition_World);
-      vtkMath::Subtract(cameraPosition_World, handlePosition_World, normal_World);
-      vtkMath::Normalize(normal_World);
-    }
+    vtkMath::Subtract(this->CachedCameraPosition, handlePosition_World, normal_World);
+    vtkMath::Normalize(normal_World);
   }
 }
 

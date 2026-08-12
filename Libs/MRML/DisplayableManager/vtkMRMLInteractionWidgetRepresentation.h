@@ -51,25 +51,15 @@
 
 // VTK includes
 #include <vtkActor.h>
-#include <vtkActor2D.h>
-#include <vtkAppendPolyData.h>
-#include <vtkArrayCalculator.h>
-#include <vtkGlyph3D.h>
-#include <vtkLookupTable.h>
+#include <vtkFloatArray.h>
+#include <vtkGlyph3DMapper.h>
+#include <vtkIntArray.h>
 #include <vtkPlane.h>
 #include <vtkPointPlacer.h>
-#include <vtkPointSetToLabelHierarchy.h>
-#include <vtkPolyDataMapper.h>
-#include <vtkPolyDataMapper2D.h>
 #include <vtkProperty.h>
-#include <vtkProperty2D.h>
 #include <vtkSmartPointer.h>
-#include <vtkSphereSource.h>
-#include <vtkTextActor.h>
-#include <vtkTextProperty.h>
-#include <vtkTensorGlyph.h>
 #include <vtkTransform.h>
-#include <vtkTransformPolyDataFilter.h>
+#include <vtkUnsignedCharArray.h>
 
 class vtkMRMLInteractionEventData;
 class vtkMRMLDisplayNode;
@@ -119,8 +109,6 @@ public:
 
   /// Update the interaction pipeline
   virtual void UpdateInteractionPipeline();
-
-  virtual void UpdateHandlePolyData();
 
   /// Get the axis for the handle specified by the index in local coordinates
   virtual void GetInteractionHandleAxisLocal(int type, int index, double axis[3]);
@@ -212,24 +200,30 @@ protected:
     vtkSmartPointer<vtkPolyData> RingOutlinePolyData;
     vtkSmartPointer<vtkPolyData> CrosshairOutlinePolyData;
 
-    std::map<std::pair<int, int>, vtkSmartPointer<vtkPolyData>> HandleGlyphPolyDataMap;
-    std::map<std::pair<int, int>, vtkSmartPointer<vtkPolyData>> HandleOutlineGlyphPolyDataMap;
-
     vtkSmartPointer<vtkPolyData> RotationHandlePoints;
     vtkSmartPointer<vtkPolyData> TranslationHandlePoints;
     vtkSmartPointer<vtkPolyData> ScaleHandlePoints;
 
-    vtkSmartPointer<vtkAppendPolyData> Append;
-    vtkSmartPointer<vtkTransformPolyDataFilter> HandleToWorldTransformFilter;
     vtkSmartPointer<vtkTransform> HandleToWorldTransform;
-    vtkSmartPointer<vtkLookupTable> ColorTable;
 
-    vtkSmartPointer<vtkPolyDataMapper> Mapper3D;
-    vtkSmartPointer<vtkProperty> Property3D;
-    vtkSmartPointer<vtkActor> Actor3D;
+    vtkSmartPointer<vtkPolyData> InstancePolyData;
+    vtkSmartPointer<vtkFloatArray> GlyphOrientationArray;
+    vtkSmartPointer<vtkFloatArray> GlyphScaleArray;
+    vtkSmartPointer<vtkIntArray> GlyphSourceIndexArray;
+    vtkSmartPointer<vtkUnsignedCharArray> GlyphMaskArray;
+    vtkSmartPointer<vtkUnsignedCharArray> FillColorArray;
+    vtkSmartPointer<vtkUnsignedCharArray> OutlineColorArray;
+
+    vtkSmartPointer<vtkGlyph3DMapper> FillMapper;
+    vtkSmartPointer<vtkProperty> FillProperty;
+    vtkSmartPointer<vtkActor> FillActor;
+
+    vtkSmartPointer<vtkGlyph3DMapper> OutlineMapper;
+    vtkSmartPointer<vtkProperty> OutlineProperty;
+    vtkSmartPointer<vtkActor> OutlineActor;
 
     vtkSmartPointer<vtkTransform> WorldToSliceTransform;
-    vtkSmartPointer<vtkTransformPolyDataFilter> WorldToSliceTransformFilter;
+    vtkSmartPointer<vtkTransform> ActorTransform;
   };
 
   struct HandleInfo
@@ -278,20 +272,19 @@ protected:
   virtual void CreateRotationHandles();
   virtual void CreateTranslationHandles();
   virtual void CreateScaleHandles();
-  virtual void UpdateHandleColors();
-  virtual int UpdateHandleColors(int type, int startIndex);
+  virtual void UpdateInstanceArrays();
+  virtual void UpdateActorTransform();
   virtual vtkPolyData* GetHandlePolydata(int type);
 
-  virtual void UpdateHandleOrientation();
-  virtual void UpdateTranslationHandleOrientation();
-  virtual void UpdateScaleHandleOrientation();
-  virtual void UpdateRotationHandleOrientation();
+  /// Cache camera state (direction, position, view up) for use by per-handle computations.
+  virtual void UpdateCameraState();
 
   /// Set the scale of the interaction handles in world coordinates
   virtual void SetWidgetScale(double scale);
 
   /// Get the vector from the interaction handle to the camera in world coordinates.
   /// In slice views and in 3D with parallel projection this is the same as the camera view direction.
+  /// Uses cached camera state from UpdateCameraState().
   virtual void GetHandleToCameraVectorWorld(double handlePosition_World[3], double normal_World[3]);
 
   /// Orthogonalize the transform axes. The Z-axis will not be changed.
@@ -338,6 +331,13 @@ protected:
   double InteractionSize{ 1.0 };
 
   double WidgetScale{ 1.0 };
+
+  bool CachedParallelProjection{ true };
+  double CachedCameraPosition[3]{ 0.0, 0.0, 0.0 };
+  double CachedCameraDirection[3]{ 0.0, 0.0, 1.0 };
+  double CachedViewUp_World[3]{ 0.0, 1.0, 0.0 };
+
+  double CachedHandleOpacity{ -1.0 };
 
   bool Interacting{ false };
 
