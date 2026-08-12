@@ -132,7 +132,11 @@ public:
     GlyphArrow,
     GlyphCircle,
     GlyphRing,
-    GlyphCrosshair
+    GlyphCrosshair,
+    GlyphArrowOutline,
+    GlyphCircleOutline,
+    GlyphRingOutline,
+    GlyphCrosshairOutline
   };
 
   virtual int GetActiveComponentType() = 0;
@@ -211,16 +215,11 @@ protected:
     vtkSmartPointer<vtkFloatArray> GlyphScaleArray;
     vtkSmartPointer<vtkIntArray> GlyphSourceIndexArray;
     vtkSmartPointer<vtkUnsignedCharArray> GlyphMaskArray;
-    vtkSmartPointer<vtkUnsignedCharArray> FillColorArray;
-    vtkSmartPointer<vtkUnsignedCharArray> OutlineColorArray;
+    vtkSmartPointer<vtkUnsignedCharArray> ColorArray;
 
-    vtkSmartPointer<vtkGlyph3DMapper> FillMapper;
-    vtkSmartPointer<vtkProperty> FillProperty;
-    vtkSmartPointer<vtkActor> FillActor;
-
-    vtkSmartPointer<vtkGlyph3DMapper> OutlineMapper;
-    vtkSmartPointer<vtkProperty> OutlineProperty;
-    vtkSmartPointer<vtkActor> OutlineActor;
+    vtkSmartPointer<vtkGlyph3DMapper> Mapper;
+    vtkSmartPointer<vtkProperty> Property;
+    vtkSmartPointer<vtkActor> Actor;
 
     vtkSmartPointer<vtkTransform> WorldToSliceTransform;
     vtkSmartPointer<vtkTransform> ActorTransform;
@@ -338,6 +337,12 @@ protected:
   double CachedViewUp_World[3]{ 0.0, 1.0, 0.0 };
 
   double CachedHandleOpacity{ -1.0 };
+
+  vtkMTimeType PostUpdatePipelineMTime{ 0 };
+  vtkMTimeType LastRenderCameraMTime{ 0 };
+  int LastRenderActiveType{ -1 };
+  int LastRenderActiveIndex{ -1 };
+  bool HasVisibleHandles{ false };
 
   bool Interacting{ false };
 
