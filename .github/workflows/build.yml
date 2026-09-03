@@ -189,8 +189,13 @@ jobs:
       # The matrix, with the prerequisites key and whether it has already been
       # built added to every entry.
       matrix: ${{ steps.key.outputs.matrix }}
-      # The subset of the entries whose prerequisites still have to be built.
+      # The subset of the entries whose prerequisites still have to be built,
+      # and how many there are. The stages are gated on the count: a matrix
+      # whose only vector is an empty "include" is rejected by GitHub, so the
+      # output falls back to the full matrix and the jobs are skipped by their
+      # condition instead.
       matrix-todo: ${{ steps.key.outputs.matrix-todo }}
+      todo-count: ${{ steps.key.outputs.todo-count }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -229,13 +234,23 @@ jobs:
               '. + [{platform: $p, runner: $r, key: $k, cached: $c}]')"
             echo "| $platform | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
           done < <(echo "$MATRIX" | jq -r '.include[] | "\(.platform) \(.runner)"')
+          todo="$(echo "$entries" | jq -c 'map(select(.cached | not))')"
+          count="$(echo "$todo" | jq 'length')"
+          if [ "$count" -eq 0 ]; then
+            # Never emit an empty "include": the stages are skipped by their
+            # condition, and this value is then never used.
+            todo="$entries"
+          fi
           echo "matrix=$(echo "$entries" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
-          echo "matrix-todo=$(echo "$entries" | jq -c '{include: map(select(.cached | not))}')" >> "$GITHUB_OUTPUT"
+          echo "matrix-todo=$(echo "$todo" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
+          echo "todo-count=$count" >> "$GITHUB_OUTPUT"
+          echo "Platforms whose prerequisites have to be built: $count"
           echo "$entries" | jq .
 
   deps-1:
     name: Deps 1/5 base (${{ matrix.platform }})
     needs: [setup, deps-key]
+    if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
@@ -265,6 +280,7 @@ jobs:
   deps-2:
     name: Deps 2/5 VTK (${{ matrix.platform }})
     needs: [setup, deps-key, deps-1]
+    if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
@@ -295,6 +311,7 @@ jobs:
   deps-3:
     name: Deps 3/5 ITK (${{ matrix.platform }})
     needs: [setup, deps-key, deps-2]
+    if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
@@ -325,6 +342,7 @@ jobs:
   deps-4:
     name: Deps 4/5 CTK (${{ matrix.platform }})
     needs: [setup, deps-key, deps-3]
+    if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
@@ -355,6 +373,7 @@ jobs:
   deps-5:
     name: Deps 5/5 rest (${{ matrix.platform }})
     needs: [setup, deps-key, deps-4]
+    if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     permissions:
@@ -423,11 +442,11 @@ jobs:
       - name: Check
         shell: bash
         env:
-          TODO: ${{ needs.deps-key.outputs.matrix-todo }}
+          TODO: ${{ needs.deps-key.outputs.todo-count }}
           RESULT: ${{ needs.deps-5.result }}
         run: |
           set -euo pipefail
-          todo="$(echo "$TODO" | jq '.include | length')"
+          todo="$TODO"
           echo "Platforms needing a build of the prerequisites: $todo"
           echo "Result of the last stage: $RESULT"
           if [ "$todo" -eq 0 ]; then
