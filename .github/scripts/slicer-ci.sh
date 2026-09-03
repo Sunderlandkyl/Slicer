@@ -308,6 +308,10 @@ cmd_strip() {
 
 # Create a zstd-compressed tar archive of paths relative to SLICER_ROOT.
 #   pack <archive> [--exclude PATTERN]... <relative path>...
+#
+# Exclude patterns are matched against the whole stored path by both GNU tar
+# and the bsdtar of macOS, so they have to be written accordingly: "*/.git"
+# rather than ".git", and "SR/Slicer-build*" rather than "SR/Slicer-build".
 cmd_pack() {
   local archive="${1:?pack: missing archive}"; shift
   local excludes=()
