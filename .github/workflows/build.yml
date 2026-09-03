@@ -102,7 +102,7 @@ jobs:
           for p in ${PLATFORMS//,/ }; do
             case "$p" in
               linux)   entries="$entries {\"platform\":\"linux\",\"runner\":\"ubuntu-22.04\"}," ;;
-              macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15\"}," ;;
+              macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15-intel\"}," ;;
               windows) entries="$entries {\"platform\":\"windows\",\"runner\":\"windows-2022\"}," ;;
               *) echo "::warning::unknown platform '$p'" ;;
             esac
