@@ -82,14 +82,20 @@ jobs:
         env:
           PLATFORMS: ${{ github.event.inputs.platforms || 'linux,macos,windows' }}
           EVENT: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          # On pull requests only Linux is built, to keep the feedback fast and
-          # the cost low. Pushes, nightly runs and manual runs build everything.
+          on_default_branch=false
+          if [ "$EVENT" = "push" ] && [ "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            on_default_branch=true
+          fi
+          # Only Linux is built on pull requests and on the branches used to
+          # develop the CI itself, to keep the feedback fast and the cost low.
+          # The default branch, the nightly run and manual runs build
+          # everything.
           if [ "$EVENT" = "pull_request" ]; then
             PLATFORMS="linux"
-          elif [ "$EVENT" = "push" ] && [ "${GITHUB_REF_NAME}" != "main" ] && [ "${GITHUB_REF_NAME}" != "master" ]; then
-            # Development branches for the CI itself: use the workflow default.
+          elif [ "$EVENT" = "push" ] && [ "$on_default_branch" = "false" ]; then
             PLATFORMS="${SLICER_CI_PLATFORMS:-linux}"
           fi
           entries=""
@@ -107,7 +113,12 @@ jobs:
           run_tests="${{ github.event.inputs.run-tests || 'true' }}"
           echo "run-tests=$run_tests" >> "$GITHUB_OUTPUT"
           publish="${{ github.event.inputs.publish || 'false' }}"
-          if [ "$EVENT" = "schedule" ]; then publish="true"; fi
+          # The nightly release follows the default branch: every build of it,
+          # and the nightly run itself, refresh what extension repositories
+          # build against.
+          if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ]; then
+            publish="true"
+          fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "force-deps=${{ github.event.inputs.rebuild-prerequisites || 'false' }}" >> "$GITHUB_OUTPUT"
 
