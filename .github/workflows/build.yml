@@ -250,9 +250,9 @@ jobs:
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           # The prerequisites are built once and then stored as a release, so
-          # a compiler cache would only displace the entries that speed up the
-          # Slicer build itself.
-          sccache: "false"
+          # caching their objects would only displace the entries that speed
+          # up the Slicer build itself.
+          compiler-cache: "false"
       - name: Build base
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -279,9 +279,9 @@ jobs:
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           # The prerequisites are built once and then stored as a release, so
-          # a compiler cache would only displace the entries that speed up the
-          # Slicer build itself.
-          sccache: "false"
+          # caching their objects would only displace the entries that speed
+          # up the Slicer build itself.
+          compiler-cache: "false"
       - name: Build VTK
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -309,9 +309,9 @@ jobs:
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           # The prerequisites are built once and then stored as a release, so
-          # a compiler cache would only displace the entries that speed up the
-          # Slicer build itself.
-          sccache: "false"
+          # caching their objects would only displace the entries that speed
+          # up the Slicer build itself.
+          compiler-cache: "false"
       - name: Build ITK
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -339,9 +339,9 @@ jobs:
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           # The prerequisites are built once and then stored as a release, so
-          # a compiler cache would only displace the entries that speed up the
-          # Slicer build itself.
-          sccache: "false"
+          # caching their objects would only displace the entries that speed
+          # up the Slicer build itself.
+          compiler-cache: "false"
       - name: Build CTK
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -371,9 +371,9 @@ jobs:
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           # The prerequisites are built once and then stored as a release, so
-          # a compiler cache would only displace the entries that speed up the
-          # Slicer build itself.
-          sccache: "false"
+          # caching their objects would only displace the entries that speed
+          # up the Slicer build itself.
+          compiler-cache: "false"
       - name: Build rest
         uses: ./.github/actions/slicer-build-stage
         with:

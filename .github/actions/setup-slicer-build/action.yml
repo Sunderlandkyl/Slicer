@@ -38,8 +38,8 @@ inputs:
   cmake-version:
     description: "CMake version to install"
     default: "3.31.x"
-  sccache:
-    description: "Enable sccache on Linux and macOS"
+  compiler-cache:
+    description: "Enable the ccache compiler cache on Linux and macOS"
     default: "true"
   free-disk-space:
     description: "Remove unneeded pre-installed tooling on Linux runners"
@@ -201,18 +201,23 @@ runs:
         echo "qt-dir=$qt_dir" >> "$GITHUB_OUTPUT"
         echo "SLICER_QT_DIR=$qt_dir" >> "$GITHUB_ENV"
 
-    - name: Set up sccache
-      if: inputs.sccache == 'true' && runner.os != 'Windows'
-      uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+    # ccache rather than sccache: sccache's GitHub Actions backend writes one
+    # cache entry per compiled object, which leaves tens of thousands of them
+    # in the repository, while this stores the whole cache as a single entry.
+    - name: Set up the compiler cache
+      if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
+      uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+      with:
+        key: slicer-extension-${{ steps.env.outputs.platform }}
+        max-size: 1G
 
-    - name: Enable sccache
-      if: inputs.sccache == 'true' && runner.os != 'Windows'
+    - name: Enable the compiler cache
+      if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       shell: bash
       run: |
         {
-          echo "SCCACHE_GHA_ENABLED=true"
-          echo "CMAKE_C_COMPILER_LAUNCHER=sccache"
-          echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache"
+          echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
         } >> "$GITHUB_ENV"
 
     - name: Configure MSVC parallel compilation
