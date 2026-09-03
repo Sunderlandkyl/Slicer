@@ -46,6 +46,10 @@ on:
         description: "Force a rebuild of the prerequisites"
         type: boolean
         default: false
+      force:
+        description: "Build even if the nightly release already holds this commit"
+        type: boolean
+        default: false
 
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
@@ -73,6 +77,7 @@ jobs:
       run-tests: ${{ steps.matrix.outputs.run-tests }}
       publish: ${{ steps.matrix.outputs.publish }}
       force-deps: ${{ steps.matrix.outputs.force-deps }}
+      skip: ${{ steps.uptodate.outputs.skip }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -122,6 +127,47 @@ jobs:
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "force-deps=${{ github.event.inputs.rebuild-prerequisites || 'false' }}" >> "$GITHUB_OUTPUT"
 
+      # The scheduled run exists to keep the nightly release in step with the
+      # default branch. When no commit has landed since the last one, there is
+      # nothing to publish and several hours of runner time to save.
+      - name: Check whether the nightly is up to date
+        id: uptodate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+          RELEASE_TAG: nightly
+        run: |
+          set -euo pipefail
+          skip=false
+          if [ "$EVENT" = "schedule" ] && [ "$FORCE" != "true" ]; then
+            dir="$(mktemp -d)"
+            if gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -D "$dir" \
+                 --clobber -p 'manifest-*.json' 2>/dev/null; then
+              built="$(cat "$dir"/manifest-*.json 2>/dev/null \
+                       | sed -n 's/^  "commit": "\(.*\)",$/\1/p' | sort -u)"
+              echo "Commit of the published nightly: ${built:-none}"
+              echo "Commit of the default branch:    $GITHUB_SHA"
+              if [ "$built" = "$GITHUB_SHA" ]; then
+                skip=true
+              fi
+            else
+              echo "No '$RELEASE_TAG' release yet."
+            fi
+            rm -rf "$dir"
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          if [ "$skip" = "true" ]; then
+            echo "::notice::The nightly release already holds $GITHUB_SHA; nothing to build."
+            {
+              echo "### Nothing to build"
+              echo ""
+              echo "The nightly release already holds \`$GITHUB_SHA\`."
+              echo "Run the workflow manually with \`force\` to build it again."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   #-----------------------------------------------------------------------------
   # Phase 1: build (or reuse) the prerequisites.
   #
@@ -137,6 +183,7 @@ jobs:
   deps-key:
     name: Prerequisites key
     needs: setup
+    if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
     outputs:
       # The matrix, with the prerequisites key and whether it has already been
@@ -351,6 +398,17 @@ jobs:
             --notes "Prebuilt Slicer prerequisites for ${SLICER_PLATFORM}, produced by the Build workflow. Safe to delete: it is regenerated on demand." \
             2>/dev/null || true
           gh release upload "$KEY" "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst* --clobber
+
+          # Keep the three most recent sets of prerequisites of this platform;
+          # older ones correspond to external projects nothing builds any more.
+          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+            --jq "[.[] | select(.tagName | startswith(\"slicer-deps-${SLICER_PLATFORM}-\"))]
+                  | sort_by(.createdAt) | reverse | .[3:] | .[].tagName" \
+            | while read -r old; do
+                [ -n "$old" ] || continue
+                echo "Removing the superseded prerequisites $old"
+                gh release delete "$old" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+              done
 
   # Single place stating whether the prerequisites of every platform are
   # available: either they were already built, or the stages produced them.

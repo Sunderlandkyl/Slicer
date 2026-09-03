@@ -35,9 +35,16 @@ or removing an external project therefore does not require touching the
 workflow, only rebalancing the stages if one of them becomes too long.
 
 The finished prerequisites are published as the assets of a release named after
-the key, for example `slicer-deps-linux-1a2b3c4d5e6f7890`. That release is an
-implementation detail of the CI and can be deleted at any time: it is
-regenerated on demand.
+the key, for example `slicer-deps-linux-1a2b3c4d5e6f7890`. Every later run,
+on any branch, restores that release instead of rebuilding: the five stages are
+skipped entirely and the job that builds Slicer downloads it directly. The
+prerequisites are rebuilt only when the key changes, which happens when an
+external project or a configure option changes, and never merely because a run
+is new.
+
+Those releases are an implementation detail of the CI and can be deleted at any
+time: they are regenerated on demand. The three most recent sets per platform
+are kept and older ones are removed automatically.
 
 `Slicer-dependencies` is an aggregate target added by `SuperBuild.cmake`. It
 depends on every entry of `Slicer_DEPENDENCIES` and `Slicer_REMOTE_DEPENDENCIES`,
@@ -203,6 +210,12 @@ releases:
 
 Pull requests build and test Linux only. Pushes to the default branch and the
 nightly schedule build all three platforms.
+
+The scheduled run exists to keep the `nightly` release in step with the default
+branch, so it stops early when no commit has landed since the last one: it
+compares the commit recorded in the published manifest against the head of the
+default branch and, when they match, builds nothing. Use the `force` input to
+build the same commit again.
 
 ## Tests
 
