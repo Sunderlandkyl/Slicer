@@ -55,7 +55,6 @@ SLICER_OUTPUT_DIR="${SLICER_OUTPUT_DIR:-$SLICER_ROOT/out}"
 # CMakeLists.txt from the environment, so it has to be set before the tree is
 # configured for the first time.
 export ExternalData_OBJECT_STORES="${ExternalData_OBJECT_STORES:-$SLICER_ROOT/ExternalData}"
-SLICER_CI_STRIP_OBJECTS="${SLICER_CI_STRIP_OBJECTS:-true}"
 nproc_count() {
   if [ -n "${NUMBER_OF_PROCESSORS:-}" ]; then echo "$NUMBER_OF_PROCESSORS"
   elif command -v nproc >/dev/null 2>&1; then nproc
@@ -280,27 +279,45 @@ cmd_package() {
   fi
 }
 
-# Remove intermediate files that are not needed to *use* a build tree
-# (objects, precompiled headers, debug databases, git metadata of the external
-# project sources). This dramatically reduces the size of the archives and is
-# safe as long as the corresponding projects are not rebuilt.
+# Remove what is not needed to *use* a build tree: object files and the git
+# metadata of the external project sources.
+#
+#   strip [--objects] [--vcs] [<dir>]
+#
+# This must only be done to a tree that will never be built again. Rebuilding a
+# stripped tree recompiles every external project from scratch, because the
+# steps of an external project are re-run whenever a script it depends on in
+# the Slicer source tree is newer than its stamp, which is the case as soon as
+# the source tree is checked out again. Removing the git metadata additionally
+# breaks the external projects that CTK builds itself, whose update step is not
+# under the control of this build.
 cmd_strip() {
-  local dir="${1:-$SLICER_SUPERBUILD_DIR}"
+  local objects=false vcs=false dir=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --objects) objects=true; shift ;;
+      --vcs) vcs=true; shift ;;
+      *) dir="$1"; shift ;;
+    esac
+  done
+  [ -n "$dir" ] || dir="$SLICER_SUPERBUILD_DIR"
   dir="$(bash_path "$dir")"
   [ -d "$dir" ] || die "strip: $dir does not exist"
-  if [ "$SLICER_CI_STRIP_OBJECTS" != "true" ]; then
-    info "strip: skipped (SLICER_CI_STRIP_OBJECTS=$SLICER_CI_STRIP_OBJECTS)"
+  if [ "$objects" = "false" ] && [ "$vcs" = "false" ]; then
+    info "strip: nothing to do"
     return 0
   fi
-  log "Strip intermediate files in $dir"
+  log "Strip $dir"
   local before; before="$(du -sh "$dir" 2>/dev/null | cut -f1 || true)"
-  find "$dir" -type f \( \
-      -name '*.o' -o -name '*.obj' -o -name '*.ilk' -o -name '*.pdb' -o -name '*.idb' \
-      -o -name '*.pch' -o -name '*.gch' -o -name '*.ipch' -o -name '*.tmp' \
-    \) -delete
-  # Git metadata of the external projects (sources are pinned by tag; the
-  # update step is disconnected).
-  find "$dir" -mindepth 2 -maxdepth 3 -type d -name '.git' -prune -exec rm -rf {} + 2>/dev/null || true
+  if [ "$objects" = "true" ]; then
+    find "$dir" -type f \( \
+        -name '*.o' -o -name '*.obj' -o -name '*.ilk' -o -name '*.pdb' -o -name '*.idb' \
+        -o -name '*.pch' -o -name '*.gch' -o -name '*.ipch' \
+      \) -delete
+  fi
+  if [ "$vcs" = "true" ]; then
+    find "$dir" -type d -name '.git' -prune -exec rm -rf {} + 2>/dev/null || true
+  fi
   local after; after="$(du -sh "$dir" 2>/dev/null | cut -f1 || true)"
   info "strip: $before -> $after"
   endlog
@@ -578,7 +595,9 @@ Commands:
   build <target>...            Build superbuild targets (unknown ones are skipped)
   dependencies                 List the external projects of the configured tree
   package                      Build the package of the inner build
-  strip [dir]                  Remove intermediate files from a build tree
+  strip [--objects] [--vcs] [dir]
+                               Remove what is not needed to use a build tree
+                               (only for a tree that will not be built again)
   pack <archive> [--exclude P]... <relpath>...
   unpack <archive>
   split <archive>

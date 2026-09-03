@@ -18,13 +18,20 @@ inputs:
     description: "Name of the archive inside the restored artifact (without extension)"
     default: "stage"
   strip:
-    description: "Strip intermediate files after the build"
-    default: "true"
+    description: >-
+      Options passed to the 'strip' command of the helper script, for example
+      "--objects --vcs". Empty, the default, keeps the tree buildable: a
+      stripped tree recompiles everything the next time it is built.
+    default: ""
   archive-name:
     description: "Name of the archive to create (without extension); empty to skip"
     default: "stage"
   archive-paths:
-    description: "Space separated paths (relative to the root) to archive"
+    description: >-
+      Space separated paths (relative to the root) to archive. Include "Slicer"
+      to carry the source tree over to the next stage: checking it out again
+      gives every file a newer timestamp, which makes CMake re-run the steps of
+      every external project.
     default: "SR"
   archive-excludes:
     description: "Space separated tar exclude patterns"
@@ -92,9 +99,14 @@ runs:
       run: '"$SLICER_CI" report'
 
     - name: Strip
-      if: inputs.strip == 'true'
+      if: inputs.strip != ''
       shell: bash
-      run: '"$SLICER_CI" strip "$SLICER_SUPERBUILD_DIR"'
+      env:
+        OPTIONS: ${{ inputs.strip }}
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC2086 - the options are deliberately word split
+        "$SLICER_CI" strip $OPTIONS "$SLICER_SUPERBUILD_DIR"
 
     - name: Archive
       if: inputs.archive-name != ''

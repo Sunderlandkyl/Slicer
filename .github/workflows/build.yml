@@ -211,6 +211,7 @@ jobs:
         with:
           # `python` pulls in zlib, bzip2, LZMA, LibFFI, sqlite and OpenSSL.
           target: "python DCMTK curl teem LibArchive RapidJSON JsonCpp tbb CTKAppLauncherLib CTKAPPLAUNCHER CTKResEdit"
+          archive-paths: "SR Slicer"
           archive-name: deps-stage
           upload-artifact: deps-stage1-${{ matrix.platform }}
 
@@ -240,6 +241,7 @@ jobs:
           target: "VTK"
           restore-artifact: deps-stage1-${{ matrix.platform }}
           restore-archive: deps-stage
+          archive-paths: "SR Slicer"
           archive-name: deps-stage
           upload-artifact: deps-stage2-${{ matrix.platform }}
 
@@ -269,6 +271,7 @@ jobs:
           target: "ITK SlicerExecutionModel"
           restore-artifact: deps-stage2-${{ matrix.platform }}
           restore-archive: deps-stage
+          archive-paths: "SR Slicer"
           archive-name: deps-stage
           upload-artifact: deps-stage3-${{ matrix.platform }}
 
@@ -298,6 +301,7 @@ jobs:
           target: "CTK qRestAPI"
           restore-artifact: deps-stage3-${{ matrix.platform }}
           restore-archive: deps-stage
+          archive-paths: "SR Slicer"
           archive-name: deps-stage
           upload-artifact: deps-stage4-${{ matrix.platform }}
 
@@ -331,6 +335,7 @@ jobs:
           target: "Slicer-dependencies"
           restore-artifact: deps-stage4-${{ matrix.platform }}
           restore-archive: deps-stage
+          archive-paths: "SR"
           archive-name: deps-${{ matrix.platform }}
           upload-artifact: deps-${{ matrix.platform }}
 
@@ -427,9 +432,8 @@ jobs:
           # has to be the last operand.
           restore-artifact: ${{ !matrix.cached && format('deps-{0}', matrix.platform) || '' }}
           restore-archive: deps-${{ matrix.platform }}
-          # Archived after packaging instead, so that the package is included.
+          # Archived after the tests and the packaging instead.
           archive-name: ""
-          strip: "false"
 
       - name: Run the tests
         id: tests
@@ -490,7 +494,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "$SLICER_CI" strip "$SLICER_SUPERBUILD_DIR"
+          # Extensions never rebuild an external project, so the published
+          # tree can be reduced. The prerequisites release keeps its objects.
+          "$SLICER_CI" strip --objects --vcs "$SLICER_SUPERBUILD_DIR"
           # Split in three archives so that consumers can fetch only what they need:
           #  - the source tree (SlicerConfig.cmake points into it)
           #  - the superbuild tree without the inner build (the prerequisites)
