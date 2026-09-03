@@ -46,18 +46,6 @@ inputs:
   build-artifact-name:
     description: "Workflow artifact holding the Slicer build tree (build-source=artifact)"
     default: ""
-  deps-source:
-    description: "Where to restore the prerequisites from: '', 'release', 'artifact' or 'auto' (release tag from the manifest, else artifact)"
-    default: "auto"
-  deps-release-tag:
-    description: "Release tag holding the prerequisites (default: read from the manifest)"
-    default: ""
-  deps-artifact-name:
-    description: "Workflow artifact holding the prerequisites (deps-source=artifact)"
-    default: ""
-  restore-testdata:
-    description: "Also restore the test data archive when present (artifact only)"
-    default: "false"
 
 outputs:
   platform:
@@ -115,23 +103,16 @@ runs:
 
     # ---- Restore: download manifests/archives -------------------------------
 
-    - name: Download build tree (release)
+    - name: Download the build tree (release)
       if: inputs.build-source == 'release'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
       run: |
         set -euo pipefail
-        dest="$SLICER_OUTPUT_DIR/restore"
-        mkdir -p "$dest"
-        echo "Downloading build tree from ${{ inputs.repository }}@${{ inputs.build-release-tag }}"
-        gh release download "${{ inputs.build-release-tag }}" -R "${{ inputs.repository }}" -D "$dest" --clobber \
-          -p "manifest-${SLICER_PLATFORM}.json" \
-          -p "slicer-source-${SLICER_PLATFORM}.tar.zst*" \
-          -p "slicer-build-${SLICER_PLATFORM}.tar.zst*"
-        ls -la "$dest"
+        "$SLICER_CI" restore-release "${{ inputs.repository }}" "${{ inputs.build-release-tag }}" all
 
-    - name: Download build tree (artifact)
+    - name: Download the build tree (artifact)
       if: inputs.build-source == 'artifact'
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
@@ -157,59 +138,11 @@ runs:
             echo "::error::The restored build tree was built at '$root' but this runner uses '$SLICER_ROOT'."
             exit 1
           fi
-          echo "deps-release-tag=$("$SLICER_CI" manifest-get "$manifest" deps_release_tag)" >> "$GITHUB_OUTPUT"
         else
           echo "manifest=" >> "$GITHUB_OUTPUT"
-          echo "deps-release-tag=" >> "$GITHUB_OUTPUT"
         fi
         echo "qt-version=$qt" >> "$GITHUB_OUTPUT"
         echo "SLICER_QT_VERSION=$qt" >> "$GITHUB_ENV"
-
-    - name: Resolve prerequisites source
-      id: deps
-      shell: bash
-      run: |
-        set -euo pipefail
-        source="${{ inputs.deps-source }}"
-        tag="${{ inputs.deps-release-tag }}"
-        [ -n "$tag" ] || tag="${{ steps.versions.outputs.deps-release-tag }}"
-        if [ "$source" = "auto" ]; then
-          if [ "${{ inputs.build-source }}" = "" ]; then
-            source=""
-          elif [ -n "$tag" ] && [ -z "${{ inputs.deps-artifact-name }}" ]; then
-            source="release"
-          elif [ -n "${{ inputs.deps-artifact-name }}" ]; then
-            source="artifact"
-          else
-            source="release"
-          fi
-        fi
-        echo "source=$source" >> "$GITHUB_OUTPUT"
-        echo "tag=$tag" >> "$GITHUB_OUTPUT"
-        echo "Prerequisites source: '$source' (tag: '$tag', artifact: '${{ inputs.deps-artifact-name }}')"
-
-    - name: Download prerequisites (release)
-      if: steps.deps.outputs.source == 'release'
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.token }}
-      run: |
-        set -euo pipefail
-        dest="$SLICER_OUTPUT_DIR/restore"
-        mkdir -p "$dest"
-        tag="${{ steps.deps.outputs.tag }}"
-        [ -n "$tag" ] || { echo "::error::No prerequisites release tag"; exit 1; }
-        echo "Downloading prerequisites from ${{ inputs.repository }}@$tag"
-        gh release download "$tag" -R "${{ inputs.repository }}" -D "$dest" --clobber \
-          -p "deps-${SLICER_PLATFORM}.tar.zst*" -p "deps-${SLICER_PLATFORM}.json"
-        ls -la "$dest"
-
-    - name: Download prerequisites (artifact)
-      if: steps.deps.outputs.source == 'artifact'
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-      with:
-        name: ${{ inputs.deps-artifact-name }}
-        path: ${{ steps.env.outputs.output-dir }}/restore
 
     # ---- Toolchain -------------------------------------------------------------
 
@@ -303,27 +236,17 @@ runs:
 
     # ---- Restore: extract -------------------------------------------------------
 
-    - name: Restore build tree
-      if: inputs.build-source != '' || steps.deps.outputs.source != ''
+    - name: Unpack the downloaded artifact
+      if: inputs.build-source == 'artifact'
       shell: bash
       run: |
         set -euo pipefail
         dest="$SLICER_OUTPUT_DIR/restore"
-        if ls "$dest"/deps-${SLICER_PLATFORM}.tar.zst* >/dev/null 2>&1; then
-          "$SLICER_CI" unpack "$dest/deps-${SLICER_PLATFORM}.tar.zst"
-          rm -f "$dest"/deps-${SLICER_PLATFORM}.tar.zst*
-        elif [ "${{ steps.deps.outputs.source }}" != "" ]; then
-          echo "::error::Prerequisites archive not found in $dest"
-          ls -la "$dest" || true
-          exit 1
-        fi
-        if [ "${{ inputs.build-source }}" != "" ]; then
-          "$SLICER_CI" unpack "$dest/slicer-source-${SLICER_PLATFORM}.tar.zst"
-          "$SLICER_CI" unpack "$dest/slicer-build-${SLICER_PLATFORM}.tar.zst"
-          rm -f "$dest"/slicer-source-${SLICER_PLATFORM}.tar.zst* "$dest"/slicer-build-${SLICER_PLATFORM}.tar.zst*
-          if [ "${{ inputs.restore-testdata }}" = "true" ] && ls "$dest"/slicer-testdata-${SLICER_PLATFORM}.tar.zst* >/dev/null 2>&1; then
-            "$SLICER_CI" unpack "$dest/slicer-testdata-${SLICER_PLATFORM}.tar.zst"
-            rm -f "$dest"/slicer-testdata-${SLICER_PLATFORM}.tar.zst*
+        # The external projects first: the inner build tree refers to them.
+        for a in "deps-${SLICER_PLATFORM}" "slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}"; do
+          if [ -f "$dest/$a.tar.zst" ] || ls "$dest/$a.tar.zst".part-* >/dev/null 2>&1; then
+            "$SLICER_CI" unpack "$dest/$a.tar.zst"
+            rm -f "$dest/$a.tar.zst" "$dest/$a.tar.zst".part-* 2>/dev/null || true
           fi
-        fi
+        done
         "$SLICER_CI" report

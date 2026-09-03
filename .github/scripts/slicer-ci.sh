@@ -356,6 +356,54 @@ cmd_split() {
   fi
 }
 
+# Download the assets of a release published by the Slicer build workflow and
+# restore them under the build root.
+#
+#   restore-release <repository> <tag> [build|deps|all]
+#
+# `build` restores the source tree and the inner build tree, `deps` the
+# external projects, `all` both. The manifest, when present, is left in
+# <output>/restore so that the caller can read the recorded versions.
+cmd_restore_release() {
+  local repo="${1:?restore-release: missing repository}"
+  local tag="${2:?restore-release: missing tag}"
+  local what="${3:-all}"
+  local dest; dest="$(bash_path "$SLICER_OUTPUT_DIR")/restore"
+  mkdir -p "$dest"
+
+  local patterns=("-p" "manifest-${SLICER_PLATFORM}.json")
+  case "$what" in
+    build) patterns+=(-p "slicer-source-${SLICER_PLATFORM}.tar.zst*" -p "slicer-build-${SLICER_PLATFORM}.tar.zst*") ;;
+    deps)  patterns+=(-p "deps-${SLICER_PLATFORM}.tar.zst*") ;;
+    all)   patterns+=(-p "slicer-source-${SLICER_PLATFORM}.tar.zst*" -p "slicer-build-${SLICER_PLATFORM}.tar.zst*"
+                      -p "deps-${SLICER_PLATFORM}.tar.zst*") ;;
+    *) die "restore-release: unknown selection '$what'" ;;
+  esac
+
+  log "Download $tag from $repo"
+  gh release download "$tag" -R "$repo" -D "$dest" --clobber "${patterns[@]}"
+  ls -la "$dest"
+  endlog
+
+  local manifest="$dest/manifest-${SLICER_PLATFORM}.json"
+  if [ -f "$manifest" ]; then
+    local root; root="$(cmd_manifest_get "$manifest" root)"
+    if [ -n "$root" ] && [ "$root" != "$SLICER_ROOT" ]; then
+      die "the build was produced at '$root' but this runner uses '$SLICER_ROOT'"
+    fi
+  fi
+
+  # The external projects first: the inner build tree refers to them.
+  local a
+  for a in "deps-${SLICER_PLATFORM}" "slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}"; do
+    if [ -f "$dest/$a.tar.zst" ] || ls "$dest/$a.tar.zst".part-* >/dev/null 2>&1; then
+      cmd_unpack "$dest/$a.tar.zst"
+      rm -f "$dest/$a.tar.zst" "$dest/$a.tar.zst".part-* 2>/dev/null || true
+    fi
+  done
+  cmd_report
+}
+
 # Run the test suite of the inner build.
 cmd_test() {
   local build; build="$(bash_path "$SLICER_BUILD_DIR")"
@@ -526,6 +574,8 @@ Commands:
   pack <archive> [--exclude P]... <relpath>...
   unpack <archive>
   split <archive>
+  restore-release <repo> <tag> [build|deps|all]
+                               Restore a published build under the build root
   test                         Run ctest on the inner build
   manifest <file> [k=v...]     Write a build manifest
   manifest-get <file> <key>    Read a manifest value
@@ -548,6 +598,7 @@ main() {
     pack) cmd_pack "$@" ;;
     unpack) cmd_unpack "$@" ;;
     split) cmd_split "$@" ;;
+    restore-release) cmd_restore_release "$@" ;;
     test) cmd_test "$@" ;;
     manifest) cmd_manifest "$@" ;;
     manifest-get) cmd_manifest_get "$@" ;;
