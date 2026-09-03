@@ -120,55 +120,65 @@ jobs:
   # instead of rebuilding, and rebuild only when an external project changes.
   #-----------------------------------------------------------------------------
   deps-key:
-    name: Prerequisites key (${{ matrix.platform }})
+    name: Prerequisites key
     needs: setup
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     outputs:
-      key: ${{ steps.key.outputs.key }}
-      cached: ${{ steps.key.outputs.cached }}
+      # The matrix, with the prerequisites key and whether it has already been
+      # built added to every entry.
+      matrix: ${{ steps.key.outputs.matrix }}
+      # The subset of the entries whose prerequisites still have to be built.
+      matrix-todo: ${{ steps.key.outputs.matrix-todo }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Compute key
+      - name: Compute keys
         id: key
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           FORCE: ${{ needs.setup.outputs.force-deps }}
-          SLICER_PLATFORM: ${{ matrix.platform }}
-          SLICER_RUNNER_IMAGE: ${{ matrix.runner }}
-          SLICER_QT_VERSION: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
-          SLICER_SOURCE_DIR: ${{ github.workspace }}
+          MATRIX: ${{ needs.setup.outputs.matrix }}
+          QT_VERSION: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
         run: |
           set -euo pipefail
           chmod +x .github/scripts/slicer-ci.sh
-          key="slicer-deps-${SLICER_PLATFORM}-$(.github/scripts/slicer-ci.sh deps-key)"
-          echo "key=$key" >> "$GITHUB_OUTPUT"
-          cached=false
-          if [ "$FORCE" != "true" ] && gh release view "$key" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            cached=true
-          fi
-          echo "cached=$cached" >> "$GITHUB_OUTPUT"
+          entries="[]"
           {
-            echo "### Prerequisites (${SLICER_PLATFORM})"
+            echo "### Prerequisites"
             echo ""
-            echo "| Key | Already built |"
-            echo "|---|---|"
-            echo "| $key | $cached |"
+            echo "| Platform | Key | Already built |"
+            echo "|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
+          while read -r platform runner; do
+            [ -n "$platform" ] || continue
+            key="slicer-deps-${platform}-$(
+              SLICER_PLATFORM="$platform" \
+              SLICER_RUNNER_IMAGE="$runner" \
+              SLICER_QT_VERSION="$QT_VERSION" \
+              SLICER_SOURCE_DIR="$GITHUB_WORKSPACE" \
+              .github/scripts/slicer-ci.sh deps-key)"
+            cached=false
+            if [ "$FORCE" != "true" ] && gh release view "$key" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              cached=true
+            fi
+            entries="$(echo "$entries" | jq -c \
+              --arg p "$platform" --arg r "$runner" --arg k "$key" --argjson c "$cached" \
+              '. + [{platform: $p, runner: $r, key: $k, cached: $c}]')"
+            echo "| $platform | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
+          done < <(echo "$MATRIX" | jq -r '.include[] | "\(.platform) \(.runner)"')
+          echo "matrix=$(echo "$entries" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
+          echo "matrix-todo=$(echo "$entries" | jq -c '{include: map(select(.cached | not))}')" >> "$GITHUB_OUTPUT"
+          echo "$entries" | jq .
 
   deps-1:
     name: Deps 1/5 base (${{ matrix.platform }})
     needs: [setup, deps-key]
-    if: needs.deps-key.outputs.cached != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -188,12 +198,11 @@ jobs:
   deps-2:
     name: Deps 2/5 VTK (${{ matrix.platform }})
     needs: [setup, deps-key, deps-1]
-    if: needs.deps-key.outputs.cached != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -214,12 +223,11 @@ jobs:
   deps-3:
     name: Deps 3/5 ITK (${{ matrix.platform }})
     needs: [setup, deps-key, deps-2]
-    if: needs.deps-key.outputs.cached != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -240,12 +248,11 @@ jobs:
   deps-4:
     name: Deps 4/5 CTK (${{ matrix.platform }})
     needs: [setup, deps-key, deps-3]
-    if: needs.deps-key.outputs.cached != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -266,14 +273,13 @@ jobs:
   deps-5:
     name: Deps 5/5 rest (${{ matrix.platform }})
     needs: [setup, deps-key, deps-4]
-    if: needs.deps-key.outputs.cached != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     permissions:
       contents: write
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -297,7 +303,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          KEY: ${{ needs.deps-key.outputs.key }}
+          KEY: ${{ matrix.key }}
         run: |
           set -euo pipefail
           "$SLICER_CI" split "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst"
@@ -312,12 +318,12 @@ jobs:
   slicer:
     name: Slicer (${{ matrix.platform }})
     needs: [setup, deps-key, deps-5]
-    if: always() && needs.deps-key.result == 'success' && (needs.deps-5.result == 'success' || needs.deps-key.outputs.cached == 'true')
+    if: always() && needs.deps-key.result == 'success' && needs.deps-5.result != 'failure' && needs.deps-5.result != 'cancelled'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -341,11 +347,11 @@ jobs:
         run: echo "ExternalData_OBJECT_STORES=$SLICER_ROOT/ExternalData" >> "$GITHUB_ENV"
 
       - name: Download the prerequisites
-        if: needs.deps-key.outputs.cached == 'true'
+        if: matrix.cached
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          KEY: ${{ needs.deps-key.outputs.key }}
+          KEY: ${{ matrix.key }}
         run: |
           set -euo pipefail
           mkdir -p "$SLICER_OUTPUT_DIR/restore"
@@ -358,7 +364,7 @@ jobs:
         uses: ./.github/actions/slicer-build-stage
         with:
           target: Slicer
-          restore-artifact: ${{ needs.deps-key.outputs.cached == 'true' && '' || format('deps-{0}', matrix.platform) }}
+          restore-artifact: ${{ matrix.cached && '' || format('deps-{0}', matrix.platform) }}
           restore-archive: deps-${{ matrix.platform }}
           # Archived after packaging instead, so that the package is included.
           archive-name: ""
@@ -431,13 +437,13 @@ jobs:
   #-----------------------------------------------------------------------------
   test:
     name: Test (${{ matrix.platform }})
-    needs: [setup, slicer]
+    needs: [setup, deps-key, slicer]
     if: needs.setup.outputs.run-tests == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -497,7 +503,7 @@ jobs:
   #-----------------------------------------------------------------------------
   publish:
     name: Publish nightly
-    needs: [setup, slicer, test]
+    needs: [setup, deps-key, slicer, test]
     if: always() && needs.setup.outputs.publish == 'true' && needs.slicer.result == 'success'
     runs-on: ubuntu-latest
     permissions:
