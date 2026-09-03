@@ -132,9 +132,28 @@ Outputs of the action:
 | `slicer-dir` | Value to pass as `-DSlicer_DIR` |
 | `source-dir` | The Slicer source tree the build was produced from |
 | `superbuild-dir` | The superbuild tree |
+| `root` | The fixed root directory |
+| `platform` | `linux`, `macos` or `windows` |
 | `launcher` | The Slicer launcher executable in the build tree |
 | `slicer-version`, `slicer-revision` | Version of the restored build |
 | `qt-dir` | The Qt prefix used by the build |
+
+The action installs everything the build needs: the system packages, CMake, the
+matching Qt, and `sccache`. It also sets `Slicer_DIR` in the environment, so a
+later step can use it without going through the output. It needs no checkout of
+Slicer: it fetches the helper script it runs from the Slicer repository itself.
+
+Inputs:
+
+| Input | Default | Description |
+|---|---|---|
+| `repository` | `Slicer/Slicer` | Repository publishing the builds |
+| `ref` | `main` | Branch or tag providing the helper script |
+| `release-tag` | `nightly` | Release to restore |
+| `qt-version` | from the manifest | Qt version to install |
+| `cmake-version` | `3.31.x` | CMake version to install |
+| `sccache` | `true` | Enable the compiler cache |
+| `free-disk-space` | `false` | Remove unneeded pre-installed tooling |
 
 To run an extension's tests, use the launcher under `xvfb` on Linux:
 

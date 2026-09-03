@@ -82,17 +82,15 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      # An extension repository would use:
+      # An extension repository would refer to the action by its full name:
       #   uses: Slicer/Slicer/.github/actions/setup-slicer-build@main
       - name: Set up the Slicer build
         id: slicer
-        uses: ./.github/actions/slicer-env
+        uses: ./.github/actions/setup-slicer-build
         with:
           repository: ${{ github.event.inputs.repository || github.repository }}
-          build-source: release
-          build-release-tag: ${{ github.event.inputs.release-tag || 'nightly' }}
-          deps-source: release
-          deps-release-tag: ${{ github.event.inputs.release-tag || 'nightly' }}
+          ref: ${{ github.sha }}
+          release-tag: ${{ github.event.inputs.release-tag || 'nightly' }}
 
       - name: Configure and build ${{ matrix.extension }}
         shell: bash
