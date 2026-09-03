@@ -447,6 +447,8 @@ jobs:
     needs: [setup, deps-key, deps]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    outputs:
+      revision: ${{ steps.package.outputs.revision }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
@@ -645,3 +647,54 @@ jobs:
           fi
           # Replace all the assets of the release.
           gh release upload "$tag" assets/* --clobber
+
+      # Repositories that asked to be told about a new nightly rather than
+      # waiting for their own scheduled run. The list is the
+      # SLICER_NIGHTLY_CONSUMERS repository variable, one "owner/name" per
+      # line. Nothing happens when it is empty, which is the default: the
+      # supported way for an extension to follow the nightly is to poll it,
+      # which needs no credentials here. See
+      # Docs/developer_guide/build_instructions/github_actions.md
+      - name: Collect the repositories to notify
+        id: consumers
+        shell: bash
+        env:
+          CONSUMERS: ${{ vars.SLICER_NIGHTLY_CONSUMERS }}
+        run: |
+          set -euo pipefail
+          list="$(echo "${CONSUMERS:-}" | tr ',' '\n' | tr -s '[:space:]' '\n' | sed '/^$/d' | sort -u)"
+          count="$(echo "$list" | sed '/^$/d' | wc -l | tr -d ' ')"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          {
+            echo "list<<EOF"
+            echo "$list"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Repositories to notify: ${count}"
+
+      - uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        id: app-token
+        if: steps.consumers.outputs.count != '0' && vars.SLICER_APP_ID != ''
+        with:
+          app-id: ${{ vars.SLICER_APP_ID }}
+          private-key: ${{ secrets.SLICER_APP_PRIVATE_KEY }}
+
+      - name: Notify the repositories following the nightly
+        if: steps.consumers.outputs.count != '0' && vars.SLICER_APP_ID != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          CONSUMERS: ${{ steps.consumers.outputs.list }}
+          REVISION: ${{ needs.slicer.outputs.revision }}
+        run: |
+          set -euo pipefail
+          echo "$CONSUMERS" | while read -r repo; do
+            [ -n "$repo" ] || continue
+            echo "Notifying $repo"
+            # A repository_dispatch reaches a workflow that declares
+            #   on: repository_dispatch: types: [slicer-nightly]
+            gh api "repos/$repo/dispatches" -f event_type=slicer-nightly \
+              -F "client_payload[revision]=${REVISION:-}" \
+              -F "client_payload[commit]=$GITHUB_SHA" \
+              || echo "::warning::Could not notify $repo; is the Slicer app installed there?"
+          done

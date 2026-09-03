@@ -184,6 +184,78 @@ The [`Extension build (self-test)`](https://github.com/Slicer/Slicer/actions/wor
 workflow builds the templates under `Extensions/Testing` this way and is the
 reference implementation.
 
+### Building when a new nightly is published
+
+An extension repository decides for itself when to build against a new nightly.
+Two ways, which can be combined.
+
+**Poll, the supported way.** A scheduled run asks what the published revision
+is, and stops when it has already built it. This needs no coordination with the
+Slicer repository and no credentials, which is why it is the recommended way
+for the extensions of the catalog.
+
+```yaml
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 12 * * *"          # after the Slicer nightly
+  repository_dispatch:
+    types: [slicer-nightly]        # see "Be told" below
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # 2 kB, rather than restoring the whole build tree to find out.
+      - name: Read the published revision
+        id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download nightly -R Slicer/Slicer -D . --clobber             -p manifest-linux.json
+          rev=$(sed -n 's/^  "slicer_revision": "\(.*\)",$//p' manifest-linux.json)
+          echo "revision=$rev" >> "$GITHUB_OUTPUT"
+
+      # A hit means this extension revision was already built against this
+      # Slicer revision.
+      - name: Have we built this already?
+        id: built
+        uses: actions/cache@v4
+        with:
+          path: .built-marker
+          key: built-${{ github.sha }}-slicer-${{ steps.nightly.outputs.revision }}
+
+      - uses: Slicer/Slicer/.github/actions/setup-slicer-build@main
+        if: steps.built.outputs.cache-hit != 'true'
+        id: slicer
+
+      - name: Build
+        if: steps.built.outputs.cache-hit != 'true'
+        run: |
+          cmake -S . -B ../build -G Ninja             -DSlicer_DIR:PATH=${{ steps.slicer.outputs.slicer-dir }}             -DCMAKE_BUILD_TYPE:STRING=Release
+          cmake --build ../build --parallel
+
+      - name: Record the build
+        if: steps.built.outputs.cache-hit != 'true'
+        run: date -u > .built-marker
+```
+
+**Be told.** For a repository that wants to build as soon as the nightly lands
+rather than waiting for its own schedule, the publishing job can send it a
+`repository_dispatch` of type `slicer-nightly`, carrying the revision and the
+commit in `client_payload`. Add the `repository_dispatch` trigger shown above,
+then ask a Slicer maintainer to add `owner/name` to the
+`SLICER_NIGHTLY_CONSUMERS` repository variable and to install the Slicer GitHub
+App on the repository. It is empty by default, so nothing is notified until
+someone opts in.
+
+Notifying does not scale to the whole extension catalog, which is why polling
+is the default: it costs the Slicer repository nothing and leaves each
+extension in control of its own cadence.
+
 ### Pinning to a specific build
 
 `setup-slicer-build` restores the `nightly` release by default. Pass

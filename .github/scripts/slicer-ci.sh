@@ -276,6 +276,10 @@ cmd_package() {
   echo "$name" > "$out/PACKAGE_FILE.txt"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "package=$name" >> "$GITHUB_OUTPUT"
+    local cache; cache="$(bash_path "$SLICER_BUILD_DIR")/CMakeCache.txt"
+    if [ -f "$cache" ]; then
+      echo "revision=$(grep -E '^Slicer_REVISION:' "$cache" | cut -d= -f2- || true)" >> "$GITHUB_OUTPUT"
+    fi
   fi
 }
 
