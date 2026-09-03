@@ -63,6 +63,11 @@ The CMake package configuration files exported by a Slicer build tree
 embed absolute paths. A build tree is therefore only usable when restored at the
 path it was built at. The workflow uses a short, fixed root per platform:
 
+macOS is built on the Intel image. Qt 5.15.2 has no arm64 build, and Slicer's
+own arm64 recipe is still a work in progress that turns DICOM, SimpleITK and
+internationalization off. GitHub provides the Intel image until August 2027,
+by which time Slicer's arm64 support should have caught up.
+
 | Platform | Root | Source tree | Superbuild tree | `Slicer_DIR` |
 |---|---|---|---|---|
 | Linux | `/home/runner/S` | `/home/runner/S/Slicer` | `/home/runner/S/SR` | `/home/runner/S/SR/Slicer-build` |
@@ -105,7 +110,7 @@ jobs:
       matrix:
         include:
           - { platform: linux, runner: ubuntu-22.04 }
-          - { platform: macos, runner: macos-15 }
+          - { platform: macos, runner: macos-15-intel }
           - { platform: windows, runner: windows-2022 }
     runs-on: ${{ matrix.runner }}
     steps:

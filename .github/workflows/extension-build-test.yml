@@ -68,7 +68,7 @@ jobs:
           for p in ${PLATFORMS//,/ }; do
             case "$p" in
               linux) runner="ubuntu-22.04" ;;
-              macos) runner="macos-15" ;;
+              macos) runner="macos-15-intel" ;;
               windows) runner="windows-2022" ;;
               *)
                 echo "::warning::unknown platform '$p'"
