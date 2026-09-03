@@ -58,6 +58,25 @@ endif()
 set(ep_common_c_flags "${CMAKE_C_FLAGS_INIT} ${ADDITIONAL_C_FLAGS}")
 set(ep_common_cxx_flags "${CMAKE_CXX_FLAGS_INIT} ${ADDITIONAL_CXX_FLAGS}")
 
+# By default, the "update" step of every git-based external project is re-run
+# on each build of the superbuild, which in turn forces the "configure" and
+# "build" steps of the project to be re-run (as no-op incremental builds).
+#
+# Enabling this option marks all external projects as UPDATE_DISCONNECTED so
+# that, once downloaded, a project is only re-built if one of its inputs changes.
+# This is useful when the superbuild tree is populated in stages (e.g. in CI, where
+# prerequisites are built once, cached, and later restored) because the restored
+# projects are then left untouched.
+#
+# Note that the sources of the external projects are still pinned by GIT_TAG in
+# the corresponding External_<proj>.cmake file: use a fresh build tree (or run the
+# <proj>-update target) after changing a tag.
+option(Slicer_EP_UPDATE_DISCONNECTED "Do not re-run the update step of external projects after the initial download" OFF)
+mark_as_advanced(Slicer_EP_UPDATE_DISCONNECTED)
+if(Slicer_EP_UPDATE_DISCONNECTED)
+  set_property(DIRECTORY PROPERTY EP_UPDATE_DISCONNECTED 1)
+endif()
+
 #-----------------------------------------------------------------------------
 # Define list of additional options used to configure Slicer
 #------------------------------------------------------------------------------
@@ -569,3 +588,14 @@ ExternalProject_Add(${proj}
   )
 
 ExternalProject_AlwaysConfigure(${proj})
+
+#------------------------------------------------------------------------------
+# Aggregate target building all the prerequisites of Slicer without building
+# Slicer itself. Useful to populate (and cache) the external projects separately
+# from the inner build, for example:
+#
+#   cmake --build . --target Slicer-dependencies
+#   cmake --build . --target Slicer
+#------------------------------------------------------------------------------
+add_custom_target(Slicer-dependencies)
+add_dependencies(Slicer-dependencies ${Slicer_DEPENDENCIES} ${Slicer_REMOTE_DEPENDENCIES})

@@ -1,0 +1,404 @@
+name: Build
+
+# Builds Slicer on Linux, macOS and Windows.
+#
+# The build is split in two phases so that it fits within the GitHub-hosted
+# runner limits (6 h per job) and so that the expensive part is done only when
+# it actually changes:
+#
+#   1. "prerequisites": builds the external projects of the Superbuild
+#      (VTK, ITK, CTK, Python, DCMTK, ...) through the `Slicer-dependencies`
+#      target. The result is keyed on the content of `SuperBuild/` so it is
+#      reused, untouched, by every later run.
+#   2. "slicer": restores the prerequisites and builds the inner `Slicer`
+#      target, then packages and tests it.
+#
+# The Superbuild structure is preserved: phase 2 runs the very same superbuild
+# tree, and the external projects are simply already up to date.
+
+on:
+  push:
+    branches:
+      - "main"
+      - "master"
+  pull_request:
+    branches:
+      - "*"
+  schedule:
+    # Nightly, after the preview branch has been updated.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to build (comma separated: linux,macos,windows)"
+        default: "linux,macos,windows"
+      run-tests:
+        description: "Run the test suite"
+        type: boolean
+        default: true
+      publish:
+        description: "Publish the build trees to the 'nightly' release"
+        type: boolean
+        default: false
+      rebuild-prerequisites:
+        description: "Force a rebuild of the prerequisites"
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  SLICER_DEPS_KEY_VERSION: "1"
+
+jobs:
+  #-----------------------------------------------------------------------------
+  # Decide what to build.
+  #-----------------------------------------------------------------------------
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      run-tests: ${{ steps.matrix.outputs.run-tests }}
+      publish: ${{ steps.matrix.outputs.publish }}
+      force-deps: ${{ steps.matrix.outputs.force-deps }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Compute matrix
+        id: matrix
+        shell: bash
+        env:
+          PLATFORMS: ${{ github.event.inputs.platforms || 'linux,macos,windows' }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # On pull requests only Linux is built, to keep the feedback fast and
+          # the cost low. Pushes, nightly runs and manual runs build everything.
+          if [ "$EVENT" = "pull_request" ]; then
+            PLATFORMS="linux"
+          fi
+          entries=""
+          for p in ${PLATFORMS//,/ }; do
+            case "$p" in
+              linux)   entries="$entries {\"platform\":\"linux\",\"runner\":\"ubuntu-22.04\"}," ;;
+              macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15\"}," ;;
+              windows) entries="$entries {\"platform\":\"windows\",\"runner\":\"windows-2022\"}," ;;
+              *) echo "::warning::unknown platform '$p'" ;;
+            esac
+          done
+          matrix="{\"include\":[${entries%,}]}"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "$matrix"
+          run_tests="${{ github.event.inputs.run-tests || 'true' }}"
+          echo "run-tests=$run_tests" >> "$GITHUB_OUTPUT"
+          publish="${{ github.event.inputs.publish || 'false' }}"
+          if [ "$EVENT" = "schedule" ]; then publish="true"; fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "force-deps=${{ github.event.inputs.rebuild-prerequisites || 'false' }}" >> "$GITHUB_OUTPUT"
+
+  #-----------------------------------------------------------------------------
+  # Phase 1: build (or reuse) the prerequisites.
+  #-----------------------------------------------------------------------------
+  prerequisites:
+    name: Prerequisites (${{ matrix.platform }})
+    needs: setup
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    outputs:
+      key-linux: ${{ steps.export.outputs.key-linux }}
+      key-macos: ${{ steps.export.outputs.key-macos }}
+      key-windows: ${{ steps.export.outputs.key-windows }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up environment
+        id: env
+        uses: ./.github/actions/slicer-env
+        with:
+          free-disk-space: ${{ matrix.platform == 'linux' }}
+
+      - name: Compute prerequisites key
+        id: key
+        shell: bash
+        env:
+          SLICER_RUNNER_IMAGE: ${{ matrix.runner }}
+        run: |
+          set -euo pipefail
+          cp -r "$GITHUB_WORKSPACE/.github" "$SLICER_ROOT/" 2>/dev/null || true
+          cd "$GITHUB_WORKSPACE"
+          key="$(SLICER_SOURCE_DIR="$GITHUB_WORKSPACE" "$SLICER_CI" deps-key)"
+          full="slicer-deps-${{ matrix.platform }}-$key"
+          echo "key=$full" >> "$GITHUB_OUTPUT"
+          echo "Prerequisites key: $full"
+
+      - name: Restore prerequisites cache
+        id: cache
+        if: needs.setup.outputs.force-deps != 'true'
+        uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_OUTPUT_DIR }}/deps-${{ matrix.platform }}.tar.zst
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Build prerequisites
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/slicer-build-stage
+        with:
+          target: Slicer-dependencies
+          archive-name: deps-${{ matrix.platform }}
+          archive-paths: SR
+          # The inner build tree does not exist yet at this point, but exclude it
+          # defensively in case the target pulls it in.
+          archive-excludes: "SR/Slicer-build"
+
+      - name: Save prerequisites cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_OUTPUT_DIR }}/deps-${{ matrix.platform }}.tar.zst
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Upload prerequisites
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: deps-${{ matrix.platform }}
+          path: ${{ env.SLICER_OUTPUT_DIR }}/deps-${{ matrix.platform }}.tar.zst
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Export key
+        id: export
+        shell: bash
+        run: echo "key-${{ matrix.platform }}=${{ steps.key.outputs.key }}" >> "$GITHUB_OUTPUT"
+
+  #-----------------------------------------------------------------------------
+  # Phase 2: build Slicer itself, package it and run the tests.
+  #-----------------------------------------------------------------------------
+  slicer:
+    name: Slicer (${{ matrix.platform }})
+    needs: [setup, prerequisites]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up environment
+        id: env
+        uses: ./.github/actions/slicer-env
+        with:
+          free-disk-space: ${{ matrix.platform == 'linux' }}
+
+      - name: Cache test data
+        uses: actions/cache@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_ROOT }}/ExternalData
+          key: slicer-testdata-${{ matrix.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
+          restore-keys: slicer-testdata-${{ matrix.platform }}-
+
+      - name: Set test data store
+        shell: bash
+        run: echo "ExternalData_OBJECT_STORES=$SLICER_ROOT/ExternalData" >> "$GITHUB_ENV"
+
+      - name: Build Slicer
+        uses: ./.github/actions/slicer-build-stage
+        with:
+          target: Slicer
+          restore-artifact: deps-${{ matrix.platform }}
+          restore-archive: deps-${{ matrix.platform }}
+          # Archived after packaging instead, so that the package is included.
+          archive-name: ""
+          strip: "false"
+
+      - name: Package
+        id: package
+        shell: bash
+        run: '"$SLICER_CI" package'
+
+      - name: Upload package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: package-${{ matrix.platform }}
+          path: ${{ env.SLICER_OUTPUT_DIR }}/${{ steps.package.outputs.package }}
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Write manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$SLICER_CI" manifest "$SLICER_OUTPUT_DIR/manifest-${SLICER_PLATFORM}.json" \
+            "qt_version=$SLICER_QT_VERSION" \
+            "commit=$GITHUB_SHA" \
+            "run_id=$GITHUB_RUN_ID" \
+            "package=${{ steps.package.outputs.package }}" \
+            "deps_release_tag=nightly"
+
+      - name: Archive build tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$SLICER_CI" strip "$SLICER_SUPERBUILD_DIR"
+          # Split in three archives so that consumers can fetch only what they need:
+          #  - the source tree (SlicerConfig.cmake points into it)
+          #  - the superbuild tree without the inner build (the prerequisites)
+          #  - the inner build tree
+          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-source-${SLICER_PLATFORM}.tar.zst" --exclude ".git" Slicer
+          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-build-${SLICER_PLATFORM}.tar.zst" SR/Slicer-build
+          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst" --exclude "SR/Slicer-build" SR
+          for a in "$SLICER_OUTPUT_DIR"/*.tar.zst; do "$SLICER_CI" split "$a"; done
+          ls -lh "$SLICER_OUTPUT_DIR"
+
+      - name: Upload build tree
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-${{ matrix.platform }}
+          path: |
+            ${{ env.SLICER_OUTPUT_DIR }}/manifest-${{ matrix.platform }}.json
+            ${{ env.SLICER_OUTPUT_DIR }}/slicer-source-${{ matrix.platform }}.tar.zst*
+            ${{ env.SLICER_OUTPUT_DIR }}/slicer-build-${{ matrix.platform }}.tar.zst*
+            ${{ env.SLICER_OUTPUT_DIR }}/deps-${{ matrix.platform }}.tar.zst*
+          retention-days: 5
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-${{ matrix.platform }}
+          path: ${{ env.SLICER_OUTPUT_DIR }}/*.log
+          retention-days: 5
+          if-no-files-found: ignore
+
+  #-----------------------------------------------------------------------------
+  # Run the test suite against the build tree produced above.
+  #-----------------------------------------------------------------------------
+  test:
+    name: Test (${{ matrix.platform }})
+    needs: [setup, slicer]
+    if: needs.setup.outputs.run-tests == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up environment
+        uses: ./.github/actions/slicer-env
+        with:
+          free-disk-space: ${{ matrix.platform == 'linux' }}
+          build-source: artifact
+          build-artifact-name: build-${{ matrix.platform }}
+          # The build-* artifact already contains the prerequisites archive.
+          deps-source: ""
+
+      - name: Cache test data
+        uses: actions/cache@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_ROOT }}/ExternalData
+          key: slicer-testdata-${{ matrix.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
+          restore-keys: slicer-testdata-${{ matrix.platform }}-
+
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        shell: bash
+        env:
+          ExternalData_OBJECT_STORES: ${{ env.SLICER_ROOT }}/ExternalData
+          SLICER_CTEST_EXCLUDE: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
+        run: '"$SLICER_CI" test'
+
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ matrix.platform }}
+          path: |
+            ${{ env.SLICER_OUTPUT_DIR }}/test-results.xml
+            ${{ env.SLICER_OUTPUT_DIR }}/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Summarize
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/.github/scripts/test-summary.py"             "$SLICER_OUTPUT_DIR/test-results.xml" "(${{ matrix.platform }})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on test failures
+        if: steps.tests.outcome == 'failure' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          echo "::error::Test suite reported failures"
+          exit 1
+
+  #-----------------------------------------------------------------------------
+  # Publish the build trees so that extension repositories can build against
+  # the latest nightly Slicer.
+  #-----------------------------------------------------------------------------
+  publish:
+    name: Publish nightly
+    needs: [setup, slicer, test]
+    if: always() && needs.setup.outputs.publish == 'true' && needs.slicer.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download build trees
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: build-*
+          path: assets
+          merge-multiple: true
+
+      - name: Download packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: package-*
+          path: assets
+          merge-multiple: true
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls -lh assets
+          tag="nightly"
+          notes="Nightly Slicer build trees and packages.
+
+          Built from \`$GITHUB_SHA\` on $(date -u +%Y-%m-%d).
+
+          Extension repositories can build against this nightly with the
+          \`Slicer/Slicer/.github/actions/setup-slicer-build\` action.
+          See \`Docs/developer_guide/build_instructions/github_actions.md\`."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes "$notes" --latest=false --prerelease
+          else
+            gh release create "$tag" --title "Slicer nightly" --notes "$notes" --prerelease --latest=false
+          fi
+          # Replace all the assets of the release.
+          gh release upload "$tag" assets/* --clobber

@@ -1,0 +1,104 @@
+name: "Set up a Slicer build"
+description: >-
+  Restore a Slicer build tree published by the Slicer nightly build so that a
+  Slicer extension can be configured and built against it in GitHub Actions.
+  Sets the `slicer-dir` output, to be passed as `-DSlicer_DIR:PATH=...`.
+
+  Usage from an extension repository:
+
+    - uses: Slicer/Slicer/.github/actions/setup-slicer-build@main
+      id: slicer
+    - run: |
+        cmake -S . -B ../build -G Ninja \
+          -DSlicer_DIR:PATH=${{ steps.slicer.outputs.slicer-dir }} \
+          -DCMAKE_BUILD_TYPE:STRING=Release
+        cmake --build ../build --parallel
+
+  Note that the build tree is restored at the fixed absolute path it was built
+  at (`/home/runner/S`, `/Users/runner/S` or `C:/S`), because the CMake
+  configuration files exported by Slicer embed absolute paths.
+
+inputs:
+  repository:
+    description: "Repository publishing the Slicer nightly releases"
+    default: "Slicer/Slicer"
+  release-tag:
+    description: "Release tag to restore"
+    default: "nightly"
+  token:
+    description: "Token used to download the release assets"
+    default: ${{ github.token }}
+  qt-version:
+    description: "Qt version (defaults to the one recorded in the manifest)"
+    default: ""
+  cmake-version:
+    description: "CMake version to install"
+    default: "3.31.x"
+  free-disk-space:
+    description: "Remove unneeded pre-installed tooling on Linux runners"
+    default: "true"
+  sccache:
+    description: "Enable sccache"
+    default: "true"
+
+outputs:
+  slicer-dir:
+    description: "Value to pass as -DSlicer_DIR (the inner build tree)"
+    value: ${{ steps.env.outputs.slicer-dir }}
+  superbuild-dir:
+    description: "Slicer superbuild directory"
+    value: ${{ steps.env.outputs.superbuild-dir }}
+  source-dir:
+    description: "Slicer source directory"
+    value: ${{ steps.env.outputs.source-dir }}
+  launcher:
+    description: "Path of the Slicer launcher executable in the build tree"
+    value: ${{ steps.check.outputs.launcher }}
+  slicer-version:
+    description: "Version of the restored Slicer build"
+    value: ${{ steps.check.outputs.version }}
+  slicer-revision:
+    description: "Revision of the restored Slicer build"
+    value: ${{ steps.check.outputs.revision }}
+  qt-dir:
+    description: "Qt prefix directory"
+    value: ${{ steps.env.outputs.qt-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the Slicer build
+      id: env
+      uses: Slicer/Slicer/.github/actions/slicer-env@main
+      with:
+        repository: ${{ inputs.repository }}
+        token: ${{ inputs.token }}
+        build-source: release
+        build-release-tag: ${{ inputs.release-tag }}
+        deps-source: release
+        deps-release-tag: ${{ inputs.release-tag }}
+        qt-version: ${{ inputs.qt-version || '6.9.3' }}
+        cmake-version: ${{ inputs.cmake-version }}
+        free-disk-space: ${{ inputs.free-disk-space }}
+        sccache: ${{ inputs.sccache }}
+
+    - name: Check the restored build
+      id: check
+      shell: bash
+      run: |
+        set -euo pipefail
+        slicer_dir="${{ steps.env.outputs.slicer-dir }}"
+        [ -f "$slicer_dir/SlicerConfig.cmake" ] || { echo "::error::SlicerConfig.cmake not found in $slicer_dir"; exit 1; }
+        manifest="${{ steps.env.outputs.manifest }}"
+        version=""; revision=""
+        if [ -n "$manifest" ]; then
+          version="$("$SLICER_CI" manifest-get "$manifest" slicer_version)"
+          revision="$("$SLICER_CI" manifest-get "$manifest" slicer_revision)"
+        fi
+        launcher="$slicer_dir/Slicer"
+        [ "$SLICER_PLATFORM" = "windows" ] && launcher="$slicer_dir/Slicer.exe"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "revision=$revision" >> "$GITHUB_OUTPUT"
+        echo "launcher=$launcher" >> "$GITHUB_OUTPUT"
+        echo "Slicer_DIR=$slicer_dir" >> "$GITHUB_ENV"
+        echo "Restored Slicer $version (r$revision) at $slicer_dir"
