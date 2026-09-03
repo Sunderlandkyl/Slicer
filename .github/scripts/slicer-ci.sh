@@ -193,15 +193,48 @@ cmd_configure() {
   endlog
 }
 
-# Build a target of the superbuild tree (e.g. VTK, ITK, Slicer-dependencies, Slicer).
+# Build one or more targets of the superbuild tree.
+#
+# Targets that are not part of the current configuration are silently skipped,
+# so a stage may name optional external projects (for example `tbb`, only built
+# for some VTK SMP backends) without having to know whether they are enabled.
 cmd_build() {
-  local target="${1:?build: missing target}"
-  log "Build target $target"
-  cmake_build "$SLICER_SUPERBUILD_DIR" --target "$target"
+  [ $# -gt 0 ] || die "build: missing target"
+  local available="$(bash_path "$SLICER_SUPERBUILD_DIR")/SlicerDependencies.txt"
+  local targets=()
+  local t
+  for t in "$@"; do
+    # Aggregate and inner targets are always defined by SuperBuild.cmake.
+    if [ "$t" = "Slicer" ] || [ "$t" = "Slicer-dependencies" ] || [ ! -f "$available" ]; then
+      targets+=("$t")
+    elif grep -qx "$t" "$available"; then
+      targets+=("$t")
+    else
+      info "skipping '$t' (not part of this configuration)"
+    fi
+  done
+  if [ ${#targets[@]} -eq 0 ]; then
+    info "nothing to build"
+    return 0
+  fi
+  log "Build ${targets[*]}"
+  # Build the targets one by one: with the Visual Studio generator a single
+  # invocation cannot take several targets, and a failure is easier to locate.
+  for t in "${targets[@]}"; do
+    echo "[slicer-ci] --- $t ---"
+    cmake_build "$SLICER_SUPERBUILD_DIR" --target "$t"
+  done
   endlog
   if command -v sccache >/dev/null 2>&1 && [ -n "${SCCACHE_GHA_ENABLED:-}" ]; then
     sccache --show-stats || true
   fi
+}
+
+# Print the list of external projects of the configured superbuild tree.
+cmd_dependencies() {
+  local f="$(bash_path "$SLICER_SUPERBUILD_DIR")/SlicerDependencies.txt"
+  [ -f "$f" ] || die "dependencies: $f not found (configure first)"
+  cat "$f"
 }
 
 # Build the package (installer) of the inner build. Prints the package path.
@@ -409,14 +442,15 @@ cmd_install_system_packages() {
     linux)
       log "Install system packages"
       sudo apt-get update -qq
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-        build-essential ninja-build patch zstd xvfb mesa-utils \
-        libxt-dev libglu1-mesa-dev libgl1-mesa-dev libgl1-mesa-dri libegl1 libopengl0 \
-        libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-        libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xfixes0 \
-        libnss3 libxss1 libxtst6 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2t64 \
-        libfontconfig1 libdbus-1-3 libxcursor1 libxi6 libpulse0 libsm6 libice6 \
-        libavcodec-dev libavformat-dev libswscale-dev libgstreamer-plugins-base1.0-0
+      # Packages required to build Slicer.
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends         build-essential ninja-build patch zstd xvfb         libxt-dev libglu1-mesa-dev libgl1-mesa-dri
+      # Packages required at run time by Qt and QtWebEngine. The exact set of
+      # package names varies between Ubuntu releases, so install them
+      # individually and do not fail on the ones that do not exist.
+      for pkg in         mesa-utils libgl1-mesa-glx libgl1 libegl1 libopengl0         libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1         libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xfixes0         libnss3 libxss1 libxtst6 libxcomposite1 libxdamage1 libxrandr2 libgbm1         libasound2 libasound2t64         libfontconfig1 libdbus-1-3 libxcursor1 libxi6 libpulse0 libsm6 libice6         libgstreamer-plugins-base1.0-0 libxkbfile1 libodbc1 libpq5
+      do
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "$pkg"           >/dev/null 2>&1 || echo "  (skipped $pkg)"
+      done
       endlog
       ;;
     macos)
@@ -454,7 +488,8 @@ Commands:
   free-disk-space              Remove unneeded tooling from Linux runners
   install-system-packages      Install platform packages
   configure                    Configure the superbuild tree
-  build <target>               Build a superbuild target (VTK, ITK, Slicer-dependencies, Slicer)
+  build <target>...            Build superbuild targets (unknown ones are skipped)
+  dependencies                 List the external projects of the configured tree
   package                      Build the package of the inner build
   strip [dir]                  Remove intermediate files from a build tree
   pack <archive> [--exclude P]... <relpath>...
@@ -476,6 +511,7 @@ main() {
     install-system-packages) cmd_install_system_packages "$@" ;;
     configure) cmd_configure "$@" ;;
     build) cmd_build "$@" ;;
+    dependencies) cmd_dependencies "$@" ;;
     package) cmd_package "$@" ;;
     strip) cmd_strip "$@" ;;
     pack) cmd_pack "$@" ;;

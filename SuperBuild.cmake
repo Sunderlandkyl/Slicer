@@ -599,3 +599,12 @@ ExternalProject_AlwaysConfigure(${proj})
 #------------------------------------------------------------------------------
 add_custom_target(Slicer-dependencies)
 add_dependencies(Slicer-dependencies ${Slicer_DEPENDENCIES} ${Slicer_REMOTE_DEPENDENCIES})
+
+# List of the external projects the inner build depends on, one per line, so
+# that tooling (for example continuous integration building the prerequisites
+# in several steps) can discover them without parsing the CMake code.
+string(REPLACE ";" "
+" _slicer_dependencies_txt "${Slicer_DEPENDENCIES};${Slicer_REMOTE_DEPENDENCIES}")
+file(WRITE ${CMAKE_BINARY_DIR}/SlicerDependencies.txt "${_slicer_dependencies_txt}
+")
+unset(_slicer_dependencies_txt)

@@ -109,92 +109,212 @@ jobs:
 
   #-----------------------------------------------------------------------------
   # Phase 1: build (or reuse) the prerequisites.
+  #
+  # A full build of the external projects does not fit in the 6 h limit of a
+  # GitHub-hosted job, so it is split in several stages chained through
+  # artifacts. Each stage builds a group of external projects in the superbuild
+  # tree produced by the previous one.
+  #
+  # The result is stored as the assets of a release named after a key computed
+  # from the files describing the external projects. Later runs restore it
+  # instead of rebuilding, and rebuild only when an external project changes.
   #-----------------------------------------------------------------------------
-  prerequisites:
-    name: Prerequisites (${{ matrix.platform }})
+  deps-key:
+    name: Prerequisites key (${{ matrix.platform }})
     needs: setup
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 360
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     outputs:
-      key-linux: ${{ steps.export.outputs.key-linux }}
-      key-macos: ${{ steps.export.outputs.key-macos }}
-      key-windows: ${{ steps.export.outputs.key-windows }}
+      key: ${{ steps.key.outputs.key }}
+      cached: ${{ steps.key.outputs.cached }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Compute key
+        id: key
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ needs.setup.outputs.force-deps }}
+          SLICER_PLATFORM: ${{ matrix.platform }}
+          SLICER_RUNNER_IMAGE: ${{ matrix.runner }}
+          SLICER_QT_VERSION: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
+          SLICER_SOURCE_DIR: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          chmod +x .github/scripts/slicer-ci.sh
+          key="slicer-deps-${SLICER_PLATFORM}-$(.github/scripts/slicer-ci.sh deps-key)"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          cached=false
+          if [ "$FORCE" != "true" ] && gh release view "$key" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            cached=true
+          fi
+          echo "cached=$cached" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Prerequisites (${SLICER_PLATFORM})"
+            echo ""
+            echo "| Key | Already built |"
+            echo "|---|---|"
+            echo "| $key | $cached |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deps-1:
+    name: Deps 1/5 base (${{ matrix.platform }})
+    needs: [setup, deps-key]
+    if: needs.deps-key.outputs.cached != 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
-
       - name: Set up environment
-        id: env
         uses: ./.github/actions/slicer-env
         with:
           free-disk-space: ${{ matrix.platform == 'linux' }}
-
-      - name: Compute prerequisites key
-        id: key
-        shell: bash
-        env:
-          SLICER_RUNNER_IMAGE: ${{ matrix.runner }}
-        run: |
-          set -euo pipefail
-          cp -r "$GITHUB_WORKSPACE/.github" "$SLICER_ROOT/" 2>/dev/null || true
-          cd "$GITHUB_WORKSPACE"
-          key="$(SLICER_SOURCE_DIR="$GITHUB_WORKSPACE" "$SLICER_CI" deps-key)"
-          full="slicer-deps-${{ matrix.platform }}-$key"
-          echo "key=$full" >> "$GITHUB_OUTPUT"
-          echo "Prerequisites key: $full"
-
-      - name: Restore prerequisites cache
-        id: cache
-        if: needs.setup.outputs.force-deps != 'true'
-        uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
-        with:
-          path: ${{ env.SLICER_OUTPUT_DIR }}/deps-${{ matrix.platform }}.tar.zst
-          key: ${{ steps.key.outputs.key }}
-
-      - name: Build prerequisites
-        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Build base
         uses: ./.github/actions/slicer-build-stage
         with:
-          target: Slicer-dependencies
+          # `python` pulls in zlib, bzip2, LZMA, LibFFI, sqlite and OpenSSL.
+          target: "python DCMTK curl teem LibArchive RapidJSON JsonCpp tbb CTKAppLauncherLib CTKAPPLAUNCHER CTKResEdit"
+          archive-name: deps-stage
+          upload-artifact: deps-stage1-${{ matrix.platform }}
+
+  deps-2:
+    name: Deps 2/5 VTK (${{ matrix.platform }})
+    needs: [setup, deps-key, deps-1]
+    if: needs.deps-key.outputs.cached != 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Set up environment
+        uses: ./.github/actions/slicer-env
+        with:
+          free-disk-space: ${{ matrix.platform == 'linux' }}
+      - name: Build VTK
+        uses: ./.github/actions/slicer-build-stage
+        with:
+          target: "VTK"
+          restore-artifact: deps-stage1-${{ matrix.platform }}
+          restore-archive: deps-stage
+          archive-name: deps-stage
+          upload-artifact: deps-stage2-${{ matrix.platform }}
+
+  deps-3:
+    name: Deps 3/5 ITK (${{ matrix.platform }})
+    needs: [setup, deps-key, deps-2]
+    if: needs.deps-key.outputs.cached != 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Set up environment
+        uses: ./.github/actions/slicer-env
+        with:
+          free-disk-space: ${{ matrix.platform == 'linux' }}
+      - name: Build ITK
+        uses: ./.github/actions/slicer-build-stage
+        with:
+          target: "ITK SlicerExecutionModel"
+          restore-artifact: deps-stage2-${{ matrix.platform }}
+          restore-archive: deps-stage
+          archive-name: deps-stage
+          upload-artifact: deps-stage3-${{ matrix.platform }}
+
+  deps-4:
+    name: Deps 4/5 CTK (${{ matrix.platform }})
+    needs: [setup, deps-key, deps-3]
+    if: needs.deps-key.outputs.cached != 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Set up environment
+        uses: ./.github/actions/slicer-env
+        with:
+          free-disk-space: ${{ matrix.platform == 'linux' }}
+      - name: Build CTK
+        uses: ./.github/actions/slicer-build-stage
+        with:
+          target: "CTK qRestAPI"
+          restore-artifact: deps-stage3-${{ matrix.platform }}
+          restore-archive: deps-stage
+          archive-name: deps-stage
+          upload-artifact: deps-stage4-${{ matrix.platform }}
+
+  deps-5:
+    name: Deps 5/5 rest (${{ matrix.platform }})
+    needs: [setup, deps-key, deps-4]
+    if: needs.deps-key.outputs.cached != 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Set up environment
+        uses: ./.github/actions/slicer-env
+        with:
+          free-disk-space: ${{ matrix.platform == 'linux' }}
+      - name: Build rest
+        uses: ./.github/actions/slicer-build-stage
+        with:
+          # Everything remaining: SimpleITK, the Python requirements and
+          # the sources of the remote modules.
+          target: "Slicer-dependencies"
+          restore-artifact: deps-stage4-${{ matrix.platform }}
+          restore-archive: deps-stage
           archive-name: deps-${{ matrix.platform }}
-          archive-paths: SR
-          # The inner build tree does not exist yet at this point, but exclude it
-          # defensively in case the target pulls it in.
-          archive-excludes: "SR/Slicer-build"
+          upload-artifact: deps-${{ matrix.platform }}
 
-      - name: Save prerequisites cache
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
-        with:
-          path: ${{ env.SLICER_OUTPUT_DIR }}/deps-${{ matrix.platform }}.tar.zst
-          key: ${{ steps.key.outputs.key }}
-
-      - name: Upload prerequisites
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: deps-${{ matrix.platform }}
-          path: ${{ env.SLICER_OUTPUT_DIR }}/deps-${{ matrix.platform }}.tar.zst
-          retention-days: 3
-          compression-level: 0
-          if-no-files-found: error
-
-      - name: Export key
-        id: export
+      - name: Publish the prerequisites
         shell: bash
-        run: echo "key-${{ matrix.platform }}=${{ steps.key.outputs.key }}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ needs.deps-key.outputs.key }}
+        run: |
+          set -euo pipefail
+          "$SLICER_CI" split "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst"
+          gh release create "$KEY" --title "$KEY" --prerelease --latest=false \
+            --notes "Prebuilt Slicer prerequisites for ${SLICER_PLATFORM}, produced by the Build workflow. Safe to delete: it is regenerated on demand." \
+            2>/dev/null || true
+          gh release upload "$KEY" "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst* --clobber
 
   #-----------------------------------------------------------------------------
   # Phase 2: build Slicer itself, package it and run the tests.
   #-----------------------------------------------------------------------------
   slicer:
     name: Slicer (${{ matrix.platform }})
-    needs: [setup, prerequisites]
+    needs: [setup, deps-key, deps-5]
+    if: always() && needs.deps-key.result == 'success' && (needs.deps-5.result == 'success' || needs.deps-key.outputs.cached == 'true')
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 360
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
@@ -220,11 +340,25 @@ jobs:
         shell: bash
         run: echo "ExternalData_OBJECT_STORES=$SLICER_ROOT/ExternalData" >> "$GITHUB_ENV"
 
+      - name: Download the prerequisites
+        if: needs.deps-key.outputs.cached == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ needs.deps-key.outputs.key }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SLICER_OUTPUT_DIR/restore"
+          gh release download "$KEY" -R "$GITHUB_REPOSITORY" -D "$SLICER_OUTPUT_DIR/restore" --clobber \
+            -p "deps-${SLICER_PLATFORM}.tar.zst*"
+          "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/deps-${SLICER_PLATFORM}.tar.zst"
+          rm -rf "$SLICER_OUTPUT_DIR/restore"
+
       - name: Build Slicer
         uses: ./.github/actions/slicer-build-stage
         with:
           target: Slicer
-          restore-artifact: deps-${{ matrix.platform }}
+          restore-artifact: ${{ needs.deps-key.outputs.cached == 'true' && '' || format('deps-{0}', matrix.platform) }}
           restore-archive: deps-${{ matrix.platform }}
           # Archived after packaging instead, so that the package is included.
           archive-name: ""
