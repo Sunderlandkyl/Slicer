@@ -1,8 +1,9 @@
 name: Extension build (self-test)
 
-# Verifies that a build tree published by the "Build" workflow can be used by a
-# separate repository to build an extension. It builds the extension templates
-# shipped in `Extensions/Testing` exactly the way an extension repository would.
+# Verifies that a build published by the "Build" workflow can be used by a
+# separate repository to build, package and load an extension. It builds the
+# extension templates shipped in `Extensions/Testing` exactly the way an
+# extension repository would, through the `setup-slicer-build` action.
 #
 # This is the reference implementation for extension repositories: see
 # `Docs/developer_guide/build_instructions/github_actions.md`.
@@ -11,13 +12,13 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Platforms to test (comma separated)"
+        description: "Platforms to test (comma separated: linux,macos,windows)"
         default: "linux"
       release-tag:
-        description: "Release tag holding the Slicer build to test against"
+        description: "Release holding the Slicer build to test against"
         default: "nightly"
       repository:
-        description: "Repository publishing the Slicer release"
+        description: "Repository publishing the Slicer release (defaults to this one)"
         default: ""
   push:
     branches:
@@ -50,20 +51,37 @@ jobs:
           # Nothing to test until a Slicer build has been published.
           if ! gh release view "$RELEASE_TAG" -R "$REPOSITORY" >/dev/null 2>&1; then
             echo "::notice::No '$RELEASE_TAG' release in $REPOSITORY; nothing to test."
-            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
             echo "found=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "found=true" >> "$GITHUB_OUTPUT"
+          # The whole cross product is built here: an entry of `include` that
+          # shares no key with the matrix is merged into every combination, so
+          # `include` cannot be used to add the platforms.
+          extensions=(
+            LoadableExtensionTemplate
+            ScriptedLoadableExtensionTemplate
+            CLIExtensionTemplate
+          )
           entries=""
           for p in ${PLATFORMS//,/ }; do
             case "$p" in
-              linux)   entries="$entries {\"platform\":\"linux\",\"runner\":\"ubuntu-22.04\"}," ;;
-              macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15\"}," ;;
-              windows) entries="$entries {\"platform\":\"windows\",\"runner\":\"windows-2022\"}," ;;
+              linux) runner="ubuntu-22.04" ;;
+              macos) runner="macos-15" ;;
+              windows) runner="windows-2022" ;;
+              *)
+                echo "::warning::unknown platform '$p'"
+                continue
+                ;;
             esac
+            for e in "${extensions[@]}"; do
+              entries="$entries {\"platform\":\"$p\",\"runner\":\"$runner\",\"extension\":\"$e\"},"
+            done
           done
-          echo "matrix={\"include\":[${entries%,}]}" >> "$GITHUB_OUTPUT"
+          matrix="{\"include\":[${entries%,}]}"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "$matrix" | jq .
 
   build-extension:
     name: ${{ matrix.extension }} (${{ matrix.platform }})
@@ -73,16 +91,12 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      matrix:
-        extension:
-          - LoadableExtensionTemplate
-          - ScriptedLoadableExtensionTemplate
-          - CLIExtensionTemplate
-        include: ${{ fromJSON(needs.setup.outputs.matrix).include }}
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      # An extension repository would refer to the action by its full name:
+      # An extension repository refers to the action by its full name and does
+      # not check Slicer out at all:
       #   uses: Slicer/Slicer/.github/actions/setup-slicer-build@main
       - name: Set up the Slicer build
         id: slicer
@@ -94,36 +108,47 @@ jobs:
 
       - name: Configure and build ${{ matrix.extension }}
         shell: bash
+        env:
+          EXTENSION: ${{ matrix.extension }}
+          SLICER_DIR: ${{ steps.slicer.outputs.slicer-dir }}
+          SOURCE_DIR: ${{ steps.slicer.outputs.source-dir }}
         run: |
           set -euo pipefail
-          src="${{ steps.slicer.outputs.source-dir }}/Extensions/Testing/${{ matrix.extension }}"
           build="$SLICER_ROOT/ext-build"
           rm -rf "$build"
-          args=(-S "$src" -B "$build" "-DSlicer_DIR:PATH=${{ steps.slicer.outputs.slicer-dir }}")
+          args=(-S "$SOURCE_DIR/Extensions/Testing/$EXTENSION" -B "$build"
+                "-DSlicer_DIR:PATH=$SLICER_DIR")
           if [ "$SLICER_PLATFORM" = "windows" ]; then
             args+=(-G "Visual Studio 17 2022" -A x64)
+            cmake "${args[@]}"
+            cmake --build "$build" --parallel --config Release
           else
             args+=(-G Ninja -DCMAKE_BUILD_TYPE:STRING=Release)
+            cmake "${args[@]}"
+            cmake --build "$build" --parallel
           fi
-          cmake "${args[@]}"
-          cmake --build "$build" --parallel ${{ matrix.platform == 'windows' && '--config Release' || '' }}
 
       - name: Package ${{ matrix.extension }}
         shell: bash
         run: |
           set -euo pipefail
           build="$SLICER_ROOT/ext-build"
-          cmake --build "$build" --target package ${{ matrix.platform == 'windows' && '--config Release' || '' }}
-          find "$build" -maxdepth 2 -name '*.tar.gz' -o -maxdepth 2 -name '*.zip' -o -maxdepth 2 -name '*.dmg' | head
+          if [ "$SLICER_PLATFORM" = "windows" ]; then
+            cmake --build "$build" --target package --config Release
+          else
+            cmake --build "$build" --target package
+          fi
+          find "$build" -maxdepth 2 \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.dmg' \) -print
 
-      - name: Load the extension in Slicer
+      - name: Load ${{ matrix.extension }} in Slicer
         if: matrix.platform == 'linux'
         shell: bash
+        env:
+          LAUNCHER: ${{ steps.slicer.outputs.launcher }}
         run: |
           set -euo pipefail
-          launcher="${{ steps.slicer.outputs.slicer-dir }}/Slicer"
-          build="$SLICER_ROOT/ext-build"
           export QTWEBENGINE_DISABLE_SANDBOX=1 LIBGL_ALWAYS_SOFTWARE=1
-          xvfb-run -a "$launcher" --no-splash --no-main-window --ignore-slicerrc \
-            --additional-module-paths "$build" \
+          xvfb-run -a "$LAUNCHER" \
+            --no-splash --no-main-window --ignore-slicerrc \
+            --additional-module-paths "$SLICER_ROOT/ext-build" \
             --python-code "import slicer; print('modules:', len(slicer.app.moduleManager().modulesNames())); exit(slicer.util.EXIT_SUCCESS)"
