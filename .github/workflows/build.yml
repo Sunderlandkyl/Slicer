@@ -394,10 +394,6 @@ jobs:
           key: slicer-testdata-${{ matrix.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
           restore-keys: slicer-testdata-${{ matrix.platform }}-
 
-      - name: Set test data store
-        shell: bash
-        run: echo "ExternalData_OBJECT_STORES=$SLICER_ROOT/ExternalData" >> "$GITHUB_ENV"
-
       - name: Download the prerequisites
         if: matrix.cached
         shell: bash
@@ -520,7 +516,6 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          ExternalData_OBJECT_STORES: ${{ env.SLICER_ROOT }}/ExternalData
           SLICER_CTEST_EXCLUDE: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
         run: '"$SLICER_CI" test'
 
