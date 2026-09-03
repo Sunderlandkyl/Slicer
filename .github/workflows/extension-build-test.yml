@@ -19,6 +19,9 @@ on:
       repository:
         description: "Repository publishing the Slicer release"
         default: ""
+  push:
+    branches:
+      - "ci/**"
   schedule:
     # A few hours after the nightly build.
     - cron: "0 10 * * *"

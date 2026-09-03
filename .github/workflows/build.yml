@@ -21,6 +21,8 @@ on:
     branches:
       - "main"
       - "master"
+      # Branches used to develop the CI itself.
+      - "ci/**"
   pull_request:
     branches:
       - "*"
@@ -82,6 +84,9 @@ jobs:
           # the cost low. Pushes, nightly runs and manual runs build everything.
           if [ "$EVENT" = "pull_request" ]; then
             PLATFORMS="linux"
+          elif [ "$EVENT" = "push" ] && [ "${GITHUB_REF_NAME}" != "main" ] && [ "${GITHUB_REF_NAME}" != "master" ]; then
+            # Development branches for the CI itself: use the workflow default.
+            PLATFORMS="${SLICER_CI_PLATFORMS:-linux}"
           fi
           entries=""
           for p in ${PLATFORMS//,/ }; do
