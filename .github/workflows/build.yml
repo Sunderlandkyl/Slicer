@@ -458,30 +458,16 @@ jobs:
             exit 1
           fi
 
-  # TEMPORARY diagnostic: is the Slicer job skipped because of its needs, or
-  # because of the matrix it is given?
-  probe:
-    name: Probe
-    needs: [setup, deps-key, deps]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Show what the Slicer job would receive
-        shell: bash
-        env:
-          MATRIX: ${{ needs.deps-key.outputs.matrix }}
-          TODO: ${{ needs.deps-key.outputs.todo-count }}
-        run: |
-          echo "deps result   : ${{ needs.deps.result }}"
-          echo "todo-count    : [$TODO]"
-          echo "matrix        : [$MATRIX]"
-          echo "matrix length : $(echo "$MATRIX" | jq '.include | length' 2>&1)"
-
   #-----------------------------------------------------------------------------
   # Phase 2: build Slicer itself, package it and run the tests.
   #-----------------------------------------------------------------------------
   slicer:
     name: Slicer (${{ matrix.platform }})
     needs: [setup, deps-key, deps]
+    # The stages are skipped when the prerequisites are already available, and
+    # GitHub carries that skip down the whole graph, past the gate job that ran
+    # and succeeded. Stating a condition here is what stops it.
+    if: ${{ !cancelled() && needs.deps.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     outputs:
@@ -641,7 +627,7 @@ jobs:
   publish:
     name: Publish nightly
     needs: [setup, deps-key, slicer]
-    if: always() && needs.setup.outputs.publish == 'true' && needs.slicer.result == 'success'
+    if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' && needs.slicer.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
