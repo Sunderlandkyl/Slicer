@@ -226,6 +226,19 @@ between runs through the `ExternalData_OBJECT_STORES` environment variable.
 To exclude known-failing tests without editing the workflow, set the
 `SLICER_CI_TEST_EXCLUDE` repository variable to a CTest regular expression.
 
+## Relation to the older CI workflow
+
+`.github/workflows/ci.yml` builds Slicer inside the `slicer/slicer-base`
+Docker image, which ships a prebuilt superbuild. It only covers Linux, runs no
+tests, and skips the build entirely whenever a file under `SuperBuild/` differs
+from the `nightly-main` branch, because the image's prerequisites would then be
+stale.
+
+The `Build` workflow covers those cases: it builds the prerequisites itself
+when they change, on the three platforms, and runs the tests. The two can be
+run side by side while the new one settles; once it has, `ci.yml` and the
+`slicer-build` action it uses can be removed.
+
 ## Local reproduction
 
 The workflow logic lives in `.github/scripts/slicer-ci.sh`, which can be run
