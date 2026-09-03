@@ -1,0 +1,105 @@
+name: "Slicer build stage"
+description: >-
+  Build one target of the Slicer superbuild tree in the fixed build root,
+  optionally restoring the tree produced by a previous stage first, then strip
+  and archive the result. Requires the 'slicer-env' action to have been run.
+
+inputs:
+  target:
+    description: "Superbuild target to build (VTK, ITK, Slicer-dependencies, Slicer, ...)"
+    required: true
+  restore-artifact:
+    description: "Workflow artifact (containing <archive-name>.tar.zst) to restore before building"
+    default: ""
+  restore-archive:
+    description: "Name of the archive inside the restored artifact (without extension)"
+    default: "stage"
+  strip:
+    description: "Strip intermediate files after the build"
+    default: "true"
+  archive-name:
+    description: "Name of the archive to create (without extension); empty to skip"
+    default: "stage"
+  archive-paths:
+    description: "Space separated paths (relative to the root) to archive"
+    default: "SR"
+  archive-excludes:
+    description: "Space separated tar exclude patterns"
+    default: ""
+  upload-artifact:
+    description: "Name of the workflow artifact to upload the archive to; empty to skip"
+    default: ""
+  retention-days:
+    description: "Retention of the uploaded artifact"
+    default: "2"
+
+runs:
+  using: composite
+  steps:
+    - name: Copy source tree to the build root
+      shell: bash
+      run: |
+        set -euo pipefail
+        src="$SLICER_SOURCE_DIR"
+        if [ -d "$src/.git" ]; then
+          echo "Source tree already present at $src"
+        else
+          rm -rf "$src"
+          echo "Cloning $GITHUB_WORKSPACE -> $src"
+          sha="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
+          git clone -q "$GITHUB_WORKSPACE" "$src"
+          git -C "$src" checkout -q "$sha"
+          git -C "$src" log -1 --oneline
+        fi
+
+    - name: Download previous stage
+      if: inputs.restore-artifact != ''
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: ${{ inputs.restore-artifact }}
+        path: ${{ env.SLICER_OUTPUT_DIR }}/restore
+
+    - name: Restore previous stage
+      if: inputs.restore-artifact != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/${{ inputs.restore-archive }}.tar.zst"
+        rm -rf "$SLICER_OUTPUT_DIR/restore"
+
+    - name: Configure
+      shell: bash
+      run: '"$SLICER_CI" configure'
+
+    - name: Build ${{ inputs.target }}
+      shell: bash
+      run: '"$SLICER_CI" build "${{ inputs.target }}"'
+
+    - name: Report
+      if: always()
+      shell: bash
+      run: '"$SLICER_CI" report'
+
+    - name: Strip
+      if: inputs.strip == 'true'
+      shell: bash
+      run: '"$SLICER_CI" strip "$SLICER_SUPERBUILD_DIR"'
+
+    - name: Archive
+      if: inputs.archive-name != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        excludes=()
+        for p in ${{ inputs.archive-excludes }}; do excludes+=(--exclude "$p"); done
+        "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/${{ inputs.archive-name }}.tar.zst" "${excludes[@]}" ${{ inputs.archive-paths }}
+
+    - name: Upload ${{ inputs.upload-artifact }}
+      if: inputs.upload-artifact != '' && inputs.archive-name != ''
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: ${{ inputs.upload-artifact }}
+        path: ${{ env.SLICER_OUTPUT_DIR }}/${{ inputs.archive-name }}.tar.zst
+        retention-days: ${{ inputs.retention-days }}
+        compression-level: 0
+        if-no-files-found: error

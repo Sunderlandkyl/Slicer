@@ -285,6 +285,14 @@ include(CMakeDependentOption)
 option(BUILD_TESTING "Test the project" ON)
 mark_as_superbuild(BUILD_TESTING)
 
+# Propagate compiler launchers (e.g. ccache, sccache) to all external projects
+# and to the inner build.
+foreach(_launcher_var CMAKE_C_COMPILER_LAUNCHER CMAKE_CXX_COMPILER_LAUNCHER)
+  if(DEFINED ${_launcher_var})
+    mark_as_superbuild(VARS ${_launcher_var}:STRING ALL_PROJECTS)
+  endif()
+endforeach()
+
 #option(WITH_MEMCHECK "Run tests through valgrind." OFF)
 #mark_as_superbuild(WITH_MEMCHECK)
 

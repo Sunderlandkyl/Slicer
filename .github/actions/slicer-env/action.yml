@@ -1,0 +1,317 @@
+name: "Slicer build environment"
+description: >-
+  Prepare a GitHub-hosted runner to build Slicer (or a Slicer extension): fixed
+  build root, system packages, CMake, Qt, optional sccache, and optionally
+  restore a Slicer build tree published by the Slicer build workflow (from a
+  GitHub release or from workflow artifacts).
+
+inputs:
+  qt-version:
+    description: "Qt version to install (ignored when a restored manifest specifies one)"
+    default: "5.15.2"
+  qt-modules:
+    description: "Extra Qt modules to install (defaults to the set required by Slicer for the Qt major version)"
+    default: ""
+  cmake-version:
+    description: "CMake version to install (jwlawson/actions-setup-cmake syntax)"
+    default: "3.31.x"
+  sccache:
+    description: "Enable sccache (GitHub Actions cache backend) on Linux/macOS"
+    default: "true"
+  free-disk-space:
+    description: "Remove unneeded pre-installed tooling on Linux runners"
+    default: "true"
+  install-qt:
+    description: "Install Qt"
+    default: "true"
+  # ---- Restore options -------------------------------------------------------
+  repository:
+    description: "Repository hosting the Slicer releases (owner/name)"
+    default: ${{ github.repository }}
+  token:
+    description: "Token used to download releases/artifacts"
+    default: ${{ github.token }}
+  build-source:
+    description: "Where to restore the Slicer build tree from: '', 'release' or 'artifact'"
+    default: ""
+  build-release-tag:
+    description: "Release tag holding the Slicer build tree (build-source=release)"
+    default: "nightly"
+  build-artifact-name:
+    description: "Workflow artifact holding the Slicer build tree (build-source=artifact)"
+    default: ""
+  deps-source:
+    description: "Where to restore the prerequisites from: '', 'release', 'artifact' or 'auto' (release tag from the manifest, else artifact)"
+    default: "auto"
+  deps-release-tag:
+    description: "Release tag holding the prerequisites (default: read from the manifest)"
+    default: ""
+  deps-artifact-name:
+    description: "Workflow artifact holding the prerequisites (deps-source=artifact)"
+    default: ""
+  restore-testdata:
+    description: "Also restore the test data archive when present (artifact only)"
+    default: "false"
+
+outputs:
+  platform:
+    description: "linux, macos or windows"
+    value: ${{ steps.env.outputs.platform }}
+  root:
+    description: "Fixed root directory"
+    value: ${{ steps.env.outputs.root }}
+  source-dir:
+    description: "Slicer source directory"
+    value: ${{ steps.env.outputs.source-dir }}
+  superbuild-dir:
+    description: "Slicer superbuild directory"
+    value: ${{ steps.env.outputs.superbuild-dir }}
+  slicer-dir:
+    description: "Slicer inner build directory (Slicer_DIR)"
+    value: ${{ steps.env.outputs.slicer-dir }}
+  output-dir:
+    description: "Directory for archives, logs and packages"
+    value: ${{ steps.env.outputs.output-dir }}
+  qt-dir:
+    description: "Qt prefix directory"
+    value: ${{ steps.qt-dir.outputs.qt-dir }}
+  qt-version:
+    description: "Installed Qt version"
+    value: ${{ steps.versions.outputs.qt-version }}
+  manifest:
+    description: "Path of the restored manifest (empty when nothing was restored)"
+    value: ${{ steps.versions.outputs.manifest }}
+
+runs:
+  using: composite
+  steps:
+    - name: Initialize environment
+      id: env
+      shell: bash
+      run: |
+        chmod +x "${{ github.action_path }}/../../scripts/slicer-ci.sh" || true
+        echo "SLICER_CI=${{ github.action_path }}/../../scripts/slicer-ci.sh" >> "$GITHUB_ENV"
+        "${{ github.action_path }}/../../scripts/slicer-ci.sh" env
+
+    - name: Free disk space
+      if: inputs.free-disk-space == 'true'
+      shell: bash
+      run: '"$SLICER_CI" free-disk-space'
+
+    - name: Install system packages
+      shell: bash
+      run: '"$SLICER_CI" install-system-packages'
+
+    - name: Install CMake
+      uses: jwlawson/actions-setup-cmake@802fa1a2c4e212495c05bf94dba2704a92a472be # v2.0.2
+      with:
+        cmake-version: ${{ inputs.cmake-version }}
+
+    # ---- Restore: download manifests/archives -------------------------------
+
+    - name: Download build tree (release)
+      if: inputs.build-source == 'release'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        dest="$SLICER_OUTPUT_DIR/restore"
+        mkdir -p "$dest"
+        echo "Downloading build tree from ${{ inputs.repository }}@${{ inputs.build-release-tag }}"
+        gh release download "${{ inputs.build-release-tag }}" -R "${{ inputs.repository }}" -D "$dest" --clobber \
+          -p "manifest-${SLICER_PLATFORM}.json" \
+          -p "slicer-source-${SLICER_PLATFORM}.tar.zst*" \
+          -p "slicer-build-${SLICER_PLATFORM}.tar.zst*"
+        ls -la "$dest"
+
+    - name: Download build tree (artifact)
+      if: inputs.build-source == 'artifact'
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: ${{ inputs.build-artifact-name }}
+        path: ${{ steps.env.outputs.output-dir }}/restore
+
+    - name: Read manifest
+      id: versions
+      shell: bash
+      run: |
+        set -euo pipefail
+        manifest="$SLICER_OUTPUT_DIR/restore/manifest-${SLICER_PLATFORM}.json"
+        qt="${{ inputs.qt-version }}"
+        if [ -f "$manifest" ]; then
+          echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
+          cat "$manifest"
+          mqt="$("$SLICER_CI" manifest-get "$manifest" qt_version)"
+          [ -n "$mqt" ] && qt="$mqt"
+          root="$("$SLICER_CI" manifest-get "$manifest" root)"
+          if [ -n "$root" ] && [ "$root" != "$SLICER_ROOT" ]; then
+            echo "::error::The restored build tree was built at '$root' but this runner uses '$SLICER_ROOT'."
+            exit 1
+          fi
+          echo "deps-release-tag=$("$SLICER_CI" manifest-get "$manifest" deps_release_tag)" >> "$GITHUB_OUTPUT"
+        else
+          echo "manifest=" >> "$GITHUB_OUTPUT"
+          echo "deps-release-tag=" >> "$GITHUB_OUTPUT"
+        fi
+        echo "qt-version=$qt" >> "$GITHUB_OUTPUT"
+        echo "SLICER_QT_VERSION=$qt" >> "$GITHUB_ENV"
+
+    - name: Resolve prerequisites source
+      id: deps
+      shell: bash
+      run: |
+        set -euo pipefail
+        source="${{ inputs.deps-source }}"
+        tag="${{ inputs.deps-release-tag }}"
+        [ -n "$tag" ] || tag="${{ steps.versions.outputs.deps-release-tag }}"
+        if [ "$source" = "auto" ]; then
+          if [ "${{ inputs.build-source }}" = "" ]; then
+            source=""
+          elif [ -n "$tag" ] && [ -z "${{ inputs.deps-artifact-name }}" ]; then
+            source="release"
+          elif [ -n "${{ inputs.deps-artifact-name }}" ]; then
+            source="artifact"
+          else
+            source="release"
+          fi
+        fi
+        echo "source=$source" >> "$GITHUB_OUTPUT"
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        echo "Prerequisites source: '$source' (tag: '$tag', artifact: '${{ inputs.deps-artifact-name }}')"
+
+    - name: Download prerequisites (release)
+      if: steps.deps.outputs.source == 'release'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        dest="$SLICER_OUTPUT_DIR/restore"
+        mkdir -p "$dest"
+        tag="${{ steps.deps.outputs.tag }}"
+        [ -n "$tag" ] || { echo "::error::No prerequisites release tag"; exit 1; }
+        echo "Downloading prerequisites from ${{ inputs.repository }}@$tag"
+        gh release download "$tag" -R "${{ inputs.repository }}" -D "$dest" --clobber \
+          -p "deps-${SLICER_PLATFORM}.tar.zst*" -p "deps-${SLICER_PLATFORM}.json"
+        ls -la "$dest"
+
+    - name: Download prerequisites (artifact)
+      if: steps.deps.outputs.source == 'artifact'
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: ${{ inputs.deps-artifact-name }}
+        path: ${{ steps.env.outputs.output-dir }}/restore
+
+    # ---- Toolchain -------------------------------------------------------------
+
+    - name: Resolve Qt install options
+      id: qt-options
+      shell: bash
+      run: |
+        set -euo pipefail
+        version="${{ steps.versions.outputs.qt-version }}"
+        major="${version%%.*}"
+        modules="${{ inputs.qt-modules }}"
+        if [ -z "$modules" ]; then
+          if [ "$major" = "6" ]; then
+            # Qt 6: Core5Compat, StateMachine, WebEngine and Multimedia are add-ons.
+            modules="qtwebengine qtwebchannel qtpositioning qt5compat qtmultimedia qtscxml qtshadertools qtimageformats"
+          else
+            # Qt 5: only WebEngine (and XmlPatterns for QtTesting) are add-ons.
+            modules="qtwebengine qtxmlpatterns qtscript"
+          fi
+        fi
+        case "$RUNNER_OS" in
+          Windows) arch="win64_msvc2019_64" ;;
+          macOS)   arch="clang_64" ;;
+          *)       arch="gcc_64" ;;
+        esac
+        if [ "$major" = "6" ]; then
+          case "$RUNNER_OS" in
+            Windows) arch="win64_msvc2022_64" ;;
+            macOS)   arch="clang_64" ;;
+            *)       arch="linux_gcc_64" ;;
+          esac
+        fi
+        echo "modules=$modules" >> "$GITHUB_OUTPUT"
+        echo "arch=$arch" >> "$GITHUB_OUTPUT"
+        echo "major=$major" >> "$GITHUB_OUTPUT"
+        echo "Qt $version ($arch): $modules"
+
+    - name: Install Qt
+      if: inputs.install-qt == 'true'
+      uses: jurplel/install-qt-action@d325aaf2a8baeeda41ad0b5d39f84a6af9bcf005 # v4.3.0
+      with:
+        version: ${{ steps.versions.outputs.qt-version }}
+        dir: ${{ steps.env.outputs.root }}/Qt
+        target: desktop
+        arch: ${{ steps.qt-options.outputs.arch }}
+        modules: ${{ steps.qt-options.outputs.modules }}
+        cache: false
+        setup-python: false
+
+    - name: Locate Qt
+      id: qt-dir
+      shell: bash
+      run: |
+        set -euo pipefail
+        qt_dir="${QT_ROOT_DIR:-}"
+        if [ -z "$qt_dir" ]; then
+          qt_dir="$(ls -d "$SLICER_ROOT/Qt/${SLICER_QT_VERSION}"/*/ 2>/dev/null | head -n1 | sed 's:/*$::' || true)"
+        fi
+        major="${{ steps.qt-options.outputs.major }}"
+        if [ "${{ inputs.install-qt }}" = "true" ] && [ ! -d "$qt_dir/lib/cmake/Qt${major}" ]; then
+          echo "::error::Qt not found under $SLICER_ROOT/Qt (QT_ROOT_DIR='$QT_ROOT_DIR')"; exit 1
+        fi
+        # Normalize to forward slashes for CMake
+        qt_dir="${qt_dir//\\//}"
+        echo "qt-dir=$qt_dir" >> "$GITHUB_OUTPUT"
+        echo "SLICER_QT_DIR=$qt_dir" >> "$GITHUB_ENV"
+        echo "Qt: $qt_dir"
+
+    - name: Set up sccache
+      if: inputs.sccache == 'true' && runner.os != 'Windows'
+      uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+
+    - name: Enable sccache
+      if: inputs.sccache == 'true' && runner.os != 'Windows'
+      shell: bash
+      run: |
+        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+        echo "SLICER_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
+
+    - name: Configure MSVC parallel compilation
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        # /MP: compile multiple sources in parallel within each project.
+        echo "CL=/MP" >> "$GITHUB_ENV"
+        echo "CMAKE_BUILD_PARALLEL_LEVEL=${NUMBER_OF_PROCESSORS:-4}" >> "$GITHUB_ENV"
+
+    # ---- Restore: extract -------------------------------------------------------
+
+    - name: Restore build tree
+      if: inputs.build-source != '' || steps.deps.outputs.source != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        dest="$SLICER_OUTPUT_DIR/restore"
+        if ls "$dest"/deps-${SLICER_PLATFORM}.tar.zst* >/dev/null 2>&1; then
+          "$SLICER_CI" unpack "$dest/deps-${SLICER_PLATFORM}.tar.zst"
+          rm -f "$dest"/deps-${SLICER_PLATFORM}.tar.zst*
+        elif [ "${{ steps.deps.outputs.source }}" != "" ]; then
+          echo "::error::Prerequisites archive not found in $dest"
+          ls -la "$dest" || true
+          exit 1
+        fi
+        if [ "${{ inputs.build-source }}" != "" ]; then
+          "$SLICER_CI" unpack "$dest/slicer-source-${SLICER_PLATFORM}.tar.zst"
+          "$SLICER_CI" unpack "$dest/slicer-build-${SLICER_PLATFORM}.tar.zst"
+          rm -f "$dest"/slicer-source-${SLICER_PLATFORM}.tar.zst* "$dest"/slicer-build-${SLICER_PLATFORM}.tar.zst*
+          if [ "${{ inputs.restore-testdata }}" = "true" ] && ls "$dest"/slicer-testdata-${SLICER_PLATFORM}.tar.zst* >/dev/null 2>&1; then
+            "$SLICER_CI" unpack "$dest/slicer-testdata-${SLICER_PLATFORM}.tar.zst"
+            rm -f "$dest"/slicer-testdata-${SLICER_PLATFORM}.tar.zst*
+          fi
+        fi
+        "$SLICER_CI" report
