@@ -36,7 +36,7 @@ inputs:
     default: "3.31.x"
   free-disk-space:
     description: "Remove unneeded pre-installed tooling on Linux runners"
-    default: "true"
+    default: "false"
   sccache:
     description: "Enable sccache"
     default: "true"

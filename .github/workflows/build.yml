@@ -191,7 +191,10 @@ jobs:
         uses: ./.github/actions/slicer-env
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          free-disk-space: ${{ matrix.platform == 'linux' }}
+          # The prerequisites are built once and then stored as a release, so
+          # a compiler cache would only displace the entries that speed up the
+          # Slicer build itself.
+          sccache: "false"
       - name: Build base
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -216,7 +219,10 @@ jobs:
         uses: ./.github/actions/slicer-env
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          free-disk-space: ${{ matrix.platform == 'linux' }}
+          # The prerequisites are built once and then stored as a release, so
+          # a compiler cache would only displace the entries that speed up the
+          # Slicer build itself.
+          sccache: "false"
       - name: Build VTK
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -242,7 +248,10 @@ jobs:
         uses: ./.github/actions/slicer-env
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          free-disk-space: ${{ matrix.platform == 'linux' }}
+          # The prerequisites are built once and then stored as a release, so
+          # a compiler cache would only displace the entries that speed up the
+          # Slicer build itself.
+          sccache: "false"
       - name: Build ITK
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -268,7 +277,10 @@ jobs:
         uses: ./.github/actions/slicer-env
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          free-disk-space: ${{ matrix.platform == 'linux' }}
+          # The prerequisites are built once and then stored as a release, so
+          # a compiler cache would only displace the entries that speed up the
+          # Slicer build itself.
+          sccache: "false"
       - name: Build CTK
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -296,7 +308,10 @@ jobs:
         uses: ./.github/actions/slicer-env
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          free-disk-space: ${{ matrix.platform == 'linux' }}
+          # The prerequisites are built once and then stored as a release, so
+          # a compiler cache would only displace the entries that speed up the
+          # Slicer build itself.
+          sccache: "false"
       - name: Build rest
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -321,13 +336,41 @@ jobs:
             2>/dev/null || true
           gh release upload "$KEY" "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst* --clobber
 
+  # Single place stating whether the prerequisites of every platform are
+  # available: either they were already built, or the stages produced them.
+  # The stage jobs are skipped both when there is nothing to build and when an
+  # earlier stage failed, so their result alone cannot be relied upon.
+  deps:
+    name: Prerequisites ready
+    needs: [deps-key, deps-5]
+    if: always() && needs.deps-key.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check
+        shell: bash
+        env:
+          TODO: ${{ needs.deps-key.outputs.matrix-todo }}
+          RESULT: ${{ needs.deps-5.result }}
+        run: |
+          set -euo pipefail
+          todo="$(echo "$TODO" | jq '.include | length')"
+          echo "Platforms needing a build of the prerequisites: $todo"
+          echo "Result of the last stage: $RESULT"
+          if [ "$todo" -eq 0 ]; then
+            echo "All prerequisites were already available."
+            exit 0
+          fi
+          if [ "$RESULT" != "success" ]; then
+            echo "::error::Building the prerequisites did not succeed ($RESULT)."
+            exit 1
+          fi
+
   #-----------------------------------------------------------------------------
   # Phase 2: build Slicer itself, package it and run the tests.
   #-----------------------------------------------------------------------------
   slicer:
     name: Slicer (${{ matrix.platform }})
-    needs: [setup, deps-key, deps-5]
-    if: always() && needs.deps-key.result == 'success' && needs.deps-5.result != 'failure' && needs.deps-5.result != 'cancelled'
+    needs: [setup, deps-key, deps]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
@@ -343,7 +386,6 @@ jobs:
         uses: ./.github/actions/slicer-env
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          free-disk-space: ${{ matrix.platform == 'linux' }}
 
       - name: Cache test data
         uses: actions/cache@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
@@ -374,7 +416,9 @@ jobs:
         uses: ./.github/actions/slicer-build-stage
         with:
           target: Slicer
-          restore-artifact: ${{ matrix.cached && '' || format('deps-{0}', matrix.platform) }}
+          # `a && b || c` returns c whenever b is falsy, so the empty string
+          # has to be the last operand.
+          restore-artifact: ${{ !matrix.cached && format('deps-{0}', matrix.platform) || '' }}
           restore-archive: deps-${{ matrix.platform }}
           # Archived after packaging instead, so that the package is included.
           archive-name: ""
@@ -461,7 +505,6 @@ jobs:
         uses: ./.github/actions/slicer-env
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          free-disk-space: ${{ matrix.platform == 'linux' }}
           build-source: artifact
           build-artifact-name: build-${{ matrix.platform }}
           # The build-* artifact already contains the prerequisites archive.
