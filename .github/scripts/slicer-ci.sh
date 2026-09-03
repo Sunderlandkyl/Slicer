@@ -134,23 +134,27 @@ cmd_deps_key() {
       # Options and version requirements defined in the top-level CMakeLists.txt
       echo "== CMakeLists.txt (subset)"
       grep -E 'option\(|Slicer_REQUIRED_|_VERSION|CMAKE_CXX_STANDARD|Slicer_VTK_|Slicer_ITK_|Slicer_USE_|Slicer_BUILD_' CMakeLists.txt || true
-      # This script (it defines the configure options)
-      echo "== slicer-ci.sh"; cat .github/scripts/slicer-ci.sh
+      # The arguments the superbuild is configured with. Only these matter:
+      # editing anything else in this script does not invalidate hours of
+      # build, and an option added for one platform does not invalidate the
+      # prerequisites of the others.
+      echo "== configure arguments"
+      SLICER_QT_DIR="" configure_args
       # Toolchain
       echo "platform=$SLICER_PLATFORM"
       echo "runner=${SLICER_RUNNER_IMAGE:-}"
       echo "qt=${SLICER_QT_VERSION:-}"
-      echo "build-type=$SLICER_BUILD_TYPE"
       echo "key-version=${SLICER_DEPS_KEY_VERSION:-1}"
     } | tr -d '\r' | sha256 | cut -c1-16
   )
 }
 
-# Configure the superbuild tree.
-cmd_configure() {
-  local sb; sb="$(bash_path "$SLICER_SUPERBUILD_DIR")"
-  mkdir -p "$sb"
-  local qt_dir="${SLICER_QT_DIR:?SLICER_QT_DIR must be set to the Qt prefix (e.g. .../Qt/5.15.2/gcc_64)}"
+# Print, one per line, the arguments the superbuild tree is configured with.
+#
+# This is also what identifies the prerequisites: two trees configured with the
+# same arguments contain the same external projects, built the same way.
+configure_args() {
+  local qt_dir="${SLICER_QT_DIR:-@QT_DIR@}"
   local qt_major="${SLICER_QT_VERSION%%.*}"
   [ -n "$qt_major" ] || qt_major=5
 
@@ -173,19 +177,31 @@ cmd_configure() {
              -DCMAKE_C_COMPILER:FILEPATH=/usr/bin/cc -DCMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++
              "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${SLICER_MACOS_DEPLOYMENT_TARGET:-14.0}")
       ;;
-    linux)
+    *)
       args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
              -DCMAKE_C_COMPILER:FILEPATH=/usr/bin/cc -DCMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++)
       ;;
   esac
-  if [ -n "${SLICER_COMPILER_LAUNCHER:-}" ]; then
-    args+=("-DCMAKE_C_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER"
-           "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER")
-  fi
   # Extra options provided by the workflow (space separated -D options)
   if [ -n "${SLICER_EXTRA_CMAKE_OPTIONS:-}" ]; then
     # shellcheck disable=SC2206
     args+=(${SLICER_EXTRA_CMAKE_OPTIONS})
+  fi
+  printf '%s\n' "${args[@]}"
+}
+
+# Configure the superbuild tree.
+cmd_configure() {
+  mkdir -p "$(bash_path "$SLICER_SUPERBUILD_DIR")"
+  : "${SLICER_QT_DIR:?SLICER_QT_DIR must be set to the Qt prefix (e.g. .../Qt/5.15.2/gcc_64)}"
+  local args=()
+  while IFS= read -r line; do args+=("$line"); done < <(configure_args)
+  # A compiler launcher (ccache, sccache) is deliberately not part of
+  # `configure_args`: it does not change what is built, so enabling or
+  # disabling it must not invalidate prebuilt prerequisites.
+  if [ -n "${SLICER_COMPILER_LAUNCHER:-}" ]; then
+    args+=("-DCMAKE_C_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER"
+           "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER")
   fi
   log "Configure superbuild"
   info "cmake ${args[*]}"

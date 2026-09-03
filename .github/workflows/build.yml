@@ -55,7 +55,11 @@ permissions:
   contents: read
 
 env:
+  # Bump to force a rebuild of the prerequisites of every platform.
   SLICER_DEPS_KEY_VERSION: "1"
+  # Qt version used to build Slicer. Override with the SLICER_CI_QT_VERSION
+  # repository variable.
+  SLICER_CI_QT_VERSION: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
 
 jobs:
   #-----------------------------------------------------------------------------
@@ -139,7 +143,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FORCE: ${{ needs.setup.outputs.force-deps }}
           MATRIX: ${{ needs.setup.outputs.matrix }}
-          QT_VERSION: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
+          QT_VERSION: ${{ env.SLICER_CI_QT_VERSION }}
         run: |
           set -euo pipefail
           chmod +x .github/scripts/slicer-ci.sh
@@ -186,6 +190,7 @@ jobs:
       - name: Set up environment
         uses: ./.github/actions/slicer-env
         with:
+          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           free-disk-space: ${{ matrix.platform == 'linux' }}
       - name: Build base
         uses: ./.github/actions/slicer-build-stage
@@ -210,6 +215,7 @@ jobs:
       - name: Set up environment
         uses: ./.github/actions/slicer-env
         with:
+          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           free-disk-space: ${{ matrix.platform == 'linux' }}
       - name: Build VTK
         uses: ./.github/actions/slicer-build-stage
@@ -235,6 +241,7 @@ jobs:
       - name: Set up environment
         uses: ./.github/actions/slicer-env
         with:
+          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           free-disk-space: ${{ matrix.platform == 'linux' }}
       - name: Build ITK
         uses: ./.github/actions/slicer-build-stage
@@ -260,6 +267,7 @@ jobs:
       - name: Set up environment
         uses: ./.github/actions/slicer-env
         with:
+          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           free-disk-space: ${{ matrix.platform == 'linux' }}
       - name: Build CTK
         uses: ./.github/actions/slicer-build-stage
@@ -287,6 +295,7 @@ jobs:
       - name: Set up environment
         uses: ./.github/actions/slicer-env
         with:
+          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           free-disk-space: ${{ matrix.platform == 'linux' }}
       - name: Build rest
         uses: ./.github/actions/slicer-build-stage
@@ -333,6 +342,7 @@ jobs:
         id: env
         uses: ./.github/actions/slicer-env
         with:
+          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           free-disk-space: ${{ matrix.platform == 'linux' }}
 
       - name: Cache test data
@@ -450,6 +460,7 @@ jobs:
       - name: Set up environment
         uses: ./.github/actions/slicer-env
         with:
+          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
           free-disk-space: ${{ matrix.platform == 'linux' }}
           build-source: artifact
           build-artifact-name: build-${{ matrix.platform }}
