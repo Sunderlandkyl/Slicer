@@ -61,6 +61,20 @@ runs:
           # regardless of whether HEAD is detached.
           echo "Copying $GITHUB_WORKSPACE -> $src"
           cp -a "$GITHUB_WORKSPACE/." "$src/"
+
+          # Give every source file a timestamp older than any stamp in a
+          # superbuild tree restored from the prerequisites. Checking the
+          # sources out gives them the time of the checkout, which makes CMake
+          # re-run the configure and build step of every external project,
+          # because the command generating their description files depends on a
+          # script in the source tree.
+          #
+          # Suppressing that is not a shortcut: within one prerequisites key
+          # the external projects cannot depend on Slicer's sources. Anything
+          # that would change them, an External_<project>.cmake file or a
+          # configure option, changes the key and rebuilds them from scratch.
+          echo "Normalizing the timestamps of the source tree"
+          find "$src" -path "$src/.git" -prune -o -print0             | xargs -0 touch -h -t 200001010000 2>/dev/null             || find "$src" -path "$src/.git" -prune -o -print0                | xargs -0 touch -t 200001010000 2>/dev/null || true
         fi
         git -C "$src" log -1 --oneline || true
         git -C "$src" status --short | head -n 5 || true
