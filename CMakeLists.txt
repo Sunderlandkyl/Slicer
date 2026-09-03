@@ -285,11 +285,16 @@ include(CMakeDependentOption)
 option(BUILD_TESTING "Test the project" ON)
 mark_as_superbuild(BUILD_TESTING)
 
-# Propagate compiler launchers (e.g. ccache, sccache) to all external projects
-# and to the inner build.
+# Propagate compiler launchers (e.g. ccache, sccache) to the Slicer build.
+#
+# Deliberately not to the external projects. The arguments an external project
+# is configured with decide whether it has to be configured and built again, so
+# adding a launcher to them invalidates every project of a prebuilt superbuild
+# tree. They are also built once and reused, which is what a compiler cache
+# would otherwise buy.
 foreach(_launcher_var CMAKE_C_COMPILER_LAUNCHER CMAKE_CXX_COMPILER_LAUNCHER)
   if(DEFINED ${_launcher_var})
-    mark_as_superbuild(VARS ${_launcher_var}:STRING ALL_PROJECTS)
+    mark_as_superbuild(VARS ${_launcher_var}:STRING)
   endif()
 endforeach()
 
