@@ -6,7 +6,10 @@ description: >-
 
 inputs:
   target:
-    description: "Superbuild target to build (VTK, ITK, Slicer-dependencies, Slicer, ...)"
+    description: >-
+      Space separated list of superbuild targets to build (VTK, ITK,
+      Slicer-dependencies, Slicer, ...). Targets that are not part of the
+      current configuration are skipped.
     required: true
   restore-artifact:
     description: "Workflow artifact (containing <archive-name>.tar.zst) to restore before building"
@@ -45,12 +48,15 @@ runs:
           echo "Source tree already present at $src"
         else
           rm -rf "$src"
-          echo "Cloning $GITHUB_WORKSPACE -> $src"
-          sha="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
-          git clone -q "$GITHUB_WORKSPACE" "$src"
-          git -C "$src" checkout -q "$sha"
-          git -C "$src" log -1 --oneline
+          mkdir -p "$src"
+          # Copy rather than clone: the working tree, the checked out commit and
+          # the full history (needed to compute Slicer_REVISION) are preserved
+          # regardless of whether HEAD is detached.
+          echo "Copying $GITHUB_WORKSPACE -> $src"
+          cp -a "$GITHUB_WORKSPACE/." "$src/"
         fi
+        git -C "$src" log -1 --oneline || true
+        git -C "$src" status --short | head -n 5 || true
 
     - name: Download previous stage
       if: inputs.restore-artifact != ''
@@ -73,7 +79,12 @@ runs:
 
     - name: Build ${{ inputs.target }}
       shell: bash
-      run: '"$SLICER_CI" build "${{ inputs.target }}"'
+      env:
+        TARGETS: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC2086 - the targets are deliberately word split
+        "$SLICER_CI" build $TARGETS
 
     - name: Report
       if: always()
@@ -88,11 +99,15 @@ runs:
     - name: Archive
       if: inputs.archive-name != ''
       shell: bash
+      env:
+        EXCLUDES: ${{ inputs.archive-excludes }}
+        PATHS: ${{ inputs.archive-paths }}
       run: |
         set -euo pipefail
         excludes=()
-        for p in ${{ inputs.archive-excludes }}; do excludes+=(--exclude "$p"); done
-        "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/${{ inputs.archive-name }}.tar.zst" "${excludes[@]}" ${{ inputs.archive-paths }}
+        for p in $EXCLUDES; do excludes+=(--exclude "$p"); done
+        # shellcheck disable=SC2086 - the paths are deliberately word split
+        "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/${{ inputs.archive-name }}.tar.zst"           ${excludes[@]+"${excludes[@]}"} $PATHS
 
     - name: Upload ${{ inputs.upload-artifact }}
       if: inputs.upload-artifact != '' && inputs.archive-name != ''

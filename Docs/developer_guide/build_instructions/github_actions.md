@@ -16,6 +16,29 @@ the Superbuild structure intact:
 | Prerequisites | `Slicer-dependencies` | Only when the description of an external project changes |
 | Slicer | `Slicer` | On every run |
 
+A single job cannot build every external project within the 6 hour limit, so
+the first phase is itself chained across five jobs, each building a group of
+external projects in the tree produced by the previous one:
+
+| Stage | External projects |
+|---|---|
+| 1 | Python (and the libraries it needs), DCMTK, curl, teem, LibArchive, RapidJSON, JsonCpp, TBB, the launcher |
+| 2 | VTK |
+| 3 | ITK, SlicerExecutionModel |
+| 4 | CTK, qRestAPI |
+| 5 | Everything remaining, through `Slicer-dependencies` |
+
+A stage names the targets it wants; those that are not part of the current
+configuration are skipped, using the list of external projects that
+`SuperBuild.cmake` writes to `SlicerDependencies.txt` in the build tree. Adding
+or removing an external project therefore does not require touching the
+workflow, only rebalancing the stages if one of them becomes too long.
+
+The finished prerequisites are published as the assets of a release named after
+the key, for example `slicer-deps-linux-1a2b3c4d5e6f7890`. That release is an
+implementation detail of the CI and can be deleted at any time: it is
+regenerated on demand.
+
 `Slicer-dependencies` is an aggregate target added by `SuperBuild.cmake`. It
 depends on every entry of `Slicer_DEPENDENCIES` and `Slicer_REMOTE_DEPENDENCIES`,
 so building it produces the same superbuild tree as a full build, minus the
