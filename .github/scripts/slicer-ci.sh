@@ -51,6 +51,10 @@ SLICER_SUPERBUILD_DIR="${SLICER_SUPERBUILD_DIR:-$SLICER_ROOT/SR}"
 SLICER_BUILD_DIR="${SLICER_BUILD_DIR:-$SLICER_SUPERBUILD_DIR/Slicer-build}"
 SLICER_BUILD_TYPE="${SLICER_BUILD_TYPE:-Release}"
 SLICER_OUTPUT_DIR="${SLICER_OUTPUT_DIR:-$SLICER_ROOT/out}"
+# Where ExternalData keeps the test data it downloads. Read by the top-level
+# CMakeLists.txt from the environment, so it has to be set before the tree is
+# configured for the first time.
+export ExternalData_OBJECT_STORES="${ExternalData_OBJECT_STORES:-$SLICER_ROOT/ExternalData}"
 SLICER_CI_STRIP_OBJECTS="${SLICER_CI_STRIP_OBJECTS:-true}"
 nproc_count() {
   if [ -n "${NUMBER_OF_PROCESSORS:-}" ]; then echo "$NUMBER_OF_PROCESSORS"
@@ -98,7 +102,7 @@ cmake_build() {
 cmd_env() {
   # Print (and export to $GITHUB_ENV when available) the variables used by the
   # other commands, so that workflow steps can use them directly.
-  local vars=(SLICER_PLATFORM SLICER_ROOT SLICER_SOURCE_DIR SLICER_SUPERBUILD_DIR SLICER_BUILD_DIR SLICER_BUILD_TYPE SLICER_OUTPUT_DIR)
+  local vars=(SLICER_PLATFORM SLICER_ROOT SLICER_SOURCE_DIR SLICER_SUPERBUILD_DIR SLICER_BUILD_DIR SLICER_BUILD_TYPE SLICER_OUTPUT_DIR ExternalData_OBJECT_STORES)
   for v in "${vars[@]}"; do
     echo "$v=${!v}"
     if [ -n "${GITHUB_ENV:-}" ]; then
@@ -115,7 +119,7 @@ cmd_env() {
       echo "output-dir=$SLICER_OUTPUT_DIR"
     } >> "$GITHUB_OUTPUT"
   fi
-  mkdir -p "$(bash_path "$SLICER_ROOT")" "$(bash_path "$SLICER_OUTPUT_DIR")"
+  mkdir -p "$(bash_path "$SLICER_ROOT")" "$(bash_path "$SLICER_OUTPUT_DIR")"            "$(bash_path "$ExternalData_OBJECT_STORES")"
 }
 
 # Compute a key identifying the set of prerequisites. Any change to the files
@@ -166,7 +170,6 @@ configure_args() {
     -DBUILD_TESTING:BOOL=ON
     -DSlicer_BUILD_DOCUMENTATION:BOOL=OFF
     -DSlicer_EP_UPDATE_DISCONNECTED:BOOL=ON
-    -DSlicer_USE_GIT_PROTOCOL:BOOL=OFF
   )
   case "$SLICER_PLATFORM" in
     windows)
