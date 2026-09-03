@@ -60,8 +60,10 @@ by continuous integration:
   `GIT_TAG` of the corresponding `SuperBuild/External_<project>.cmake` file, so
   use a fresh build tree after changing a tag. (OFF by default)
 - `CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER`: when set, they
-  are passed on to every external project and to the Slicer build itself, which
-  is what a compiler cache such as `ccache` or `sccache` needs.
+  are passed on to the Slicer build, which is what a compiler cache such as
+  `ccache` or `sccache` needs. They are deliberately not passed to the external
+  projects: the arguments those are configured with decide whether they have to
+  be built again, so adding a launcher would invalidate a prebuilt tree.
 
 [Building with GitHub Actions](github_actions.md) describes how Slicer's own
 continuous integration uses them.
