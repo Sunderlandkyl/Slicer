@@ -76,14 +76,17 @@ enforced by `PreventDirWithTooManyChars`.
 
 Each successful build publishes:
 
-| Artifact | Content |
-|---|---|
-| `package-<platform>` | The installer produced by CPack |
-| `build-<platform>` | `manifest-<platform>.json`, plus the source tree, the inner build tree and the prerequisites, as `zstd` archives |
-| `test-results-<platform>` | The JUnit report and the CTest logs |
+| Artifact | Content | When |
+|---|---|---|
+| `package-<platform>` | The installer produced by CPack | Always |
+| `test-results-<platform>` | The JUnit report and the CTest logs | Always |
+| `logs-<platform>` | The packaging log | Always |
+| `build-<platform>` | `manifest-<platform>.json`, plus the source tree, the inner build tree and the prerequisites, as `zstd` archives | Only when publishing |
 
-Nightly runs additionally publish those assets to the `nightly` GitHub release,
-which is what extension repositories consume.
+Archiving a build tree takes about fifteen minutes, so it is done only for the
+runs that publish: the scheduled one, a build of the default branch, and a
+manual run asking for it. Those assets are then attached to the `nightly`
+release, which is what extension repositories consume.
 
 ## Building an extension against the latest nightly
 
@@ -198,8 +201,15 @@ nightly schedule build all three platforms.
 
 ## Tests
 
-Tests run in a separate job from a restored build tree, so a build is published
-even when tests fail, and the test job can be re-run on its own.
+The tests run in the job that produced the build, right after it and before
+packaging: handing a 15 GB build tree to a second job costs more time than the
+isolation is worth. A failure is recorded but does not stop the job, so the
+package and the build tree are still produced; the job then fails at its last
+step. The scheduled run never fails on test failures, so a nightly is always
+published.
+
+Every run publishes a `test-results-<platform>` artifact with the JUnit report
+and the CTest logs, and writes a summary table to the run's page.
 
 On Linux the suite runs under `xvfb-run` with a software OpenGL renderer, since
 Slicer requires a display even with `--no-main-window`. macOS and Windows
