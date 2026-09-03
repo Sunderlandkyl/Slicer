@@ -461,12 +461,27 @@ cmd_install_system_packages() {
       # Packages required to build Slicer.
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends         build-essential ninja-build patch zstd xvfb         libxt-dev libglu1-mesa-dev libgl1-mesa-dri
       # Packages required at run time by Qt and QtWebEngine. The exact set of
-      # package names varies between Ubuntu releases, so install them
-      # individually and do not fail on the ones that do not exist.
-      for pkg in         mesa-utils libgl1-mesa-glx libgl1 libegl1 libopengl0         libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1         libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xfixes0         libnss3 libxss1 libxtst6 libxcomposite1 libxdamage1 libxrandr2 libgbm1         libasound2 libasound2t64         libfontconfig1 libdbus-1-3 libxcursor1 libxi6 libpulse0 libsm6 libice6         libgstreamer-plugins-base1.0-0 libxkbfile1 libodbc1 libpq5
-      do
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "$pkg"           >/dev/null 2>&1 || echo "  (skipped $pkg)"
+      # package names varies between Ubuntu releases (libasound2 became
+      # libasound2t64, libgl1-mesa-glx was dropped, ...), so keep only the ones
+      # this release actually provides.
+      local runtime_pkgs=(
+        mesa-utils libgl1-mesa-glx libgl1 libegl1 libopengl0
+        libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
+        libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xfixes0
+        libnss3 libxss1 libxtst6 libxcomposite1 libxdamage1 libxrandr2 libgbm1
+        libasound2 libasound2t64
+        libfontconfig1 libdbus-1-3 libxcursor1 libxi6 libpulse0 libsm6 libice6
+        libgstreamer-plugins-base1.0-0 libxkbfile1 libodbc1 libpq5
+      )
+      local available=()
+      local pkg
+      for pkg in "${runtime_pkgs[@]}"; do
+        if apt-cache show "$pkg" >/dev/null 2>&1; then
+          available+=("$pkg")
+        fi
       done
+      info "installing: ${available[*]}"
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${available[@]}"
       endlog
       ;;
     macos)

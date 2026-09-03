@@ -18,9 +18,15 @@ inputs:
   sccache:
     description: "Enable sccache (GitHub Actions cache backend) on Linux/macOS"
     default: "true"
+  sccache-size:
+    description: "Maximum size of the sccache cache"
+    default: "4G"
   free-disk-space:
-    description: "Remove unneeded pre-installed tooling on Linux runners"
-    default: "true"
+    description: >-
+      Remove unneeded pre-installed tooling on Linux runners. Off by default:
+      a GitHub-hosted runner has around 85 GB free, which is enough for a
+      Slicer build tree.
+    default: "false"
   install-qt:
     description: "Install Qt"
     default: "true"
@@ -143,7 +149,9 @@ runs:
           echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
           cat "$manifest"
           mqt="$("$SLICER_CI" manifest-get "$manifest" qt_version)"
-          [ -n "$mqt" ] && qt="$mqt"
+          if [ -n "$mqt" ]; then
+            qt="$mqt"
+          fi
           root="$("$SLICER_CI" manifest-get "$manifest" root)"
           if [ -n "$root" ] && [ "$root" != "$SLICER_ROOT" ]; then
             echo "::error::The restored build tree was built at '$root' but this runner uses '$SLICER_ROOT'."
@@ -218,8 +226,9 @@ runs:
             # Qt 6: Core5Compat, StateMachine, WebEngine and Multimedia are add-ons.
             modules="qtwebengine qtwebchannel qtpositioning qt5compat qtmultimedia qtscxml qtshadertools qtimageformats"
           else
-            # Qt 5: only WebEngine (and XmlPatterns for QtTesting) are add-ons.
-            modules="qtwebengine qtxmlpatterns qtscript"
+            # Qt 5: WebEngine is the only add-on Slicer needs; the other
+            # required modules are part of the base installation.
+            modules="qtwebengine"
           fi
         fi
         case "$RUNNER_OS" in
@@ -280,6 +289,9 @@ runs:
       run: |
         echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
         echo "SLICER_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
+        # Stay well inside the 10 GB the GitHub Actions cache allows per
+        # repository, which is also used for the test data.
+        echo "SCCACHE_CACHE_SIZE=${{ inputs.sccache-size }}" >> "$GITHUB_ENV"
 
     - name: Configure MSVC parallel compilation
       if: runner.os == 'Windows'
