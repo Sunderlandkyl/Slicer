@@ -431,6 +431,34 @@ jobs:
           archive-name: ""
           strip: "false"
 
+      - name: Run the tests
+        id: tests
+        if: needs.setup.outputs.run-tests == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          SLICER_CTEST_EXCLUDE: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
+        run: '"$SLICER_CI" test'
+
+      - name: Summarize the tests
+        if: always() && needs.setup.outputs.run-tests == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/.github/scripts/test-summary.py" \
+            "$SLICER_OUTPUT_DIR/test-results.xml" "(${{ matrix.platform }})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the test results
+        if: always() && needs.setup.outputs.run-tests == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ matrix.platform }}
+          path: |
+            ${{ env.SLICER_OUTPUT_DIR }}/test-results.xml
+            ${{ env.SLICER_OUTPUT_DIR }}/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Package
         id: package
         shell: bash
@@ -446,6 +474,7 @@ jobs:
           if-no-files-found: error
 
       - name: Write manifest
+        if: needs.setup.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -456,7 +485,8 @@ jobs:
             "package=${{ steps.package.outputs.package }}" \
             "deps_release_tag=nightly"
 
-      - name: Archive build tree
+      - name: Archive the build tree
+        if: needs.setup.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -471,7 +501,8 @@ jobs:
           for a in "$SLICER_OUTPUT_DIR"/*.tar.zst; do "$SLICER_CI" split "$a"; done
           ls -lh "$SLICER_OUTPUT_DIR"
 
-      - name: Upload build tree
+      - name: Upload the build tree
+        if: needs.setup.outputs.publish == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-${{ matrix.platform }}
@@ -484,6 +515,13 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+      - name: Fail on test failures
+        if: steps.tests.outcome == 'failure' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          echo "::error::The test suite reported failures."
+          exit 1
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -494,74 +532,12 @@ jobs:
           if-no-files-found: ignore
 
   #-----------------------------------------------------------------------------
-  # Run the test suite against the build tree produced above.
-  #-----------------------------------------------------------------------------
-  test:
-    name: Test (${{ matrix.platform }})
-    needs: [setup, deps-key, slicer]
-    if: needs.setup.outputs.run-tests == 'true'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Set up environment
-        uses: ./.github/actions/slicer-env
-        with:
-          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          build-source: artifact
-          build-artifact-name: build-${{ matrix.platform }}
-
-      - name: Cache test data
-        uses: actions/cache@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
-        with:
-          path: ${{ env.SLICER_ROOT }}/ExternalData
-          key: slicer-testdata-${{ matrix.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
-          restore-keys: slicer-testdata-${{ matrix.platform }}-
-
-      - name: Run tests
-        id: tests
-        continue-on-error: true
-        shell: bash
-        env:
-          SLICER_CTEST_EXCLUDE: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
-        run: '"$SLICER_CI" test'
-
-      - name: Publish test report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-${{ matrix.platform }}
-          path: |
-            ${{ env.SLICER_OUTPUT_DIR }}/test-results.xml
-            ${{ env.SLICER_OUTPUT_DIR }}/*.log
-          retention-days: 7
-          if-no-files-found: ignore
-
-      - name: Summarize
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/.github/scripts/test-summary.py"             "$SLICER_OUTPUT_DIR/test-results.xml" "(${{ matrix.platform }})" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Fail on test failures
-        if: steps.tests.outcome == 'failure' && github.event_name != 'schedule'
-        shell: bash
-        run: |
-          echo "::error::Test suite reported failures"
-          exit 1
-
-  #-----------------------------------------------------------------------------
   # Publish the build trees so that extension repositories can build against
   # the latest nightly Slicer.
   #-----------------------------------------------------------------------------
   publish:
     name: Publish nightly
-    needs: [setup, deps-key, slicer, test]
+    needs: [setup, deps-key, slicer]
     if: always() && needs.setup.outputs.publish == 'true' && needs.slicer.result == 'success'
     runs-on: ubuntu-latest
     permissions:
