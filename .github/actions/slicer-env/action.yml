@@ -1,7 +1,7 @@
 name: "Slicer build environment"
 description: >-
   Prepare a GitHub-hosted runner to build Slicer (or a Slicer extension): fixed
-  build root, system packages, CMake, Qt, optional sccache, and optionally
+  build root, system packages, CMake, Qt, a compiler cache, and optionally
   restore a Slicer build tree published by the Slicer build workflow (from a
   GitHub release or from workflow artifacts).
 
@@ -15,12 +15,12 @@ inputs:
   cmake-version:
     description: "CMake version to install (jwlawson/actions-setup-cmake syntax)"
     default: "3.31.x"
-  sccache:
-    description: "Enable sccache (GitHub Actions cache backend) on Linux/macOS"
+  compiler-cache:
+    description: "Enable the ccache compiler cache on Linux and macOS"
     default: "true"
-  sccache-size:
-    description: "Maximum size of the sccache cache"
-    default: "4G"
+  compiler-cache-size:
+    description: "Maximum size of the compiler cache"
+    default: "2G"
   free-disk-space:
     description: >-
       Remove unneeded pre-installed tooling on Linux runners. Off by default:
@@ -212,19 +212,20 @@ runs:
         echo "SLICER_QT_DIR=$qt_dir" >> "$GITHUB_ENV"
         echo "Qt: $qt_dir"
 
-    - name: Set up sccache
-      if: inputs.sccache == 'true' && runner.os != 'Windows'
-      uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+    # ccache rather than sccache: sccache's GitHub Actions backend writes one
+    # cache entry per compiled object, which leaves tens of thousands of them
+    # in the repository, while this stores the whole cache as a single entry.
+    - name: Set up the compiler cache
+      if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
+      uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+      with:
+        key: slicer-${{ steps.env.outputs.platform }}
+        max-size: ${{ inputs.compiler-cache-size }}
 
-    - name: Enable sccache
-      if: inputs.sccache == 'true' && runner.os != 'Windows'
+    - name: Enable the compiler cache
+      if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       shell: bash
-      run: |
-        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-        echo "SLICER_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
-        # Stay well inside the 10 GB the GitHub Actions cache allows per
-        # repository, which is also used for the test data.
-        echo "SCCACHE_CACHE_SIZE=${{ inputs.sccache-size }}" >> "$GITHUB_ENV"
+      run: echo "SLICER_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
 
     - name: Configure MSVC parallel compilation
       if: runner.os == 'Windows'

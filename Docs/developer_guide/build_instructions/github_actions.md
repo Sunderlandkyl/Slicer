@@ -252,6 +252,19 @@ when they change, on the three platforms, and runs the tests. The two can be
 run side by side while the new one settles; once it has, `ci.yml` and the
 `slicer-build` action it uses can be removed.
 
+## Compiler cache
+
+The job that builds Slicer runs the compiler through `ccache`, restored from
+the GitHub Actions cache. The prerequisites do not use it: they are built once
+and then stored as a release, so caching their objects would only displace the
+entries that make the Slicer build faster.
+
+`sccache` would be the more usual choice, but its GitHub Actions backend writes
+one cache entry per compiled object. A full Slicer build leaves tens of
+thousands of them in the repository, which makes the cache list unusable even
+though their total size is small. `ccache` is stored as a single entry per
+platform instead.
+
 ## Local reproduction
 
 The workflow logic lives in `.github/scripts/slicer-ci.sh`, which can be run

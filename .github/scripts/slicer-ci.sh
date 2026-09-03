@@ -244,8 +244,8 @@ cmd_build() {
     cmake_build "$SLICER_SUPERBUILD_DIR" --target "$t"
   done
   endlog
-  if command -v sccache >/dev/null 2>&1 && [ -n "${SCCACHE_GHA_ENABLED:-}" ]; then
-    sccache --show-stats || true
+  if [ "${SLICER_COMPILER_LAUNCHER:-}" = "ccache" ] && command -v ccache >/dev/null 2>&1; then
+    ccache --show-stats || true
   fi
 }
 
