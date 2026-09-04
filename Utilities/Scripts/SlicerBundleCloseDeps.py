@@ -222,6 +222,7 @@ def close_deps(app, search_dirs):
     id_resets = {}          # path -> new LC_ID_DYLIB
     changes = {}            # path -> list of (old_ref, new_ref)
     copied = []
+    redirected = []
     seen = set()
 
     def embed(source):
@@ -271,9 +272,24 @@ def close_deps(app, search_dirs):
             if is_system(ref):
                 continue
             source = resolve(ref, binary_dir, rpaths, search_dirs, exe_dir)
-            if source is None or inside_bundle(source):
-                # Unresolvable (leave as-is) or already internal (resolves via
-                # the application's @loader_path/.. run-path).
+            if source is None:
+                # The reference could not be resolved on this machine. When it
+                # is relative or @rpath based it is meant to be satisfied from
+                # inside the application, so if a library of that name is
+                # already in the bundle, point at it. Leaving it alone ships a
+                # bundle whose only symptom is a dyld "Library not loaded" at
+                # launch on a user's machine.
+                if not ref.startswith("/"):
+                    target = embedded.get(os.path.basename(ref))
+                    if target is not None:
+                        new_ref = "@rpath/" + os.path.relpath(target, contents)
+                        if new_ref != ref:
+                            changes.setdefault(current, []).append((ref, new_ref))
+                            redirected.append(os.path.basename(ref))
+                continue
+            if inside_bundle(source):
+                # Already internal: resolves via the application's
+                # @loader_path/.. run-path.
                 continue
             name = os.path.basename(source)
             target = embedded[name] if name in embedded else embed(source)
@@ -299,6 +315,11 @@ def close_deps(app, search_dirs):
 
     print("SlicerBundleCloseDeps: embedded %d libraries, rewrote %d files, reset %d ids"
           % (len(set(copied)), len(changes), len(id_resets)))
+    if redirected:
+        print("SlicerBundleCloseDeps: pointed %d unresolved references at an "
+              "already embedded library" % len(redirected))
+        for base in sorted(set(redirected)):
+            print("  redirected:", base)
     for base in sorted(set(copied)):
         print("  embedded:", base)
     return True

@@ -61,6 +61,10 @@ endif()
 set(Slicer_USE_PYTHONQT "@Slicer_USE_PYTHONQT@")
 if(Slicer_USE_PYTHONQT)
   _append_search_dir("@PYTHON_LIBRARY_PATH@")
+  # SlicerBlockInstallPythonQt.cmake copies libPythonQt into the bundle from
+  # here. Without this directory the reference cannot be resolved, is taken for
+  # a system library and is left as a bare name that dyld cannot find.
+  _append_search_dir("@PYTHONQT_INSTALL_DIR@/lib")
 endif()
 set(Slicer_USE_PYTHONQT_WITH_OPENSSL "@Slicer_USE_PYTHONQT_WITH_OPENSSL@")
 set(Slicer_USE_DCMTK_WITH_OPENSSL "@Slicer_USE_PYTHONQT_WITH_OPENSSL@")
