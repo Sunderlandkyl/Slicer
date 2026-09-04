@@ -555,6 +555,14 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" package'
 
+      # A bundle whose install names were not rewritten builds and packages
+      # cleanly, and only fails on a user's machine. Check before publishing.
+      - name: Verify the package
+        id: verify
+        continue-on-error: true
+        shell: bash
+        run: '"$SLICER_CI" verify-package'
+
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -608,11 +616,16 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-      - name: Fail on test failures
-        if: steps.tests.outcome == 'failure' && github.event_name != 'schedule'
+      - name: Fail on test failures or an unusable package
+        if: (steps.tests.outcome == 'failure' || steps.verify.outcome == 'failure') && github.event_name != 'schedule'
         shell: bash
         run: |
-          echo "::error::The test suite reported failures."
+          if [ "${{ steps.verify.outcome }}" = "failure" ]; then
+            echo "::error::The application bundle is not self-contained."
+          fi
+          if [ "${{ steps.tests.outcome }}" = "failure" ]; then
+            echo "::error::The test suite reported failures."
+          fi
           exit 1
 
       - name: Upload logs
