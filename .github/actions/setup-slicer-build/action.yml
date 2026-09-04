@@ -10,7 +10,7 @@ description: >-
       id: slicer
     - run: |
         cmake -S . -B ../build -G Ninja \
-          -DSlicer_DIR:PATH=${{ steps.slicer.outputs.slicer-dir }} \
+          -DSlicer_DIR:PATH=<the slicer-dir output> \
           -DCMAKE_BUILD_TYPE:STRING=Release
         cmake --build ../build --parallel
 
