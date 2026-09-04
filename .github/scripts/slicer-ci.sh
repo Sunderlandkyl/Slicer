@@ -308,6 +308,24 @@ cmd_package() {
   fi
 }
 
+# Check that the package produced on macOS is self-contained, using the
+# 'packageverify' target the build system provides. Without it a bundle whose
+# install names were not rewritten builds, packages and uploads cleanly, and
+# only fails on a user's machine with a dyld "Library not loaded" error.
+cmd_verify_package() {
+  if [ "$SLICER_PLATFORM" != "macos" ]; then
+    info "verify-package: nothing to check on $SLICER_PLATFORM"
+    return 0
+  fi
+  log "Verify the application bundle"
+  local rc=0
+  cmake_build "$SLICER_BUILD_DIR" --target packageverify || rc=$?
+  endlog
+  if [ $rc -ne 0 ]; then
+    die "the application bundle is not self-contained"
+  fi
+}
+
 # Remove what is not needed to *use* a build tree: object files and the git
 # metadata of the external project sources.
 #
@@ -626,6 +644,7 @@ Commands:
   build <target>...            Build superbuild targets (unknown ones are skipped)
   dependencies                 List the external projects of the configured tree
   package                      Build the package of the inner build
+  verify-package               Check that a macOS bundle is self-contained
   strip [--objects] [--vcs] [dir]
                                Remove what is not needed to use a build tree
                                (only for a tree that will not be built again)
@@ -652,6 +671,7 @@ main() {
     build) cmd_build "$@" ;;
     dependencies) cmd_dependencies "$@" ;;
     package) cmd_package "$@" ;;
+    verify-package) cmd_verify_package "$@" ;;
     strip) cmd_strip "$@" ;;
     pack) cmd_pack "$@" ;;
     unpack) cmd_unpack "$@" ;;
