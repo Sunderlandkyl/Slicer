@@ -80,25 +80,23 @@ runs:
     # The helper script is fetched from the Slicer repository rather than taken
     # from the caller's workspace, so that this action works from any
     # repository without it having to check Slicer out.
-    - name: Fetch the Slicer CI scripts
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      with:
-        repository: ${{ inputs.repository }}
-        ref: ${{ inputs.ref }}
-        path: ${{ runner.temp }}/slicer-ci
-        sparse-checkout: .github/scripts
-        sparse-checkout-cone-mode: false
-        persist-credentials: false
-
+    #
+    # Downloaded rather than checked out: actions/checkout refuses a path
+    # outside the caller's workspace, and checking out inside it would leave a
+    # directory in the repository being built.
     - name: Initialize environment
       id: env
       shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
       run: |
         set -euo pipefail
-        script="${{ runner.temp }}/slicer-ci/.github/scripts/slicer-ci.sh"
-        chmod +x "$script" || true
-        echo "SLICER_CI=$script" >> "$GITHUB_ENV"
-        "$script" env
+        dir="${{ runner.temp }}/slicer-ci"
+        mkdir -p "$dir"
+        gh api "repos/${{ inputs.repository }}/contents/.github/scripts/slicer-ci.sh?ref=${{ inputs.ref }}"           --jq '.content' | base64 -d > "$dir/slicer-ci.sh"
+        chmod +x "$dir/slicer-ci.sh"
+        echo "SLICER_CI=$dir/slicer-ci.sh" >> "$GITHUB_ENV"
+        "$dir/slicer-ci.sh" env
 
     - name: Free disk space
       if: inputs.free-disk-space == 'true'
