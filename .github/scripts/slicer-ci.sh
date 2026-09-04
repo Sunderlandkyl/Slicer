@@ -215,7 +215,13 @@ cmd_configure() {
   log "Configure superbuild"
   info "cmake ${args[*]}"
   local rc=0
-  cmake "${args[@]}" || rc=$?
+  if [ "$SLICER_PLATFORM" = "windows" ]; then
+    # Git Bash rewrites any argument that looks like an absolute POSIX path,
+    # which turns a compiler option such as /MP into C:/Program Files/Git/MP.
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "${args[@]}" || rc=$?
+  else
+    cmake "${args[@]}" || rc=$?
+  fi
   endlog
   if [ $rc -ne 0 ]; then
     local sb; sb="$(bash_path "$SLICER_SUPERBUILD_DIR")"
@@ -368,7 +374,9 @@ cmd_pack() {
   log "Pack ${paths[*]} -> $archive"
   # Note: mtimes are preserved by tar, which is required for the superbuild
   # stamps to remain valid after restore.
-  tar -C "$root" "${excludes[@]}" -cf - "${paths[@]}" | zstd -T0 -3 -q -o "$(bash_path "$archive")" --force
+  # ${a[@]+"${a[@]}"} rather than "${a[@]}": expanding an empty array under
+  # `set -u` is an error in the bash 3.2 that macOS ships.
+  tar -C "$root" ${excludes[@]+"${excludes[@]}"} -cf - "${paths[@]}"     | zstd -T0 -3 -q -o "$(bash_path "$archive")" --force
   ls -lh "$(bash_path "$archive")"
   endlog
 }
@@ -577,7 +585,7 @@ cmd_install_system_packages() {
         fi
       done
       info "installing: ${available[*]}"
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${available[@]}"
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends         ${available[@]+"${available[@]}"}
       endlog
       ;;
     macos)
