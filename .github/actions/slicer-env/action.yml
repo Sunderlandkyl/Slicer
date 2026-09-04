@@ -191,7 +191,10 @@ runs:
         arch: ${{ steps.qt-options.outputs.arch }}
         modules: ${{ steps.qt-options.outputs.modules }}
         cache: false
-        setup-python: false
+        # The action needs a Python to run aqtinstall. Letting it provision one
+        # is required on macOS, whose system Python refuses to install into an
+        # externally managed environment.
+        setup-python: true
 
     - name: Locate Qt
       id: qt-dir
@@ -226,14 +229,6 @@ runs:
       if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       shell: bash
       run: echo "SLICER_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
-
-    - name: Configure MSVC parallel compilation
-      if: runner.os == 'Windows'
-      shell: bash
-      run: |
-        # /MP: compile multiple sources in parallel within each project.
-        echo "CL=/MP" >> "$GITHUB_ENV"
-        echo "CMAKE_BUILD_PARALLEL_LEVEL=${NUMBER_OF_PROCESSORS:-4}" >> "$GITHUB_ENV"
 
     # ---- Restore: extract -------------------------------------------------------
 

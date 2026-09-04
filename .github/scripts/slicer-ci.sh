@@ -172,7 +172,13 @@ configure_args() {
   )
   case "$SLICER_PLATFORM" in
     windows)
-      args+=(-G "Visual Studio 17 2022" -A x64)
+      # /MP is requested through the options the build system provides rather
+      # than through the CL environment variable, which breaks the compiler
+      # identification of the Visual Studio generator.
+      args+=(-G "Visual Studio 17 2022" -A x64
+             -DCMAKE_CXX_MP_FLAG:BOOL=ON
+             -DADDITIONAL_C_FLAGS:STRING=/MP
+             -DADDITIONAL_CXX_FLAGS:STRING=/MP)
       ;;
     macos)
       args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
@@ -208,8 +214,21 @@ cmd_configure() {
   fi
   log "Configure superbuild"
   info "cmake ${args[*]}"
-  cmake "${args[@]}"
+  local rc=0
+  cmake "${args[@]}" || rc=$?
   endlog
+  if [ $rc -ne 0 ]; then
+    local sb; sb="$(bash_path "$SLICER_SUPERBUILD_DIR")"
+    local f
+    for f in "$sb/CMakeFiles/CMakeConfigureLog.yaml" "$sb/CMakeFiles/CMakeError.log"              "$sb/CMakeFiles/CMakeOutput.log"; do
+      if [ -f "$f" ]; then
+        log "$(basename "$f")"
+        tail -n 200 "$f"
+        endlog
+      fi
+    done
+    die "configure failed"
+  fi
 }
 
 # Build one or more targets of the superbuild tree.
