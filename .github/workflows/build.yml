@@ -92,6 +92,10 @@ jobs:
           # Set the SLICER_CI_PLATFORMS repository variable to work on a single
           # platform while developing the CI itself.
           SLICER_CI_PLATFORMS: ${{ vars.SLICER_CI_PLATFORMS }}
+          # Publish from a branch other than the default one. Only for bringing
+          # up the CI itself, when the nightly release has to exist before the
+          # workflow has been merged.
+          SLICER_CI_PUBLISH: ${{ vars.SLICER_CI_PUBLISH }}
         run: |
           set -euo pipefail
           on_default_branch=false
@@ -125,7 +129,7 @@ jobs:
           # The nightly release follows the default branch: every build of it,
           # and the nightly run itself, refresh what extension repositories
           # build against.
-          if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ]; then
+          if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ]              || [ "${SLICER_CI_PUBLISH:-}" = "true" ]; then
             publish="true"
           fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
