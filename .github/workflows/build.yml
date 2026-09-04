@@ -256,11 +256,13 @@ jobs:
           echo "$entries" | jq .
 
   deps-1:
-    name: Deps 1/5 base (${{ matrix.platform }})
+    name: "Deps 1/5: Python, DCMTK and the small libraries (${{ matrix.platform }})"
     needs: [setup, deps-key]
     if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    env:
+      SLICER_STAGE_NAME: "Deps 1/5: Python, DCMTK and the small libraries"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
@@ -279,18 +281,23 @@ jobs:
       - name: Build base
         uses: ./.github/actions/slicer-build-stage
         with:
-          # `python` pulls in zlib, bzip2, LZMA, LibFFI, sqlite and OpenSSL.
-          target: "python DCMTK curl teem LibArchive RapidJSON JsonCpp tbb CTKAppLauncherLib CTKAPPLAUNCHER CTKResEdit"
+          # Everything that does not need VTK or ITK. `python` brings in zlib,
+          # bzip2, LZMA, LibFFI, sqlite and OpenSSL; `DCMTK` brings in OpenJPEG.
+          # teem is deliberately not here: it depends on VTK, and asking for it
+          # would build the whole of VTK in this stage.
+          target: "python DCMTK curl LibArchive RapidJSON JsonCpp tbb CTKAppLauncherLib CTKAPPLAUNCHER CTKResEdit"
           archive-paths: "SR Slicer"
           archive-name: deps-stage
           upload-artifact: deps-stage1-${{ matrix.platform }}
 
   deps-2:
-    name: Deps 2/5 VTK (${{ matrix.platform }})
+    name: "Deps 2/5: VTK (${{ matrix.platform }})"
     needs: [setup, deps-key, deps-1]
     if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    env:
+      SLICER_STAGE_NAME: "Deps 2/5: VTK"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
@@ -317,11 +324,13 @@ jobs:
           upload-artifact: deps-stage2-${{ matrix.platform }}
 
   deps-3:
-    name: Deps 3/5 ITK (${{ matrix.platform }})
+    name: "Deps 3/5: ITK, teem and SlicerExecutionModel (${{ matrix.platform }})"
     needs: [setup, deps-key, deps-2]
     if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    env:
+      SLICER_STAGE_NAME: "Deps 3/5: ITK, teem and SlicerExecutionModel"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
@@ -340,7 +349,8 @@ jobs:
       - name: Build ITK
         uses: ./.github/actions/slicer-build-stage
         with:
-          target: "ITK SlicerExecutionModel"
+          # ITK needs VTK (Slicer enables ITKVtkGlue), and so does teem.
+          target: "ITK teem SlicerExecutionModel"
           restore-artifact: deps-stage2-${{ matrix.platform }}
           restore-archive: deps-stage
           archive-paths: "SR Slicer"
@@ -348,11 +358,13 @@ jobs:
           upload-artifact: deps-stage3-${{ matrix.platform }}
 
   deps-4:
-    name: Deps 4/5 CTK (${{ matrix.platform }})
+    name: "Deps 4/5: CTK and qRestAPI (${{ matrix.platform }})"
     needs: [setup, deps-key, deps-3]
     if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    env:
+      SLICER_STAGE_NAME: "Deps 4/5: CTK and qRestAPI"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
@@ -379,13 +391,15 @@ jobs:
           upload-artifact: deps-stage4-${{ matrix.platform }}
 
   deps-5:
-    name: Deps 5/5 rest (${{ matrix.platform }})
+    name: "Deps 5/5: SimpleITK, the Python packages and the remote modules (${{ matrix.platform }})"
     needs: [setup, deps-key, deps-4]
     if: needs.deps-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     permissions:
       contents: write
+    env:
+      SLICER_STAGE_NAME: "Deps 5/5: SimpleITK, the Python packages and the remote modules"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}

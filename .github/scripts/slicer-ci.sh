@@ -262,13 +262,37 @@ cmd_build() {
     return 0
   fi
   log "Build ${targets[*]}"
+  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
+  mkdir -p "$out"
+  local buildlog="$out/build-$(echo "${targets[0]}" | tr -c 'A-Za-z0-9_-' '_').log"
   # Build the targets one by one: with the Visual Studio generator a single
   # invocation cannot take several targets, and a failure is easier to locate.
   for t in "${targets[@]}"; do
     echo "[slicer-ci] --- $t ---"
-    cmake_build "$SLICER_SUPERBUILD_DIR" --target "$t"
+    cmake_build "$SLICER_SUPERBUILD_DIR" --target "$t" 2>&1 | tee -a "$buildlog"
   done
   endlog
+
+  # Report which external projects this step actually built. A stage asks for a
+  # few targets and gets their whole dependency subtree, so the only honest
+  # answer comes from the build itself.
+  local built
+  built="$(grep -oE "Completed '[A-Za-z0-9_.-]+'" "$buildlog" 2>/dev/null            | sed -E "s/Completed '(.*)'//" | sort -u || true)"
+  if [ -n "$built" ]; then
+    info "external projects completed in this step:"
+    echo "$built" | sed 's/^/  /'
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+      {
+        echo "### ${SLICER_STAGE_NAME:-Build} (${SLICER_PLATFORM})"
+        echo ""
+        echo "Requested: \`${targets[*]}\`"
+        echo ""
+        echo "Built $(echo "$built" | wc -l | tr -d ' ') external projects:"
+        echo ""
+        echo "$built" | paste -sd', ' - | sed 's/^/`/;s/$/`/'
+      } >> "$GITHUB_STEP_SUMMARY"
+    fi
+  fi
   if [ "${SLICER_COMPILER_LAUNCHER:-}" = "ccache" ] && command -v ccache >/dev/null 2>&1; then
     ccache --show-stats || true
   fi
