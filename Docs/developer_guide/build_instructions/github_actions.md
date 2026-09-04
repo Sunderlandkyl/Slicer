@@ -20,31 +20,36 @@ A single job cannot build every external project within the 6 hour limit, so
 the first phase is itself chained across five jobs, each building a group of
 external projects in the tree produced by the previous one:
 
-| Stage | Asks for | Which brings in |
-|---|---|---|
-| 1 | `python`, `DCMTK`, `curl`, `LibArchive`, `RapidJSON`, `JsonCpp`, `tbb`, the launcher | zlib, bzip2, LZMA, LibFFI, sqlite, OpenSSL, OpenJPEG |
-| 2 | `VTK` | |
-| 3 | `ITK`, `teem`, `SlicerExecutionModel` | |
-| 4 | `CTK`, `qRestAPI` | PythonQt, QtTesting |
-| 5 | `Slicer-dependencies` | SimpleITK, the Python packages, the sources of the remote modules |
+| Stage | Builds |
+|---|---|
+| 1 | What VTK and ITK need: `python` (with zlib, bzip2, LZMA, LibFFI, sqlite, OpenSSL), `DCMTK` (with OpenJPEG), `tbb` |
+| 2 | `VTK` |
+| 3 | `ITK` |
+| 4 | `CTK` (with PythonQt and QtTesting) |
+| 5 | Everything else, through `Slicer-dependencies` |
 
-A stage asks for a few targets and gets their whole dependency subtree, so what
-it names and what it builds are not the same thing. Each stage therefore reports
-the external projects it actually completed, both in its log and in the run
-summary; that report comes from the build, so it cannot drift from this table.
-
-The order follows the dependency graph, which is almost entirely serial:
+The split follows the critical path rather than a hand-picked grouping, which
+is what makes it checkable: stage 1 is the prerequisites of VTK and ITK, stages
+2 to 4 are the chain itself, and stage 5 is whatever is left.
 
 ```
 zlib -> OpenSSL -> python -> VTK -> ITK -> CTK
-                               \-> teem      /
-                     DCMTK ----------------/
+                     DCMTK ---^-------^------^
 ```
 
-`ITK` depends on `VTK` because Slicer enables `ITKVtkGlue`, and `teem` depends
-on `VTK` as well, so neither can start before stage 2 finishes. Watch out when
-rebalancing: putting `teem` in stage 1 pulls the whole of VTK into it and makes
-stage 2 a no-op.
+`ITK` depends on `VTK` because Slicer enables `ITKVtkGlue`, so nothing on that
+chain can overlap.
+
+The rule matters when adding an external project. A project that VTK or ITK
+needs belongs in stage 1; a project that merely *uses* them belongs in stage 5
+and needs no change at all, since `Slicer-dependencies` covers everything.
+Naming a consumer in an early stage silently pulls its dependencies in with it:
+`teem` uses VTK, and naming it in stage 1 used to build the whole of VTK there,
+leaving the stage called VTK with nothing to do.
+
+Because a stage gets the whole dependency subtree of what it asks for, each one
+reports the projects it actually completed, in its log and in the run summary,
+taken from the build so it cannot drift from this table.
 
 A stage names the targets it wants; those that are not part of the current
 configuration are skipped, using the list of external projects that
