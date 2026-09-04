@@ -88,6 +88,10 @@ jobs:
           PLATFORMS: ${{ github.event.inputs.platforms || 'linux,macos,windows' }}
           EVENT: ${{ github.event_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          # Platforms built by a push to a branch other than the default one.
+          # Set the SLICER_CI_PLATFORMS repository variable to work on a single
+          # platform while developing the CI itself.
+          SLICER_CI_PLATFORMS: ${{ vars.SLICER_CI_PLATFORMS }}
         run: |
           set -euo pipefail
           on_default_branch=false
