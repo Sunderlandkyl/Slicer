@@ -20,13 +20,31 @@ A single job cannot build every external project within the 6 hour limit, so
 the first phase is itself chained across five jobs, each building a group of
 external projects in the tree produced by the previous one:
 
-| Stage | External projects |
-|---|---|
-| 1 | Python (and the libraries it needs), DCMTK, curl, teem, LibArchive, RapidJSON, JsonCpp, TBB, the launcher |
-| 2 | VTK |
-| 3 | ITK, SlicerExecutionModel |
-| 4 | CTK, qRestAPI |
-| 5 | Everything remaining, through `Slicer-dependencies` |
+| Stage | Asks for | Which brings in |
+|---|---|---|
+| 1 | `python`, `DCMTK`, `curl`, `LibArchive`, `RapidJSON`, `JsonCpp`, `tbb`, the launcher | zlib, bzip2, LZMA, LibFFI, sqlite, OpenSSL, OpenJPEG |
+| 2 | `VTK` | |
+| 3 | `ITK`, `teem`, `SlicerExecutionModel` | |
+| 4 | `CTK`, `qRestAPI` | PythonQt, QtTesting |
+| 5 | `Slicer-dependencies` | SimpleITK, the Python packages, the sources of the remote modules |
+
+A stage asks for a few targets and gets their whole dependency subtree, so what
+it names and what it builds are not the same thing. Each stage therefore reports
+the external projects it actually completed, both in its log and in the run
+summary; that report comes from the build, so it cannot drift from this table.
+
+The order follows the dependency graph, which is almost entirely serial:
+
+```
+zlib -> OpenSSL -> python -> VTK -> ITK -> CTK
+                               \-> teem      /
+                     DCMTK ----------------/
+```
+
+`ITK` depends on `VTK` because Slicer enables `ITKVtkGlue`, and `teem` depends
+on `VTK` as well, so neither can start before stage 2 finishes. Watch out when
+rebalancing: putting `teem` in stage 1 pulls the whole of VTK into it and makes
+stage 2 a no-op.
 
 A stage names the targets it wants; those that are not part of the current
 configuration are skipped, using the list of external projects that
