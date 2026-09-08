@@ -671,7 +671,11 @@ jobs:
   publish:
     name: Publish nightly
     needs: [setup, deps-key, slicer]
-    if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' && needs.slicer.result == 'success' }}
+    # Deliberately not conditioned on the Slicer job succeeding. That job fails
+    # when tests fail, which must not withhold packages that were built,
+    # verified and uploaded. Whether every platform actually produced its
+    # artifacts is checked below, so a failed build still blocks publishing.
+    if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' && needs.slicer.result != 'cancelled' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -691,6 +695,27 @@ jobs:
           pattern: package-*
           path: assets
           merge-multiple: true
+
+      # A platform whose build or packaging failed never uploaded its
+      # artifacts. Publishing a release missing one would leave extension
+      # repositories building against a half-updated nightly.
+      - name: Check that every platform produced its artifacts
+        shell: bash
+        env:
+          MATRIX: ${{ needs.deps-key.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for platform in $(echo "$MATRIX" | jq -r '.include[].platform'); do
+            for f in "manifest-${platform}.json" "slicer-source-${platform}.tar.zst"                      "slicer-build-${platform}.tar.zst" "deps-${platform}.tar.zst"; do
+              if ! ls "assets/$f"* >/dev/null 2>&1; then
+                echo "::error::$platform did not produce $f"
+                missing=1
+              fi
+            done
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "Every platform produced a complete set of artifacts."
 
       - name: Publish release
         shell: bash
