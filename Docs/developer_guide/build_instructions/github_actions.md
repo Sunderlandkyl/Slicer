@@ -118,6 +118,13 @@ Each successful build publishes:
 | `logs-<platform>` | The packaging log | Always |
 | `build-<platform>` | `manifest-<platform>.json`, plus the source tree, the inner build tree and the prerequisites, as `zstd` archives | Only when publishing |
 
+Publishing does not wait on the tests. A package that was built and verified is
+published even when the suite reports failures, because withholding it would
+leave extension repositories building against a stale nightly over test
+problems they cannot act on. The run still turns red, and the publishing job
+refuses to update the release unless every platform produced a complete set of
+artifacts, so a failed *build* does block it.
+
 Archiving a build tree takes about fifteen minutes, so it is done only for the
 runs that publish: the scheduled one, a build of the default branch, and a
 manual run asking for it. Those assets are then attached to the `nightly`
