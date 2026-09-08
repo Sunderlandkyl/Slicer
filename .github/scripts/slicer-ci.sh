@@ -261,38 +261,64 @@ cmd_build() {
     info "nothing to build"
     return 0
   fi
+  # What an external project build completed is recorded by its stamp files,
+  # a cleaner source than the build output, which carries ANSI escapes and
+  # carriage returns.
+  _completed_projects() {
+    find "$(bash_path "$SLICER_SUPERBUILD_DIR")" -type f -name "*-done" 2>/dev/null \
+      | while read -r f; do b="${f##*/}"; echo "${b%-done}"; done \
+      | LC_ALL=C sort -u
+  }
+  local before after built count
+  before="$(_completed_projects)"
+
   log "Build ${targets[*]}"
-  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
-  mkdir -p "$out"
-  local buildlog="$out/build-$(echo "${targets[0]}" | tr -c 'A-Za-z0-9_-' '_').log"
   # Build the targets one by one: with the Visual Studio generator a single
   # invocation cannot take several targets, and a failure is easier to locate.
+  local t
   for t in "${targets[@]}"; do
     echo "[slicer-ci] --- $t ---"
-    cmake_build "$SLICER_SUPERBUILD_DIR" --target "$t" 2>&1 | tee -a "$buildlog"
+    cmake_build "$SLICER_SUPERBUILD_DIR" --target "$t"
   done
   endlog
 
-  # Report which external projects this step actually built. A stage asks for a
-  # few targets and gets their whole dependency subtree, so the only honest
-  # answer comes from the build itself.
-  local built
-  built="$(grep -oE "Completed '[A-Za-z0-9_.-]+'" "$buildlog" 2>/dev/null            | sed -E "s/Completed '(.*)'//" | sort -u || true)"
-  if [ -n "$built" ]; then
-    info "external projects completed in this step:"
-    echo "$built" | sed 's/^/  /'
-    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-      {
-        echo "### ${SLICER_STAGE_NAME:-Build} (${SLICER_PLATFORM})"
-        echo ""
-        echo "Requested: \`${targets[*]}\`"
-        echo ""
-        echo "Built $(echo "$built" | wc -l | tr -d ' ') external projects:"
-        echo ""
-        echo "$built" | paste -sd', ' - | sed 's/^/`/;s/$/`/'
-      } >> "$GITHUB_STEP_SUMMARY"
-    fi
+  after="$(_completed_projects)"
+  built="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | sed '/^$/d')"
+  count="$(printf '%s' "$built" | grep -c . || true)"
+  info "external projects completed in this step: ${count}"
+  if [ "$count" -gt 0 ]; then
+    printf '%s\n' "$built" | sed 's/^/  /'
   fi
+
+  # Report as soon as the stage finishes rather than saving it for the end:
+  # a cold build takes hours, and the run page should say what has been done
+  # so far.
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+      echo "### ${SLICER_STAGE_NAME:-Build} (${SLICER_PLATFORM})"
+      echo ""
+      echo "Asked for: ${targets[*]}"
+      echo ""
+      if [ "$count" -gt 0 ]; then
+        echo "Completed $count external projects:"
+        echo ""
+        printf '%s\n' "$built" | sed 's/^/- /'
+      else
+        echo "Nothing new: every project asked for was already built."
+      fi
+      echo ""
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
+
+  # Also kept in the tree, so the job that builds Slicer can show the whole
+  # picture on a run where the prerequisites came from a release and no stage
+  # ran. Each stage's archive carries the record to the next.
+  local record; record="$(bash_path "$SLICER_SUPERBUILD_DIR")/.ci-stages.tsv"
+  {
+    printf '%s\t%s\t%s\n' \
+      "${SLICER_STAGE_NAME:-Build}" "${targets[*]}" "$(printf '%s' "$built" | tr '\n' ' ')"
+  } >> "$record"
+
   if [ "${SLICER_COMPILER_LAUNCHER:-}" = "ccache" ] && command -v ccache >/dev/null 2>&1; then
     ccache --show-stats || true
   fi
@@ -643,6 +669,29 @@ cmd_install_system_packages() {
   esac
 }
 
+# Write one summary for this platform covering every stage that has run, from
+# the record each stage leaves in the superbuild tree.
+cmd_stage_summary() {
+  local record; record="$(bash_path "$SLICER_SUPERBUILD_DIR")/.ci-stages.tsv"
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
+  [ -f "$record" ] || return 0
+  {
+    echo "## Prerequisites (${SLICER_PLATFORM})"
+    echo ""
+    echo "| Stage | Asked for | Completed |"
+    echo "|---|---|---|"
+    while IFS=$'\t' read -r stage asked done_; do
+      [ -n "$stage" ] || continue
+      if [ -z "$done_" ]; then
+        done_="nothing new"
+      fi
+      echo "| ${stage} | ${asked} | ${done_} |"
+    done < "$record"
+    echo ""
+  } >> "$GITHUB_STEP_SUMMARY"
+  cat "$record"
+}
+
 # Print a disk usage report of the root directory.
 cmd_report() {
   local root; root="$(bash_path "$SLICER_ROOT")"
@@ -681,6 +730,7 @@ Commands:
   manifest <file> [k=v...]     Write a build manifest
   manifest-get <file> <key>    Read a manifest value
   report                       Disk usage report
+  stage-summary                Summarize every prerequisite stage of this platform
 EOF
 }
 
@@ -705,6 +755,7 @@ main() {
     manifest) cmd_manifest "$@" ;;
     manifest-get) cmd_manifest_get "$@" ;;
     report) cmd_report "$@" ;;
+    stage-summary) cmd_stage_summary "$@" ;;
     ""|-h|--help|help) usage ;;
     *) die "unknown command: $cmd" ;;
   esac

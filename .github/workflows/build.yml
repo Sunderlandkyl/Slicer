@@ -549,6 +549,11 @@ jobs:
           # Archived after the tests and the packaging instead.
           archive-name: ""
 
+      - name: Summarize the prerequisites
+        if: always()
+        shell: bash
+        run: '"$SLICER_CI" stage-summary'
+
       - name: Run the tests
         id: tests
         if: needs.setup.outputs.run-tests == 'true'
