@@ -62,6 +62,12 @@ runs:
           echo "Copying $GITHUB_WORKSPACE -> $src"
           cp -a "$GITHUB_WORKSPACE/." "$src/"
 
+          # The compiler cache action keeps its cache in the workspace, so a
+          # plain copy drags a few hundred megabytes of it into the source
+          # tree, where it is then archived and published.
+          rm -rf "$src/.ccache" "$src/.cache"
+          rm -f "$src"/*.log
+
           # Give every source file a timestamp older than any stamp in a
           # superbuild tree restored from the prerequisites. Checking the
           # sources out gives them the time of the checkout, which makes CMake

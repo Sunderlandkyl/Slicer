@@ -628,7 +628,7 @@ jobs:
           #  - the source tree (SlicerConfig.cmake points into it)
           #  - the superbuild tree without the inner build (the prerequisites)
           #  - the inner build tree
-          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-source-${SLICER_PLATFORM}.tar.zst" --exclude "*/.git" Slicer
+          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-source-${SLICER_PLATFORM}.tar.zst"             --exclude "*/.git" --exclude "*/.ccache" --exclude "*/.cache" Slicer
           "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-build-${SLICER_PLATFORM}.tar.zst" SR/Slicer-build
           "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst" --exclude "SR/Slicer-build*" SR
           for a in "$SLICER_OUTPUT_DIR"/*.tar.zst; do "$SLICER_CI" split "$a"; done
@@ -742,8 +742,19 @@ jobs:
           else
             gh release create "$tag" --title "Slicer nightly" --notes "$notes" --prerelease --latest=false
           fi
-          # Replace all the assets of the release.
+          # Replace all the assets of the release. The package name carries the
+          # date, so uploading alone would accumulate one package per day rather
+          # than replacing yesterday's; remove whatever this run did not produce.
           gh release upload "$tag" assets/* --clobber
+          ( cd assets && ls ) | LC_ALL=C sort -u > keep.txt
+          gh release view "$tag" --json assets --jq '.assets[].name' \
+            | LC_ALL=C sort -u > have.txt
+          comm -13 keep.txt have.txt > stale.txt
+          while read -r asset; do
+            [ -n "$asset" ] || continue
+            echo "Removing the superseded asset $asset"
+            gh release delete-asset "$tag" "$asset" --yes || true
+          done < stale.txt
 
       # Repositories that asked to be told about a new nightly rather than
       # waiting for their own scheduled run. The list is the
