@@ -92,6 +92,11 @@ runs:
       shell: bash
       run: '"$SLICER_CI" free-disk-space'
 
+    - name: Select the macOS architecture
+      if: runner.os == 'macOS'
+      shell: bash
+      run: echo "SLICER_MACOS_ARCH=arm64" >> "$GITHUB_ENV"
+
     - name: Install system packages
       shell: bash
       run: '"$SLICER_CI" install-system-packages'

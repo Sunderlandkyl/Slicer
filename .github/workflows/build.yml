@@ -63,7 +63,9 @@ env:
   SLICER_DEPS_KEY_VERSION: "1"
   # Qt version used to build Slicer. Override with the SLICER_CI_QT_VERSION
   # repository variable.
-  SLICER_CI_QT_VERSION: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
+  # This branch is an experiment: macOS on arm64 with Qt 6, to find out what
+  # Slicer needs before the Intel runner image is retired in August 2027.
+  SLICER_CI_QT_VERSION: "6.9.3"
 
 jobs:
   #-----------------------------------------------------------------------------
@@ -109,13 +111,13 @@ jobs:
           if [ "$EVENT" = "pull_request" ]; then
             PLATFORMS="linux"
           elif [ "$EVENT" = "push" ] && [ "$on_default_branch" = "false" ]; then
-            PLATFORMS="${SLICER_CI_PLATFORMS:-linux}"
+            PLATFORMS="macos"
           fi
           entries=""
           for p in ${PLATFORMS//,/ }; do
             case "$p" in
               linux)   entries="$entries {\"platform\":\"linux\",\"runner\":\"ubuntu-22.04\"}," ;;
-              macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15-intel\"}," ;;
+              macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15\"}," ;;
               windows) entries="$entries {\"platform\":\"windows\",\"runner\":\"windows-2022\"}," ;;
               *) echo "::warning::unknown platform '$p'" ;;
             esac
@@ -129,7 +131,7 @@ jobs:
           # The nightly release follows the default branch: every build of it,
           # and the nightly run itself, refresh what extension repositories
           # build against.
-          if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ]              || [ "${SLICER_CI_PUBLISH:-}" = "true" ]; then
+          if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ]              || [ "false" = "true" ]; then
             publish="true"
           fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
