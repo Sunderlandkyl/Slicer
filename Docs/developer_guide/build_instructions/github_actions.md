@@ -341,6 +341,43 @@ between runs through the `ExternalData_OBJECT_STORES` environment variable.
 To exclude known-failing tests without editing the workflow, set the
 `SLICER_CI_TEST_EXCLUDE` repository variable to a CTest regular expression.
 
+## Signing and notarizing the macOS package
+
+macOS refuses to open an application that Apple has not notarized without a
+warning, and notarization requires the package to be signed with a Developer ID
+certificate. Both happen automatically when the secrets below exist, and are
+skipped when they do not, so a fork builds without them. Without them the
+bundle is still signed ad-hoc, which is enough to run locally, and is required
+on Apple silicon, which refuses to execute unsigned code at all.
+
+| Secret or variable | What it is |
+|---|---|
+| `MACOS_CERTIFICATE` | The Developer ID Application certificate, a `.p12` file, base64 encoded |
+| `MACOS_CERTIFICATE_PASSWORD` | Its password |
+| `MACOS_SIGNING_IDENTITY` (variable) | The identity name, for example `Developer ID Application: Example (TEAMID)` |
+| `APPLE_API_KEY` | An App Store Connect API key, the `.p8` file, base64 encoded |
+| `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID` | That key's identifiers |
+
+An API key is used rather than an Apple ID and password because it needs no
+two-factor prompt.
+
+The certificate is imported into a temporary keychain, `SLICER_CODESIGN_IDENTITY`
+tells the bundle fixup to sign with it instead of ad-hoc, and the package is then
+submitted with `notarytool` and stapled.
+
+Signing with a real identity also turns on the hardened runtime and a secure
+timestamp, both of which Apple requires. The hardened runtime blocks things
+Slicer needs, so it is signed with the entitlements in
+`CMake/SlicerMacOSEntitlements.plist`: loading Python modules and extensions
+that carry a different signature, and the just-in-time compilation QtWebEngine
+performs. Apple reports which entitlements a submission actually used, so that
+list should be trimmed once the first notarization succeeds.
+
+Every package is also attested with `actions/attest-build-provenance`, which
+records how it was built and can be checked with `gh attestation verify`. That
+is supply-chain evidence and has nothing to do with whether an operating system
+will run the package.
+
 ## Relation to the older CI workflow
 
 `.github/workflows/ci.yml` builds Slicer inside the `slicer/slicer-base`

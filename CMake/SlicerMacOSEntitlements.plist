@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Entitlements required to sign Slicer with the hardened runtime, which Apple
+  requires for notarization.
+
+  Slicer is a Python application that embeds a browser engine, so several of the
+  protections the hardened runtime enables have to be relaxed:
+
+  - disable-library-validation: Slicer loads Python extension modules, CLI
+    modules and extensions that are not signed by the same team identifier, and
+    the hardened runtime otherwise refuses to load them.
+  - allow-unsigned-executable-memory and allow-jit: QtWebEngine embeds Chromium,
+    which compiles JavaScript at run time.
+  - disable-executable-page-protection: required by some Python extension
+    modules that rewrite their own code pages.
+  - automation.apple-events: Slicer's tests drive the application through Qt
+    Testing, which sends Apple events.
+
+  Trim this list once notarization succeeds: each entitlement weakens a
+  protection, and Apple reports which ones a submission actually needed.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.disable-executable-page-protection</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+  </dict>
+</plist>

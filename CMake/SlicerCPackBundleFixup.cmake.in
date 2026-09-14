@@ -164,9 +164,25 @@ endif()
 # instead -- every Mach-O on its own, deepest first, and the .app last.
 #-----------------------------------------------------------------------------
 message(STATUS "Re-signing application bundle after fixup")
+# Signing with a real Developer ID, which notarization requires, is requested
+# through the environment so that a build machine holding a certificate needs no
+# change to the build system. Without it the bundle is signed ad-hoc, which is
+# enough to run locally and is required on Apple silicon.
+set(_codesign_identity "$ENV{SLICER_CODESIGN_IDENTITY}")
+if(_codesign_identity STREQUAL "")
+  set(_codesign_identity "-")
+endif()
+set(_codesign_extra_args)
+if(NOT _codesign_identity STREQUAL "-")
+  list(APPEND _codesign_extra_args
+    --entitlements "@CMAKE_SOURCE_DIR@/CMake/SlicerMacOSEntitlements.plist")
+endif()
+message(STATUS "Re-signing with identity: ${_codesign_identity}")
 execute_process(
   COMMAND python3 "@CMAKE_SOURCE_DIR@/Utilities/Scripts/SlicerSignBundleMacOS.py"
           --app "${app_dir}"
+          --identity "${_codesign_identity}"
+          ${_codesign_extra_args}
   RESULT_VARIABLE _codesign_result
   ERROR_VARIABLE _codesign_error
   )

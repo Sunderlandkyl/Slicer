@@ -495,6 +495,10 @@ jobs:
   slicer:
     name: Slicer (${{ matrix.platform }})
     needs: [setup, deps-key, deps]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     # The stages are skipped when the prerequisites are already available, and
     # GitHub carries that skip down the whole graph, past the gate job that ran
     # and succeeded. Stating a condition here is what stops it.
@@ -517,8 +521,13 @@ jobs:
         with:
           qt-version: ${{ env.SLICER_CI_QT_VERSION }}
 
-      - name: Cache test data
-        uses: actions/cache@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+      # Restore and save are separate so the save can run even when the job
+      # fails. actions/cache only saves after a successful job, and this job
+      # fails whenever a test fails, so the test data was never cached and
+      # every run downloaded the whole set again.
+      - name: Restore the test data
+        id: testdata
+        uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
         with:
           path: ${{ env.SLICER_ROOT }}/ExternalData
           key: slicer-testdata-${{ matrix.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
@@ -538,6 +547,35 @@ jobs:
           "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/deps-${SLICER_PLATFORM}.tar.zst"
           rm -rf "$SLICER_OUTPUT_DIR/restore"
 
+      # Signing with a Developer ID, and notarizing, happen only when the
+      # secrets exist. Without them the bundle is signed ad-hoc, which runs
+      # locally but shows Gatekeeper's warning. See
+      # Docs/developer_guide/build_instructions/github_actions.md
+      - name: Import the signing certificate
+        id: signing
+        if: matrix.platform == 'macos' && env.MACOS_CERTIFICATE != ''
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/slicer-signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          echo "SLICER_CODESIGN_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "Signing with: $MACOS_SIGNING_IDENTITY"
+
       - name: Build Slicer
         uses: ./.github/actions/slicer-build-stage
         with:
@@ -553,6 +591,13 @@ jobs:
         if: always()
         shell: bash
         run: '"$SLICER_CI" stage-summary'
+
+      - name: Save the test data
+        if: always() && steps.testdata.outputs.cache-hit != 'true'
+        uses: actions/cache/save@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_ROOT }}/ExternalData
+          key: ${{ steps.testdata.outputs.cache-primary-key }}
 
       - name: Run the tests
         id: tests
@@ -594,6 +639,42 @@ jobs:
         continue-on-error: true
         shell: bash
         run: '"$SLICER_CI" verify-package'
+
+      # Apple must notarize the package before macOS will open it without a
+      # warning. The submission is rejected outright if anything in the bundle
+      # is unsigned or lacks the hardened runtime.
+      - name: Notarize and staple
+        if: matrix.platform == 'macos' && steps.signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          PACKAGE: ${{ steps.package.outputs.package }}
+        run: |
+          set -euo pipefail
+          dmg="$SLICER_OUTPUT_DIR/$PACKAGE"
+          key="$RUNNER_TEMP/apple-api-key.p8"
+          echo "$APPLE_API_KEY" | base64 --decode > "$key"
+          echo "Submitting $PACKAGE to Apple"
+          xcrun notarytool submit "$dmg" \
+            --key "$key" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" \
+            --wait --timeout 45m
+          rm -f "$key"
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          # What Gatekeeper itself will decide.
+          spctl --assess --type open --context context:primary-signature -vv "$dmg"
+
+      # Provenance for the package, verifiable with "gh attestation verify".
+      # This is a statement about how the package was built; it is unrelated to
+      # code signing and does not affect whether an operating system will run
+      # it.
+      - name: Attest the package
+        if: needs.setup.outputs.publish == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.SLICER_OUTPUT_DIR }}/${{ steps.package.outputs.package }}
 
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
