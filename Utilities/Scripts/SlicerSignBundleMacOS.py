@@ -67,9 +67,24 @@ def find_machos(root, ignored=()):
     return paths, skipped
 
 
-def sign(path, identity):
+def codesign_args(identity, entitlements):
+    """Arguments common to every codesign call.
+
+    Notarization requires the hardened runtime and a secure timestamp, neither
+    of which is the default. Both are skipped for the ad-hoc identity, which
+    cannot carry a timestamp and is only ever used to run locally.
+    """
+    args = ["codesign", "--force", "--sign", identity]
+    if identity != "-":
+        args += ["--options", "runtime", "--timestamp"]
+        if entitlements:
+            args += ["--entitlements", entitlements]
+    return args
+
+
+def sign(path, identity, entitlements):
     result = subprocess.run(
-        ["codesign", "--force", "--sign", identity, path],
+        codesign_args(identity, entitlements) + [path],
         capture_output=True,
         text=True,
         check=False,
@@ -77,14 +92,15 @@ def sign(path, identity):
     return path, result.returncode, result.stderr.strip()
 
 
-def sign_bundle(app, identity, ignored=()):
+def sign_bundle(app, identity, entitlements=None, ignored=()):
     machos, skipped = find_machos(app, ignored)
     # Deepest paths first so nested code is sealed before its container.
     machos.sort(key=lambda path: path.count(os.sep), reverse=True)
 
     failures = []
     with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-        for path, code, error in executor.map(lambda p: sign(p, identity), machos):
+        for path, code, error in executor.map(
+                lambda p: sign(p, identity, entitlements), machos):
             if code != 0:
                 failures.append((path, error))
     print("SlicerSignBundleMacOS: signed %d Mach-O files (%d failures)"
@@ -98,7 +114,7 @@ def sign_bundle(app, identity, ignored=()):
 
     # Seal the application bundle itself last.
     result = subprocess.run(
-        ["codesign", "--force", "--sign", identity, app],
+        codesign_args(identity, entitlements) + [app],
         capture_output=True,
         text=True,
         check=False,
@@ -114,6 +130,9 @@ def main(argv):
     parser.add_argument("--app", required=True, help="Path to the .app bundle")
     parser.add_argument("--identity", default="-",
                         help="codesign identity (default: '-', ad-hoc)")
+    parser.add_argument("--entitlements", default=None,
+                        help="entitlements plist, required by the hardened "
+                             "runtime when signing with a real identity")
     parser.add_argument("--ignore-library", action="append", default=[], metavar="REGEX",
                         help="Regex (unanchored search against basename) of Mach-O files to "
                              "leave unsigned -- e.g. a vendor library that ships "
@@ -131,7 +150,8 @@ def main(argv):
             print("SlicerSignBundleMacOS: invalid --ignore-library regex %r: %s" %
                   (pattern, error), file=sys.stderr)
             return 1
-    return 0 if sign_bundle(options.app, options.identity, ignored) else 1
+    return 0 if sign_bundle(options.app, options.identity,
+                            options.entitlements, ignored) else 1
 
 
 if __name__ == "__main__":
