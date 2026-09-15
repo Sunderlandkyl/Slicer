@@ -554,9 +554,11 @@ cmd_test() {
   fi
   local rc=0
   log "Run tests"
+  # Chromium's sandbox keeps QtWebEngine's helper processes on the runners from
+  # reading their resources, so no page ever loads.
+  export QTWEBENGINE_DISABLE_SANDBOX=1
   if [ "$SLICER_PLATFORM" = "linux" ]; then
     export LIBGL_ALWAYS_SOFTWARE=1
-    export QTWEBENGINE_DISABLE_SANDBOX=1
     xvfb-run -a -s "-screen 0 1920x1080x24" ctest "${args[@]}" || rc=$?
   else
     if [ "$SLICER_PLATFORM" = "windows" ]; then
