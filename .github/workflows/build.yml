@@ -132,6 +132,7 @@ jobs:
           if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ]              || [ "${SLICER_CI_PUBLISH:-}" = "true" ]; then
             publish="true"
           fi
+          publish="false"  # TEST branch: never touch the nightly release
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "force-deps=${{ github.event.inputs.rebuild-prerequisites || 'false' }}" >> "$GITHUB_OUTPUT"
 
