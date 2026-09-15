@@ -495,10 +495,6 @@ jobs:
   slicer:
     name: Slicer (${{ matrix.platform }})
     needs: [setup, deps-key, deps]
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
     # The stages are skipped when the prerequisites are already available, and
     # GitHub carries that skip down the whole graph, past the gate job that ran
     # and succeeded. Stating a condition here is what stops it.
@@ -666,16 +662,6 @@ jobs:
           # What Gatekeeper itself will decide.
           spctl --assess --type open --context context:primary-signature -vv "$dmg"
 
-      # Provenance for the package, verifiable with "gh attestation verify".
-      # This is a statement about how the package was built; it is unrelated to
-      # code signing and does not affect whether an operating system will run
-      # it.
-      - name: Attest the package
-        if: needs.setup.outputs.publish == 'true'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: ${{ env.SLICER_OUTPUT_DIR }}/${{ steps.package.outputs.package }}
-
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -765,6 +751,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -779,7 +767,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: package-*
-          path: assets
+          path: packages
           merge-multiple: true
 
       # A platform whose build or packaging failed never uploaded its
@@ -803,12 +791,23 @@ jobs:
           [ "$missing" -eq 0 ] || exit 1
           echo "Every platform produced a complete set of artifacts."
 
+      # Provenance for the packages, verifiable with "gh attestation verify".
+      # This is a statement about how the packages were built; it is unrelated
+      # to code signing and does not affect whether an operating system will
+      # run them. It is done here rather than on each build runner so that a
+      # network failure while attesting cannot withhold a platform's artifacts.
+      - name: Attest the packages
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: packages/*
+
       - name: Publish release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          cp packages/* assets/
           ls -lh assets
           tag="nightly"
           notes="Nightly Slicer build trees and packages.
