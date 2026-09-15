@@ -595,6 +595,11 @@ jobs:
           path: ${{ env.SLICER_ROOT }}/ExternalData
           key: ${{ steps.testdata.outputs.cache-primary-key }}
 
+      - name: Install software OpenGL
+        if: needs.setup.outputs.run-tests == 'true' && matrix.platform == 'windows'
+        shell: bash
+        run: '"$SLICER_CI" install-software-opengl'
+
       - name: Run the tests
         id: tests
         if: needs.setup.outputs.run-tests == 'true'
@@ -781,7 +786,8 @@ jobs:
           set -euo pipefail
           missing=0
           for platform in $(echo "$MATRIX" | jq -r '.include[].platform'); do
-            for f in "manifest-${platform}.json" "slicer-source-${platform}.tar.zst"                      "slicer-build-${platform}.tar.zst" "deps-${platform}.tar.zst"; do
+            for f in "manifest-${platform}.json" "slicer-source-${platform}.tar.zst" \
+                     "slicer-build-${platform}.tar.zst" "deps-${platform}.tar.zst"; do
               if ! ls "assets/$f"* >/dev/null 2>&1; then
                 echo "::error::$platform did not produce $f"
                 missing=1
