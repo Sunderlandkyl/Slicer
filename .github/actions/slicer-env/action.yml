@@ -181,8 +181,28 @@ runs:
         echo "major=$major" >> "$GITHUB_OUTPUT"
         echo "Qt $version ($arch): $modules"
 
+    # The Qt archives come from a pool of third-party mirrors, one of which
+    # occasionally refuses connections. Try a second time, when aqtinstall
+    # picks a mirror again, rather than lose a stage to it.
     - name: Install Qt
       if: inputs.install-qt == 'true'
+      id: install-qt
+      continue-on-error: true
+      uses: jurplel/install-qt-action@d325aaf2a8baeeda41ad0b5d39f84a6af9bcf005 # v4.3.0
+      with:
+        version: ${{ steps.versions.outputs.qt-version }}
+        dir: ${{ steps.env.outputs.root }}/Qt
+        target: desktop
+        arch: ${{ steps.qt-options.outputs.arch }}
+        modules: ${{ steps.qt-options.outputs.modules }}
+        cache: false
+        # The action needs a Python to run aqtinstall. Letting it provision one
+        # is required on macOS, whose system Python refuses to install into an
+        # externally managed environment.
+        setup-python: true
+
+    - name: Install Qt (second attempt)
+      if: steps.install-qt.outcome == 'failure'
       uses: jurplel/install-qt-action@d325aaf2a8baeeda41ad0b5d39f84a6af9bcf005 # v4.3.0
       with:
         version: ${{ steps.versions.outputs.qt-version }}
