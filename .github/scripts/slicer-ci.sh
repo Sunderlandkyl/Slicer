@@ -701,14 +701,13 @@ cmd_install_software_opengl() {
   echo "${MESA_WINDOWS_SHA256}  $dir.7z" | sha256sum -c - || die "unexpected checksum for $name.7z"
   rm -rf "$dir"
   7z x -y -o"$dir" "$dir.7z" >/dev/null
-  # Option 1 deploys the desktop OpenGL drivers system-wide; option 7 updates
-  # that deployment.
-  ( cd "$dir" && MSYS_NO_PATHCONV=1 cmd.exe /c "systemwidedeploy.cmd 1" )
-  ( cd "$dir" && MSYS_NO_PATHCONV=1 cmd.exe /c "systemwidedeploy.cmd 7" )
-  powershell -NoProfile -Command \
-    "Get-Item C:/Windows/System32/opengl32.dll | ForEach-Object { \$_.VersionInfo.FileDescription + ' ' + \$_.VersionInfo.ProductVersion }" \
-    || true
-  rm -rf "$dir" "$dir.7z"
+  # Choice 1 of the deployment utility installs Mesa as the desktop OpenGL
+  # driver. Its other numbered choices differ between Mesa releases, so no other
+  # is used.
+  ( cd "$dir" && MSYS_NO_PATHCONV=1 cmd.exe /c "systemwidedeploy.cmd 1" ) | tee "$dir.log"
+  grep -q "Desktop OpenGL drivers deploy complete" "$dir.log" \
+    || die "Mesa did not report deploying its desktop OpenGL drivers"
+  rm -rf "$dir" "$dir.7z" "$dir.log"
   endlog
 }
 
