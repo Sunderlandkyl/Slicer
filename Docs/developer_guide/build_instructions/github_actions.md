@@ -184,7 +184,7 @@ Outputs of the action:
 | `qt-dir` | The Qt prefix used by the build |
 
 The action installs everything the build needs: the system packages, CMake, the
-matching Qt, and `sccache`. It also sets `Slicer_DIR` in the environment, so a
+matching Qt, and `ccache`. It also sets `Slicer_DIR` in the environment, so a
 later step can use it without going through the output. It needs no checkout of
 Slicer: it fetches the helper script it runs from the Slicer repository itself.
 
@@ -197,17 +197,28 @@ Inputs:
 | `release-tag` | `nightly` | Release to restore |
 | `qt-version` | from the manifest | Qt version to install |
 | `cmake-version` | `3.31.x` | CMake version to install |
-| `sccache` | `true` | Enable the compiler cache |
+| `compiler-cache` | `true` | Enable the `ccache` compiler cache on Linux and macOS |
 | `free-disk-space` | `false` | Remove unneeded pre-installed tooling |
 
-To run an extension's tests, use the launcher under `xvfb` on Linux:
+To run an extension's tests, use `xvfb` on Linux, and install a software OpenGL
+on Windows first, since the runners have no GPU:
 
 ```yaml
+      - name: Install software OpenGL
+        if: runner.os == 'Windows'
+        shell: bash
+        run: '"$SLICER_CI" install-software-opengl'
+
       - name: Test
         shell: bash
         run: |
-          export QTWEBENGINE_DISABLE_SANDBOX=1
-          xvfb-run -a ctest --test-dir ../build --output-on-failure
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            export QTWEBENGINE_DISABLE_SANDBOX=1
+            xvfb-run -a ctest --test-dir ../build --output-on-failure
+          else
+            export GALLIUM_DRIVER=llvmpipe
+            ctest --test-dir ../build -C Release --output-on-failure
+          fi
 ```
 
 The [`Extension build (self-test)`](https://github.com/Slicer/Slicer/actions/workflows/extension-build-test.yml)
@@ -331,9 +342,12 @@ published.
 Every run publishes a `test-results-<platform>` artifact with the JUnit report
 and the CTest logs, and writes a summary table to the run's page.
 
-On Linux the suite runs under `xvfb-run` with a software OpenGL renderer, since
-Slicer requires a display even with `--no-main-window`. macOS and Windows
-runners provide a session, so no wrapper is needed.
+The runners have no GPU, and Slicer requires OpenGL even with
+`--no-main-window`. On Linux the suite runs under `xvfb-run` with Mesa's software
+renderer. On Windows, the OpenGL available without a GPU is too old for VTK to
+create a render window, so a pinned build of Mesa is installed before the tests
+(`slicer-ci.sh install-software-opengl`). macOS runners provide a session and
+OpenGL, so they need no setup.
 
 Test data is downloaded by `ExternalData` from `SlicerTestingData` and cached
 between runs through the `ExternalData_OBJECT_STORES` environment variable.
@@ -373,8 +387,9 @@ that carry a different signature, and the just-in-time compilation QtWebEngine
 performs. Apple reports which entitlements a submission actually used, so that
 list should be trimmed once the first notarization succeeds.
 
-Every package is also attested with `actions/attest-build-provenance`, which
-records how it was built and can be checked with `gh attestation verify`. That
+Every published package is also attested, in the publish job, with
+`actions/attest-build-provenance`, which records how it was built and can be
+checked with `gh attestation verify`. That
 is supply-chain evidence and has nothing to do with whether an operating system
 will run the package.
 
