@@ -212,8 +212,8 @@ on Windows first, since the runners have no GPU:
       - name: Test
         shell: bash
         run: |
+          export QTWEBENGINE_DISABLE_SANDBOX=1
           if [ "$RUNNER_OS" = "Linux" ]; then
-            export QTWEBENGINE_DISABLE_SANDBOX=1
             xvfb-run -a ctest --test-dir ../build --output-on-failure
           else
             export GALLIUM_DRIVER=llvmpipe
