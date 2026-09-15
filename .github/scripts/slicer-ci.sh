@@ -118,7 +118,8 @@ cmd_env() {
       echo "output-dir=$SLICER_OUTPUT_DIR"
     } >> "$GITHUB_OUTPUT"
   fi
-  mkdir -p "$(bash_path "$SLICER_ROOT")" "$(bash_path "$SLICER_OUTPUT_DIR")"            "$(bash_path "$ExternalData_OBJECT_STORES")"
+  mkdir -p "$(bash_path "$SLICER_ROOT")" "$(bash_path "$SLICER_OUTPUT_DIR")" \
+    "$(bash_path "$ExternalData_OBJECT_STORES")"
 }
 
 # Compute a key identifying the set of prerequisites. Any change to the files
@@ -226,7 +227,8 @@ cmd_configure() {
   if [ $rc -ne 0 ]; then
     local sb; sb="$(bash_path "$SLICER_SUPERBUILD_DIR")"
     local f
-    for f in "$sb/CMakeFiles/CMakeConfigureLog.yaml" "$sb/CMakeFiles/CMakeError.log"              "$sb/CMakeFiles/CMakeOutput.log"; do
+    for f in "$sb/CMakeFiles/CMakeConfigureLog.yaml" "$sb/CMakeFiles/CMakeError.log" \
+      "$sb/CMakeFiles/CMakeOutput.log"; do
       if [ -f "$f" ]; then
         log "$(basename "$f")"
         tail -n 200 "$f"
