@@ -36,8 +36,9 @@
 #      Python wheels). A stale rpath is harmless on its own -- dyld skips paths
 #      that do not exist -- so this is a hygiene signal, not a loadability error;
 #      genuinely unsatisfied dependencies are caught by check 2 instead.
-#   4. Dependencies on known optional database backends under /usr/local or
-#      /opt (the ODBC / PostgreSQL / MySQL / Mimer Qt SQL drivers), and
+#   4. Dependencies on known optional database backends under /usr/local,
+#      /opt or Postgres.app (the ODBC / PostgreSQL / MySQL / Mimer Qt SQL
+#      drivers), and
 #      unresolved weak dependencies. These are not bundled by design and only
 #      disable the corresponding optional plugin. Any other dependency under
 #      /usr/local or /opt is treated as check 2 (FATAL).
@@ -250,10 +251,12 @@ function(_bv_resolve dep loader_dir rpaths out_status)
     if(dep MATCHES "^(/usr/lib/|/System/)")
       set(${out_status} "SYSTEM" PARENT_SCOPE)
       return()
-    elseif(dep MATCHES "^(/usr/local/|/opt/)")
+    elseif(dep MATCHES "^(/usr/local/|/opt/|/Applications/Postgres[.]app/)")
       # Only known optional runtime backends (Qt SQL/ODBC drivers) are
       # external-by-design; anything else under /usr/local or /opt would make
       # the bundle depend on the packaging machine and is a hard error.
+      # Postgres.app is where the Qt 5 binary distribution's PostgreSQL driver
+      # expects libpq.
       if(dep MATCHES "(libiodbc|libodbc|libpq|libmimerapi|libmysqlclient|libmariadb)[^/]*$")
         set(${out_status} "EXTERNAL" PARENT_SCOPE)
         return()
