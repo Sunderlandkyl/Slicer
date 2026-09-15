@@ -557,6 +557,10 @@ cmd_test() {
     export QTWEBENGINE_DISABLE_SANDBOX=1
     xvfb-run -a -s "-screen 0 1920x1080x24" ctest "${args[@]}" || rc=$?
   else
+    if [ "$SLICER_PLATFORM" = "windows" ]; then
+      # Mesa's software rasterizer, rather than a driver that needs a GPU.
+      export GALLIUM_DRIVER=llvmpipe
+    fi
     ctest "${args[@]}" || rc=$?
   fi
   endlog
@@ -631,7 +635,9 @@ cmd_install_system_packages() {
       log "Install system packages"
       sudo apt-get update -qq
       # Packages required to build Slicer.
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends         build-essential ninja-build patch zstd xvfb         libxt-dev libglu1-mesa-dev libgl1-mesa-dri
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+        build-essential ninja-build patch zstd xvfb \
+        libxt-dev libglu1-mesa-dev libgl1-mesa-dri
       # Packages required at run time by Qt and QtWebEngine. The exact set of
       # package names varies between Ubuntu releases (libasound2 became
       # libasound2t64, libgl1-mesa-glx was dropped, ...), so keep only the ones
@@ -653,7 +659,8 @@ cmd_install_system_packages() {
         fi
       done
       info "installing: ${available[*]}"
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends         ${available[@]+"${available[@]}"}
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+        ${available[@]+"${available[@]}"}
       endlog
       ;;
     macos)
@@ -667,6 +674,38 @@ cmd_install_system_packages() {
       endlog
       ;;
   esac
+}
+
+# The hosted runners have no GPU. On Linux, Mesa renders in software under xvfb.
+# The OpenGL that Windows provides without a GPU is too old for VTK to create a
+# render window, so Mesa is installed in its place. The version is pinned, and
+# its archive checked, so the renderer the tests run against does not change
+# underneath them.
+MESA_WINDOWS_VERSION="26.1.7"
+MESA_WINDOWS_SHA256="c6e90c3117233b66f7816df05026a5fb0f88eaf7829bd07a1724b981487ec0bb"
+
+cmd_install_software_opengl() {
+  if [ "$SLICER_PLATFORM" != "windows" ]; then
+    info "no software OpenGL to install on $SLICER_PLATFORM"
+    return 0
+  fi
+  local name="mesa3d-${MESA_WINDOWS_VERSION}-release-msvc"
+  local dir; dir="$(bash_path "${RUNNER_TEMP:-$SLICER_ROOT}")/$name"
+  log "Install Mesa ${MESA_WINDOWS_VERSION} software OpenGL"
+  curl -fsSL --retry 5 --retry-all-errors --connect-timeout 30 -o "$dir.7z" \
+    "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_WINDOWS_VERSION}/${name}.7z"
+  echo "${MESA_WINDOWS_SHA256}  $dir.7z" | sha256sum -c - || die "unexpected checksum for $name.7z"
+  rm -rf "$dir"
+  7z x -y -o"$dir" "$dir.7z" >/dev/null
+  # Option 1 deploys the desktop OpenGL drivers system-wide; option 7 updates
+  # that deployment.
+  ( cd "$dir" && MSYS_NO_PATHCONV=1 cmd.exe /c "systemwidedeploy.cmd 1" )
+  ( cd "$dir" && MSYS_NO_PATHCONV=1 cmd.exe /c "systemwidedeploy.cmd 7" )
+  powershell -NoProfile -Command \
+    "Get-Item C:/Windows/System32/opengl32.dll | ForEach-Object { \$_.VersionInfo.FileDescription + ' ' + \$_.VersionInfo.ProductVersion }" \
+    || true
+  rm -rf "$dir" "$dir.7z"
+  endlog
 }
 
 # Write one summary for this platform covering every stage that has run, from
@@ -713,6 +752,7 @@ Commands:
   deps-key                     Print the key identifying the prerequisites
   free-disk-space              Remove unneeded tooling from Linux runners
   install-system-packages      Install platform packages
+  install-software-opengl      Install a software OpenGL for headless tests
   configure                    Configure the superbuild tree
   build <target>...            Build superbuild targets (unknown ones are skipped)
   dependencies                 List the external projects of the configured tree
@@ -741,6 +781,7 @@ main() {
     deps-key) cmd_deps_key "$@" ;;
     free-disk-space) cmd_free_disk_space "$@" ;;
     install-system-packages) cmd_install_system_packages "$@" ;;
+    install-software-opengl) cmd_install_software_opengl "$@" ;;
     configure) cmd_configure "$@" ;;
     build) cmd_build "$@" ;;
     dependencies) cmd_dependencies "$@" ;;
