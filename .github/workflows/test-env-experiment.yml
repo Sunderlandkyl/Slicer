@@ -1,0 +1,79 @@
+# TEST ONLY: re-run failing tests against the published nightly build tree under
+# different environment settings, to find what the runners need without a full
+# build. Not intended for merging.
+name: Test environment experiment
+
+on:
+  push:
+    branches:
+      - "exp/test-env"
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    name: Experiment (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-15-intel
+          - platform: windows
+            runner: windows-2022
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up the nightly build tree
+        uses: ./.github/actions/setup-slicer-build
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.ref_name }}
+          compiler-cache: "false"
+
+      - name: Install software OpenGL
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: '"$SLICER_CI" install-software-opengl'
+
+      - name: Run the variants
+        shell: bash
+        run: |
+          cfg=""
+          if [ "$SLICER_PLATFORM" = "windows" ]; then
+            cfg="-C Release"
+            export GALLIUM_DRIVER=llvmpipe
+          fi
+          summary="$GITHUB_STEP_SUMMARY"
+          echo "| Variant | Tests | Result |" >> "$summary"
+          echo "|---|---|---|" >> "$summary"
+          variant() {
+            label="$1"; regex="$2"; timeout="$3"; shift 3
+            echo "::group::$label ($*)"
+            start=$(date +%s)
+            # shellcheck disable=SC2086
+            env "$@" ctest --test-dir "$SLICER_BUILD_DIR" $cfg -R "$regex" --timeout "$timeout" --output-on-failure > "out-$label.txt" 2>&1
+            rc=$?
+            tail -n 150 "out-$label.txt"
+            line=$(grep -E 'tests passed' "out-$label.txt" | tail -1)
+            echo "RESULT $label rc=$rc $(( $(date +%s) - start ))s :: $line"
+            echo "| $label | \`$regex\` | rc=$rc, $(( $(date +%s) - start ))s, $line |" >> "$summary"
+            echo "::endgroup::"
+          }
+          WEB='^py_WebEngineTest$'
+          variant web-baseline "$WEB" 240 X=1
+          variant web-nosandbox "$WEB" 240 QTWEBENGINE_DISABLE_SANDBOX=1
+          variant web-disable-gpu "$WEB" 240 QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu
+          variant web-nosandbox-disable-gpu "$WEB" 240 QTWEBENGINE_DISABLE_SANDBOX=1 QTWEBENGINE_CHROMIUM_FLAGS=--disable-gpu
+          if [ "$SLICER_PLATFORM" = "macos" ]; then
+            variant combo6-original "^qMRMLNodeComboBoxTest6$" 120 X=1
+            variant combo6-original-again "^qMRMLNodeComboBoxTest6$" 120 X=1
+            variant vr-baseline "^qSlicerVolumeRenderingModuleWidgetTest1$" 240 X=1
+          else
+            variant gl-mesa '^(vtkMRMLModelDisplayableManagerTest|vtkMRMLCameraDisplayableManagerTest1|vtkMRMLAccuratePickerTest|qMRMLLayoutManagerTest4|qMRMLPlotViewTest1|py_ScreenCapture|qSlicerTransformsModuleWidgetGenericTest|slicer_nomainwindow_NoApplicationInformationOptionTest|vtkMRMLVolumeRenderingDisplayableManagerTest1|py_ScriptedModuleCleanupTest_without_testing)$' 300 X=1
+            variant widget2 '^qSlicerWidgetTest2$' 240 X=1
+          fi
+          exit 0
