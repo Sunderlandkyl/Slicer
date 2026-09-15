@@ -93,7 +93,8 @@ runs:
         set -euo pipefail
         dir="${{ runner.temp }}/slicer-ci"
         mkdir -p "$dir"
-        gh api "repos/${{ inputs.repository }}/contents/.github/scripts/slicer-ci.sh?ref=${{ inputs.ref }}"           --jq '.content' | base64 -d > "$dir/slicer-ci.sh"
+        gh api "repos/${{ inputs.repository }}/contents/.github/scripts/slicer-ci.sh?ref=${{ inputs.ref }}" \
+          --jq '.content' | base64 -d > "$dir/slicer-ci.sh"
         chmod +x "$dir/slicer-ci.sh"
         echo "SLICER_CI=$dir/slicer-ci.sh" >> "$GITHUB_ENV"
         "$dir/slicer-ci.sh" env

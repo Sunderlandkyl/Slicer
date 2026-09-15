@@ -129,7 +129,8 @@ jobs:
           # The nightly release follows the default branch: every build of it,
           # and the nightly run itself, refresh what extension repositories
           # build against.
-          if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ]              || [ "${SLICER_CI_PUBLISH:-}" = "true" ]; then
+          if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ] \
+            || [ "${SLICER_CI_PUBLISH:-}" = "true" ]; then
             publish="true"
           fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
@@ -700,7 +701,8 @@ jobs:
           #  - the source tree (SlicerConfig.cmake points into it)
           #  - the superbuild tree without the inner build (the prerequisites)
           #  - the inner build tree
-          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-source-${SLICER_PLATFORM}.tar.zst"             --exclude "*/.git" --exclude "*/.ccache" --exclude "*/.cache" Slicer
+          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-source-${SLICER_PLATFORM}.tar.zst" \
+            --exclude "*/.git" --exclude "*/.ccache" --exclude "*/.cache" Slicer
           "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-build-${SLICER_PLATFORM}.tar.zst" SR/Slicer-build
           "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst" --exclude "SR/Slicer-build*" SR
           for a in "$SLICER_OUTPUT_DIR"/*.tar.zst; do "$SLICER_CI" split "$a"; done
