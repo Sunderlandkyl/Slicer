@@ -58,10 +58,10 @@ on:
         default: "Slicer/Slicer"
       slicer-ref:
         description: >-
-          Ref of the Slicer repository providing the helper script
-          (default: the commit of this workflow)
+          Ref of the Slicer repository providing the actions and the helper
+          script; pin it to whatever this workflow is pinned to
         type: string
-        default: ""
+        default: "main"
       release-tag:
         description: "Release holding the Slicer build to build against"
         type: string
@@ -141,39 +141,15 @@ jobs:
 
       # A reusable workflow resolves a local action path against the repository
       # that called it, not the one it lives in, so the action it needs is
-      # checked out here. Which Slicer, and which commit of it, is what
-      # `job_workflow_ref` states about this very file, for example
-      # `Slicer/Slicer/.github/workflows/extension-build.yml@refs/heads/main`.
-      # Taking it from there rather than from a name written in this file is
-      # what lets a fork test a change to it, and keeps the action and the
-      # helper script at the same commit as these steps.
-      - name: Locate the workflow's own Slicer
-        id: slicer-source
-        shell: bash
-        env:
-          WORKFLOW_REF: ${{ github.job_workflow_ref }}
-          SLICER_REF: ${{ inputs.slicer-ref }}
-        run: |
-          set -euo pipefail
-          repository="${WORKFLOW_REF%%/.github/*}"
-          ref="${SLICER_REF:-${WORKFLOW_REF##*@}}"
-          # A plain branch or tag name: the contents API, which the action
-          # fetches the helper script through, does not take a full ref path.
-          ref="${ref#refs/heads/}"
-          ref="${ref#refs/tags/}"
-          if [ -z "$repository" ] || [ "$repository" = "$WORKFLOW_REF" ]; then
-            echo "::error::could not read the repository from '$WORKFLOW_REF'"
-            exit 1
-          fi
-          echo "repository=$repository" >> "$GITHUB_OUTPUT"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Using $repository@$ref"
-
+      # checked out here. Which commit of Slicer that is cannot be read from
+      # the run: github.job_workflow_ref and github.job_workflow_sha, which
+      # state it, are empty in a called workflow. It is `slicer-ref`, so a
+      # caller pinning this workflow to a tag should pin that to the same tag.
       - name: Check out the Slicer actions
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          repository: ${{ steps.slicer-source.outputs.repository }}
-          ref: ${{ steps.slicer-source.outputs.ref }}
+          repository: ${{ inputs.slicer-repository }}
+          ref: ${{ inputs.slicer-ref }}
           path: .slicer-actions
           sparse-checkout: .github
 
@@ -181,11 +157,8 @@ jobs:
         id: slicer
         uses: ./.slicer-actions/.github/actions/setup-slicer-build
         with:
-          repository: ${{ steps.slicer-source.outputs.repository }}
-          ref: ${{ steps.slicer-source.outputs.ref }}
-          # The build being restored can come from elsewhere, a fork
-          # publishing its own nightly for instance.
-          release-repository: ${{ inputs.slicer-repository }}
+          repository: ${{ inputs.slicer-repository }}
+          ref: ${{ inputs.slicer-ref }}
           release-tag: ${{ inputs.release-tag }}
           qt-version: ${{ inputs.qt-version }}
 

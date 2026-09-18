@@ -163,7 +163,7 @@ Inputs:
 | `artifact-prefix` | repository name | Name of the package artifact, without the platform |
 | `submodules` | `false` | Passed to the checkout action |
 | `slicer-repository` | `Slicer/Slicer` | Repository publishing the build |
-| `slicer-ref` | this workflow's commit | Ref of Slicer providing the actions and the helper script |
+| `slicer-ref` | `main` | Ref of Slicer providing the actions and the helper script; pin it to whatever the workflow is pinned to |
 | `release-tag` | `nightly` | Release to build against |
 | `qt-version` | from the manifest | Qt version to install |
 | `timeout-minutes` | `120` | Timeout of each platform's job |

@@ -23,11 +23,6 @@ inputs:
   repository:
     description: "Repository publishing the Slicer builds"
     default: "Slicer/Slicer"
-  release-repository:
-    description: >-
-      Repository holding the release to restore, when it is not the one
-      providing this action
-    default: ""
   ref:
     description: "Branch or tag of that repository providing the helper script"
     default: "main"
@@ -122,10 +117,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
-      run: >-
-        "$SLICER_CI" restore-release
-        "${{ inputs.release-repository || inputs.repository }}"
-        "${{ inputs.release-tag }}" all
+      run: '"$SLICER_CI" restore-release "${{ inputs.repository }}" "${{ inputs.release-tag }}" all'
 
     - name: Read the manifest
       id: manifest
