@@ -132,9 +132,10 @@ release, which is what extension repositories consume.
 
 ## Building an extension against the latest nightly
 
-Use the `setup-slicer-build` action. It restores the nightly build tree at the
-fixed path, installs the matching Qt and CMake, and outputs the value to pass as
-`Slicer_DIR`.
+Call the `extension-build` workflow. It restores the published build tree,
+configures, builds, tests and packages the extension, loads the result into
+Slicer and uploads the package. The extension repository carries no build steps
+of its own and never checks Slicer out:
 
 ```yaml
 name: Build extension
@@ -143,13 +144,49 @@ on: [push, pull_request]
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - { platform: linux, runner: ubuntu-22.04 }
-          - { platform: macos, runner: macos-15-intel }
-          - { platform: windows, runner: windows-2022 }
-    runs-on: ${{ matrix.runner }}
+    uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
+    with:
+      platforms: linux,macos,windows
+```
+
+Inputs:
+
+| Input | Default | Description |
+|---|---|---|
+| `platforms` | `linux` | Platforms to build on, comma separated |
+| `source-directory` | `.` | Directory of the extension within the repository |
+| `cmake-options` | | Additional options for the configure step |
+| `run-tests` | `true` | Run the extension's tests |
+| `package` | `true` | Build the extension's package |
+| `load-in-slicer` | `true` | Load the built extension into Slicer |
+| `upload-package` | `true` | Upload the package as a workflow artifact |
+| `artifact-prefix` | repository name | Name of the package artifact, without the platform |
+| `submodules` | `false` | Passed to the checkout action |
+| `slicer-repository` | `Slicer/Slicer` | Repository publishing the build |
+| `slicer-ref` | this workflow's commit | Ref of Slicer providing the actions and the helper script |
+| `release-tag` | `nightly` | Release to build against |
+| `qt-version` | from the manifest | Qt version to install |
+| `timeout-minutes` | `120` | Timeout of each platform's job |
+
+A superbuild extension needs nothing extra: its own tree, `inner-build`, is
+where the tests, the package and the modules are looked for.
+
+Loading the extension into Slicer is what proves the two are compatible. A
+mismatch between the extension and the build it was made against shows up
+there rather than at build time.
+
+The [`Extension build (self-test)`](https://github.com/Slicer/Slicer/actions/workflows/extension-build-test.yml)
+workflow builds the templates under `Extensions/Testing` through this same
+workflow, so what is verified is what extension repositories run.
+
+### Doing the steps directly
+
+An extension that needs something the workflow does not offer can use the
+`setup-slicer-build` action on its own. It restores the nightly build tree at
+the fixed path, installs the matching Qt and CMake, and outputs the value to
+pass as `Slicer_DIR`:
+
+```yaml
     steps:
       - uses: actions/checkout@v5
 
@@ -164,10 +201,6 @@ jobs:
             -DSlicer_DIR:PATH=${{ steps.slicer.outputs.slicer-dir }} \
             -DCMAKE_BUILD_TYPE:STRING=Release
           cmake --build ../build --parallel
-
-      - name: Package
-        shell: bash
-        run: cmake --build ../build --target package
 ```
 
 Outputs of the action:
@@ -200,30 +233,21 @@ Inputs:
 | `compiler-cache` | `true` | Enable the `ccache` compiler cache on Linux and macOS |
 | `free-disk-space` | `false` | Remove unneeded pre-installed tooling |
 
-To run an extension's tests, use `xvfb` on Linux, and install a software OpenGL
-on Windows first, since the runners have no GPU:
+The action puts the helper script in `SLICER_CI`, and the steps the reusable
+workflow runs are its commands, so they can be used one at a time and run the
+same way locally:
 
 ```yaml
-      - name: Install software OpenGL
-        if: runner.os == 'Windows'
-        shell: bash
-        run: '"$SLICER_CI" install-software-opengl'
-
-      - name: Test
-        shell: bash
-        run: |
-          export QTWEBENGINE_DISABLE_SANDBOX=1
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a ctest --test-dir ../build --output-on-failure
-          else
-            export GALLIUM_DRIVER=llvmpipe
-            ctest --test-dir ../build -C Release --output-on-failure
-          fi
+      - run: '"$SLICER_CI" extension-configure'   # SLICER_EXT_SOURCE_DIR, SLICER_EXT_CMAKE_OPTIONS
+      - run: '"$SLICER_CI" extension-build'
+      - run: '"$SLICER_CI" extension-test'        # xvfb and software OpenGL as needed
+      - run: '"$SLICER_CI" extension-package'
+      - run: '"$SLICER_CI" extension-load'
 ```
 
-The [`Extension build (self-test)`](https://github.com/Slicer/Slicer/actions/workflows/extension-build-test.yml)
-workflow builds the templates under `Extensions/Testing` this way and is the
-reference implementation.
+Running the tests directly needs a display and OpenGL, which the runners lack;
+`extension-test` is what arranges both, and on Windows the driver it uses is
+installed by `"$SLICER_CI" install-software-opengl`.
 
 ### Building when a new nightly is published
 
@@ -245,43 +269,49 @@ on:
     types: [slicer-nightly]        # see "Be told" below
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      built: ${{ steps.built.outputs.cache-hit }}
+      revision: ${{ steps.nightly.outputs.revision }}
     steps:
-      - uses: actions/checkout@v5
-
       # 2 kB, rather than restoring the whole build tree to find out.
       - name: Read the published revision
         id: nightly
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download nightly -R Slicer/Slicer -D . --clobber             -p manifest-linux.json
-          rev=$(sed -n 's/^  "slicer_revision": "\(.*\)",$//p' manifest-linux.json)
+          gh release download nightly -R Slicer/Slicer -D . --clobber \
+            -p manifest-linux.json
+          rev=$(sed -n 's/^  "slicer_revision": "\(.*\)",$/\1/p' manifest-linux.json)
           echo "revision=$rev" >> "$GITHUB_OUTPUT"
 
       # A hit means this extension revision was already built against this
       # Slicer revision.
       - name: Have we built this already?
         id: built
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .built-marker
           key: built-${{ github.sha }}-slicer-${{ steps.nightly.outputs.revision }}
+          lookup-only: true
 
-      - uses: Slicer/Slicer/.github/actions/setup-slicer-build@main
-        if: steps.built.outputs.cache-hit != 'true'
-        id: slicer
+  build:
+    needs: check
+    if: needs.check.outputs.built != 'true'
+    uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
+    with:
+      platforms: linux,macos,windows
 
-      - name: Build
-        if: steps.built.outputs.cache-hit != 'true'
-        run: |
-          cmake -S . -B ../build -G Ninja             -DSlicer_DIR:PATH=${{ steps.slicer.outputs.slicer-dir }}             -DCMAKE_BUILD_TYPE:STRING=Release
-          cmake --build ../build --parallel
-
-      - name: Record the build
-        if: steps.built.outputs.cache-hit != 'true'
-        run: date -u > .built-marker
+  record:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - run: date -u > .built-marker
+      - uses: actions/cache/save@v4
+        with:
+          path: .built-marker
+          key: built-${{ github.sha }}-slicer-${{ needs.check.outputs.revision }}
 ```
 
 **Be told.** For a repository that wants to build as soon as the nightly lands
@@ -299,9 +329,9 @@ extension in control of its own cadence.
 
 ### Pinning to a specific build
 
-`setup-slicer-build` restores the `nightly` release by default. Pass
-`release-tag` to pin to another release, and `repository` to consume a fork's
-releases:
+Both the workflow and the action restore the `nightly` release by default. Pass
+`release-tag` to pin to another release, and `slicer-repository` (`repository`
+for the action) to consume a fork's releases:
 
 ```yaml
       - uses: Slicer/Slicer/.github/actions/setup-slicer-build@main
