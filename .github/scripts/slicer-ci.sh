@@ -382,10 +382,7 @@ cmd_package() {
   echo "$name" > "$out/PACKAGE_FILE.txt"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "package=$name" >> "$GITHUB_OUTPUT"
-    local cache; cache="$(bash_path "$SLICER_BUILD_DIR")/CMakeCache.txt"
-    if [ -f "$cache" ]; then
-      echo "revision=$(grep -E '^Slicer_REVISION:' "$cache" | cut -d= -f2- || true)" >> "$GITHUB_OUTPUT"
-    fi
+    echo "revision=$(slicer_config_value Slicer_REVISION)" >> "$GITHUB_OUTPUT"
   fi
 }
 
@@ -604,8 +601,10 @@ cmd_manifest() {
   local version="" revision="" qt=""
   if [ -f "$cache" ]; then
     version="$(grep -E '^Slicer_VERSION_FULL:' "$cache" | cut -d= -f2- || true)"
-    revision="$(grep -E '^Slicer_REVISION:' "$cache" | cut -d= -f2- || true)"
   fi
+  # Slicer_REVISION is computed while configuring rather than cached, so it is
+  # read from the configuration Slicer exports, not from CMakeCache.txt.
+  revision="$(slicer_config_value Slicer_REVISION)"
   if [ -z "$version" ] && [ -f "$(bash_path "$SLICER_BUILD_DIR")/SlicerConfigVersion.cmake" ]; then
     version="$(grep -oE 'PACKAGE_VERSION "[^"]+"' "$(bash_path "$SLICER_BUILD_DIR")/SlicerConfigVersion.cmake" | head -n1 | cut -d'"' -f2 || true)"
   fi

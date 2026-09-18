@@ -265,6 +265,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job checks nothing out, so gh cannot infer the repository to
+          # act on from a working tree.
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.publish-tag }}
           PREFIX: ${{ needs.setup.outputs.artifact-prefix }}
           SLICER_REVISION: ${{ needs.build.outputs.slicer-revision }}
