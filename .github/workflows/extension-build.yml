@@ -139,14 +139,24 @@ jobs:
         with:
           submodules: ${{ inputs.submodules }}
 
-      - name: Set up the Slicer build
-        id: slicer
-        uses: ./.github/actions/setup-slicer-build
+      # A reusable workflow resolves a local action path against the repository
+      # that called it, not the one it lives in, so the action it needs is
+      # checked out here. Only .github, and only the commit of Slicer providing
+      # this workflow, so the action and the helper script cannot drift apart
+      # from it.
+      - name: Check out the Slicer actions
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.slicer-repository }}
-          # Without an explicit ref, the helper script comes from the very
-          # commit of Slicer that provides this workflow, so the two cannot
-          # drift apart.
+          ref: ${{ inputs.slicer-ref || github.job_workflow_sha }}
+          path: .slicer-actions
+          sparse-checkout: .github
+
+      - name: Set up the Slicer build
+        id: slicer
+        uses: ./.slicer-actions/.github/actions/setup-slicer-build
+        with:
+          repository: ${{ inputs.slicer-repository }}
           ref: ${{ inputs.slicer-ref || github.job_workflow_sha }}
           release-tag: ${{ inputs.release-tag }}
           qt-version: ${{ inputs.qt-version }}
