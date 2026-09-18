@@ -94,6 +94,44 @@ cmake_build() {
   cmake "${args[@]}" "$@"
 }
 
+# Show what CMake recorded about a failed configure, which is where the reason
+# usually is rather than in the output above.
+dump_cmake_logs() {
+  local dir; dir="$(bash_path "$1")"
+  local f
+  for f in "$dir/CMakeFiles/CMakeConfigureLog.yaml" "$dir/CMakeFiles/CMakeError.log" \
+    "$dir/CMakeFiles/CMakeOutput.log"; do
+    if [ -f "$f" ]; then
+      log "$(basename "$f")"
+      tail -n 200 "$f"
+      endlog
+    fi
+  done
+}
+
+# Run a program that needs a display and OpenGL. The runners have neither a
+# display on Linux nor a GPU anywhere, and Chromium's sandbox keeps
+# QtWebEngine's helper processes from reading their resources.
+run_headless() {
+  export QTWEBENGINE_DISABLE_SANDBOX=1
+  case "$SLICER_PLATFORM" in
+    linux)
+      export LIBGL_ALWAYS_SOFTWARE=1
+      xvfb-run -a -s "-screen 0 1920x1080x24" "$@"
+      ;;
+    windows)
+      # Mesa's software rasterizer, rather than a driver that needs a GPU.
+      export GALLIUM_DRIVER=llvmpipe
+      "$@"
+      ;;
+    *)
+      "$@"
+      ;;
+  esac
+}
+
+run_ctest() { run_headless ctest "$@"; }
+
 #------------------------------------------------------------------------------
 # Commands
 #------------------------------------------------------------------------------
@@ -225,16 +263,7 @@ cmd_configure() {
   fi
   endlog
   if [ $rc -ne 0 ]; then
-    local sb; sb="$(bash_path "$SLICER_SUPERBUILD_DIR")"
-    local f
-    for f in "$sb/CMakeFiles/CMakeConfigureLog.yaml" "$sb/CMakeFiles/CMakeError.log" \
-      "$sb/CMakeFiles/CMakeOutput.log"; do
-      if [ -f "$f" ]; then
-        log "$(basename "$f")"
-        tail -n 200 "$f"
-        endlog
-      fi
-    done
+    dump_cmake_logs "$SLICER_SUPERBUILD_DIR"
     die "configure failed"
   fi
 }
@@ -554,19 +583,7 @@ cmd_test() {
   fi
   local rc=0
   log "Run tests"
-  # Chromium's sandbox keeps QtWebEngine's helper processes on the runners from
-  # reading their resources, so no page ever loads.
-  export QTWEBENGINE_DISABLE_SANDBOX=1
-  if [ "$SLICER_PLATFORM" = "linux" ]; then
-    export LIBGL_ALWAYS_SOFTWARE=1
-    xvfb-run -a -s "-screen 0 1920x1080x24" ctest "${args[@]}" || rc=$?
-  else
-    if [ "$SLICER_PLATFORM" = "windows" ]; then
-      # Mesa's software rasterizer, rather than a driver that needs a GPU.
-      export GALLIUM_DRIVER=llvmpipe
-    fi
-    ctest "${args[@]}" || rc=$?
-  fi
+  run_ctest "${args[@]}" || rc=$?
   endlog
   cp -f "$build/Testing/Temporary/LastTest.log" "$out/" 2>/dev/null || true
   cp -f "$build/Testing/Temporary/LastTestsFailed.log" "$out/" 2>/dev/null || true
@@ -711,6 +728,167 @@ cmd_install_software_opengl() {
   endlog
 }
 
+# --- Extensions -------------------------------------------------------------
+#
+# An extension repository builds against a Slicer build tree restored from a
+# release rather than one it built itself, so these commands stand in for the
+# configure, build, test, package and load steps it would otherwise carry in
+# its own workflow. They read the restored tree from SLICER_BUILD_DIR and take
+# the extension from SLICER_EXT_SOURCE_DIR (default: the checkout), building it
+# in SLICER_EXT_BUILD_DIR (default: <root>/ext-build, kept short because the
+# Windows path limit is reached quickly).
+
+ext_source_dir() { echo "${SLICER_EXT_SOURCE_DIR:-${GITHUB_WORKSPACE:-$PWD}}"; }
+ext_build_dir() { echo "${SLICER_EXT_BUILD_DIR:-$SLICER_ROOT/ext-build}"; }
+
+# An extension that uses a superbuild builds itself in `inner-build`, which is
+# where its targets, its tests and its package are; one that does not builds
+# everything in the top level tree.
+ext_inner_dir() {
+  local b; b="$(ext_build_dir)"
+  if [ -f "$(bash_path "$b")/inner-build/CMakeCache.txt" ]; then
+    echo "$b/inner-build"
+  else
+    echo "$b"
+  fi
+}
+
+extension_configure_args() {
+  local args=(
+    -S "$(ext_source_dir)"
+    -B "$(ext_build_dir)"
+    "-DSlicer_DIR:PATH=$SLICER_BUILD_DIR"
+    -DBUILD_TESTING:BOOL=ON
+  )
+  case "$SLICER_PLATFORM" in
+    windows)
+      args+=(-G "Visual Studio 17 2022" -A x64)
+      ;;
+    macos)
+      # The deployment target and the architecture have to be those Slicer was
+      # built with, or the extension cannot be loaded into it.
+      args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
+             "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${SLICER_MACOS_DEPLOYMENT_TARGET:-14.0}"
+             "-DCMAKE_OSX_ARCHITECTURES:STRING=${SLICER_MACOS_ARCH:-x86_64}")
+      ;;
+    *)
+      args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE")
+      ;;
+  esac
+  if [ -n "${SLICER_COMPILER_LAUNCHER:-}" ]; then
+    args+=("-DCMAKE_C_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER"
+           "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER")
+  fi
+  # Options provided by the workflow, one per line or space separated.
+  if [ -n "${SLICER_EXT_CMAKE_OPTIONS:-}" ]; then
+    # shellcheck disable=SC2206
+    args+=(${SLICER_EXT_CMAKE_OPTIONS})
+  fi
+  printf '%s\n' "${args[@]}"
+}
+
+cmd_extension_configure() {
+  local src; src="$(bash_path "$(ext_source_dir)")"
+  [ -f "$src/CMakeLists.txt" ] || die "extension-configure: no CMakeLists.txt in $(ext_source_dir)"
+  [ -f "$(bash_path "$SLICER_BUILD_DIR")/SlicerConfig.cmake" ] \
+    || die "extension-configure: no Slicer build tree at $SLICER_BUILD_DIR"
+  mkdir -p "$(bash_path "$(ext_build_dir)")"
+  local args=()
+  while IFS= read -r line; do args+=("$line"); done < <(extension_configure_args)
+  log "Configure extension"
+  info "cmake ${args[*]}"
+  local rc=0
+  if [ "$SLICER_PLATFORM" = "windows" ]; then
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "${args[@]}" || rc=$?
+  else
+    cmake "${args[@]}" || rc=$?
+  fi
+  endlog
+  [ $rc -eq 0 ] || { dump_cmake_logs "$(ext_build_dir)"; die "extension configure failed"; }
+}
+
+cmd_extension_build() {
+  log "Build extension"
+  cmake_build "$(ext_build_dir)"
+  endlog
+}
+
+cmd_extension_test() {
+  local inner; inner="$(ext_inner_dir)"
+  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
+  mkdir -p "$out"
+  local args=(
+    --test-dir "$inner"
+    --parallel "${SLICER_CTEST_PARALLEL:-$SLICER_PARALLEL}"
+    --timeout "${SLICER_CTEST_TIMEOUT:-900}"
+    --output-on-failure
+    # An extension is not required to have tests.
+    --no-tests=ignore
+    --output-junit "$SLICER_OUTPUT_DIR/extension-test-results.xml"
+  )
+  if [ "$SLICER_PLATFORM" = "windows" ]; then
+    args+=(--build-config "$SLICER_BUILD_TYPE")
+  fi
+  if [ -n "${SLICER_CTEST_EXCLUDE:-}" ]; then
+    args+=(--exclude-regex "$SLICER_CTEST_EXCLUDE")
+  fi
+  local rc=0
+  log "Test extension"
+  run_ctest "${args[@]}" || rc=$?
+  endlog
+  return $rc
+}
+
+cmd_extension_package() {
+  local inner; inner="$(ext_inner_dir)"
+  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
+  mkdir -p "$out"
+  log "Package extension"
+  local logfile="$out/extension-package.log"
+  cmake_build "$inner" --target package 2>&1 | tee "$logfile"
+  endlog
+  local packages
+  packages="$(grep -oE 'CPack: - package: (.*) generated\.' "$logfile" \
+    | sed -E 's/CPack: - package: (.*) generated\./\1/')"
+  [ -n "$packages" ] || die "extension-package: no package was generated, see $logfile"
+  local names=""
+  local pkg
+  while IFS= read -r pkg; do
+    [ -n "$pkg" ] || continue
+    info "package: $pkg"
+    cp "$(bash_path "$pkg")" "$out/"
+    names="$names$(basename "$pkg") "
+  done <<< "$packages"
+  printf '%s' "${names% }" > "$out/EXTENSION_PACKAGES.txt"
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    echo "packages=${names% }" >> "$GITHUB_OUTPUT"
+  fi
+}
+
+# Load the built extension into the restored Slicer, which is what proves the
+# two were built compatibly: a binary incompatibility shows up here and not in
+# the build.
+cmd_extension_load() {
+  local launcher="$SLICER_BUILD_DIR/Slicer"
+  [ "$SLICER_PLATFORM" = "windows" ] && launcher="$SLICER_BUILD_DIR/Slicer.exe"
+  local inner; inner="$(ext_inner_dir)"
+  local code="import slicer, sys"
+  code="$code; n = len(slicer.app.moduleManager().modulesNames())"
+  code="$code; print('modules loaded:', n)"
+  code="$code; sys.exit(slicer.util.EXIT_SUCCESS if n else slicer.util.EXIT_FAILURE)"
+  local args=(
+    "$(bash_path "$launcher")"
+    --no-splash --no-main-window --ignore-slicerrc
+    --additional-module-paths "$inner"
+    --python-code "$code"
+  )
+  log "Load the extension in Slicer"
+  local rc=0
+  run_headless "${args[@]}" || rc=$?
+  endlog
+  [ $rc -eq 0 ] || die "the extension could not be loaded (exit $rc)"
+}
+
 # Write one summary for this platform covering every stage that has run, from
 # the record each stage leaves in the superbuild tree.
 cmd_stage_summary() {
@@ -770,6 +948,11 @@ Commands:
   restore-release <repo> <tag> [build|deps|all]
                                Restore a published build under the build root
   test                         Run ctest on the inner build
+  extension-configure          Configure an extension against the restored Slicer
+  extension-build              Build the configured extension
+  extension-test               Run the tests of the extension
+  extension-package            Build the package of the extension
+  extension-load               Load the built extension into Slicer
   manifest <file> [k=v...]     Write a build manifest
   manifest-get <file> <key>    Read a manifest value
   report                       Disk usage report
@@ -796,6 +979,11 @@ main() {
     split) cmd_split "$@" ;;
     restore-release) cmd_restore_release "$@" ;;
     test) cmd_test "$@" ;;
+    extension-configure) cmd_extension_configure "$@" ;;
+    extension-build) cmd_extension_build "$@" ;;
+    extension-test) cmd_extension_test "$@" ;;
+    extension-package) cmd_extension_package "$@" ;;
+    extension-load) cmd_extension_load "$@" ;;
     manifest) cmd_manifest "$@" ;;
     manifest-get) cmd_manifest_get "$@" ;;
     report) cmd_report "$@" ;;

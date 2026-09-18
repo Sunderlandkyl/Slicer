@@ -1,0 +1,219 @@
+# Builds, tests, packages and loads a Slicer extension against a Slicer build
+# published by the "Build" workflow.
+#
+# An extension repository calls this workflow instead of carrying the steps
+# itself; it needs no checkout of Slicer and no Slicer build of its own:
+#
+#   jobs:
+#     build:
+#       uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
+#       with:
+#         platforms: linux,macos,windows
+#
+# See Docs/developer_guide/build_instructions/github_actions.md
+name: Extension build
+
+on:
+  workflow_call:
+    inputs:
+      platforms:
+        description: "Platforms to build on (comma separated: linux,macos,windows)"
+        type: string
+        default: "linux"
+      source-directory:
+        description: "Directory of the extension within the repository"
+        type: string
+        default: "."
+      cmake-options:
+        description: "Additional options for the extension's configure step"
+        type: string
+        default: ""
+      run-tests:
+        description: "Run the extension's tests"
+        type: boolean
+        default: true
+      package:
+        description: "Build the extension's package"
+        type: boolean
+        default: true
+      load-in-slicer:
+        description: "Load the built extension into Slicer"
+        type: boolean
+        default: true
+      upload-package:
+        description: "Upload the package as a workflow artifact"
+        type: boolean
+        default: true
+      artifact-prefix:
+        description: "Name of the package artifact, without the platform (default: the repository name)"
+        type: string
+        default: ""
+      submodules:
+        description: "Value for the checkout action's submodules option"
+        type: string
+        default: "false"
+      slicer-repository:
+        description: "Repository publishing the Slicer build"
+        type: string
+        default: "Slicer/Slicer"
+      slicer-ref:
+        description: >-
+          Ref of the Slicer repository providing the helper script
+          (default: the commit of this workflow)
+        type: string
+        default: ""
+      release-tag:
+        description: "Release holding the Slicer build to build against"
+        type: string
+        default: "nightly"
+      qt-version:
+        description: "Qt version to install (default: the one the build was made with)"
+        type: string
+        default: ""
+      timeout-minutes:
+        description: "Timeout of each platform's job"
+        type: number
+        default: 120
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      found: ${{ steps.matrix.outputs.found }}
+      artifact-prefix: ${{ steps.matrix.outputs.artifact-prefix }}
+    steps:
+      - name: Choose the platforms
+        id: matrix
+        shell: bash
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+          SLICER_REPOSITORY: ${{ inputs.slicer-repository }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+          ARTIFACT_PREFIX: ${{ inputs.artifact-prefix }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prefix="$ARTIFACT_PREFIX"
+          [ -n "$prefix" ] || prefix="${GITHUB_REPOSITORY##*/}"
+          echo "artifact-prefix=$prefix" >> "$GITHUB_OUTPUT"
+          # There is nothing to build against until a Slicer build has been
+          # published, which is not a failure: an extension repository enabling
+          # this before the first nightly exists should not go red.
+          if ! gh release view "$RELEASE_TAG" -R "$SLICER_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::No '$RELEASE_TAG' release in $SLICER_REPOSITORY; nothing to build against."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          entries=""
+          for p in ${PLATFORMS//,/ }; do
+            case "$p" in
+              linux)   entries="$entries {\"platform\":\"linux\",\"runner\":\"ubuntu-22.04\"}," ;;
+              macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15-intel\"}," ;;
+              windows) entries="$entries {\"platform\":\"windows\",\"runner\":\"windows-2022\"}," ;;
+              *) echo "::warning::unknown platform '$p'" ;;
+            esac
+          done
+          [ -n "$entries" ] || { echo "::error::no known platform in '$PLATFORMS'"; exit 1; }
+          matrix="{\"include\":[${entries%,}]}"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "$matrix"
+
+  build:
+    name: ${{ matrix.platform }}
+    needs: setup
+    if: needs.setup.outputs.found == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: ${{ inputs.submodules }}
+
+      - name: Set up the Slicer build
+        id: slicer
+        uses: ./.github/actions/setup-slicer-build
+        with:
+          repository: ${{ inputs.slicer-repository }}
+          # Without an explicit ref, the helper script comes from the very
+          # commit of Slicer that provides this workflow, so the two cannot
+          # drift apart.
+          ref: ${{ inputs.slicer-ref || github.job_workflow_sha }}
+          release-tag: ${{ inputs.release-tag }}
+          qt-version: ${{ inputs.qt-version }}
+
+      # The runners have no GPU, and the OpenGL that Windows provides without
+      # one is too old for VTK to create a render window.
+      - name: Install software OpenGL
+        if: matrix.platform == 'windows' && (inputs.run-tests || inputs.load-in-slicer)
+        shell: bash
+        run: '"$SLICER_CI" install-software-opengl'
+
+      - name: Configure
+        shell: bash
+        env:
+          SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
+          SLICER_EXT_CMAKE_OPTIONS: ${{ inputs.cmake-options }}
+        run: '"$SLICER_CI" extension-configure'
+
+      - name: Build
+        shell: bash
+        run: '"$SLICER_CI" extension-build'
+
+      - name: Package
+        id: package
+        if: inputs.package
+        shell: bash
+        run: '"$SLICER_CI" extension-package'
+
+      - name: Test
+        id: tests
+        if: inputs.run-tests
+        continue-on-error: true
+        shell: bash
+        run: '"$SLICER_CI" extension-test'
+
+      - name: Load in Slicer
+        if: inputs.load-in-slicer
+        shell: bash
+        run: '"$SLICER_CI" extension-load'
+
+      - name: Upload the package
+        if: inputs.package && inputs.upload-package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ needs.setup.outputs.artifact-prefix }}-${{ matrix.platform }}
+          path: |
+            ${{ env.SLICER_OUTPUT_DIR }}/*.tar.gz
+            ${{ env.SLICER_OUTPUT_DIR }}/*.zip
+            ${{ env.SLICER_OUTPUT_DIR }}/*.dmg
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload the test results
+        if: always() && inputs.run-tests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ needs.setup.outputs.artifact-prefix }}-test-results-${{ matrix.platform }}
+          path: ${{ env.SLICER_OUTPUT_DIR }}/extension-test-results.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # Last, so that a test failure still leaves the package and the results
+      # uploaded.
+      - name: Fail on test failures
+        if: inputs.run-tests && steps.tests.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::error::the extension's tests failed"
+          exit 1
