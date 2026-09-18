@@ -70,6 +70,16 @@ on:
         description: "Qt version to install (default: the one the build was made with)"
         type: string
         default: ""
+      publish:
+        description: >-
+          Publish the packages to a release of the calling repository; the
+          calling job must grant `contents: write`
+        type: boolean
+        default: false
+      publish-tag:
+        description: "Tag of the release the packages are published to"
+        type: string
+        default: "nightly"
       timeout-minutes:
         description: "Timeout of each platform's job"
         type: number
@@ -134,6 +144,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    outputs:
+      # The same value whichever platform writes it last: every platform builds
+      # against the same published Slicer.
+      slicer-revision: ${{ steps.slicer.outputs.slicer-revision }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -228,3 +242,65 @@ jobs:
         run: |
           echo "::error::the extension's tests failed"
           exit 1
+
+  # Publishing is off by default: an extension repository opts in, and the job
+  # that calls this workflow has to grant `contents: write` for it, since a
+  # called workflow cannot give itself more than its caller has.
+  publish:
+    name: Publish
+    needs: [setup, build]
+    if: inputs.publish && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: ${{ needs.setup.outputs.artifact-prefix }}-*
+          path: downloaded
+          merge-multiple: true
+
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.publish-tag }}
+          PREFIX: ${{ needs.setup.outputs.artifact-prefix }}
+          SLICER_REVISION: ${{ needs.build.outputs.slicer-revision }}
+        run: |
+          set -euo pipefail
+          # The test results were downloaded alongside the packages; only the
+          # packages are released.
+          mkdir -p assets
+          find downloaded -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.dmg' \) \
+            -exec cp {} assets/ ';'
+          if [ -z "$(ls -A assets)" ]; then
+            echo "::error::no package to publish"
+            exit 1
+          fi
+          ls -lh assets
+          notes="Packages of ${PREFIX}, built against Slicer r${SLICER_REVISION}.
+
+          Built from \`$GITHUB_SHA\` on $(date -u +%Y-%m-%d)."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes "$notes" --latest=false --prerelease
+          else
+            gh release create "$TAG" --title "$PREFIX $TAG" --notes "$notes" \
+              --prerelease --latest=false
+          fi
+          # The package name carries the revision it was built from, so
+          # uploading alone would accumulate one set per build rather than
+          # replacing the previous one; remove whatever this run did not
+          # produce.
+          gh release upload "$TAG" assets/* --clobber
+          ( cd assets && ls ) | LC_ALL=C sort -u > keep.txt
+          gh release view "$TAG" --json assets --jq '.assets[].name' \
+            | LC_ALL=C sort -u > have.txt
+          comm -13 keep.txt have.txt > stale.txt
+          while read -r asset; do
+            [ -n "$asset" ] || continue
+            echo "Removing the superseded asset $asset"
+            gh release delete-asset "$TAG" "$asset" --yes || true
+          done < stale.txt
+          echo "Published $(ls assets | wc -l) packages to the '$TAG' release." >> "$GITHUB_STEP_SUMMARY"

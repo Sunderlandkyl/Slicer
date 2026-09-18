@@ -166,7 +166,32 @@ Inputs:
 | `slicer-ref` | `main` | Ref of Slicer providing the actions and the helper script; pin it to whatever the workflow is pinned to |
 | `release-tag` | `nightly` | Release to build against |
 | `qt-version` | from the manifest | Qt version to install |
+| `publish` | `false` | Publish the packages to a release of the extension's own repository |
+| `publish-tag` | `nightly` | Tag of that release |
 | `timeout-minutes` | `120` | Timeout of each platform's job |
+
+### Publishing the packages
+
+The packages can be published to a release of the extension's own repository,
+the way Slicer publishes its nightly. A called workflow cannot grant itself
+more than its caller has, so the calling job passes `contents: write`:
+
+```yaml
+jobs:
+  build:
+    permissions:
+      contents: write
+    uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
+    with:
+      platforms: linux,macos,windows
+      # Only the branch that should publish, so a pull request does not.
+      publish: ${{ github.ref == 'refs/heads/main' }}
+```
+
+The release holds one package per platform and is rewritten on each build:
+a package name carries the revision it was built from, so what the run did not
+produce is removed rather than left to accumulate. The notes record the commit
+and the Slicer revision it was built against.
 
 A superbuild extension needs nothing extra: its own tree, `inner-build`, is
 where the tests, the package and the modules are looked for.
