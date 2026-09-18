@@ -753,6 +753,13 @@ ext_inner_dir() {
   fi
 }
 
+# A value recorded in the SlicerConfig.cmake of the restored build tree.
+slicer_config_value() {
+  local config; config="$(bash_path "$SLICER_BUILD_DIR")/SlicerConfig.cmake"
+  [ -f "$config" ] || return 0
+  sed -n "s/^set($1[[:space:]]*\"\(.*\)\")[[:space:]]*$/\1/p" "$config" | head -n 1
+}
+
 extension_configure_args() {
   local args=(
     -S "$(ext_source_dir)"
@@ -760,16 +767,19 @@ extension_configure_args() {
     "-DSlicer_DIR:PATH=$SLICER_BUILD_DIR"
     -DBUILD_TESTING:BOOL=ON
   )
+  # Slicer refuses to be found by a project configured with a different
+  # compiler than its own, and the default compiler of a runner is not
+  # necessarily the one Slicer was built with. The macOS deployment target and
+  # architecture need no such care: Slicer sets them itself, through the
+  # ConfigurePrerequisites component.
+  local compiler
+  compiler="$(slicer_config_value Slicer_CMAKE_C_COMPILER)"
+  [ -n "$compiler" ] && args+=("-DCMAKE_C_COMPILER:FILEPATH=$compiler")
+  compiler="$(slicer_config_value Slicer_CMAKE_CXX_COMPILER)"
+  [ -n "$compiler" ] && args+=("-DCMAKE_CXX_COMPILER:FILEPATH=$compiler")
   case "$SLICER_PLATFORM" in
     windows)
       args+=(-G "Visual Studio 17 2022" -A x64)
-      ;;
-    macos)
-      # The deployment target and the architecture have to be those Slicer was
-      # built with, or the extension cannot be loaded into it.
-      args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
-             "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${SLICER_MACOS_DEPLOYMENT_TARGET:-14.0}"
-             "-DCMAKE_OSX_ARCHITECTURES:STRING=${SLICER_MACOS_ARCH:-x86_64}")
       ;;
     *)
       args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE")
