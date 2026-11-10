@@ -72,12 +72,12 @@ vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D::ControlPointsPi
   this->Mapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
   this->Mapper->SetInputConnection(this->Glypher->GetOutputPort());
   this->Mapper->ScalarVisibilityOff();
-  vtkNew<vtkCoordinate> coordinate;
-  // coordinate->SetViewport(this->Renderer); TODO: check this
-  //  World coordinates of the node can not be used to build the actors of the representation
-  //  Because the world coordinate in the node are the 3D ones.
-  coordinate->SetCoordinateSystemToDisplay();
-  this->Mapper->SetTransformCoordinate(coordinate);
+  // The glyph positions are slice XY coordinates: pixel coordinates relative to the lower-left
+  // corner of the viewport of the renderer. This is what the mapper uses when no transform
+  // coordinate is set. A transform coordinate in the Display coordinate system must not be used:
+  // display coordinates are relative to the render window, which only matches the viewport if
+  // the renderer covers the entire window (it does not when the view is rendered into a part of
+  // a render window that is shared with other views).
 
   this->Actor = vtkSmartPointer<vtkActor2D>::New();
   this->Actor->SetMapper(this->Mapper);
@@ -168,9 +168,8 @@ vtkSlicerMarkupsWidgetRepresentation2D::LineIntersectionPointsPipeline2D::LineIn
   this->Mapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
   this->Mapper->SetInputConnection(this->Glypher->GetOutputPort());
   this->Mapper->SetScalarVisibility(false);
-  vtkNew<vtkCoordinate> coord;
-  coord->SetCoordinateSystemToDisplay();
-  this->Mapper->SetTransformCoordinate(coord);
+  // Positions are pixel coordinates relative to the viewport of the renderer (see the control
+  // points pipeline), which is what the mapper uses without a transform coordinate.
 
   this->Property = vtkSmartPointer<vtkProperty2D>::New();
   this->Property->SetColor(property->GetColor());
@@ -199,6 +198,9 @@ vtkSlicerMarkupsWidgetRepresentation2D::vtkSlicerMarkupsWidgetRepresentation2D()
   reinterpret_cast<ControlPointsPipeline2D*>(this->ControlPoints[Active])->Property->SetColor(0.4, 1.0, 0.);
 
   this->TextActor->SetTextProperty(this->GetPropertiesLabelTextProperty(Unselected));
+  // The text is positioned in slice XY coordinates: pixel coordinates relative to the viewport
+  // of the renderer (not to the render window, see the control points pipeline).
+  this->TextActor->GetPositionCoordinate()->SetCoordinateSystemToViewport();
 
   this->PointsVisibilityOnSlice = vtkSmartPointer<vtkIntArray>::New();
   this->PointsVisibilityOnSlice->SetName("pointsVisibilityOnSlice");
@@ -254,7 +256,10 @@ void vtkSlicerMarkupsWidgetRepresentation2D::GetSliceToWorldCoordinates(const do
     return;
   }
 
-  double xyzw[4] = { slicePos[0] - this->Renderer->GetOrigin()[0], slicePos[1] - this->Renderer->GetOrigin()[1], 0.0, 1.0 };
+  // Slice positions are pixel coordinates relative to the viewport of the renderer, as returned
+  // by GetWorldToSliceCoordinates() and as the display position of the interaction events that
+  // the view forwards to the widgets.
+  double xyzw[4] = { slicePos[0], slicePos[1], 0.0, 1.0 };
   double rasw[4] = { 0.0, 0.0, 0.0, 1.0 };
 
   this->GetSliceNode()->GetXYToRAS()->MultiplyPoint(xyzw, rasw);
@@ -406,11 +411,10 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateAllPointsAndLabelsFromMRML(do
       controlPoints->ControlPoints->InsertNextPoint(slicePos);
       slicePos[0] += labelsOffset / sqrt(2.0);
       slicePos[1] += labelsOffset / sqrt(2.0);
-      this->Renderer->SetDisplayPoint(slicePos);
-      this->Renderer->DisplayToView();
-      double viewPos[3] = { 0.0 };
-      this->Renderer->GetViewPoint(viewPos);
-      this->Renderer->ViewToNormalizedViewport(viewPos[0], viewPos[1], viewPos[2]);
+      // Slice XY coordinates are pixel coordinates relative to the viewport of the renderer
+      // (not to the render window), therefore they are normalized using the viewport size.
+      double viewPos[3] = { slicePos[0], slicePos[1], 0.0 };
+      this->Renderer->ViewportToNormalizedViewport(viewPos[0], viewPos[1]);
       controlPoints->LabelControlPoints->InsertNextPoint(viewPos);
 
       double pointNormalWorld[3] = { 0.0, 0.0, 1.0 };

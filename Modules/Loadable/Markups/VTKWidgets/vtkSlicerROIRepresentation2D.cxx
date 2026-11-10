@@ -152,7 +152,7 @@ void vtkSlicerROIRepresentation2D::UpdateFromMRMLInternal(vtkMRMLNode* caller, u
   {
     double textPos[3] = { 0.0, 0.0, 0.0 };
     this->GetNthControlPointDisplayPosition(0, textPos);
-    this->TextActor->SetDisplayPosition(static_cast<int>(textPos[0]), static_cast<int>(textPos[1]));
+    this->TextActor->SetPosition(static_cast<int>(textPos[0]), static_cast<int>(textPos[1]));
     this->TextActor->SetVisibility(true);
   }
   else
