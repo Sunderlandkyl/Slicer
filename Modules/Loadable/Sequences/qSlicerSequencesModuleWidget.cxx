@@ -17,6 +17,7 @@
 
 // Qt includes
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDebug>
 #include <QListWidgetItem>
 #include <QtPlugin>
@@ -62,6 +63,7 @@ enum
   SYNCH_NODES_RECORDING_COLUMN,
   SYNCH_NODES_OVERWRITE_PROXY_NAME_COLUMN,
   SYNCH_NODES_SAVE_CHANGES_COLUMN,
+  SYNCH_NODES_MISSING_ITEM_COLUMN,
   SYNCH_NODES_NUMBER_OF_COLUMNS // this must be the last line in this enum
 };
 
@@ -375,6 +377,7 @@ void qSlicerSequencesModuleWidget::setup()
   tableWidget_SynchronizedSequenceNodes_HeaderView->setSectionResizeMode(SYNCH_NODES_RECORDING_COLUMN, QHeaderView::ResizeToContents);
   tableWidget_SynchronizedSequenceNodes_HeaderView->setSectionResizeMode(SYNCH_NODES_OVERWRITE_PROXY_NAME_COLUMN, QHeaderView::ResizeToContents);
   tableWidget_SynchronizedSequenceNodes_HeaderView->setSectionResizeMode(SYNCH_NODES_SAVE_CHANGES_COLUMN, QHeaderView::ResizeToContents);
+  tableWidget_SynchronizedSequenceNodes_HeaderView->setSectionResizeMode(SYNCH_NODES_MISSING_ITEM_COLUMN, QHeaderView::ResizeToContents);
 
   tableWidget_SynchronizedSequenceNodes_HeaderView->setStretchLastSection(false);
 
@@ -851,6 +854,8 @@ void qSlicerSequencesModuleWidget::refreshSynchronizedSequenceNodesTable()
 #endif
     qMRMLNodeComboBox* proxyNodeComboBox = dynamic_cast<qMRMLNodeComboBox*>(d->tableWidget_SynchronizedSequenceNodes->cellWidget(row, SYNCH_NODES_PROXY_COLUMN));
     disconnect(proxyNodeComboBox, SIGNAL(currentNodeChanged(vtkMRMLNode*)), this, SLOT(onProxyNodeChanged(vtkMRMLNode*)));
+    QComboBox* missingItemModeComboBox = dynamic_cast<QComboBox*>(d->tableWidget_SynchronizedSequenceNodes->cellWidget(row, SYNCH_NODES_MISSING_ITEM_COLUMN));
+    disconnect(missingItemModeComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(synchronizedSequenceNodeMissingItemModeChanged(int)));
   }
 
   if (d->ActiveBrowserNode == nullptr)
@@ -978,9 +983,52 @@ void qSlicerSequencesModuleWidget::refreshSynchronizedSequenceNodesTable()
     d->tableWidget_SynchronizedSequenceNodes->setCellWidget(i, SYNCH_NODES_PROXY_COLUMN, proxyNodeComboBox);
 
     connect(proxyNodeComboBox, SIGNAL(currentNodeChanged(vtkMRMLNode*)), this, SLOT(onProxyNodeChanged(vtkMRMLNode*)));
+
+    // What the proxy node shows when the sequence has no item for the current index value.
+    QComboBox* missingItemModeComboBox = new QComboBox();
+    int missingItemModeIndex = 0;
+    missingItemModeComboBox->addItem(tr("Previous item"), vtkMRMLSequenceBrowserNode::MissingItemCreateFromPrevious);
+    missingItemModeComboBox->setItemData(
+      missingItemModeIndex++, tr("The proxy node shows the previous item. A new item created from it is added when recording."), Qt::ToolTipRole);
+    missingItemModeComboBox->addItem(tr("Empty"), vtkMRMLSequenceBrowserNode::MissingItemCreateFromDefault);
+    missingItemModeComboBox->setItemData(missingItemModeIndex++, tr("The proxy node is emptied. A new empty item is added when recording."), Qt::ToolTipRole);
+    missingItemModeComboBox->addItem(tr("Empty, not recorded"), vtkMRMLSequenceBrowserNode::MissingItemSetToDefault);
+    missingItemModeComboBox->setItemData(missingItemModeIndex++, tr("The proxy node is emptied. No item is added when recording."), Qt::ToolTipRole);
+    missingItemModeComboBox->addItem(tr("Unchanged"), vtkMRMLSequenceBrowserNode::MissingItemIgnore);
+    missingItemModeComboBox->setItemData(missingItemModeIndex++, tr("The proxy node keeps its content."), Qt::ToolTipRole);
+    missingItemModeComboBox->addItem(tr("Hidden"), vtkMRMLSequenceBrowserNode::MissingItemDisplayHidden);
+    missingItemModeComboBox->setItemData(missingItemModeIndex++, tr("The proxy node is hidden (if it is a display node), otherwise it keeps its content."), Qt::ToolTipRole);
+    missingItemModeComboBox->setCurrentIndex(missingItemModeComboBox->findData(d->ActiveBrowserNode->GetMissingItemMode(syncedNode)));
+    missingItemModeComboBox->setProperty("MRMLNodeID", QString(syncedNode->GetID()));
+    d->tableWidget_SynchronizedSequenceNodes->setCellWidget(i, SYNCH_NODES_MISSING_ITEM_COLUMN, missingItemModeComboBox);
+    connect(missingItemModeComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(synchronizedSequenceNodeMissingItemModeChanged(int)));
   }
 
   connect(d->tableWidget_SynchronizedSequenceNodes, SIGNAL(cellChanged(int, int)), this, SLOT(sequenceNodeNameEdited(int, int)));
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSequencesModuleWidget::synchronizedSequenceNodeMissingItemModeChanged(int index)
+{
+  Q_D(qSlicerSequencesModuleWidget);
+  if (d->ActiveBrowserNode == nullptr)
+  {
+    qCritical() << Q_FUNC_INFO << ": Invalid activeBrowserNode";
+    return;
+  }
+  QComboBox* senderComboBox = dynamic_cast<QComboBox*>(sender());
+  if (!senderComboBox)
+  {
+    qCritical() << Q_FUNC_INFO << ": Invalid sender combo box";
+    return;
+  }
+  std::string synchronizedNodeID = senderComboBox->property("MRMLNodeID").toString().toStdString();
+  vtkMRMLSequenceNode* synchronizedNode = vtkMRMLSequenceNode::SafeDownCast(this->mrmlScene()->GetNodeByID(synchronizedNodeID));
+  if (!synchronizedNode)
+  {
+    return;
+  }
+  d->ActiveBrowserNode->SetMissingItemMode(synchronizedNode, static_cast<vtkMRMLSequenceBrowserNode::MissingItemModeType>(senderComboBox->itemData(index).toInt()));
 }
 
 //-----------------------------------------------------------------------------
