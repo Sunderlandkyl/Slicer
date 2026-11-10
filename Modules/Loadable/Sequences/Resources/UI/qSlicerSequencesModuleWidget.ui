@@ -146,7 +146,7 @@
              <enum>QAbstractItemView::ScrollPerPixel</enum>
             </property>
             <property name="columnCount">
-             <number>6</number>
+             <number>7</number>
             </property>
             <attribute name="horizontalHeaderVisible">
              <bool>true</bool>
@@ -211,6 +211,14 @@
              </property>
              <property name="toolTip">
               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Save the proxy node current state into the sequence when not in playback or recording mode.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Missing item</string>
+             </property>
+             <property name="toolTip">
+              <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;What the proxy node shows when the sequence has no item for the current index value (for example a markups sequence that was only recorded at some time points).&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
              </property>
             </column>
            </widget>
