@@ -100,6 +100,7 @@ protected slots:
   void synchronizedSequenceNodeRecordingStateChanged(int aState);
   void synchronizedSequenceNodeOverwriteProxyNameStateChanged(int aState);
   void synchronizedSequenceNodeSaveChangesStateChanged(int aState);
+  void synchronizedSequenceNodeMissingItemModeChanged(int index);
 
   void onProxyNodeChanged(vtkMRMLNode* newProxyNode);
 
