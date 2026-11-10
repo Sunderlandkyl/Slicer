@@ -952,6 +952,14 @@ vtkSlicerMarkupsWidget* vtkMRMLMarkupsDisplayableManager::GetWidgetForPlacement(
   if (!activeMarkupsNode)
   {
     vtkSlicerMarkupsLogic* markupsLogic = vtkSlicerMarkupsLogic::SafeDownCast(this->GetMRMLApplicationLogic()->GetModuleLogic("Markups"));
+    if (markupsLogic && markupsLogic->GetMRMLScene() != this->GetMRMLScene())
+    {
+      // This displayable manager displays a scene other than the scene of the application (for
+      // example a private scene that mirrors the nodes of the application scene for a tile of a
+      // lightbox view). New nodes are only added to the application scene by the displayable
+      // managers of the regular views: here the active node is simply not available for placement.
+      return nullptr;
+    }
     if (markupsLogic)
     {
       activeMarkupsNode = markupsLogic->AddNewMarkupsNode(placeNodeClassName);
