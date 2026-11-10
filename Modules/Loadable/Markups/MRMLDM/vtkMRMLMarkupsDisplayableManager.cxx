@@ -75,12 +75,56 @@ vtkMRMLMarkupsDisplayableManager::vtkMRMLMarkupsDisplayableManager()
   this->LastClickWorldCoordinates[1] = 0.0;
   this->LastClickWorldCoordinates[2] = 0.0;
   this->LastClickWorldCoordinates[3] = 1.0;
+
+  this->RendererStartCallbackCommand = vtkSmartPointer<vtkCallbackCommand>::New();
+  this->RendererStartCallbackCommand->SetClientData(this);
+  this->RendererStartCallbackCommand->SetCallback(vtkMRMLMarkupsDisplayableManager::RendererStartCallback);
 }
 
 //---------------------------------------------------------------------------
 vtkMRMLMarkupsDisplayableManager::~vtkMRMLMarkupsDisplayableManager()
 {
   this->DisableInteractorStyleEventsProcessing = 0;
+
+  vtkRenderer* renderer = this->GetRenderer();
+  if (renderer && this->RendererStartObserverTag)
+  {
+    renderer->RemoveObserver(this->RendererStartObserverTag);
+    this->RendererStartObserverTag = 0;
+  }
+  if (this->InteractionRenderer)
+  {
+    // The render window may outlive this displayable manager (for example when a view that is
+    // rendered into a part of a shared render window is removed), so the interaction renderer
+    // must not be left in it.
+    vtkRenderWindow* renderWindow = this->InteractionRenderer->GetRenderWindow();
+    if (renderWindow)
+    {
+      renderWindow->RemoveRenderer(this->InteractionRenderer);
+    }
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManager::RendererStartCallback(vtkObject* vtkNotUsed(caller), unsigned long vtkNotUsed(eid), void* clientData, void* vtkNotUsed(callData))
+{
+  vtkMRMLMarkupsDisplayableManager* self = reinterpret_cast<vtkMRMLMarkupsDisplayableManager*>(clientData);
+  if (self)
+  {
+    self->UpdateInteractionRendererViewport();
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayableManager::UpdateInteractionRendererViewport()
+{
+  vtkRenderer* renderer = this->GetRenderer();
+  if (!renderer || !this->InteractionRenderer)
+  {
+    return;
+  }
+  // SetViewport only modifies the renderer if the viewport actually changed.
+  this->InteractionRenderer->SetViewport(renderer->GetViewport());
 }
 
 //---------------------------------------------------------------------------
@@ -982,6 +1026,13 @@ void vtkMRMLMarkupsDisplayableManager::Create()
   this->InteractionRenderer->SetActiveCamera(renderer->GetActiveCamera());
   this->InteractionRenderer->SetLayer(INTERACTION_RENDERER_LAYER);
   renderWindow->AddRenderer(this->InteractionRenderer);
+  // The interaction renderer is drawn into the viewport of the renderer of the view, which is
+  // not necessarily the whole render window.
+  this->UpdateInteractionRendererViewport();
+  if (!this->RendererStartObserverTag)
+  {
+    this->RendererStartObserverTag = renderer->AddObserver(vtkCommand::StartEvent, this->RendererStartCallbackCommand);
+  }
   for (auto interactionWidget : this->Helper->MarkupsDisplayNodesToInteractionWidgets)
   {
     // Update the renderer of any interaction widgets that were already created.

@@ -37,6 +37,7 @@
 #include <vtkMRMLTransformNode.h>
 
 // VTK includes
+#include <vtkCallbackCommand.h>
 #include <vtkEventBroker.h>
 #include <vtkObservation.h>
 #include <vtkRenderer.h>
@@ -68,6 +69,11 @@ public:
 
   // Helper functions
   void SetupRenderer();
+  /// Make the viewport of the interaction renderer the same as the viewport of the renderer of
+  /// the view. It is called before each rendering, because the viewport of the view renderer may
+  /// change (for example if the view is rendered into a tile of a render window).
+  void UpdateInteractionRendererViewport();
+  static void RendererStartCallback(vtkObject* caller, unsigned long eid, void* clientData, void* callData);
   bool UseDisplayNode(vtkMRMLTransformDisplayNode* displayNode);
   bool UseTransformNode(vtkMRMLTransformNode* displayNode);
   void ClearPipelines();
@@ -75,6 +81,8 @@ public:
   vtkMRMLAbstractViewNode* GetAbstractViewNode();
 
   vtkSmartPointer<vtkRenderer> InteractionRenderer;
+  vtkSmartPointer<vtkCallbackCommand> RendererStartCallbackCommand;
+  unsigned long RendererStartObserverTag{ 0 };
 
   vtkWeakPointer<vtkMRMLTransformHandleWidget> LastActiveWidget;
   vtkMRMLTransformHandleWidget* FindClosestWidget(vtkMRMLInteractionEventData* callData, double& closestDistance2);
@@ -90,6 +98,9 @@ private:
 vtkMRMLLinearTransformsDisplayableManager::vtkInternal::vtkInternal(vtkMRMLLinearTransformsDisplayableManager* external)
   : External(external)
 {
+  this->RendererStartCallbackCommand = vtkSmartPointer<vtkCallbackCommand>::New();
+  this->RendererStartCallbackCommand->SetClientData(this);
+  this->RendererStartCallbackCommand->SetCallback(vtkInternal::RendererStartCallback);
 }
 
 //---------------------------------------------------------------------------
@@ -97,6 +108,49 @@ vtkMRMLLinearTransformsDisplayableManager::vtkInternal::~vtkInternal()
 {
   this->RemoveAllObservations();
   this->ClearPipelines();
+
+  vtkRenderer* renderer = (this->External ? this->External->GetRenderer() : nullptr);
+  if (renderer && this->RendererStartObserverTag)
+  {
+    renderer->RemoveObserver(this->RendererStartObserverTag);
+    this->RendererStartObserverTag = 0;
+  }
+  if (this->InteractionRenderer)
+  {
+    // The render window may outlive this displayable manager (for example when a view that is
+    // rendered into a part of a shared render window is removed), so the interaction renderer
+    // must not be left in it.
+    vtkRenderWindow* renderWindow = this->InteractionRenderer->GetRenderWindow();
+    if (renderWindow)
+    {
+      renderWindow->RemoveRenderer(this->InteractionRenderer);
+    }
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLLinearTransformsDisplayableManager::vtkInternal::RendererStartCallback(vtkObject* vtkNotUsed(caller),
+                                                                                   unsigned long vtkNotUsed(eid),
+                                                                                   void* clientData,
+                                                                                   void* vtkNotUsed(callData))
+{
+  vtkInternal* self = reinterpret_cast<vtkInternal*>(clientData);
+  if (self)
+  {
+    self->UpdateInteractionRendererViewport();
+  }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLLinearTransformsDisplayableManager::vtkInternal::UpdateInteractionRendererViewport()
+{
+  vtkRenderer* renderer = (this->External ? this->External->GetRenderer() : nullptr);
+  if (!renderer || !this->InteractionRenderer)
+  {
+    return;
+  }
+  // SetViewport only modifies the renderer if the viewport actually changed.
+  this->InteractionRenderer->SetViewport(renderer->GetViewport());
 }
 
 //---------------------------------------------------------------------------
@@ -507,6 +561,13 @@ void vtkMRMLLinearTransformsDisplayableManager::vtkInternal::SetupRenderer()
   this->InteractionRenderer->SetActiveCamera(renderer->GetActiveCamera());
   this->InteractionRenderer->SetLayer(RENDERER_LAYER);
   renderWindow->AddRenderer(this->InteractionRenderer);
+  // The interaction renderer is drawn into the viewport of the renderer of the view, which is
+  // not necessarily the whole render window.
+  this->UpdateInteractionRendererViewport();
+  if (!this->RendererStartObserverTag)
+  {
+    this->RendererStartObserverTag = renderer->AddObserver(vtkCommand::StartEvent, this->RendererStartCallbackCommand);
+  }
 }
 
 //---------------------------------------------------------------------------

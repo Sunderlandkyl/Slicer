@@ -33,6 +33,7 @@
 // STD includes
 #include <map>
 
+class vtkCallbackCommand;
 class vtkMRMLMarkupsNode;
 class vtkSlicerViewerWidget;
 class vtkMRMLMarkupsDisplayNode;
@@ -153,7 +154,17 @@ protected:
 
   vtkWeakPointer<vtkMRMLAbstractWidget> LastActiveWidget;
 
+  /// Renderer of the interaction handles. It shares the camera of the renderer of the view and
+  /// is rendered into the same viewport, on top of it.
   vtkSmartPointer<vtkRenderer> InteractionRenderer;
+
+  /// Make the viewport of the interaction renderer the same as the viewport of the renderer of
+  /// the view. It is called before each rendering, because the viewport of the view renderer may
+  /// change (for example if the view is rendered into a tile of a render window).
+  void UpdateInteractionRendererViewport();
+  static void RendererStartCallback(vtkObject* caller, unsigned long eid, void* clientData, void* callData);
+  vtkSmartPointer<vtkCallbackCommand> RendererStartCallbackCommand;
+  unsigned long RendererStartObserverTag{ 0 };
 
 private:
   vtkMRMLMarkupsDisplayableManager(const vtkMRMLMarkupsDisplayableManager&) = delete;
