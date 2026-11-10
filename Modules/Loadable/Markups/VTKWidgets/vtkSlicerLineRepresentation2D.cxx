@@ -145,7 +145,7 @@ void vtkSlicerLineRepresentation2D::UpdateFromMRMLInternal(vtkMRMLNode* caller, 
                           lText * vector3[1] + c[1],
                           lText * vector3[2] + c[2] };
                           */
-    this->TextActor->SetDisplayPosition(static_cast<int>(textPos[0]), static_cast<int>(textPos[1]));
+    this->TextActor->SetPosition(static_cast<int>(textPos[0]), static_cast<int>(textPos[1]));
     this->TextActor->SetVisibility(this->MarkupsDisplayNode->GetPropertiesLabelVisibility() //
                                    && this->AnyPointVisibilityOnSlice                       //
                                    && markupsNode->GetNumberOfDefinedControlPoints(true) == 2);
