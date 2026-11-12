@@ -760,6 +760,8 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+    outputs:
+      consumers: ${{ steps.consumers.outputs.list }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -858,39 +860,67 @@ jobs:
           CONSUMERS: ${{ vars.SLICER_NIGHTLY_CONSUMERS }}
         run: |
           set -euo pipefail
-          list="$(echo "${CONSUMERS:-}" | tr ',' '\n' | tr -s '[:space:]' '\n' | sed '/^$/d' | sort -u)"
-          count="$(echo "$list" | sed '/^$/d' | wc -l | tr -d ' ')"
-          echo "count=$count" >> "$GITHUB_OUTPUT"
-          {
-            echo "list<<EOF"
-            echo "$list"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "Repositories to notify: ${count}"
+          # Printed as a JSON array for the matrix of the notify job.
+          list="$(echo "${CONSUMERS:-}" | tr ',' '\n' | tr -s '[:space:]' '\n' \
+                  | sed '/^$/d' | grep -E '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' | sort -u \
+                  | jq -R . | jq -cs .)" || list="[]"
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "Repositories to notify: $list"
+
+  #-----------------------------------------------------------------------------
+  # Tell the repositories following the nightly that a new one is available.
+  #
+  # One job per repository, because an app installation token is scoped to a
+  # single owner: a token made for this repository cannot dispatch to an
+  # extension repository owned by someone else. Each job asks for a token
+  # scoped to the one repository it notifies.
+  #-----------------------------------------------------------------------------
+  notify:
+    name: Notify ${{ matrix.repository }}
+    needs: [slicer, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.publish.outputs.consumers != '[]' && needs.publish.outputs.consumers != '' && vars.SLICER_APP_ID != '' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        repository: ${{ fromJSON(needs.publish.outputs.consumers) }}
+    steps:
+      - name: Split the repository name
+        id: repo
+        shell: bash
+        env:
+          REPOSITORY: ${{ matrix.repository }}
+        run: |
+          echo "owner=${REPOSITORY%%/*}" >> "$GITHUB_OUTPUT"
+          echo "name=${REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         id: app-token
-        if: steps.consumers.outputs.count != '0' && vars.SLICER_APP_ID != ''
+        continue-on-error: true
         with:
           app-id: ${{ vars.SLICER_APP_ID }}
           private-key: ${{ secrets.SLICER_APP_PRIVATE_KEY }}
+          owner: ${{ steps.repo.outputs.owner }}
+          repositories: ${{ steps.repo.outputs.name }}
 
-      - name: Notify the repositories following the nightly
-        if: steps.consumers.outputs.count != '0' && vars.SLICER_APP_ID != ''
+      - name: Notify
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          CONSUMERS: ${{ steps.consumers.outputs.list }}
+          REPOSITORY: ${{ matrix.repository }}
           REVISION: ${{ needs.slicer.outputs.revision }}
         run: |
           set -euo pipefail
-          echo "$CONSUMERS" | while read -r repo; do
-            [ -n "$repo" ] || continue
-            echo "Notifying $repo"
-            # A repository_dispatch reaches a workflow that declares
-            #   on: repository_dispatch: types: [slicer-nightly]
-            gh api "repos/$repo/dispatches" -f event_type=slicer-nightly \
-              -F "client_payload[revision]=${REVISION:-}" \
-              -F "client_payload[commit]=$GITHUB_SHA" \
-              || echo "::warning::Could not notify $repo; is the Slicer app installed there?"
-          done
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::No token for $REPOSITORY; is the Slicer app installed there?"
+            exit 0
+          fi
+          # A repository_dispatch reaches a workflow on the default branch of
+          # the repository that declares
+          #   on: repository_dispatch: types: [slicer-nightly]
+          gh api "repos/$REPOSITORY/dispatches" -f event_type=slicer-nightly \
+            -F "client_payload[revision]=${REVISION:-}" \
+            -F "client_payload[commit]=$GITHUB_SHA" \
+            || echo "::warning::Could not notify $REPOSITORY"
+          echo "Notified $REPOSITORY of Slicer r${REVISION:-?} ($GITHUB_SHA)" >> "$GITHUB_STEP_SUMMARY"
