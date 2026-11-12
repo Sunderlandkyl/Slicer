@@ -760,8 +760,6 @@ jobs:
       contents: write
       id-token: write
       attestations: write
-    outputs:
-      consumers: ${{ steps.consumers.outputs.list }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -846,81 +844,111 @@ jobs:
             gh release delete-asset "$tag" "$asset" --yes || true
           done < stale.txt
 
-      # Repositories that asked to be told about a new nightly rather than
-      # waiting for their own scheduled run. The list is the
-      # SLICER_NIGHTLY_CONSUMERS repository variable, one "owner/name" per
-      # line. Nothing happens when it is empty, which is the default: the
-      # supported way for an extension to follow the nightly is to poll it,
-      # which needs no credentials here. See
-      # Docs/developer_guide/build_instructions/github_actions.md
-      - name: Collect the repositories to notify
-        id: consumers
-        shell: bash
-        env:
-          CONSUMERS: ${{ vars.SLICER_NIGHTLY_CONSUMERS }}
-        run: |
-          set -euo pipefail
-          # Printed as a JSON array for the matrix of the notify job.
-          list="$(echo "${CONSUMERS:-}" | tr ',' '\n' | tr -s '[:space:]' '\n' \
-                  | sed '/^$/d' | grep -E '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' | sort -u \
-                  | jq -R . | jq -cs .)" || list="[]"
-          echo "list=$list" >> "$GITHUB_OUTPUT"
-          echo "Repositories to notify: $list"
-
   #-----------------------------------------------------------------------------
-  # Tell the repositories following the nightly that a new one is available.
+  # Start the build of every extension repository following the nightly.
   #
-  # One job per repository, because an app installation token is scoped to a
-  # single owner: a token made for this repository cannot dispatch to an
-  # extension repository owned by someone else. Each job asks for a token
-  # scoped to the one repository it notifies.
+  # A repository follows the nightly by installing the Slicer nightly GitHub
+  # App: the app's installations are the list of repositories to notify, so
+  # nothing has to be registered here. The app only holds the Actions
+  # permission, which starts workflows and cannot change code, plus read access
+  # to see whether the workflow exists.
+  #
+  # This is a separate app from the one in SLICER_APP_ID, whose permissions on
+  # this repository must not be granted to every extension installing it.
+  #
+  # What is started is the workflow named by NIGHTLY_WORKFLOW, on the default
+  # branch of the repository, which declares `on: workflow_dispatch`.
+  # Repositories without it are skipped. See
+  # Docs/developer_guide/build_instructions/github_actions.md
   #-----------------------------------------------------------------------------
   notify:
-    name: Notify ${{ matrix.repository }}
-    needs: [slicer, publish]
-    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.publish.outputs.consumers != '[]' && needs.publish.outputs.consumers != '' && vars.SLICER_APP_ID != '' }}
+    name: Start the extension builds
+    needs: [publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && vars.SLICER_NIGHTLY_APP_ID != '' }}
     runs-on: ubuntu-latest
     permissions: {}
-    strategy:
-      fail-fast: false
-      matrix:
-        repository: ${{ fromJSON(needs.publish.outputs.consumers) }}
     steps:
-      - name: Split the repository name
-        id: repo
+      - name: Start the builds
         shell: bash
         env:
-          REPOSITORY: ${{ matrix.repository }}
-        run: |
-          echo "owner=${REPOSITORY%%/*}" >> "$GITHUB_OUTPUT"
-          echo "name=${REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
-        id: app-token
-        continue-on-error: true
-        with:
-          app-id: ${{ vars.SLICER_APP_ID }}
-          private-key: ${{ secrets.SLICER_APP_PRIVATE_KEY }}
-          owner: ${{ steps.repo.outputs.owner }}
-          repositories: ${{ steps.repo.outputs.name }}
-
-      - name: Notify
-        shell: bash
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPOSITORY: ${{ matrix.repository }}
-          REVISION: ${{ needs.slicer.outputs.revision }}
+          APP_ID: ${{ vars.SLICER_NIGHTLY_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.SLICER_NIGHTLY_APP_PRIVATE_KEY }}
+          NIGHTLY_WORKFLOW: slicer-nightly-build.yml
         run: |
           set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::warning::No token for $REPOSITORY; is the Slicer app installed there?"
-            exit 0
-          fi
-          # A repository_dispatch reaches a workflow on the default branch of
-          # the repository that declares
-          #   on: repository_dispatch: types: [slicer-nightly]
-          gh api "repos/$REPOSITORY/dispatches" -f event_type=slicer-nightly \
-            -F "client_payload[revision]=${REVISION:-}" \
-            -F "client_payload[commit]=$GITHUB_SHA" \
-            || echo "::warning::Could not notify $REPOSITORY"
-          echo "Notified $REPOSITORY of Slicer r${REVISION:-?} ($GITHUB_SHA)" >> "$GITHUB_STEP_SUMMARY"
+          api="https://api.github.com"
+          call() {
+            curl -fsSL -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+          }
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+          # The app authenticates as itself with a short-lived JWT to list its
+          # installations, then as each installation to reach its repositories.
+          key="$(mktemp)"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$APP_PRIVATE_KEY" > "$key"
+          now="$(date +%s)"
+          header="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)"
+          payload="$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now - 60)) $((now + 540)) "$APP_ID" | b64url)"
+          signature="$(printf '%s.%s' "$header" "$payload" \
+                       | openssl dgst -sha256 -sign "$key" -binary | b64url)"
+          jwt="$header.$payload.$signature"
+          echo "::add-mask::$jwt"
+
+          installations=""
+          page=1
+          while :; do
+            batch="$(call -H "Authorization: Bearer $jwt" \
+                       "$api/app/installations?per_page=100&page=$page" | jq -r '.[].id')"
+            [ -n "$batch" ] || break
+            installations="$installations $batch"
+            page=$((page + 1))
+          done
+
+          started=0 skipped=0 failed=0
+          summary="$(mktemp)"
+          for installation in $installations; do
+            token="$(call -X POST -H "Authorization: Bearer $jwt" \
+                       "$api/app/installations/$installation/access_tokens" | jq -r .token)" \
+              || { echo "::warning::No token for installation $installation"; failed=$((failed + 1)); continue; }
+            echo "::add-mask::$token"
+            page=1
+            while :; do
+              repos="$(call -H "Authorization: Bearer $token" \
+                         "$api/installation/repositories?per_page=100&page=$page" \
+                       | jq -r '.repositories[] | "\(.full_name) \(.default_branch)"')"
+              [ -n "$repos" ] || break
+              while read -r repo branch; do
+                if ! call -o /dev/null -H "Authorization: Bearer $token" \
+                       "$api/repos/$repo/actions/workflows/$NIGHTLY_WORKFLOW" 2>/dev/null; then
+                  echo "$repo: no $NIGHTLY_WORKFLOW, skipped"
+                  echo "| $repo | skipped: no \`$NIGHTLY_WORKFLOW\` |" >> "$summary"
+                  skipped=$((skipped + 1))
+                elif call -X POST -H "Authorization: Bearer $token" \
+                       "$api/repos/$repo/actions/workflows/$NIGHTLY_WORKFLOW/dispatches" \
+                       -d "{\"ref\":\"$branch\"}"; then
+                  echo "$repo: started $NIGHTLY_WORKFLOW on $branch"
+                  echo "| $repo | started on \`$branch\` |" >> "$summary"
+                  started=$((started + 1))
+                else
+                  echo "::warning::$repo: could not start $NIGHTLY_WORKFLOW on $branch"
+                  echo "| $repo | **failed** to start on \`$branch\` |" >> "$summary"
+                  failed=$((failed + 1))
+                fi
+              done <<< "$repos"
+              page=$((page + 1))
+            done
+          done
+
+          {
+            echo "### Extension builds"
+            echo
+            echo "Started $started, skipped $skipped, failed $failed."
+            if [ -s "$summary" ]; then
+              echo
+              echo "| Repository | Result |"
+              echo "|---|---|"
+              cat "$summary"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

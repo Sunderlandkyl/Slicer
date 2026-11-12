@@ -241,8 +241,7 @@ on:
   pull_request:
   schedule:
     - cron: "0 12 * * *"          # after the Slicer nightly
-  repository_dispatch:
-    types: [slicer-nightly]        # see "Be told" below
+  workflow_dispatch:               # see "Be told" below
 
 jobs:
   build:
@@ -285,17 +284,26 @@ jobs:
 ```
 
 **Be told.** For a repository that wants to build as soon as the nightly lands
-rather than waiting for its own schedule, the publishing job can send it a
-`repository_dispatch` of type `slicer-nightly`, carrying the revision and the
-commit in `client_payload`. Add the `repository_dispatch` trigger shown above,
-then ask a Slicer maintainer to add `owner/name` to the
-`SLICER_NIGHTLY_CONSUMERS` repository variable and to install the Slicer GitHub
-App on the repository. It is empty by default, so nothing is notified until
-someone opts in.
+rather than waiting for its own schedule:
 
-Notifying does not scale to the whole extension catalog, which is why polling
-is the default: it costs the Slicer repository nothing and leaves each
-extension in control of its own cadence.
+1. Name the workflow `.github/workflows/slicer-nightly-build.yml` and give it a
+   `workflow_dispatch` trigger, as above, with no required inputs.
+2. Install the Slicer nightly GitHub App on the repository.
+
+Nothing has to be registered with the Slicer repository: once a nightly is
+published, the `Build` workflow lists the repositories the app is installed
+on and starts that workflow on the default branch of each. Repositories
+without it are skipped. Uninstalling the app opts out.
+
+The app holds the Actions permission, which starts workflows but cannot change
+code, and read access to the repository's contents, used only to see whether
+the workflow exists. It is a separate app from the one the Slicer repository
+uses for its own automation, so installing it grants nothing more.
+
+To try this on forks, create a private GitHub App with these permissions,
+install it on the fork of the extension, and set its ID and private key as the
+`SLICER_NIGHTLY_APP_ID` variable and `SLICER_NIGHTLY_APP_PRIVATE_KEY` secret of
+the fork of Slicer. Without them the step is skipped.
 
 ### Pinning to a specific build
 
