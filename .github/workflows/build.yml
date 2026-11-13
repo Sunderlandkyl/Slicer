@@ -50,6 +50,10 @@ on:
         description: "Build even if the nightly release already holds this commit"
         type: boolean
         default: false
+      notify-only:
+        description: "Build nothing; only start the extension builds against the published nightly"
+        type: boolean
+        default: false
 
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
@@ -71,6 +75,9 @@ jobs:
   #-----------------------------------------------------------------------------
   setup:
     name: Setup
+    # Every other job but notify depends on this one, so skipping it builds
+    # and publishes nothing.
+    if: ${{ !inputs.notify-only }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
@@ -860,11 +867,16 @@ jobs:
   # branch of the repository, which declares `on: workflow_dispatch`.
   # Repositories without it are skipped. See
   # Docs/developer_guide/build_instructions/github_actions.md
+  #
+  # Run alone with the notify-only input of a manual run, against whatever the
+  # nightly release currently holds.
   #-----------------------------------------------------------------------------
   notify:
     name: Start the extension builds
     needs: [publish]
-    if: ${{ !cancelled() && needs.publish.result == 'success' && vars.SLICER_NIGHTLY_APP_ID != '' }}
+    if: >-
+      ${{ !cancelled() && vars.SLICER_NIGHTLY_APP_ID != ''
+          && (needs.publish.result == 'success' || inputs.notify-only) }}
     runs-on: ubuntu-latest
     permissions: {}
     steps:
@@ -874,60 +886,120 @@ jobs:
           APP_ID: ${{ vars.SLICER_NIGHTLY_APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.SLICER_NIGHTLY_APP_PRIVATE_KEY }}
           NIGHTLY_WORKFLOW: slicer-nightly-build.yml
+          # Between two requests that create something, to stay clear of the
+          # secondary rate limit on content creation when many repositories
+          # follow the nightly.
+          PACE_SECONDS: "1"
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          if [ -z "${APP_PRIVATE_KEY:-}" ]; then
+            echo "::warning::SLICER_NIGHTLY_APP_ID is set but the SLICER_NIGHTLY_APP_PRIVATE_KEY secret is not; no extension build started."
+            exit 0
+          fi
           api="https://api.github.com"
-          call() {
-            curl -fsSL -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" "$@"
-          }
           b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
-          # The app authenticates as itself with a short-lived JWT to list its
-          # installations, then as each installation to reach its repositories.
           key="$(mktemp)"
-          trap 'rm -f "$key"' EXIT
+          summary="$(mktemp)"
+          trap 'rm -f "$key" "$summary"' EXIT
           printf '%s\n' "$APP_PRIVATE_KEY" > "$key"
-          now="$(date +%s)"
-          header="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)"
-          payload="$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now - 60)) $((now + 540)) "$APP_ID" | b64url)"
-          signature="$(printf '%s.%s' "$header" "$payload" \
-                       | openssl dgst -sha256 -sign "$key" -binary | b64url)"
-          jwt="$header.$payload.$signature"
-          echo "::add-mask::$jwt"
 
-          installations=""
-          page=1
+          # The app authenticates as itself with a JWT valid for ten minutes at
+          # most, to list its installations and make their tokens. It is made
+          # again after seven minutes, since pacing makes a long list outlast it.
+          jwt="" jwt_made=0
+          refresh_jwt() {
+            local now header payload signature
+            now="$(date +%s)"
+            if [ -n "$jwt" ] && [ $((now - jwt_made)) -lt 420 ]; then
+              return 0
+            fi
+            header="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)"
+            payload="$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now - 60)) $((now + 540)) "$APP_ID" | b64url)"
+            signature="$(printf '%s.%s' "$header" "$payload" \
+                         | openssl dgst -sha256 -sign "$key" -binary | b64url)" || return 1
+            [ -n "$signature" ] || return 1
+            jwt="$header.$payload.$signature"
+            jwt_made="$now"
+            echo "::add-mask::$jwt"
+          }
+
+          # call <token> <curl arguments...>: prints the response body. Waits
+          # and retries when GitHub asks to slow down.
+          call() {
+            local token="$1"; shift
+            local attempt body headers code wait
+            body="$(mktemp)"; headers="$(mktemp)"
+            for attempt in 1 2 3 4; do
+              code="$(curl -sS -o "$body" -D "$headers" -w '%{http_code}' \
+                        -H "Accept: application/vnd.github+json" \
+                        -H "X-GitHub-Api-Version: 2022-11-28" \
+                        -H "Authorization: Bearer $token" "$@")" || code=000
+              case "$code" in
+                2??)
+                  cat "$body"; rm -f "$body" "$headers"; return 0 ;;
+                403|429)
+                  wait="$(tr -d '\r' < "$headers" | sed -n 's/^[Rr]etry-[Aa]fter: *\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+                  if [ -n "$wait" ] || grep -qi 'secondary rate limit' "$body"; then
+                    wait="${wait:-60}"
+                    echo "Rate limited, waiting ${wait}s" >&2
+                    sleep "$wait"
+                    continue
+                  fi ;;
+              esac
+              echo "HTTP $code: $(head -c 300 "$body")" >&2
+              break
+            done
+            rm -f "$body" "$headers"
+            return 1
+          }
+
+          # A wrong key or app ID fails here, which is a configuration error.
+          refresh_jwt || { echo "::error::Could not sign with SLICER_NIGHTLY_APP_PRIVATE_KEY"; exit 1; }
+          installations="" page=1
           while :; do
-            batch="$(call -H "Authorization: Bearer $jwt" \
-                       "$api/app/installations?per_page=100&page=$page" | jq -r '.[].id')"
+            refresh_jwt
+            batch="$(call "$jwt" "$api/app/installations?per_page=100&page=$page")" \
+              || { echo "::error::Could not list the installations of app $APP_ID; are SLICER_NIGHTLY_APP_ID and SLICER_NIGHTLY_APP_PRIVATE_KEY from the same app?"; exit 1; }
+            batch="$(printf '%s' "$batch" | jq -r '.[].id')"
             [ -n "$batch" ] || break
             installations="$installations $batch"
             page=$((page + 1))
           done
+          echo "Installations: $(echo $installations | wc -w)"
 
+          # From here on, one repository failing never stops the others.
           started=0 skipped=0 failed=0
-          summary="$(mktemp)"
           for installation in $installations; do
-            token="$(call -X POST -H "Authorization: Bearer $jwt" \
-                       "$api/app/installations/$installation/access_tokens" | jq -r .token)" \
-              || { echo "::warning::No token for installation $installation"; failed=$((failed + 1)); continue; }
+            sleep "$PACE_SECONDS"
+            refresh_jwt
+            if ! token="$(call "$jwt" -X POST "$api/app/installations/$installation/access_tokens" | jq -re .token)"; then
+              echo "::warning::No token for installation $installation"
+              echo "| installation $installation | **failed**: no token |" >> "$summary"
+              failed=$((failed + 1))
+              continue
+            fi
             echo "::add-mask::$token"
             page=1
             while :; do
-              repos="$(call -H "Authorization: Bearer $token" \
-                         "$api/installation/repositories?per_page=100&page=$page" \
-                       | jq -r '.repositories[] | "\(.full_name) \(.default_branch)"')"
+              if ! repos="$(call "$token" "$api/installation/repositories?per_page=100&page=$page" \
+                            | jq -r '.repositories[] | "\(.full_name) \(.default_branch)"')"; then
+                echo "::warning::Could not list the repositories of installation $installation"
+                echo "| installation $installation | **failed**: could not list its repositories |" >> "$summary"
+                failed=$((failed + 1))
+                break
+              fi
               [ -n "$repos" ] || break
               while read -r repo branch; do
-                if ! call -o /dev/null -H "Authorization: Bearer $token" \
-                       "$api/repos/$repo/actions/workflows/$NIGHTLY_WORKFLOW" 2>/dev/null; then
+                if ! call "$token" "$api/repos/$repo/actions/workflows/$NIGHTLY_WORKFLOW" >/dev/null 2>&1; then
                   echo "$repo: no $NIGHTLY_WORKFLOW, skipped"
                   echo "| $repo | skipped: no \`$NIGHTLY_WORKFLOW\` |" >> "$summary"
                   skipped=$((skipped + 1))
-                elif call -X POST -H "Authorization: Bearer $token" \
-                       "$api/repos/$repo/actions/workflows/$NIGHTLY_WORKFLOW/dispatches" \
-                       -d "{\"ref\":\"$branch\"}"; then
+                  continue
+                fi
+                sleep "$PACE_SECONDS"
+                if call "$token" -X POST "$api/repos/$repo/actions/workflows/$NIGHTLY_WORKFLOW/dispatches" \
+                     -d "{\"ref\":\"$branch\"}" >/dev/null; then
                   echo "$repo: started $NIGHTLY_WORKFLOW on $branch"
                   echo "| $repo | started on \`$branch\` |" >> "$summary"
                   started=$((started + 1))
@@ -952,3 +1024,4 @@ jobs:
               cat "$summary"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "Started $started, skipped $skipped, failed $failed."
