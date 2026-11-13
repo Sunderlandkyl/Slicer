@@ -84,6 +84,26 @@ bash_path() {
   fi
 }
 
+# The git a native Windows program can run, as a Windows path.
+#
+# Inside Git Bash, `git` is Git's internal build, whose location changes
+# between Git releases (mingw64/bin, then ucrt64/bin). CMake records the git it
+# finds, and SlicerConfig.cmake hands that path on to every extension, so an
+# extension built on a newer runner image than Slicer gets a git that does not
+# exist: ExternalProject then refuses GIT_SUBMODULES with "git version 1.6.5 or
+# later required ... GIT_VERSION_STRING=''". The launcher in Git's cmd
+# directory stays where it is.
+native_git() {
+  local candidate
+  candidate="$(cygpath -m "${PROGRAMFILES:-C:\\Program Files}" 2>/dev/null)/Git/cmd/git.exe"
+  if [ -f "$candidate" ]; then
+    echo "$candidate"
+    return 0
+  fi
+  where.exe git 2>/dev/null | tr -d '\r' | grep -i -v -E '\\(ucrt64|mingw64|usr)\\' \
+    | head -n 1 | sed 's#\\#/#g'
+}
+
 # Run cmake --build on the superbuild tree with the right config/parallelism.
 cmake_build() {
   local dir="$1"; shift
@@ -779,6 +799,10 @@ extension_configure_args() {
   case "$SLICER_PLATFORM" in
     windows)
       args+=(-G "Visual Studio 17 2022" -A x64)
+      # Rather than the git recorded in SlicerConfig.cmake, which may not
+      # exist on this runner (see native_git).
+      local git; git="$(native_git)"
+      [ -n "$git" ] && args+=("-DGIT_EXECUTABLE:FILEPATH=$git")
       ;;
     *)
       args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE")
