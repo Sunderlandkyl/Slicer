@@ -1,20 +1,13 @@
 name: Build
 
-# Builds Slicer on Linux, macOS and Windows.
+# Builds Slicer on Linux, macOS and Windows, publishes the result as the nightly
+# release, and starts the builds of the extensions that follow it.
 #
-# The build is split in two phases so that it fits within the GitHub-hosted
-# runner limits (6 h per job) and so that the expensive part is done only when
-# it actually changes:
-#
-#   1. "prerequisites": builds the external projects of the Superbuild
-#      (VTK, ITK, CTK, Python, DCMTK, ...) through the `Slicer-dependencies`
-#      target. The result is keyed on the content of `SuperBuild/` so it is
-#      reused, untouched, by every later run.
-#   2. "slicer": restores the prerequisites and builds the inner `Slicer`
-#      target, then packages and tests it.
-#
-# The Superbuild structure is preserved: phase 2 runs the very same superbuild
-# tree, and the external projects are simply already up to date.
+# The build itself is done by build-application.yml, which custom applications
+# based on Slicer call as well: the prerequisites (VTK, ITK, CTK, Python,
+# DCMTK, ...) are built in stages only when what describes them changes, and
+# reused untouched by every other run; Slicer is then built in the very same
+# superbuild tree, packaged and tested.
 
 on:
   push:
@@ -62,13 +55,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # Bump to force a rebuild of the prerequisites of every platform.
-  SLICER_DEPS_KEY_VERSION: "1"
-  # Qt version used to build Slicer. Override with the SLICER_CI_QT_VERSION
-  # repository variable.
-  SLICER_CI_QT_VERSION: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
-
 jobs:
   #-----------------------------------------------------------------------------
   # Decide what to build.
@@ -80,7 +66,7 @@ jobs:
     if: ${{ !inputs.notify-only }}
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
+      platforms: ${{ steps.matrix.outputs.platforms }}
       run-tests: ${{ steps.matrix.outputs.run-tests }}
       publish: ${{ steps.matrix.outputs.publish }}
       force-deps: ${{ steps.matrix.outputs.force-deps }}
@@ -88,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Compute matrix
+      - name: Decide what to build
         id: matrix
         shell: bash
         env:
@@ -118,18 +104,9 @@ jobs:
           elif [ "$EVENT" = "push" ] && [ "$on_default_branch" = "false" ]; then
             PLATFORMS="${SLICER_CI_PLATFORMS:-linux}"
           fi
-          entries=""
-          for p in ${PLATFORMS//,/ }; do
-            case "$p" in
-              linux)   entries="$entries {\"platform\":\"linux\",\"runner\":\"ubuntu-22.04\"}," ;;
-              macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15-intel\"}," ;;
-              windows) entries="$entries {\"platform\":\"windows\",\"runner\":\"windows-2022\"}," ;;
-              *) echo "::warning::unknown platform '$p'" ;;
-            esac
-          done
-          matrix="{\"include\":[${entries%,}]}"
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          echo "$matrix"
+          # The runner of each platform is chosen by build-application.yml.
+          echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
+          echo "Platforms: $PLATFORMS"
           run_tests="${{ github.event.inputs.run-tests || 'true' }}"
           echo "run-tests=$run_tests" >> "$GITHUB_OUTPUT"
           publish="${{ github.event.inputs.publish || 'false' }}"
@@ -185,594 +162,38 @@ jobs:
           fi
 
   #-----------------------------------------------------------------------------
-  # Phase 1: build (or reuse) the prerequisites.
-  #
-  # A full build of the external projects does not fit in the 6 h limit of a
-  # GitHub-hosted job, so it is split in several stages chained through
-  # artifacts. Each stage builds a group of external projects in the superbuild
-  # tree produced by the previous one.
-  #
-  # The result is stored as the assets of a release named after a key computed
-  # from the files describing the external projects. Later runs restore it
-  # instead of rebuilding, and rebuild only when an external project changes.
+  # Build the prerequisites (or reuse them), then Slicer, package and test it.
+  # The same reusable workflow builds custom applications based on Slicer.
   #-----------------------------------------------------------------------------
-  deps-key:
-    name: Prerequisites key
+  build:
+    name: Build
     needs: setup
     if: needs.setup.outputs.skip != 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      # The matrix, with the prerequisites key and whether it has already been
-      # built added to every entry.
-      matrix: ${{ steps.key.outputs.matrix }}
-      # The subset of the entries whose prerequisites still have to be built,
-      # and how many there are. The stages are gated on the count: a matrix
-      # whose only vector is an empty "include" is rejected by GitHub, so the
-      # output falls back to the full matrix and the jobs are skipped by their
-      # condition instead.
-      matrix-todo: ${{ steps.key.outputs.matrix-todo }}
-      todo-count: ${{ steps.key.outputs.todo-count }}
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Compute keys
-        id: key
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          FORCE: ${{ needs.setup.outputs.force-deps }}
-          MATRIX: ${{ needs.setup.outputs.matrix }}
-          QT_VERSION: ${{ env.SLICER_CI_QT_VERSION }}
-        run: |
-          set -euo pipefail
-          chmod +x .github/scripts/slicer-ci.sh
-          # The prerequisites are kept as assets of the nightly release. A set
-          # counts as built once its .parts list, uploaded last, is present.
-          assets="$(gh release view nightly -R "$GITHUB_REPOSITORY" --json assets \
-                      --jq '.assets[].name' 2>/dev/null || true)"
-          entries="[]"
-          {
-            echo "### Prerequisites"
-            echo ""
-            echo "| Platform | Key | Already built |"
-            echo "|---|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
-          while read -r platform runner; do
-            [ -n "$platform" ] || continue
-            key="slicer-deps-${platform}-$(
-              SLICER_PLATFORM="$platform" \
-              SLICER_RUNNER_IMAGE="$runner" \
-              SLICER_QT_VERSION="$QT_VERSION" \
-              SLICER_SOURCE_DIR="$GITHUB_WORKSPACE" \
-              .github/scripts/slicer-ci.sh deps-key)"
-            cached=false
-            if [ "$FORCE" != "true" ] && grep -qxF "$key.parts" <<< "$assets"; then
-              cached=true
-            fi
-            entries="$(echo "$entries" | jq -c \
-              --arg p "$platform" --arg r "$runner" --arg k "$key" --argjson c "$cached" \
-              '. + [{platform: $p, runner: $r, key: $k, cached: $c}]')"
-            echo "| $platform | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
-          done < <(echo "$MATRIX" | jq -r '.include[] | "\(.platform) \(.runner)"')
-          todo="$(echo "$entries" | jq -c 'map(select(.cached | not))')"
-          count="$(echo "$todo" | jq 'length')"
-          if [ "$count" -eq 0 ]; then
-            # Never emit an empty "include": the stages are skipped by their
-            # condition, and this value is then never used.
-            todo="$entries"
-          fi
-          echo "matrix=$(echo "$entries" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
-          echo "matrix-todo=$(echo "$todo" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
-          echo "todo-count=$count" >> "$GITHUB_OUTPUT"
-          echo "Platforms whose prerequisites have to be built: $count"
-          echo "$entries" | jq .
-
-  deps-1:
-    name: "Deps 1/5: what VTK and ITK need (${{ matrix.platform }})"
-    needs: [setup, deps-key]
-    if: needs.deps-key.outputs.todo-count != '0'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 350
-    env:
-      SLICER_STAGE_NAME: "Deps 1/5: what VTK and ITK need"
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-      - name: Set up environment
-        uses: ./.github/actions/slicer-env
-        with:
-          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          # The prerequisites are built once and then stored as a release, so
-          # caching their objects would only displace the entries that speed
-          # up the Slicer build itself.
-          compiler-cache: "false"
-      - name: Build base
-        uses: ./.github/actions/slicer-build-stage
-        with:
-          # The dependencies of VTK and ITK, and nothing else. Naming their
-          # prerequisites rather than a hand-picked list keeps this stage
-          # derivable from the graph: `python` brings in zlib, bzip2, LZMA,
-          # LibFFI, sqlite and OpenSSL, `DCMTK` brings in OpenJPEG.
-          #
-          # Anything that merely *uses* VTK or ITK belongs in the last stage.
-          # Naming such a project here would build the whole of VTK in this
-          # stage instead, which is what teem used to do.
-          target: "python DCMTK tbb"
-          archive-paths: "SR Slicer"
-          archive-name: deps-stage
-          upload-artifact: deps-stage1-${{ matrix.platform }}
-
-  deps-2:
-    name: "Deps 2/5: VTK (${{ matrix.platform }})"
-    needs: [setup, deps-key, deps-1]
-    if: needs.deps-key.outputs.todo-count != '0'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 350
-    env:
-      SLICER_STAGE_NAME: "Deps 2/5: VTK"
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-      - name: Set up environment
-        uses: ./.github/actions/slicer-env
-        with:
-          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          # The prerequisites are built once and then stored as a release, so
-          # caching their objects would only displace the entries that speed
-          # up the Slicer build itself.
-          compiler-cache: "false"
-      - name: Build VTK
-        uses: ./.github/actions/slicer-build-stage
-        with:
-          target: "VTK"
-          restore-artifact: deps-stage1-${{ matrix.platform }}
-          restore-archive: deps-stage
-          archive-paths: "SR Slicer"
-          archive-name: deps-stage
-          upload-artifact: deps-stage2-${{ matrix.platform }}
-
-  deps-3:
-    name: "Deps 3/5: ITK (${{ matrix.platform }})"
-    needs: [setup, deps-key, deps-2]
-    if: needs.deps-key.outputs.todo-count != '0'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 350
-    env:
-      SLICER_STAGE_NAME: "Deps 3/5: ITK"
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-      - name: Set up environment
-        uses: ./.github/actions/slicer-env
-        with:
-          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          # The prerequisites are built once and then stored as a release, so
-          # caching their objects would only displace the entries that speed
-          # up the Slicer build itself.
-          compiler-cache: "false"
-      - name: Build ITK
-        uses: ./.github/actions/slicer-build-stage
-        with:
-          # ITK needs VTK, because Slicer enables ITKVtkGlue.
-          target: "ITK"
-          restore-artifact: deps-stage2-${{ matrix.platform }}
-          restore-archive: deps-stage
-          archive-paths: "SR Slicer"
-          archive-name: deps-stage
-          upload-artifact: deps-stage3-${{ matrix.platform }}
-
-  deps-4:
-    name: "Deps 4/5: CTK (${{ matrix.platform }})"
-    needs: [setup, deps-key, deps-3]
-    if: needs.deps-key.outputs.todo-count != '0'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 350
-    env:
-      SLICER_STAGE_NAME: "Deps 4/5: CTK"
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-      - name: Set up environment
-        uses: ./.github/actions/slicer-env
-        with:
-          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          # The prerequisites are built once and then stored as a release, so
-          # caching their objects would only displace the entries that speed
-          # up the Slicer build itself.
-          compiler-cache: "false"
-      - name: Build CTK
-        uses: ./.github/actions/slicer-build-stage
-        with:
-          # CTK needs VTK, ITK, Python and DCMTK, so it comes last on the
-          # critical path. It brings in PythonQt and QtTesting.
-          target: "CTK"
-          restore-artifact: deps-stage3-${{ matrix.platform }}
-          restore-archive: deps-stage
-          archive-paths: "SR Slicer"
-          archive-name: deps-stage
-          upload-artifact: deps-stage4-${{ matrix.platform }}
-
-  deps-5:
-    name: "Deps 5/5: everything else (${{ matrix.platform }})"
-    needs: [setup, deps-key, deps-4]
-    if: needs.deps-key.outputs.todo-count != '0'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 350
+    uses: ./.github/workflows/build-application.yml
     permissions:
+      # The prerequisites are stored on the nightly release.
       contents: write
-    env:
-      SLICER_STAGE_NAME: "Deps 5/5: everything else"
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-      - name: Set up environment
-        uses: ./.github/actions/slicer-env
-        with:
-          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-          # The prerequisites are built once and then stored as a release, so
-          # caching their objects would only displace the entries that speed
-          # up the Slicer build itself.
-          compiler-cache: "false"
-      - name: Build rest
-        uses: ./.github/actions/slicer-build-stage
-        with:
-          # Everything that was not on the critical path: teem, curl,
-          # LibArchive, RapidJSON, JsonCpp, SlicerExecutionModel, qRestAPI, the
-          # launcher, SimpleITK, the Python packages and the sources of the
-          # remote modules. Whatever is added to the superbuild lands here
-          # unless VTK or ITK needs it.
-          target: "Slicer-dependencies"
-          restore-artifact: deps-stage4-${{ matrix.platform }}
-          restore-archive: deps-stage
-          archive-paths: "SR"
-          archive-name: deps-${{ matrix.platform }}
-          upload-artifact: deps-${{ matrix.platform }}
-
-      - name: Publish the prerequisites
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          KEY: ${{ matrix.key }}
-          TAG: nightly
-        run: |
-          set -euo pipefail
-          # The prerequisites are assets of the nightly pre-release, named after
-          # their key, rather than a release of their own: the repository has a
-          # single release. The nightly is created here when this is the first
-          # run; the publish job fills in its notes.
-          gh release create "$TAG" --title "Slicer nightly" --prerelease --latest=false \
-            --notes "Nightly Slicer build trees and packages." 2>/dev/null || true
-
-          "$SLICER_CI" split "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst"
-          upload="$SLICER_OUTPUT_DIR/prerequisites"
-          rm -rf "$upload"; mkdir -p "$upload"
-          for f in "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst*; do
-            mv "$f" "$upload/$KEY${f##*/deps-${SLICER_PLATFORM}}"
-          done
-          gh release upload "$TAG" "$upload"/* --clobber
-          # The list of parts goes last: its presence marks the set as complete.
-          parts="$(cd "$upload" && ls)"
-          echo "$parts" > "$upload/$KEY.parts"
-          gh release upload "$TAG" "$upload/$KEY.parts" --clobber
-          rm -rf "$upload"
-
-          # Keep the three most recent sets of prerequisites of this platform;
-          # older ones correspond to external projects nothing builds any more.
-          # A set's list goes first, so that a half-removed set never counts as
-          # built.
-          names="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
-                     --jq '.assets[] | "\(.createdAt) \(.name)"')"
-          { grep -E " slicer-deps-${SLICER_PLATFORM}-[0-9a-f]+\.parts$" <<< "$names" || true; } \
-            | sort -r | tail -n +4 | while read -r _ list; do
-                old="${list%.parts}"
-                echo "Removing the superseded prerequisites $old"
-                gh release delete-asset "$TAG" "$list" -R "$GITHUB_REPOSITORY" --yes || true
-                awk '{print $2}' <<< "$names" | { grep -F "$old.tar.zst" || true; } | while read -r asset; do
-                  gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes || true
-                done
-              done
-
-  # Single place stating whether the prerequisites of every platform are
-  # available: either they were already built, or the stages produced them.
-  # The stage jobs are skipped both when there is nothing to build and when an
-  # earlier stage failed, so their result alone cannot be relied upon.
-  deps:
-    name: Prerequisites ready
-    needs: [deps-key, deps-5]
-    if: always() && needs.deps-key.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check
-        shell: bash
-        env:
-          TODO: ${{ needs.deps-key.outputs.todo-count }}
-          RESULT: ${{ needs.deps-5.result }}
-        run: |
-          set -euo pipefail
-          todo="$TODO"
-          echo "Platforms needing a build of the prerequisites: $todo"
-          echo "Result of the last stage: $RESULT"
-          if [ "$todo" -eq 0 ]; then
-            echo "All prerequisites were already available."
-            exit 0
-          fi
-          if [ "$RESULT" != "success" ]; then
-            echo "::error::Building the prerequisites did not succeed ($RESULT)."
-            exit 1
-          fi
-
-  #-----------------------------------------------------------------------------
-  # Phase 2: build Slicer itself, package it and run the tests.
-  #-----------------------------------------------------------------------------
-  slicer:
-    name: Slicer (${{ matrix.platform }})
-    needs: [setup, deps-key, deps]
-    # The stages are skipped when the prerequisites are already available, and
-    # GitHub carries that skip down the whole graph, past the gate job that ran
-    # and succeeded. Stating a condition here is what stops it.
-    if: ${{ !cancelled() && needs.deps.result == 'success' }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 350
-    outputs:
-      revision: ${{ steps.package.outputs.revision }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-
-      - name: Set up environment
-        id: env
-        uses: ./.github/actions/slicer-env
-        with:
-          qt-version: ${{ env.SLICER_CI_QT_VERSION }}
-
-      # Restore and save are separate so the save can run even when the job
-      # fails. actions/cache only saves after a successful job, and this job
-      # fails whenever a test fails, so the test data was never cached and
-      # every run downloaded the whole set again.
-      - name: Restore the test data
-        id: testdata
-        uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
-        with:
-          path: ${{ env.SLICER_ROOT }}/ExternalData
-          key: slicer-testdata-${{ matrix.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
-          restore-keys: slicer-testdata-${{ matrix.platform }}-
-
-      - name: Download the prerequisites
-        if: matrix.cached
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          KEY: ${{ matrix.key }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$SLICER_OUTPUT_DIR/restore"
-          gh release download nightly -R "$GITHUB_REPOSITORY" -D "$SLICER_OUTPUT_DIR/restore" --clobber \
-            -p "$KEY.tar.zst*"
-          "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/$KEY.tar.zst"
-          rm -rf "$SLICER_OUTPUT_DIR/restore"
-
-      # Signing with a Developer ID, and notarizing, happen only when the
-      # secrets exist. Without them the bundle is signed ad-hoc, which runs
-      # locally but shows Gatekeeper's warning. See
-      # Docs/developer_guide/build_instructions/github_actions.md
-      - name: Import the signing certificate
-        id: signing
-        if: matrix.platform == 'macos' && env.MACOS_CERTIFICATE != ''
-        shell: bash
-        env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          MACOS_SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
-        run: |
-          set -euo pipefail
-          keychain="$RUNNER_TEMP/slicer-signing.keychain-db"
-          password="$(openssl rand -base64 24)"
-          security create-keychain -p "$password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$password" "$keychain"
-          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" \
-            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          rm -f "$RUNNER_TEMP/cert.p12"
-          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" >/dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-          echo "SLICER_CODESIGN_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
-          echo "Signing with: $MACOS_SIGNING_IDENTITY"
-
-      - name: Build Slicer
-        uses: ./.github/actions/slicer-build-stage
-        with:
-          target: Slicer
-          # `a && b || c` returns c whenever b is falsy, so the empty string
-          # has to be the last operand.
-          restore-artifact: ${{ !matrix.cached && format('deps-{0}', matrix.platform) || '' }}
-          restore-archive: deps-${{ matrix.platform }}
-          # Archived after the tests and the packaging instead.
-          archive-name: ""
-
-      - name: Summarize the prerequisites
-        if: always()
-        shell: bash
-        run: '"$SLICER_CI" stage-summary'
-
-      - name: Save the test data
-        if: always() && steps.testdata.outputs.cache-hit != 'true'
-        uses: actions/cache/save@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
-        with:
-          path: ${{ env.SLICER_ROOT }}/ExternalData
-          key: ${{ steps.testdata.outputs.cache-primary-key }}
-
-      - name: Install software OpenGL
-        if: needs.setup.outputs.run-tests == 'true' && matrix.platform == 'windows'
-        shell: bash
-        run: '"$SLICER_CI" install-software-opengl'
-
-      - name: Run the tests
-        id: tests
-        if: needs.setup.outputs.run-tests == 'true'
-        continue-on-error: true
-        shell: bash
-        env:
-          SLICER_CTEST_EXCLUDE: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
-        run: '"$SLICER_CI" test'
-
-      - name: Summarize the tests
-        if: always() && needs.setup.outputs.run-tests == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/.github/scripts/test-summary.py" \
-            "$SLICER_OUTPUT_DIR/test-results.xml" "(${{ matrix.platform }})" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload the test results
-        if: always() && needs.setup.outputs.run-tests == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-${{ matrix.platform }}
-          path: |
-            ${{ env.SLICER_OUTPUT_DIR }}/test-results.xml
-            ${{ env.SLICER_OUTPUT_DIR }}/*.log
-          retention-days: 7
-          if-no-files-found: ignore
-
-      - name: Package
-        id: package
-        shell: bash
-        run: '"$SLICER_CI" package'
-
-      # A bundle whose install names were not rewritten builds and packages
-      # cleanly, and only fails on a user's machine. Check before publishing.
-      - name: Verify the package
-        id: verify
-        continue-on-error: true
-        shell: bash
-        run: '"$SLICER_CI" verify-package'
-
-      # Apple must notarize the package before macOS will open it without a
-      # warning. The submission is rejected outright if anything in the bundle
-      # is unsigned or lacks the hardened runtime.
-      - name: Notarize and staple
-        if: matrix.platform == 'macos' && steps.signing.outputs.enabled == 'true'
-        shell: bash
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-          PACKAGE: ${{ steps.package.outputs.package }}
-        run: |
-          set -euo pipefail
-          dmg="$SLICER_OUTPUT_DIR/$PACKAGE"
-          key="$RUNNER_TEMP/apple-api-key.p8"
-          echo "$APPLE_API_KEY" | base64 --decode > "$key"
-          echo "Submitting $PACKAGE to Apple"
-          xcrun notarytool submit "$dmg" \
-            --key "$key" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" \
-            --wait --timeout 45m
-          rm -f "$key"
-          xcrun stapler staple "$dmg"
-          xcrun stapler validate "$dmg"
-          # What Gatekeeper itself will decide.
-          spctl --assess --type open --context context:primary-signature -vv "$dmg"
-
-      - name: Upload package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: package-${{ matrix.platform }}
-          path: ${{ env.SLICER_OUTPUT_DIR }}/${{ steps.package.outputs.package }}
-          retention-days: 7
-          compression-level: 0
-          if-no-files-found: error
-
-      - name: Write manifest
-        if: needs.setup.outputs.publish == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$SLICER_CI" manifest "$SLICER_OUTPUT_DIR/manifest-${SLICER_PLATFORM}.json" \
-            "qt_version=$SLICER_QT_VERSION" \
-            "commit=$GITHUB_SHA" \
-            "run_id=$GITHUB_RUN_ID" \
-            "package=${{ steps.package.outputs.package }}" \
-            "deps_release_tag=nightly"
-
-      - name: Archive the build tree
-        if: needs.setup.outputs.publish == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Extensions never rebuild an external project, so the published
-          # tree can be reduced. The prerequisites release keeps its objects.
-          "$SLICER_CI" strip --objects --vcs "$SLICER_SUPERBUILD_DIR"
-          # Split in three archives so that consumers can fetch only what they need:
-          #  - the source tree (SlicerConfig.cmake points into it)
-          #  - the superbuild tree without the inner build (the prerequisites)
-          #  - the inner build tree
-          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-source-${SLICER_PLATFORM}.tar.zst" \
-            --exclude "*/.git" --exclude "*/.ccache" --exclude "*/.cache" Slicer
-          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-build-${SLICER_PLATFORM}.tar.zst" SR/Slicer-build
-          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst" --exclude "SR/Slicer-build*" SR
-          for a in "$SLICER_OUTPUT_DIR"/*.tar.zst; do "$SLICER_CI" split "$a"; done
-          ls -lh "$SLICER_OUTPUT_DIR"
-
-      - name: Upload the build tree
-        if: needs.setup.outputs.publish == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: build-${{ matrix.platform }}
-          path: |
-            ${{ env.SLICER_OUTPUT_DIR }}/manifest-${{ matrix.platform }}.json
-            ${{ env.SLICER_OUTPUT_DIR }}/slicer-source-${{ matrix.platform }}.tar.zst*
-            ${{ env.SLICER_OUTPUT_DIR }}/slicer-build-${{ matrix.platform }}.tar.zst*
-            ${{ env.SLICER_OUTPUT_DIR }}/deps-${{ matrix.platform }}.tar.zst*
-          retention-days: 5
-          compression-level: 0
-          if-no-files-found: error
-
-      - name: Fail on test failures or an unusable package
-        if: (steps.tests.outcome == 'failure' || steps.verify.outcome == 'failure') && github.event_name != 'schedule'
-        shell: bash
-        run: |
-          if [ "${{ steps.verify.outcome }}" = "failure" ]; then
-            echo "::error::The application bundle is not self-contained."
-          fi
-          if [ "${{ steps.tests.outcome }}" = "failure" ]; then
-            echo "::error::The test suite reported failures."
-          fi
-          exit 1
-
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: logs-${{ matrix.platform }}
-          path: ${{ env.SLICER_OUTPUT_DIR }}/*.log
-          retention-days: 5
-          if-no-files-found: ignore
+    secrets: inherit
+    with:
+      name: Slicer
+      platforms: ${{ needs.setup.outputs.platforms }}
+      ci-repository: ${{ github.repository }}
+      ci-ref: ${{ github.sha }}
+      # Override with the SLICER_CI_QT_VERSION repository variable.
+      qt-version: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
+      # Bump to force a rebuild of the prerequisites of every platform.
+      deps-key-version: "1"
+      rebuild-prerequisites: ${{ needs.setup.outputs.force-deps == 'true' }}
+      # The repository has a single release: the prerequisites are kept on
+      # the nightly one.
+      prerequisites-release: nightly
+      prerequisites-release-title: Slicer nightly
+      run-tests: ${{ needs.setup.outputs.run-tests == 'true' }}
+      test-exclude: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
+      # The nightly run publishes packages even when tests fail.
+      fail-on-test-failures: ${{ github.event_name != 'schedule' }}
+      archive-build-trees: ${{ needs.setup.outputs.publish == 'true' }}
+      macos-signing-identity: ${{ vars.MACOS_SIGNING_IDENTITY }}
 
   #-----------------------------------------------------------------------------
   # Publish the build trees so that extension repositories can build against
@@ -780,14 +201,14 @@ jobs:
   #-----------------------------------------------------------------------------
   publish:
     name: Publish nightly
-    needs: [setup, deps-key, slicer]
-    # Deliberately not conditioned on the Slicer job succeeding. That job fails
+    needs: [setup, build]
+    # Deliberately not conditioned on the build succeeding. The build fails
     # when tests fail, which must not withhold packages that were built,
     # verified and uploaded. Whether every platform actually produced its
     # artifacts is checked below, so a failed build still blocks publishing.
     # Nor does it run when nothing was built: a scheduled run that finds the
     # nightly already up to date skips every build job.
-    if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' && needs.setup.outputs.skip != 'true' && needs.slicer.result != 'cancelled' && needs.slicer.result != 'skipped' }}
+    if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' && needs.setup.outputs.skip != 'true' && needs.build.result != 'cancelled' && needs.build.result != 'skipped' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -816,7 +237,7 @@ jobs:
       - name: Check that every platform produced its artifacts
         shell: bash
         env:
-          MATRIX: ${{ needs.deps-key.outputs.matrix }}
+          MATRIX: ${{ needs.build.outputs.matrix }}
         run: |
           set -euo pipefail
           missing=0

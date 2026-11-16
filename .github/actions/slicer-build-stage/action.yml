@@ -67,6 +67,9 @@ runs:
           # tree, where it is then archived and published.
           rm -rf "$src/.ccache" "$src/.cache"
           rm -f "$src"/*.log
+          # The checkout of the CI scripts used by build-application.yml is
+          # not part of the sources.
+          rm -rf "$src/.slicer-ci"
 
           # Give every source file a timestamp older than any stamp in a
           # superbuild tree restored from the prerequisites. Checking the

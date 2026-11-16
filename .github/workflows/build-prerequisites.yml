@@ -1,0 +1,303 @@
+name: Build the prerequisites
+
+# Builds the external projects of a Slicer superbuild (VTK, ITK, CTK, Python,
+# DCMTK, ...) for the platforms whose prerequisites are not available yet, and
+# stores them as assets of a release of the calling repository, named after
+# their key.
+#
+# Called by build-application.yml only when there is something to build, so
+# that a run reusing the prerequisites shows a single skipped job rather than
+# one per stage and platform.
+#
+# A full build of the external projects does not fit in the 6 h limit of a
+# GitHub-hosted job, so it is split in stages chained through artifacts. Each
+# stage builds a group of external projects in the superbuild tree produced by
+# the previous one. The groups follow the critical path: VTK, then ITK, which
+# needs VTK because Slicer enables ITKVtkGlue, then CTK, which needs both.
+
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        description: "Matrix of the platforms to build, as JSON: {include: [{platform, runner, key}]}"
+        type: string
+        required: true
+      ci-repository:
+        description: "Repository providing the Slicer CI actions and scripts"
+        type: string
+        required: true
+      ci-ref:
+        description: "Commit, branch or tag of ci-repository"
+        type: string
+        required: true
+      qt-version:
+        type: string
+        required: true
+      extra-cmake-options:
+        description: "Space separated -D options added to the superbuild configuration"
+        type: string
+        default: ""
+      prerequisites-release:
+        description: "Release of the calling repository that holds the prerequisites"
+        type: string
+        required: true
+      prerequisites-release-title:
+        description: "Title given to that release if it has to be created"
+        type: string
+        default: "CI prerequisites"
+
+permissions:
+  contents: read
+
+env:
+  SLICER_EXTRA_CMAKE_OPTIONS: ${{ inputs.extra-cmake-options }}
+
+jobs:
+  deps-1:
+    name: "Deps 1/5: what VTK and ITK need (${{ matrix.platform }})"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    env:
+      SLICER_STAGE_NAME: "Deps 1/5: what VTK and ITK need"
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - name: Check out the sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Check out the Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+      - name: Set up environment
+        uses: ./.slicer-ci/.github/actions/slicer-env
+        with:
+          qt-version: ${{ inputs.qt-version }}
+          # The prerequisites are built once and then stored on a release, so
+          # caching their objects would only displace the entries that speed
+          # up the build of the application itself.
+          compiler-cache: "false"
+      - name: Build base
+        uses: ./.slicer-ci/.github/actions/slicer-build-stage
+        with:
+          # The dependencies of VTK and ITK, and nothing else. Naming their
+          # prerequisites rather than a hand-picked list keeps this stage
+          # derivable from the graph: `python` brings in zlib, bzip2, LZMA,
+          # LibFFI, sqlite and OpenSSL, `DCMTK` brings in OpenJPEG.
+          #
+          # Anything that merely *uses* VTK or ITK belongs in the last stage.
+          # Naming such a project here would build the whole of VTK in this
+          # stage instead, which is what teem used to do.
+          target: "python DCMTK tbb"
+          archive-paths: "SR Slicer"
+          archive-name: deps-stage
+          upload-artifact: deps-stage1-${{ matrix.platform }}
+
+  deps-2:
+    name: "Deps 2/5: VTK (${{ matrix.platform }})"
+    needs: deps-1
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    env:
+      SLICER_STAGE_NAME: "Deps 2/5: VTK"
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - name: Check out the sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Check out the Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+      - name: Set up environment
+        uses: ./.slicer-ci/.github/actions/slicer-env
+        with:
+          qt-version: ${{ inputs.qt-version }}
+          compiler-cache: "false"
+      - name: Build VTK
+        uses: ./.slicer-ci/.github/actions/slicer-build-stage
+        with:
+          target: "VTK"
+          restore-artifact: deps-stage1-${{ matrix.platform }}
+          restore-archive: deps-stage
+          archive-paths: "SR Slicer"
+          archive-name: deps-stage
+          upload-artifact: deps-stage2-${{ matrix.platform }}
+
+  deps-3:
+    name: "Deps 3/5: ITK (${{ matrix.platform }})"
+    needs: deps-2
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    env:
+      SLICER_STAGE_NAME: "Deps 3/5: ITK"
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - name: Check out the sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Check out the Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+      - name: Set up environment
+        uses: ./.slicer-ci/.github/actions/slicer-env
+        with:
+          qt-version: ${{ inputs.qt-version }}
+          compiler-cache: "false"
+      - name: Build ITK
+        uses: ./.slicer-ci/.github/actions/slicer-build-stage
+        with:
+          # ITK needs VTK, because Slicer enables ITKVtkGlue.
+          target: "ITK"
+          restore-artifact: deps-stage2-${{ matrix.platform }}
+          restore-archive: deps-stage
+          archive-paths: "SR Slicer"
+          archive-name: deps-stage
+          upload-artifact: deps-stage3-${{ matrix.platform }}
+
+  deps-4:
+    name: "Deps 4/5: CTK (${{ matrix.platform }})"
+    needs: deps-3
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    env:
+      SLICER_STAGE_NAME: "Deps 4/5: CTK"
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - name: Check out the sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Check out the Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+      - name: Set up environment
+        uses: ./.slicer-ci/.github/actions/slicer-env
+        with:
+          qt-version: ${{ inputs.qt-version }}
+          compiler-cache: "false"
+      - name: Build CTK
+        uses: ./.slicer-ci/.github/actions/slicer-build-stage
+        with:
+          # CTK needs VTK, ITK, Python and DCMTK, so it comes last on the
+          # critical path. It brings in PythonQt and QtTesting.
+          target: "CTK"
+          restore-artifact: deps-stage3-${{ matrix.platform }}
+          restore-archive: deps-stage
+          archive-paths: "SR Slicer"
+          archive-name: deps-stage
+          upload-artifact: deps-stage4-${{ matrix.platform }}
+
+  deps-5:
+    name: "Deps 5/5: everything else (${{ matrix.platform }})"
+    needs: deps-4
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    permissions:
+      contents: write
+    env:
+      SLICER_STAGE_NAME: "Deps 5/5: everything else"
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - name: Check out the sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - name: Check out the Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+      - name: Set up environment
+        uses: ./.slicer-ci/.github/actions/slicer-env
+        with:
+          qt-version: ${{ inputs.qt-version }}
+          compiler-cache: "false"
+      - name: Build rest
+        uses: ./.slicer-ci/.github/actions/slicer-build-stage
+        with:
+          # Everything that was not on the critical path: teem, curl,
+          # LibArchive, RapidJSON, JsonCpp, SlicerExecutionModel, qRestAPI, the
+          # launcher, SimpleITK, the Python packages and the sources of the
+          # remote modules. Whatever is added to the superbuild lands here
+          # unless VTK or ITK needs it.
+          target: "Slicer-dependencies"
+          restore-artifact: deps-stage4-${{ matrix.platform }}
+          restore-archive: deps-stage
+          archive-paths: "SR"
+          archive-name: deps-${{ matrix.platform }}
+          upload-artifact: deps-${{ matrix.platform }}
+
+      - name: Publish the prerequisites
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ matrix.key }}
+          TAG: ${{ inputs.prerequisites-release }}
+          TITLE: ${{ inputs.prerequisites-release-title }}
+        run: |
+          set -euo pipefail
+          # The prerequisites are assets of a single pre-release, named after
+          # their key, rather than a release each. The release is created here
+          # when this is the first run; for Slicer it is the nightly release,
+          # whose notes the publish job fills in.
+          gh release create "$TAG" --title "$TITLE" --prerelease --latest=false \
+            --notes "Prebuilt prerequisites reused by the build workflow. The slicer-deps-* assets are regenerated on demand." \
+            2>/dev/null || true
+
+          "$SLICER_CI" split "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst"
+          upload="$SLICER_OUTPUT_DIR/prerequisites"
+          rm -rf "$upload"; mkdir -p "$upload"
+          for f in "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst*; do
+            mv "$f" "$upload/$KEY${f##*/deps-${SLICER_PLATFORM}}"
+          done
+          gh release upload "$TAG" "$upload"/* --clobber
+          # The list of parts goes last: its presence marks the set as complete.
+          parts="$(cd "$upload" && ls)"
+          echo "$parts" > "$upload/$KEY.parts"
+          gh release upload "$TAG" "$upload/$KEY.parts" --clobber
+          rm -rf "$upload"
+
+          # Keep the three most recent sets of prerequisites of this platform;
+          # older ones correspond to external projects nothing builds any more.
+          # A set's list goes first, so that a half-removed set never counts as
+          # built.
+          names="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
+                     --jq '.assets[] | "\(.createdAt) \(.name)"')"
+          { grep -E " slicer-deps-${SLICER_PLATFORM}-[0-9a-f]+\.parts$" <<< "$names" || true; } \
+            | sort -r | tail -n +4 | while read -r _ list; do
+                old="${list%.parts}"
+                echo "Removing the superseded prerequisites $old"
+                gh release delete-asset "$TAG" "$list" -R "$GITHUB_REPOSITORY" --yes || true
+                awk '{print $2}' <<< "$names" | { grep -F "$old.tar.zst" || true; } | while read -r asset; do
+                  gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes || true
+                done
+              done

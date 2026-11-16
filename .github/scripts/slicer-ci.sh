@@ -125,9 +125,51 @@ cmd_env() {
 # Compute a key identifying the set of prerequisites. Any change to the files
 # describing the external projects (or to the toolchain) yields a new key and
 # therefore a fresh build of the prerequisites.
+#
+# The source tree is either Slicer itself or a custom application built on
+# Slicer (a top-level project that fetches the Slicer sources and adds them with
+# add_subdirectory, as in the SlicerCustomAppTemplate).
 cmd_deps_key() {
   local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
-  [ -d "$src/SuperBuild" ] || die "deps-key: $src does not look like a Slicer source tree"
+  if [ -f "$src/SuperBuild.cmake" ]; then
+    _deps_key_slicer "$src"
+  elif [ -f "$src/CMakeLists.txt" ]; then
+    _deps_key_application "$src"
+  else
+    die "deps-key: $src is neither a Slicer source tree nor a custom application"
+  fi
+}
+
+# Key of a custom application. Its external projects are those of the Slicer
+# revision it fetches, plus any it adds in SuperBuild/, configured by the
+# options of its top-level CMakeLists.txt. That file pins the Slicer revision,
+# so it is hashed whole: changing the pin, or any option, rebuilds the
+# prerequisites. A revision pinned by branch name rather than by commit is not
+# followed; bump the key version to rebuild after the branch moves.
+_deps_key_application() {
+  local src="$1"
+  (
+    cd "$src"
+    {
+      echo "== application"
+      echo "== CMakeLists.txt"; cat CMakeLists.txt
+      if [ -d SuperBuild ]; then
+        find SuperBuild -type f | LC_ALL=C sort | while read -r f; do echo "== $f"; cat "$f"; done
+      fi
+      echo "== configure arguments"
+      SLICER_QT_DIR="" configure_args
+      echo "platform=$SLICER_PLATFORM"
+      echo "runner=${SLICER_RUNNER_IMAGE:-}"
+      echo "qt=${SLICER_QT_VERSION:-}"
+      echo "key-version=${SLICER_DEPS_KEY_VERSION:-1}"
+    } | tr -d '\r' | sha256 | cut -c1-16
+  )
+}
+
+# Key of Slicer itself. Kept byte for byte as it was when only Slicer was
+# built, so that existing prerequisites keep their key.
+_deps_key_slicer() {
+  local src="$1"
   (
     cd "$src"
     {
