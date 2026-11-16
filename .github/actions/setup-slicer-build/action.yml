@@ -171,9 +171,40 @@ runs:
         echo "modules=$modules" >> "$GITHUB_OUTPUT"
         echo "arch=$arch" >> "$GITHUB_OUTPUT"
 
+    # aqtinstall downloads each archive from a mirror picked by download.qt.io
+    # and, on a timeout, tries one random fallback before giving up. Give slow
+    # mirrors more time, retry connection errors, skip a mirror known to fail,
+    # and fall back to a fixed list of reliable ones. The PlusLib builds use
+    # the same configuration.
+    - name: Configure aqtinstall
+      shell: bash
+      run: |
+        cat > "$RUNNER_TEMP/aqt.ini" <<'EOF'
+        [requests]
+        connection_timeout : 10
+        response_timeout : 120
+        max_retries_on_connection_error : 10
+        [mirrors]
+        blacklist :
+            https://mirror.ossplanet.net
+        fallbacks :
+            https://ftp.fau.de/qtproject/
+            https://mirror.netcologne.de/qtproject/
+            https://mirrors.dotsrc.org/qtproject/
+            https://master.qt.io/
+            https://qt.mirror.constant.com/
+            https://mirrors.ukfast.co.uk/sites/qt.io/
+        EOF
+        echo "AQT_CONFIG=$RUNNER_TEMP/aqt.ini" >> "$GITHUB_ENV"
+
     # The Qt archives come from a pool of third-party mirrors, one of which
-    # occasionally refuses connections. Try a second time, when aqtinstall
-    # picks a mirror again, rather than lose a stage to it.
+    # occasionally refuses connections. Qt is therefore kept in the GitHub
+    # Actions cache of the repository (private to its workflows, keyed on the
+    # version, architecture and modules), so that the mirrors are only used
+    # the first time; the action saves the cache as soon as Qt is installed,
+    # so a job that later fails its tests still saves it. When a download is
+    # needed and fails, try a second time, when aqtinstall picks a mirror
+    # again, rather than lose a stage to it.
     - name: Install Qt
       id: install-qt
       continue-on-error: true
@@ -184,7 +215,8 @@ runs:
         target: desktop
         arch: ${{ steps.qt-options.outputs.arch }}
         modules: ${{ steps.qt-options.outputs.modules }}
-        cache: false
+        cache: true
+        cache-key-prefix: slicer-qt
         # The action needs a Python to run aqtinstall. Letting it provision one
         # is required on macOS, whose system Python refuses to install into an
         # externally managed environment.
@@ -199,7 +231,8 @@ runs:
         target: desktop
         arch: ${{ steps.qt-options.outputs.arch }}
         modules: ${{ steps.qt-options.outputs.modules }}
-        cache: false
+        cache: true
+        cache-key-prefix: slicer-qt
         # The action needs a Python to run aqtinstall. Letting it provision one
         # is required on macOS, whose system Python refuses to install into an
         # externally managed environment.
