@@ -785,7 +785,9 @@ jobs:
     # when tests fail, which must not withhold packages that were built,
     # verified and uploaded. Whether every platform actually produced its
     # artifacts is checked below, so a failed build still blocks publishing.
-    if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' && needs.slicer.result != 'cancelled' }}
+    # Nor does it run when nothing was built: a scheduled run that finds the
+    # nightly already up to date skips every build job.
+    if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' && needs.setup.outputs.skip != 'true' && needs.slicer.result != 'cancelled' && needs.slicer.result != 'skipped' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
