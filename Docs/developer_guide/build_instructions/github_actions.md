@@ -57,17 +57,21 @@ configuration are skipped, using the list of external projects that
 or removing an external project therefore does not require touching the
 workflow, only rebalancing the stages if one of them becomes too long.
 
-The finished prerequisites are published as the assets of a release named after
-the key, for example `slicer-deps-linux-1a2b3c4d5e6f7890`. Every later run,
-on any branch, restores that release instead of rebuilding: the five stages are
-skipped entirely and the job that builds Slicer downloads it directly. The
-prerequisites are rebuilt only when the key changes, which happens when an
-external project or a configure option changes, and never merely because a run
-is new.
+The finished prerequisites are published as assets of the `nightly`
+pre-release, named after the key, for example
+`slicer-deps-linux-1a2b3c4d5e6f7890.tar.zst` (split into `.part-NN` files above
+the 2 GiB asset limit). A `<key>.parts` list, uploaded last, marks a set as
+complete. Every later run, on any branch, restores those assets instead of
+rebuilding: the five stages are skipped entirely and the job that builds Slicer
+downloads them directly. The prerequisites are rebuilt only when the key
+changes, which happens when an external project or a configure option changes,
+and never merely because a run is new.
 
-Those releases are an implementation detail of the CI and can be deleted at any
-time: they are regenerated on demand. The three most recent sets per platform
-are kept and older ones are removed automatically.
+Keeping them on the nightly release means that the repository has a single
+release. The assets are an implementation detail of the CI and can be deleted
+at any time: they are regenerated on demand. The three most recent sets per
+platform are kept and older ones are removed automatically; publishing the
+nightly replaces its own assets but leaves these alone.
 
 `Slicer-dependencies` is an aggregate target added by `SuperBuild.cmake`. It
 depends on every entry of `Slicer_DEPENDENCIES` and `Slicer_REMOTE_DEPENDENCIES`,
@@ -418,7 +422,7 @@ run side by side while the new one settles; once it has, `ci.yml` and the
 
 The job that builds Slicer runs the compiler through `ccache`, restored from
 the GitHub Actions cache. The prerequisites do not use it: they are built once
-and then stored as a release, so caching their objects would only displace the
+and then stored on the nightly release, so caching their objects would only displace the
 entries that make the Slicer build faster.
 
 `sccache` would be the more usual choice, but its GitHub Actions backend writes

@@ -226,6 +226,10 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x .github/scripts/slicer-ci.sh
+          # The prerequisites are kept as assets of the nightly release. A set
+          # counts as built once its .parts list, uploaded last, is present.
+          assets="$(gh release view nightly -R "$GITHUB_REPOSITORY" --json assets \
+                      --jq '.assets[].name' 2>/dev/null || true)"
           entries="[]"
           {
             echo "### Prerequisites"
@@ -242,7 +246,7 @@ jobs:
               SLICER_SOURCE_DIR="$GITHUB_WORKSPACE" \
               .github/scripts/slicer-ci.sh deps-key)"
             cached=false
-            if [ "$FORCE" != "true" ] && gh release view "$key" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [ "$FORCE" != "true" ] && grep -qxF "$key.parts" <<< "$assets"; then
               cached=true
             fi
             entries="$(echo "$entries" | jq -c \
@@ -449,23 +453,43 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           KEY: ${{ matrix.key }}
+          TAG: nightly
         run: |
           set -euo pipefail
+          # The prerequisites are assets of the nightly pre-release, named after
+          # their key, rather than a release of their own: the repository has a
+          # single release. The nightly is created here when this is the first
+          # run; the publish job fills in its notes.
+          gh release create "$TAG" --title "Slicer nightly" --prerelease --latest=false \
+            --notes "Nightly Slicer build trees and packages." 2>/dev/null || true
+
           "$SLICER_CI" split "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst"
-          gh release create "$KEY" --title "$KEY" --prerelease --latest=false \
-            --notes "Prebuilt Slicer prerequisites for ${SLICER_PLATFORM}, produced by the Build workflow. Safe to delete: it is regenerated on demand." \
-            2>/dev/null || true
-          gh release upload "$KEY" "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst* --clobber
+          upload="$SLICER_OUTPUT_DIR/prerequisites"
+          rm -rf "$upload"; mkdir -p "$upload"
+          for f in "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst*; do
+            mv "$f" "$upload/$KEY${f##*/deps-${SLICER_PLATFORM}}"
+          done
+          gh release upload "$TAG" "$upload"/* --clobber
+          # The list of parts goes last: its presence marks the set as complete.
+          parts="$(cd "$upload" && ls)"
+          echo "$parts" > "$upload/$KEY.parts"
+          gh release upload "$TAG" "$upload/$KEY.parts" --clobber
+          rm -rf "$upload"
 
           # Keep the three most recent sets of prerequisites of this platform;
           # older ones correspond to external projects nothing builds any more.
-          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
-            --jq "[.[] | select(.tagName | startswith(\"slicer-deps-${SLICER_PLATFORM}-\"))]
-                  | sort_by(.createdAt) | reverse | .[3:] | .[].tagName" \
-            | while read -r old; do
-                [ -n "$old" ] || continue
+          # A set's list goes first, so that a half-removed set never counts as
+          # built.
+          names="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
+                     --jq '.assets[] | "\(.createdAt) \(.name)"')"
+          { grep -E " slicer-deps-${SLICER_PLATFORM}-[0-9a-f]+\.parts$" <<< "$names" || true; } \
+            | sort -r | tail -n +4 | while read -r _ list; do
+                old="${list%.parts}"
                 echo "Removing the superseded prerequisites $old"
-                gh release delete "$old" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+                gh release delete-asset "$TAG" "$list" -R "$GITHUB_REPOSITORY" --yes || true
+                awk '{print $2}' <<< "$names" | { grep -F "$old.tar.zst" || true; } | while read -r asset; do
+                  gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes || true
+                done
               done
 
   # Single place stating whether the prerequisites of every platform are
@@ -546,9 +570,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$SLICER_OUTPUT_DIR/restore"
-          gh release download "$KEY" -R "$GITHUB_REPOSITORY" -D "$SLICER_OUTPUT_DIR/restore" --clobber \
-            -p "deps-${SLICER_PLATFORM}.tar.zst*"
-          "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/deps-${SLICER_PLATFORM}.tar.zst"
+          gh release download nightly -R "$GITHUB_REPOSITORY" -D "$SLICER_OUTPUT_DIR/restore" --clobber \
+            -p "$KEY.tar.zst*"
+          "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/$KEY.tar.zst"
           rm -rf "$SLICER_OUTPUT_DIR/restore"
 
       # Signing with a Developer ID, and notarizing, happen only when the
@@ -831,7 +855,10 @@ jobs:
 
           Extension repositories can build against this nightly with the
           \`Slicer/Slicer/.github/actions/setup-slicer-build\` action.
-          See \`Docs/developer_guide/build_instructions/github_actions.md\`."
+          See \`Docs/developer_guide/build_instructions/github_actions.md\`.
+
+          The \`slicer-deps-<platform>-<key>\` assets are the prebuilt
+          prerequisites that the Build workflow reuses between runs."
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" --notes "$notes" --latest=false --prerelease
           else
@@ -844,7 +871,9 @@ jobs:
           ( cd assets && ls ) | LC_ALL=C sort -u > keep.txt
           gh release view "$tag" --json assets --jq '.assets[].name' \
             | LC_ALL=C sort -u > have.txt
-          comm -13 keep.txt have.txt > stale.txt
+          # The prerequisites (slicer-deps-*) are managed by the stage that
+          # builds them, and are kept.
+          comm -13 keep.txt have.txt | { grep -v '^slicer-deps-' || true; } > stale.txt
           while read -r asset; do
             [ -n "$asset" ] || continue
             echo "Removing the superseded asset $asset"
