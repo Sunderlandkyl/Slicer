@@ -69,6 +69,9 @@ jobs:
       platforms: ${{ steps.matrix.outputs.platforms }}
       run-tests: ${{ steps.matrix.outputs.run-tests }}
       publish: ${{ steps.matrix.outputs.publish }}
+      # Whether a desktop platform, and the web runtime, are among the platforms.
+      desktop: ${{ steps.matrix.outputs.desktop }}
+      web: ${{ steps.matrix.outputs.web }}
       force-deps: ${{ steps.matrix.outputs.force-deps }}
       skip: ${{ steps.uptodate.outputs.skip }}
     steps:
@@ -119,12 +122,15 @@ jobs:
             || { [ "$EVENT" = "push" ] && [ "${SLICER_CI_PUBLISH:-}" = "true" ]; }; then
             publish="true"
           fi
-          # The nightly release holds the desktop packages and build trees: a
-          # run that builds none of them, web alone, has nothing to publish.
-          if ! grep -qE '(^|,) *(linux|macos|windows) *(,|$)' <<< "$PLATFORMS"; then
-            publish="false"
-          fi
+          # A run building the web runtime alone publishes that alone: the
+          # desktop assets, the notes of the release and the extension builds
+          # are left as they are.
+          desktop=false; web=false
+          if grep -qE '(^|,) *(linux|macos|windows) *(,|$)' <<< "$PLATFORMS"; then desktop=true; fi
+          if grep -qE '(^|,) *web *(,|$)' <<< "$PLATFORMS"; then web=true; fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "desktop=$desktop" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
           echo "force-deps=${{ github.event.inputs.rebuild-prerequisites || 'false' }}" >> "$GITHUB_OUTPUT"
 
       # The scheduled run exists to keep the nightly release in step with the
@@ -205,7 +211,7 @@ jobs:
       test-exclude: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
       # The nightly run publishes packages even when tests fail.
       fail-on-test-failures: ${{ github.event_name != 'schedule' }}
-      archive-build-trees: ${{ needs.setup.outputs.publish == 'true' }}
+      archive-build-trees: ${{ needs.setup.outputs.publish == 'true' && needs.setup.outputs.desktop == 'true' }}
       macos-signing-identity: ${{ vars.MACOS_SIGNING_IDENTITY }}
 
   #-----------------------------------------------------------------------------
@@ -251,10 +257,11 @@ jobs:
         shell: bash
         env:
           MATRIX: ${{ needs.build.outputs.matrix }}
+          WEB: ${{ needs.setup.outputs.web }}
         run: |
           set -euo pipefail
           missing=0
-          for platform in $(echo "$MATRIX" | jq -r '.include[].platform'); do
+          for platform in $(echo "$MATRIX" | jq -r '.include[]?.platform'); do
             for f in "manifest-${platform}.json" "slicer-source-${platform}.tar.zst" \
                      "slicer-build-${platform}.tar.zst" "deps-${platform}.tar.zst"; do
               if ! ls "assets/$f"* >/dev/null 2>&1; then
@@ -263,6 +270,14 @@ jobs:
               fi
             done
           done
+          if [ "$WEB" = "true" ]; then
+            for f in slicerweb-wheels.zip slicerweb-extensions.zip; do
+              if [ ! -f "packages/$f" ]; then
+                echo "::error::web did not produce $f"
+                missing=1
+              fi
+            done
+          fi
           [ "$missing" -eq 0 ] || exit 1
           echo "Every platform produced a complete set of artifacts."
 
@@ -280,8 +295,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          DESKTOP: ${{ needs.setup.outputs.desktop }}
+          WEB: ${{ needs.setup.outputs.web }}
         run: |
           set -euo pipefail
+          mkdir -p assets
           cp packages/* assets/
           ls -lh assets
           tag="nightly"
@@ -293,10 +311,18 @@ jobs:
           \`Slicer/Slicer/.github/actions/setup-slicer-build\` action.
           See \`Docs/developer_guide/build_instructions/github_actions.md\`.
 
+          The \`slicerweb-wheels.zip\` and \`slicerweb-extensions.zip\` assets are
+          the WebAssembly runtime of SlicerWeb (https://github.com/lassoan/SlicerWeb):
+          the wheels.zip and extensions.zip a SlicerWeb site is built from.
+
           The \`slicer-deps-<platform>-<key>\` assets are the prebuilt
           prerequisites that the Build workflow reuses between runs."
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" --notes "$notes" --latest=false --prerelease
+            # A run of the web runtime alone leaves the notes, which describe
+            # the desktop builds, as they are.
+            if [ "$DESKTOP" = "true" ]; then
+              gh release edit "$tag" --notes "$notes" --latest=false --prerelease
+            fi
           else
             gh release create "$tag" --title "Slicer nightly" --notes "$notes" --prerelease --latest=false
           fi
@@ -304,12 +330,19 @@ jobs:
           # date, so uploading alone would accumulate one package per day rather
           # than replacing yesterday's; remove whatever this run did not produce.
           gh release upload "$tag" assets/* --clobber
+          # A run of the web runtime alone replaces it and nothing else.
+          if [ "$DESKTOP" != "true" ]; then
+            exit 0
+          fi
           ( cd assets && ls ) | LC_ALL=C sort -u > keep.txt
           gh release view "$tag" --json assets --jq '.assets[].name' \
             | LC_ALL=C sort -u > have.txt
           # The prerequisites (slicer-deps-*) are managed by the stage that
-          # builds them, and are kept.
-          comm -13 keep.txt have.txt | { grep -v '^slicer-deps-' || true; } > stale.txt
+          # builds them, and are kept, and so is the web runtime (slicerweb-*)
+          # when this run did not build it.
+          keep='^slicer-deps-'
+          [ "$WEB" = "true" ] || keep='^(slicer-deps-|slicerweb-)'
+          comm -13 keep.txt have.txt | { grep -vE "$keep" || true; } > stale.txt
           while read -r asset; do
             [ -n "$asset" ] || continue
             echo "Removing the superseded asset $asset"
@@ -338,10 +371,12 @@ jobs:
   #-----------------------------------------------------------------------------
   notify:
     name: Start the extension builds
-    needs: [publish]
+    needs: [setup, publish]
+    # Not after a run of the web runtime alone: no extension builds against it.
     if: >-
       ${{ !cancelled() && vars.SLICER_NIGHTLY_APP_ID != ''
-          && (needs.publish.result == 'success' || inputs.notify-only) }}
+          && ((needs.publish.result == 'success' && needs.setup.outputs.desktop == 'true')
+              || inputs.notify-only) }}
     runs-on: ubuntu-latest
     permissions: {}
     steps:

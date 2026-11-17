@@ -16,8 +16,9 @@ name: Build Slicer for the web
 #   2. Slicer itself, its wheels, and SlicerWeb's smoke test of them.
 #
 # The run produces these artifacts:
-#   package-web   wheels.zip, the runtime (what SlicerWeb's publish_runtime.py
-#                 uploads, and its Publish app workflow reads)
+#   package-web   the runtime: slicerweb-wheels.zip and slicerweb-extensions.zip,
+#                 the wheels.zip and extensions.zip that SlicerWeb's
+#                 publish_runtime.py uploads and its Publish app workflow reads
 #   logs-web      the logs of the stages
 
 on:
@@ -320,13 +321,38 @@ jobs:
       - name: Smoke test
         run: bash "$SLICERWEB_CI" run 70-smoke
       - name: Archive the runtime
+        env:
+          FROM_CHECKOUT: ${{ inputs.slicer-from-checkout }}
+          SLICERWEB_REPOSITORY: ${{ inputs.slicerweb-repository }}
         run: |
           set -euo pipefail
-          mkdir -p "$SLICERWEB_ROOT/out/package"
-          # The layout of SlicerWeb's publish_runtime.py: the contents of the
-          # wheels folder.
-          (cd "$SLICERWEB_ROOT/dist/wheels" && zip -q -r "$SLICERWEB_ROOT/out/package/wheels.zip" .)
-          ls -lh "$SLICERWEB_ROOT/out/package"
+          out="$SLICERWEB_ROOT/out/package"
+          mkdir -p "$out"
+          wheels="$SLICERWEB_ROOT/dist/wheels"
+          # What SlicerWeb's build.py writes next to the wheels, which the
+          # application shows at the end of its menu: when the runtime was
+          # built, and from which commits. A site has to be built from the
+          # same SlicerWeb commit as its runtime.
+          slicer="null"
+          if [ "$FROM_CHECKOUT" = "true" ]; then
+            slicer="$(jq -n --arg r "$GITHUB_REPOSITORY" --arg c "$(git -C slicer rev-parse HEAD)" \
+                        '{repository: $r, commit: $c}')"
+          fi
+          jq -n --arg date "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" \
+                --arg repo "$SLICERWEB_REPOSITORY" \
+                --arg commit "$(git -C slicerweb rev-parse HEAD)" \
+                --argjson slicer "$slicer" \
+                '{date: $date, slicerweb: {repository: $repo, commit: $commit, modified: false}}
+                 + (if $slicer then {slicer: $slicer} else {} end)' \
+            | sudo tee "$wheels/build-info.json"
+          # The layout of SlicerWeb's publish_runtime.py: wheels.zip holds the
+          # contents of the wheels folder, extensions.zip those of the
+          # extensions folder, an empty index until extensions are built here.
+          (cd "$wheels" && zip -q -r "$out/slicerweb-wheels.zip" .)
+          mkdir -p "$SLICERWEB_ROOT/out/extensions"
+          echo '{"extensions": []}' > "$SLICERWEB_ROOT/out/extensions/index.json"
+          (cd "$SLICERWEB_ROOT/out/extensions" && zip -q -r "$out/slicerweb-extensions.zip" .)
+          ls -lh "$out"
           {
             echo "### Web runtime"
             echo ""
@@ -338,7 +364,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package-web
-          path: ${{ env.SLICERWEB_ROOT }}/out/package/wheels.zip
+          path: ${{ env.SLICERWEB_ROOT }}/out/package/
           retention-days: 7
           compression-level: 0
           if-no-files-found: error
