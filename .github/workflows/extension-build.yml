@@ -50,6 +50,13 @@ on:
         description: "Additional options for the extension's configure step"
         type: string
         default: ""
+      build-dependencies:
+        description: >-
+          Build the extensions it depends on (EXTENSION_DEPENDS) first, from
+          the repositories of the registry of the Slicer release, at the
+          revision they published, or else from the Slicer ExtensionsIndex
+        type: boolean
+        default: true
       run-tests:
         description: "Run the extension's tests"
         type: boolean
@@ -235,6 +242,18 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" install-software-opengl'
 
+      # The extensions it depends on (EXTENSION_DEPENDS), built from the
+      # repositories of the registry of the Slicer release, at the revision
+      # they published, or from the ExtensionsIndex.
+      - name: Build the dependencies
+        if: inputs.build-dependencies
+        shell: bash
+        env:
+          SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
+          SLICER_EXT_CMAKE_OPTIONS: ${{ inputs.cmake-options }}
+          SLICER_EXT_REGISTRY: https://github.com/${{ inputs.slicer-repository }}/releases/download/${{ inputs.release-tag }}/extension-repositories.json
+        run: '"$SLICER_CI" extension-dependencies'
+
       - name: Configure
         shell: bash
         env:
@@ -396,6 +415,8 @@ jobs:
           NAME: ${{ needs.setup.outputs.extension-name }}
           SOURCE_DIRECTORY: ${{ inputs.source-directory }}
           SUBDIRECTORY: ${{ inputs.web-build-subdirectory }}
+          # Where the dependencies come from, as for the desktop platforms.
+          SLICER_EXT_REGISTRY: ${{ inputs.build-dependencies && format('https://github.com/{0}/releases/download/{1}/extension-repositories.json', inputs.slicer-repository, inputs.release-tag) || '' }}
         run: |
           set -euo pipefail
           src="$GITHUB_WORKSPACE/extension"

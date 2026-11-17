@@ -861,12 +861,162 @@ extension_configure_args() {
     args+=("-DCMAKE_C_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER"
            "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER")
   fi
+  # The extensions it depends on, built by extension-dependencies: <Name>_DIR
+  # of each, as the Slicer extension build hands them on.
+  local deps; deps="$(bash_path "$(ext_deps_dir)")/cmake-args.txt"
+  if [ -f "$deps" ]; then
+    while IFS= read -r line; do [ -n "$line" ] && args+=("$line"); done < "$deps"
+  fi
   # Options provided by the workflow, one per line or space separated.
   if [ -n "${SLICER_EXT_CMAKE_OPTIONS:-}" ]; then
     # shellcheck disable=SC2206
     args+=(${SLICER_EXT_CMAKE_OPTIONS})
   fi
   printf '%s\n' "${args[@]}"
+}
+
+ext_deps_dir() { echo "${SLICER_EXT_DEPS_DIR:-$SLICER_ROOT/ext-deps}"; }
+
+# Build the extensions the extension depends on (EXTENSION_DEPENDS of its
+# CMakeLists.txt, and theirs in turn), dependencies first, against the same
+# Slicer build tree, as the Slicer extension build does. Each is taken from:
+#   - the registry (SLICER_EXT_REGISTRY, the extension-repositories.json of the
+#     Slicer release): the repository whose nightly extension.json names it,
+#     at the revision that release was built from, which is what a user
+#     installs beside the extension;
+#   - otherwise the Slicer ExtensionsIndex (SLICER_EXT_INDEX_URL): its scm_url
+#     at its scm_revision.
+# extension-configure then hands -D<Name>_DIR of each to the extension, and
+# extension-load loads their modules with it. Only the extension's own package
+# is made: its dependencies are published by their own repositories.
+cmd_extension_dependencies() {
+  local src; src="$(ext_source_dir)"
+  local root; root="$(ext_deps_dir)"
+  local broot; broot="$(bash_path "$root")"
+  local py; py="$(command -v python3 || command -v python)" || die "extension-dependencies: no python"
+  rm -rf "$broot"; mkdir -p "$broot"
+  : > "$broot/cmake-args.txt"; : > "$broot/module-paths.txt"
+  log "Resolve the dependencies"
+  "$py" - "$src" "$root" "${SLICER_EXT_REGISTRY:-}" \
+    "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" \
+    > "$broot/plan.txt" <<'PY' || { endlog; die "extension-dependencies: could not resolve the dependencies"; }
+import json, os, re, subprocess, sys, urllib.request
+src, root, registry_url, index_url = sys.argv[1:5]
+
+def log(message):
+    print(message, file=sys.stderr)
+
+def get_json(url, attempts=3):
+    """The JSON document at url, or None when there is none (404) or it cannot be read."""
+    import time, urllib.error
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+        except Exception:
+            pass
+        time.sleep(5 * (attempt + 1))
+    return None
+
+def depends(source):
+    """EXTENSION_DEPENDS of the CMakeLists.txt of an extension."""
+    try:
+        text = open(os.path.join(source, "CMakeLists.txt"), encoding="utf8", errors="replace").read()
+    except OSError:
+        return []
+    match = re.search(r"set\s*\(\s*EXTENSION_DEPENDS\s+([^)]*)\)", text, re.I)
+    if not match:
+        return []
+    names = [n.strip('"') for n in re.split(r"[\s;]+", match.group(1)) if n.strip('"')]
+    return [n for n in names if n not in ("NA", "")]
+
+# The registry: name -> (repository, revision) of what each repository published.
+published = {}
+registry = get_json(registry_url) if registry_url else None
+if registry:
+    tag = registry.get("release_tag", "nightly")
+    for entry in registry.get("repositories", []):
+        repo = entry["repository"]
+        described = get_json(f"https://github.com/{repo}/releases/download/{tag}/extension.json")
+        if described and described.get("name"):
+            published[described["name"]] = (repo, described.get("revision") or entry.get("default_branch"))
+    log(f"registry: {', '.join(f'{n} ({r})' for n, (r, _) in sorted(published.items())) or 'nothing published'}")
+elif registry_url:
+    log(f"no registry at {registry_url}")
+
+def fetch(name):
+    """The source of a dependency, fetched into <root>/src/<name>."""
+    if name in published:
+        repo, revision = published[name]
+        url, origin = f"https://github.com/{repo}.git", f"registry: {repo}"
+    else:
+        described = get_json(f"{index_url}/{name}.json")
+        if not described or not described.get("scm_url"):
+            sys.exit(f"::error::{name} is neither in the registry nor in the ExtensionsIndex")
+        url, revision = described["scm_url"], described.get("scm_revision") or "HEAD"
+        origin = "ExtensionsIndex"
+    path = os.path.join(root, "src", name).replace("\\", "/")
+    os.makedirs(path, exist_ok=True)
+    git = lambda *args: subprocess.run(["git", "-C", path, *args], check=True, stdout=sys.stderr)
+    git("init", "-q")
+    git("remote", "add", "origin", url)
+    git("fetch", "-q", "--depth", "1", "origin", revision)
+    git("checkout", "-q", "FETCH_HEAD")
+    log(f"{name}: {url} {revision} ({origin})")
+    return path
+
+order, state = [], {}
+def visit(name, chain):
+    if state.get(name) == "done":
+        return
+    if state.get(name) == "visiting":
+        sys.exit("::error::dependency cycle: " + " -> ".join(chain + [name]))
+    state[name] = "visiting"
+    path = fetch(name)
+    for dependency in depends(path):
+        visit(dependency, chain + [name])
+    state[name] = "done"
+    order.append((name, path))
+
+for name in depends(src):
+    visit(name, [])
+for name, path in order:
+    print(f"{name}\t{path}")
+PY
+  cat "$broot/plan.txt" >&2
+  endlog
+  local name path build dir
+  while IFS=$'\t' read -r name path; do
+    [ -n "$name" ] || continue
+    build="$root/build/$name"
+    log "Dependency $name"
+    local args=()
+    # The extension's configure arguments, with the dependencies built so far,
+    # for this one, without its tests.
+    while IFS= read -r line; do args+=("$line"); done < <(
+      SLICER_EXT_SOURCE_DIR="$path" SLICER_EXT_BUILD_DIR="$build" SLICER_EXT_CMAKE_OPTIONS="" \
+        extension_configure_args)
+    args+=(-DBUILD_TESTING:BOOL=OFF)
+    info "cmake ${args[*]}"
+    local rc=0
+    if [ "$SLICER_PLATFORM" = "windows" ]; then
+      MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "${args[@]}" || rc=$?
+    else
+      cmake "${args[@]}" || rc=$?
+    fi
+    [ $rc -eq 0 ] || { endlog; dump_cmake_logs "$build"; die "configuring the dependency $name failed"; }
+    cmake_build "$build"
+    # Where the extension itself is: inner-build for one with a superbuild.
+    dir="$build"
+    [ -f "$(bash_path "$build")/inner-build/CMakeCache.txt" ] && dir="$build/inner-build"
+    echo "-D${name}_DIR:PATH=$dir" >> "$broot/cmake-args.txt"
+    echo "$dir" >> "$broot/module-paths.txt"
+    endlog
+  done < "$broot/plan.txt"
+  info "dependencies: $(tr '\n' ' ' < "$broot/cmake-args.txt")"
 }
 
 cmd_extension_configure() {
@@ -962,8 +1112,13 @@ cmd_extension_load() {
     "$(bash_path "$launcher")"
     --no-splash --no-main-window --ignore-slicerrc
     --additional-module-paths "$inner"
-    --python-code "$code"
   )
+  # The modules of the extensions it depends on (extension-dependencies).
+  local deps; deps="$(bash_path "$(ext_deps_dir)")/module-paths.txt"
+  if [ -f "$deps" ]; then
+    while IFS= read -r dir; do [ -n "$dir" ] && args+=("$dir"); done < "$deps"
+  fi
+  args+=(--python-code "$code")
   log "Load the extension in Slicer"
   local rc=0
   run_headless "${args[@]}" || rc=$?
@@ -1030,6 +1185,7 @@ Commands:
   restore-release <repo> <tag> [build|deps|all]
                                Restore a published build under the build root
   test                         Run ctest on the inner build
+  extension-dependencies       Build the extensions the extension depends on
   extension-configure          Configure an extension against the restored Slicer
   extension-build              Build the configured extension
   extension-test               Run the tests of the extension
@@ -1061,6 +1217,7 @@ main() {
     split) cmd_split "$@" ;;
     restore-release) cmd_restore_release "$@" ;;
     test) cmd_test "$@" ;;
+    extension-dependencies) cmd_extension_dependencies "$@" ;;
     extension-configure) cmd_extension_configure "$@" ;;
     extension-build) cmd_extension_build "$@" ;;
     extension-test) cmd_extension_test "$@" ;;

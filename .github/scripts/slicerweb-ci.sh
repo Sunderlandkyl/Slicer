@@ -123,16 +123,52 @@ cmd_extension() {
   local descriptions="$SLICERWEB_ROOT/extension-descriptions"
   rm -rf "$descriptions"; mkdir -p "$descriptions" "$output"
   local rev; rev="$(git -C "$src" rev-parse HEAD)"
-  python3 - "$SLICERWEB_DIR/extensions" "$descriptions" "$name" "$rev" "$sub" <<'PY'
-import json, os, sys
-catalog, out, name, rev, sub = sys.argv[1:6]
+  python3 - "$SLICERWEB_DIR/extensions" "$descriptions" "$name" "$rev" "$sub" "$src" \
+    "${SLICER_EXT_REGISTRY:-}" "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" <<'PY'
+import json, os, re, sys, time, urllib.error, urllib.request
+catalog, out, name, rev, sub, src, registry_url, index_url = sys.argv[1:9]
+
+def get_json(url, attempts=3):
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+        except Exception:
+            pass
+        time.sleep(5 * (attempt + 1))
+    return None
+
 def described(n):
     path = os.path.join(catalog, n + ".json")
     return json.load(open(path, encoding="utf8")) if os.path.isfile(path) else None
+
+def cmake_depends(source):
+    try:
+        text = open(os.path.join(source, "CMakeLists.txt"), encoding="utf8", errors="replace").read()
+    except OSError:
+        return []
+    match = re.search(r"set\s*\(\s*EXTENSION_DEPENDS\s+([^)]*)\)", text, re.I)
+    names = [n.strip('"') for n in re.split(r"[\s;]+", match.group(1))] if match else []
+    return [n for n in names if n and n != "NA"]
+
+# The registry: name -> (repository, revision) of what each repository published.
+published = {}
+registry = get_json(registry_url) if registry_url else None
+if registry:
+    tag = registry.get("release_tag", "nightly")
+    for entry in registry.get("repositories", []):
+        repo = entry["repository"]
+        e = get_json(f"https://github.com/{repo}/releases/download/{tag}/extension.json")
+        if e and e.get("name"):
+            published[e["name"]] = (repo, e.get("revision") or entry.get("default_branch"))
+
 own = described(name)
 if own is None:
-    print(f"{name} is not in SlicerWeb's catalog: building it with build subdirectory {sub or '.'!r} and no dependencies")
-    own = {"build_dependencies": []}
+    print(f"{name} is not in SlicerWeb's catalog: building it with build subdirectory {sub or '.'!r}")
+    own = {"build_dependencies": cmake_depends(src)}
 else:
     print(f"{name}: the description of SlicerWeb's catalog")
 if sub:
@@ -141,16 +177,25 @@ own.setdefault("build_subdirectory", ".")
 # The checkout, mounted at /ext, at its commit.
 own["scm_url"], own["scm_revision"] = "/ext", rev
 json.dump(own, open(os.path.join(out, name + ".json"), "w"), indent=1)
+
+# Its dependencies: what SlicerWeb's catalog says of each (build subdirectory,
+# browser-specific options), else the ExtensionsIndex; from the repository of
+# the registry that published it, at the revision it published, as on the
+# desktop platforms, else from where that description says.
 pending, seen = list(own.get("build_dependencies") or []), set()
 while pending:
     dep = pending.pop()
     if dep in seen:
         continue
     seen.add(dep)
-    description = described(dep)
-    if description is None:
-        print(f"::warning::{name} depends on {dep}, which SlicerWeb's catalog does not describe")
+    description = described(dep) or get_json(f"{index_url}/{dep}.json")
+    if description is None and dep not in published:
+        print(f"::warning::{name} depends on {dep}, which neither the registry, SlicerWeb's catalog nor the ExtensionsIndex describes")
         continue
+    description = dict(description or {"build_subdirectory": "."})
+    if dep in published:
+        repo, revision = published[dep]
+        description["scm_url"], description["scm_revision"] = f"https://github.com/{repo}.git", revision
     print(f"{name} depends on {dep}: built from {description['scm_url']} {description['scm_revision']}")
     json.dump(description, open(os.path.join(out, dep + ".json"), "w"), indent=1)
     pending.extend(description.get("build_dependencies") or [])

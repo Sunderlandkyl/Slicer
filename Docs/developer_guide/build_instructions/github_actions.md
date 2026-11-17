@@ -230,6 +230,7 @@ Inputs:
 | `source-directory` | `.` | Directory of the extension within the repository |
 | `extension-name` | repository name | CMake project name of the extension |
 | `cmake-options` | | Additional options for the configure step |
+| `build-dependencies` | `true` | Build the extensions it depends on (`EXTENSION_DEPENDS`) first, see below |
 | `run-tests` | `true` | Run the extension's tests |
 | `package` | `true` | Build the extension's package |
 | `load-in-slicer` | `true` | Load the built extension into Slicer |
@@ -285,6 +286,15 @@ built against the commit Slicer was built from. The repositories are listed in
 `extension-repositories.json` on the nightly release: those the Slicer nightly
 GitHub App is installed in that have `slicer-nightly-build.yml` (see below). A
 build replaces the packages of the platforms it built, and keeps the others.
+
+The extensions an extension depends on (`EXTENSION_DEPENDS` of its
+`CMakeLists.txt`, and theirs in turn) are built first, in the same job and
+against the same Slicer build, as the Slicer extension build does, and handed
+to it as `<Name>_DIR`: its tests and the load check find their modules. Each is
+taken from the repository of the registry that publishes it, at the revision
+of its nightly release, which is what a user installs beside the extension, or
+else from its entry in the [ExtensionsIndex](https://github.com/Slicer/ExtensionsIndex).
+Only the extension's own package is published.
 
 A superbuild extension needs nothing extra: its own tree, `inner-build`, is
 where the tests, the package and the modules are looked for.
