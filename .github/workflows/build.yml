@@ -113,9 +113,16 @@ jobs:
           # The nightly release follows the default branch: every build of it,
           # and the nightly run itself, refresh what extension repositories
           # build against.
+          # SLICER_CI_PUBLISH applies to pushes only: a manual run publishes
+          # when, and only when, it is asked to.
           if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ] \
-            || [ "${SLICER_CI_PUBLISH:-}" = "true" ]; then
+            || { [ "$EVENT" = "push" ] && [ "${SLICER_CI_PUBLISH:-}" = "true" ]; }; then
             publish="true"
+          fi
+          # The nightly release holds the desktop packages and build trees: a
+          # run that builds none of them, web alone, has nothing to publish.
+          if ! grep -qE '(^|,) *(linux|macos|windows) *(,|$)' <<< "$PLATFORMS"; then
+            publish="false"
           fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "force-deps=${{ github.event.inputs.rebuild-prerequisites || 'false' }}" >> "$GITHUB_OUTPUT"
