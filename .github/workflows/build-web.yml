@@ -14,12 +14,17 @@ name: Build Slicer for the web
 #      under a key computed from what describes them in SlicerWeb. Every later
 #      run whose key is unchanged restores them instead.
 #   2. Slicer itself, its wheels, and SlicerWeb's smoke test of them.
+#   3. The extensions SlicerWeb describes (its extensions/ folder), built
+#      against that very build tree and packaged as wheels, in a job of their
+#      own: an extension that fails to build withholds no runtime.
 #
 # The run produces these artifacts:
-#   package-web   the runtime: slicerweb-wheels.zip and slicerweb-extensions.zip,
-#                 the wheels.zip and extensions.zip that SlicerWeb's
-#                 publish_runtime.py uploads and its Publish app workflow reads
-#   logs-web      the logs of the stages
+#   package-web             slicerweb-wheels.zip, the wheels.zip that SlicerWeb's
+#                           publish_runtime.py uploads and its Publish app
+#                           workflow reads
+#   package-web-extensions  slicerweb-extensions.zip, its extensions.zip: the
+#                           extension wheels and their index
+#   logs-web, logs-web-extensions   the logs of the stages
 
 on:
   workflow_call:
@@ -41,6 +46,10 @@ on:
           builds) rather than the one SlicerWeb pins.
         type: boolean
         default: false
+      extensions:
+        description: "Build the extensions SlicerWeb describes (its extensions/ folder)"
+        type: boolean
+        default: true
       ci-repository:
         type: string
         default: "Slicer/Slicer"
@@ -346,12 +355,8 @@ jobs:
                  + (if $slicer then {slicer: $slicer} else {} end)' \
             | sudo tee "$wheels/build-info.json"
           # The layout of SlicerWeb's publish_runtime.py: wheels.zip holds the
-          # contents of the wheels folder, extensions.zip those of the
-          # extensions folder, an empty index until extensions are built here.
+          # contents of the wheels folder.
           (cd "$wheels" && zip -q -r "$out/slicerweb-wheels.zip" .)
-          mkdir -p "$SLICERWEB_ROOT/out/extensions"
-          echo '{"extensions": []}' > "$SLICERWEB_ROOT/out/extensions/index.json"
-          (cd "$SLICERWEB_ROOT/out/extensions" && zip -q -r "$out/slicerweb-extensions.zip" .)
           ls -lh "$out"
           {
             echo "### Web runtime"
@@ -368,11 +373,96 @@ jobs:
           retention-days: 7
           compression-level: 0
           if-no-files-found: error
+      # The extensions are built against this very tree: Slicer_DIR is its
+      # build tree of Slicer, and the extension wheels have to match the
+      # libraries of the runtime.
+      - name: Archive the build tree
+        if: inputs.extensions
+        run: bash "$SLICERWEB_CI" pack "$SLICERWEB_ROOT/out/tree/web-build.tar.zst"
+      - name: Upload the build tree
+        if: inputs.extensions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: web-build
+          path: ${{ env.SLICERWEB_ROOT }}/out/tree/web-build.tar.zst
+          retention-days: 2
+          compression-level: 0
+          if-no-files-found: error
       - name: Upload the logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: logs-web
+          path: ${{ env.SLICERWEB_ROOT }}/dist/logs
+          retention-days: 7
+          if-no-files-found: ignore
+
+  extensions:
+    name: ${{ inputs.name }} extensions (web)
+    needs: runtime
+    if: inputs.extensions
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Check out SlicerWeb
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.slicerweb-repository }}
+          ref: ${{ inputs.slicerweb-ref }}
+          path: slicerweb
+      - name: Check out the Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+      - name: Free disk space
+        run: bash "$SLICER_CI" free-disk-space
+      - name: Build the toolchain image
+        run: bash "$SLICERWEB_CI" image
+      - name: Download the build tree
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-build
+          path: ${{ env.SLICERWEB_ROOT }}/restore
+      - name: Restore the build tree
+        run: bash "$SLICERWEB_CI" unpack "$SLICERWEB_ROOT/restore/web-build.tar.zst"
+      # Each extension of SlicerWeb's extensions/ folder, at the revision its
+      # description file names (a branch is taken as it is now), dependencies
+      # first, superbuild included; then their wheels and index.
+      - name: Build the extensions
+        run: bash "$SLICERWEB_CI" run 80-extensions
+      - name: Archive the extensions
+        run: |
+          set -euo pipefail
+          out="$SLICERWEB_ROOT/out/package"
+          mkdir -p "$out"
+          ext="$SLICERWEB_ROOT/dist/extensions"
+          # The layout of SlicerWeb's publish_runtime.py: extensions.zip holds
+          # the contents of the extensions folder.
+          (cd "$ext" && zip -q -r "$out/slicerweb-extensions.zip" .)
+          ls -lh "$out"
+          {
+            echo "### Web extensions"
+            echo ""
+            echo "| Extension | Revision | Wheel |"
+            echo "|---|---|---|"
+            jq -r '.extensions[] | "| \(.name) | \(.revision) | \(.wheel) |"' "$ext/index.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the extensions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: package-web-extensions
+          path: ${{ env.SLICERWEB_ROOT }}/out/package/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-web-extensions
           path: ${{ env.SLICERWEB_ROOT }}/dist/logs
           retention-days: 7
           if-no-files-found: ignore

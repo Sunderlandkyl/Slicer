@@ -271,12 +271,20 @@ jobs:
             done
           done
           if [ "$WEB" = "true" ]; then
-            for f in slicerweb-wheels.zip slicerweb-extensions.zip; do
-              if [ ! -f "packages/$f" ]; then
-                echo "::error::web did not produce $f"
-                missing=1
-              fi
-            done
+            if [ ! -f packages/slicerweb-wheels.zip ]; then
+              echo "::error::web did not produce slicerweb-wheels.zip"
+              missing=1
+            fi
+            # The extensions are built in a job of their own, against the
+            # runtime of this run: when they fail, or are not built, the
+            # runtime is published with an empty extension index rather than
+            # with extensions built against another runtime.
+            if [ ! -f packages/slicerweb-extensions.zip ]; then
+              echo "::warning::web did not produce slicerweb-extensions.zip; publishing the runtime without extensions"
+              mkdir -p empty-extensions
+              echo '{"extensions": []}' > empty-extensions/index.json
+              (cd empty-extensions && zip -q -r ../packages/slicerweb-extensions.zip .)
+            fi
           fi
           [ "$missing" -eq 0 ] || exit 1
           echo "Every platform produced a complete set of artifacts."
