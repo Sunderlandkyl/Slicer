@@ -14,17 +14,19 @@
 # WebAssembly, https://github.com/lassoan/SlicerWeb) against the web build tree
 # published with the nightly, and packages it as a Pyodide wheel.
 #
-# The packages are published to a release of the calling repository per Slicer
-# commit, tagged slicer-<commit>, with extension.json saying what it holds:
+# The packages are published to the nightly release of the calling repository,
+# whose notes, and extension.json, say which Slicer commit each was built
+# against:
 #
 #   {"name": ..., "repository": ..., "revision": <commit of the extension>,
-#    "slicer_commit": ..., "slicer_revision": ...,
-#    "packages": {"linux": <asset>, "macos": ..., "windows": ..., "web": <wheel>},
+#    "packages": {"linux": {"file": <asset>, "slicer_commit": ..., "slicer_revision": ...},
+#                 "macos": ..., "windows": ...,
+#                 "web": {"file": <wheel>, "slicer_commit": ..., "icon": <asset, if any>}},
 #    "web": <its entry of SlicerWeb's extension index>}
 #
-# so that a Slicer built from a commit finds, in each extension repository,
-# the packages built against it:
-#   https://github.com/<repository>/releases/download/slicer-<commit>/extension.json
+# so that a Slicer finds, in each extension repository, whether the package of
+# its platform was built against its commit:
+#   https://github.com/<repository>/releases/download/nightly/extension.json
 #
 # See Docs/developer_guide/build_instructions/github_actions.md
 name: Extension build
@@ -100,18 +102,14 @@ on:
         default: ""
       publish:
         description: >-
-          Publish the packages to a release of the calling repository; the
-          calling job must grant `contents: write`
+          Publish the packages to the release publish-tag of the calling
+          repository; the calling job must grant `contents: write`
         type: boolean
         default: false
-      publish-tag-prefix:
-        description: "Prefix of the tags of the releases, followed by the commit of Slicer"
+      publish-tag:
+        description: "Tag of the release the packages are published to"
         type: string
-        default: "slicer-"
-      keep-releases:
-        description: "Number of releases (one per Slicer commit) to keep"
-        type: number
-        default: 10
+        default: "nightly"
       timeout-minutes:
         description: "Timeout of each desktop platform's job"
         type: number
@@ -472,78 +470,70 @@ jobs:
           path: downloaded
           merge-multiple: true
 
-      - name: Publish the releases
+      - name: Publish the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           # This job checks nothing out, so gh cannot infer the repository to
           # act on from a working tree.
           GH_REPO: ${{ github.repository }}
-          PREFIX: ${{ inputs.publish-tag-prefix }}
+          TAG: ${{ inputs.publish-tag }}
           NAME: ${{ needs.setup.outputs.extension-name }}
-          KEEP: ${{ inputs.keep-releases }}
         run: |
           set -euo pipefail
           shopt -s nullglob
           descriptions=(downloaded/slicer-package-*.json)
           [ ${#descriptions[@]} -gt 0 ] || { echo "::error::no package to publish"; exit 1; }
-          # The packages of one run may have been built against different
-          # Slicer commits, when the nightly release holds a web build tree of
-          # another commit than the desktop ones: one release per commit.
-          commits="$(jq -r .slicer_commit "${descriptions[@]}" | sort -u)"
-          for commit in $commits; do
-            if [ -z "$commit" ] || [ "$commit" = "null" ]; then
-              echo "::warning::packages built against a Slicer build that does not record its commit; not published"
-              continue
-            fi
-            tag="$PREFIX$commit"
-            work="release-$commit"
-            rm -rf "$work"; mkdir -p "$work/assets"
-            # What the release already holds, from the runs of other platforms
-            # against the same Slicer commit.
-            if gh release view "$tag" >/dev/null 2>&1; then
-              gh release download "$tag" -p extension.json -D "$work" 2>/dev/null || true
-            else
-              gh release create "$tag" --title "$NAME for Slicer ${commit:0:7}" --prerelease --latest=false \
-                --notes "Packages of $NAME built against Slicer $commit. extension.json says which file is which."
-            fi
-            [ -f "$work/extension.json" ] || echo '{"packages": {}}' > "$work/extension.json"
-            for d in "${descriptions[@]}"; do
-              [ "$(jq -r .slicer_commit "$d")" = "$commit" ] || continue
-              platform="$(jq -r .platform "$d")"
-              # The package that platform had before, replaced by this one.
-              jq -r --arg p "$platform" '.packages[$p] // empty | if type == "array" then .[] else . end' \
-                "$work/extension.json" > "$work/old-$platform.txt"
-              jq -r '.packages[]' "$d" | while read -r f; do cp "downloaded/$f" "$work/assets/"; done
-              # A desktop platform has one package; the web platform its wheel
-              # (and icon, kept in the web entry).
-              main="$(jq -r '.packages[0]' "$d")"
-              jq --slurpfile pkg "$d" --arg p "$platform" --arg main "$main" \
-                 --arg name "$NAME" --arg repo "$GITHUB_REPOSITORY" --arg rev "$GITHUB_SHA" --arg commit "$commit" \
-                '.name = $name | .repository = $repo | .revision = $rev | .slicer_commit = $commit
-                 | .packages[$p] = $main
-                 | (if ($pkg[0].slicer_revision // "") != "" then .slicer_revision = $pkg[0].slicer_revision else . end)
-                 | (if $p == "web" then .web = $pkg[0].web else . end)' \
-                "$work/extension.json" > "$work/extension.json.new"
-              mv "$work/extension.json.new" "$work/extension.json"
-            done
-            cp "$work/extension.json" "$work/assets/"
-            cat "$work/extension.json"
-            gh release upload "$tag" "$work"/assets/* --clobber
-            # Packages replaced by this run (their names carry the revision).
-            cat "$work"/old-*.txt 2>/dev/null | sort -u | while read -r old; do
-              [ -n "$old" ] || continue
-              [ -f "$work/assets/$old" ] && continue
-              echo "Removing the superseded asset $old"
-              gh release delete-asset "$tag" "$old" --yes || true
-            done
-            echo "Published $(ls "$work/assets" | wc -l) files to the release $tag." >> "$GITHUB_STEP_SUMMARY"
+          work=release
+          rm -rf "$work"; mkdir -p "$work/assets"
+          # What the release holds of the platforms this run did not build is
+          # kept: extension.json is updated, not replaced.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release download "$TAG" -p extension.json -D "$work" 2>/dev/null || true
+          else
+            gh release create "$TAG" --title "$NAME $TAG" --prerelease --latest=false --notes "Packages of $NAME."
+          fi
+          [ -f "$work/extension.json" ] || echo '{"packages": {}}' > "$work/extension.json"
+          # Older extension.json named one file per platform; the files of a
+          # platform are its package and, for web, the icon.
+          jq '.packages |= with_entries(.value |= (if type == "string" then {file: .} else . end))' \
+            "$work/extension.json" > "$work/extension.json.new" && mv "$work/extension.json.new" "$work/extension.json"
+          : > "$work/old.txt"
+          for d in "${descriptions[@]}"; do
+            platform="$(jq -r .platform "$d")"
+            # The files that platform had before, replaced by these.
+            jq -r --arg p "$platform" '.packages[$p] // {} | [.file, .icon] | .[] | select(. != null and . != "")' \
+              "$work/extension.json" >> "$work/old.txt"
+            jq -r '.packages[]' "$d" | while read -r f; do cp "downloaded/$f" "$work/assets/"; done
+            # The package, and the Slicer it was built against: a Slicer finds
+            # here whether the package of its platform matches its commit.
+            jq --slurpfile pkg "$d" --arg p "$platform" \
+               --arg name "$NAME" --arg repo "$GITHUB_REPOSITORY" --arg rev "$GITHUB_SHA" \
+              '.name = $name | .repository = $repo | .revision = $rev
+               | .packages[$p] = ({file: $pkg[0].packages[0], slicer_commit: $pkg[0].slicer_commit}
+                   + (if ($pkg[0].slicer_revision // "") != "" then {slicer_revision: $pkg[0].slicer_revision} else {} end)
+                   + (if ($pkg[0].packages | length) > 1 then {icon: $pkg[0].packages[1]} else {} end))
+               | (if $p == "web" then .web = $pkg[0].web else . end)' \
+              "$work/extension.json" > "$work/extension.json.new"
+            mv "$work/extension.json.new" "$work/extension.json"
           done
+          cp "$work/extension.json" "$work/assets/"
+          cat "$work/extension.json"
 
-          # Keep the releases of the most recent Slicer commits.
-          gh release list --limit 200 --json tagName,createdAt \
-            --jq ".[] | select(.tagName | startswith(\"$PREFIX\")) | \"\(.createdAt) \(.tagName)\"" \
-            | sort -r | tail -n +"$((KEEP + 1))" | while read -r _ old; do
-                echo "Removing the release $old"
-                gh release delete "$old" --cleanup-tag --yes || true
-              done
+          # The notes say what each package was built against.
+          notes="Packages of $NAME, built from \`$GITHUB_SHA\` on $(date -u +%Y-%m-%d), against Slicer:
+
+          $(jq -r '.packages | to_entries[] | "- \(.key): Slicer `\(.value.slicer_commit)`\(if .value.slicer_revision then " (r\(.value.slicer_revision))" else "" end): \(.value.file)"' "$work/extension.json")
+
+          extension.json says the same, for the Extensions Managers: a package is
+          offered to a Slicer built from the commit it was built against."
+          gh release edit "$TAG" --notes "$notes" --latest=false --prerelease
+          gh release upload "$TAG" "$work"/assets/* --clobber
+          # Files replaced by this run (package names carry the revision).
+          sort -u "$work/old.txt" | while read -r old; do
+            [ -n "$old" ] || continue
+            [ -f "$work/assets/$old" ] && continue
+            echo "Removing the superseded asset $old"
+            gh release delete-asset "$TAG" "$old" --yes || true
+          done
+          echo "Published $(ls "$work/assets" | wc -l) files to the release $TAG." >> "$GITHUB_STEP_SUMMARY"

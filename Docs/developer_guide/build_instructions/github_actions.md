@@ -241,9 +241,8 @@ Inputs:
 | `release-tag` | `nightly` | Release to build against |
 | `qt-version` | from the manifest | Qt version to install |
 | `web-build-subdirectory` | | For `web`, of an extension SlicerWeb's catalog does not describe: `inner-build` with a superbuild, `.` without |
-| `publish` | `false` | Publish the packages to releases of the extension's own repository |
-| `publish-tag-prefix` | `slicer-` | Prefix of the tags of those releases, followed by the Slicer commit |
-| `keep-releases` | `10` | Number of those releases to keep |
+| `publish` | `false` | Publish the packages to a release of the extension's own repository |
+| `publish-tag` | `nightly` | Tag of that release |
 | `timeout-minutes` | `120` | Timeout of each desktop platform's job |
 | `web-timeout-minutes` | `240` | Timeout of the web platform's job |
 
@@ -265,25 +264,27 @@ jobs:
       publish: ${{ github.ref == 'refs/heads/main' }}
 ```
 
-The packages go to one release per Slicer commit they were built against,
-tagged `slicer-<commit>`, with an `extension.json` saying what it holds:
+The packages go to the `nightly` release of the extension's repository, whose
+notes say which Slicer commit each was built against, as does the
+`extension.json` it holds:
 
 ```json
 {"name": "SlicerIGSIO", "repository": "IGSIO/SlicerIGSIO",
  "revision": "<commit of the extension>",
- "slicer_commit": "<commit of Slicer>", "slicer_revision": "34012",
- "packages": {"linux": "...", "macos": "...", "windows": "...", "web": "<wheel>"},
+ "packages": {
+   "linux": {"file": "...", "slicer_commit": "<commit of Slicer>", "slicer_revision": "34012"},
+   "macos": {"...": "..."}, "windows": {"...": "..."},
+   "web": {"file": "<wheel>", "slicer_commit": "<commit of Slicer>"}},
  "web": {"name": "SlicerIGSIO", "wheel": "<wheel>", "depends": [], "...": "..."}}
 ```
 
-A Slicer built from a commit therefore finds, in every extension repository,
-what was built against it, at
-`https://github.com/<repository>/releases/download/slicer-<commit>/extension.json`.
-The repositories are listed in `extension-repositories.json` on the nightly
-release: those the Slicer nightly GitHub App is installed in that have
-`slicer-nightly-build.yml` (see below). A new build against the same commit
-replaces the packages of its platforms; the releases of the
-`keep-releases` most recent Slicer commits are kept.
+An Extensions Manager reads
+`https://github.com/<repository>/releases/download/nightly/extension.json` in
+each extension repository, and offers the package of its platform when it was
+built against the commit Slicer was built from. The repositories are listed in
+`extension-repositories.json` on the nightly release: those the Slicer nightly
+GitHub App is installed in that have `slicer-nightly-build.yml` (see below). A
+build replaces the packages of the platforms it built, and keeps the others.
 
 A superbuild extension needs nothing extra: its own tree, `inner-build`, is
 where the tests, the package and the modules are looked for.

@@ -584,8 +584,8 @@ jobs:
           sort -u "$registry" | jq -R 'split(" ") | {repository: .[0], default_branch: .[1]}' \
             | jq -s --arg date "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" --arg slicer "$GITHUB_REPOSITORY" \
                 '{date: $date, slicer_repository: $slicer,
-                  release_tag_prefix: "slicer-",
-                  description: "Repositories building Slicer extensions against this repository: the packages built against a commit of Slicer are in the release slicer-<commit> of each, which extension.json describes.",
+                  release_tag: "nightly",
+                  description: "Repositories building Slicer extensions against this repository: their packages are in the release nightly of each, whose extension.json says which Slicer commit each was built against.",
                   repositories: .}' > "$list"
           cat "$list"
           if gh release upload "$REGISTRY_TAG" "$list" --clobber; then
