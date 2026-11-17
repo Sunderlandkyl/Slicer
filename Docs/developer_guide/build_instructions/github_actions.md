@@ -1,10 +1,22 @@
 # Building with GitHub Actions
 
 Slicer is built on Linux, macOS and Windows by the [`Build`](https://github.com/Slicer/Slicer/actions/workflows/build.yml)
-workflow. This page describes how that workflow is organized, and how another
-repository can build an extension against the resulting nightly build.
+workflow. This page describes how that workflow is organized, how another
+repository can build an extension against the resulting nightly build, and how
+a custom application based on Slicer can build its installers the same way.
 
 ## How the build is organized
+
+The work is shared between three workflow files:
+
+| File | Role |
+|---|---|
+| `build.yml` | Slicer's `Build` workflow: decides what to build, publishes the nightly release and starts the extension builds |
+| `build-application.yml` | Reusable: computes the prerequisites key, builds Slicer (or a custom application) and packages and tests it |
+| `build-prerequisites.yml` | Reusable, called by the previous one only when a platform lacks its prerequisites: the five stages described below |
+
+Since the stages are a workflow of their own, a run that reuses the
+prerequisites shows a single skipped `Prerequisites` job.
 
 A full Slicer Superbuild takes several hours and produces a build tree of
 15 GB or more, which does not fit in a single GitHub-hosted runner job (limited
@@ -133,6 +145,54 @@ Archiving a build tree takes about fifteen minutes, so it is done only for the
 runs that publish: the scheduled one, a build of the default branch, and a
 manual run asking for it. Those assets are then attached to the `nightly`
 release, which is what extension repositories consume.
+
+## Building a custom application
+
+A custom application based on Slicer, whose top-level `CMakeLists.txt` fetches
+the Slicer sources and adds them with `add_subdirectory` as in the
+[SlicerCustomAppTemplate](https://github.com/KitwareMedical/SlicerCustomAppTemplate),
+builds its installers by calling `build-application.yml`:
+
+```yaml
+name: Build installers
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    uses: Slicer/Slicer/.github/workflows/build-application.yml@main
+    permissions:
+      contents: write   # the prerequisites are stored on a release
+    with:
+      name: MyApp
+      ci-ref: main      # the same ref as on the `uses:` line
+      run-tests: false
+      extra-cmake-options: "-DBUILD_TESTING:BOOL=OFF"
+```
+
+The installers are uploaded as the `package-<platform>` artifacts of the run;
+the calling workflow decides whether to attach them to a release.
+
+The application builds its own prerequisites, the first time and whenever its
+top-level `CMakeLists.txt` or its `SuperBuild/` directory changes, and keeps
+them on a `prerequisites` pre-release of its own repository
+(`prerequisites-release` changes the name). It never uses those of Slicer: its
+options and its Slicer revision differ. That file pins the Slicer revision, so
+pin it by commit: a branch name is not followed, and moving the branch does not
+rebuild the prerequisites (bump `deps-key-version` to force it).
+
+The stages need a Slicer revision whose `SuperBuild.cmake` defines the
+`Slicer-dependencies` target and writes `SlicerDependencies.txt`.
+
+`ci-ref` has to be given because the actions and scripts the workflow runs are
+checked out separately: the local actions of a called workflow resolve against
+the checkout of the calling repository. The other inputs, described in
+`build-application.yml`, select the platforms, the Qt version, the macOS signing
+identity (with the signing secrets passed by the caller) and whether to run the
+tests.
 
 ## Building an extension against the latest nightly
 
