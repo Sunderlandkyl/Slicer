@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Platforms to build (comma separated: linux,macos,windows)"
+        description: "Platforms to build (comma separated: linux,macos,windows,web)"
         default: "linux,macos,windows"
       run-tests:
         description: "Run the test suite"
@@ -177,6 +177,12 @@ jobs:
     with:
       name: Slicer
       platforms: ${{ needs.setup.outputs.platforms }}
+      # The web runtime is built from this very commit of Slicer. Until the
+      # change letting it override the Slicer revision is in SlicerWeb, the
+      # fork that has it is the default.
+      slicerweb-repository: ${{ vars.SLICERWEB_REPOSITORY || 'Sunderlandkyl/SlicerWeb' }}
+      slicerweb-ref: ${{ vars.SLICERWEB_REF || 'ci/slicer-actions' }}
+      web-slicer-from-checkout: true
       ci-repository: ${{ github.repository }}
       ci-ref: ${{ github.sha }}
       # Override with the SLICER_CI_QT_VERSION repository variable.

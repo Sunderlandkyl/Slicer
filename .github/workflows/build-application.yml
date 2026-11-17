@@ -38,6 +38,7 @@ name: Build a Slicer application
 #   test-results-<platform>   the JUnit report and the CTest logs
 #   logs-<platform>           the packaging log
 #   build-<platform>          the build trees and their manifest (archive-build-trees)
+#   package-web, logs-web     the web runtime, when web is among the platforms
 
 on:
   workflow_call:
@@ -47,9 +48,25 @@ on:
         type: string
         default: "Application"
       platforms:
-        description: "Platforms to build (comma separated: linux,macos,windows)"
+        description: >-
+          Platforms to build (comma separated: linux,macos,windows,web). web
+          builds the WebAssembly runtime of SlicerWeb (build-web.yml).
         type: string
         default: "linux,macos,windows"
+      slicerweb-repository:
+        description: "SlicerWeb repository the web platform is built with"
+        type: string
+        default: "lassoan/SlicerWeb"
+      slicerweb-ref:
+        description: "Commit, branch or tag of slicerweb-repository"
+        type: string
+        default: "main"
+      web-slicer-from-checkout:
+        description: >-
+          Build the web runtime from the Slicer commit of the calling
+          repository rather than the one SlicerWeb pins (Slicer's own builds).
+        type: boolean
+        default: false
       ci-repository:
         description: >-
           Repository providing the Slicer CI actions and scripts. Local actions
@@ -149,6 +166,9 @@ jobs:
       # their condition instead.
       matrix-todo: ${{ steps.key.outputs.matrix-todo }}
       todo-count: ${{ steps.key.outputs.todo-count }}
+      # The number of desktop platforms, and whether web is among the platforms.
+      desktop-count: ${{ steps.key.outputs.desktop-count }}
+      web: ${{ steps.key.outputs.web }}
     steps:
       - name: Check out the sources
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -179,6 +199,7 @@ jobs:
           assets="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
                       --jq '.assets[].name' 2>/dev/null || true)"
           entries="[]"
+          web=false
           {
             echo "### Prerequisites"
             echo ""
@@ -192,6 +213,8 @@ jobs:
               linux)   runner="ubuntu-22.04" ;;
               macos)   runner="macos-15-intel" ;;
               windows) runner="windows-2022" ;;
+              # Built by build-web.yml, which has prerequisites of its own.
+              web) web=true; continue ;;
               *) echo "::warning::unknown platform '$platform'"; continue ;;
             esac
             key="slicer-deps-${platform}-$(
@@ -209,7 +232,10 @@ jobs:
               '. + [{platform: $p, runner: $r, key: $k, cached: $c}]')"
             echo "| $platform | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
           done
-          [ "$(echo "$entries" | jq 'length')" -gt 0 ] || { echo "::error::no known platform in '$PLATFORMS'"; exit 1; }
+          desktop="$(echo "$entries" | jq 'length')"
+          [ "$desktop" -gt 0 ] || [ "$web" = "true" ] || { echo "::error::no known platform in '$PLATFORMS'"; exit 1; }
+          echo "desktop-count=$desktop" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
           todo="$(echo "$entries" | jq -c 'map(select(.cached | not))')"
           count="$(echo "$todo" | jq 'length')"
           if [ "$count" -eq 0 ]; then
@@ -279,7 +305,7 @@ jobs:
     # The prerequisites are skipped when they are already available, and
     # GitHub carries that skip down the whole graph, past the gate job that ran
     # and succeeded. Stating a condition here is what stops it.
-    if: ${{ !cancelled() && needs.deps.result == 'success' }}
+    if: ${{ !cancelled() && needs.deps.result == 'success' && needs.deps-key.outputs.desktop-count != '0' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
@@ -534,3 +560,25 @@ jobs:
           path: ${{ env.SLICER_OUTPUT_DIR }}/*.log
           retention-days: 5
           if-no-files-found: ignore
+
+  #-----------------------------------------------------------------------------
+  # The web runtime, when web is among the platforms.
+  #-----------------------------------------------------------------------------
+  web:
+    name: Web
+    needs: deps-key
+    if: needs.deps-key.outputs.web == 'true'
+    uses: ./.github/workflows/build-web.yml
+    permissions:
+      contents: write
+    with:
+      name: ${{ inputs.name }}
+      slicerweb-repository: ${{ inputs.slicerweb-repository }}
+      slicerweb-ref: ${{ inputs.slicerweb-ref }}
+      slicer-from-checkout: ${{ inputs.web-slicer-from-checkout }}
+      ci-repository: ${{ inputs.ci-repository }}
+      ci-ref: ${{ inputs.ci-ref }}
+      deps-key-version: ${{ inputs.deps-key-version }}
+      rebuild-prerequisites: ${{ inputs.rebuild-prerequisites }}
+      prerequisites-release: ${{ inputs.prerequisites-release }}
+      prerequisites-release-title: ${{ inputs.prerequisites-release-title }}
