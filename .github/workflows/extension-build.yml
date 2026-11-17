@@ -8,7 +8,23 @@
 #     build:
 #       uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
 #       with:
-#         platforms: linux,macos,windows
+#         platforms: linux,macos,windows,web
+#
+# The web platform builds the extension for SlicerWeb (Slicer compiled to
+# WebAssembly, https://github.com/lassoan/SlicerWeb) against the web build tree
+# published with the nightly, and packages it as a Pyodide wheel.
+#
+# The packages are published to a release of the calling repository per Slicer
+# commit, tagged slicer-<commit>, with extension.json saying what it holds:
+#
+#   {"name": ..., "repository": ..., "revision": <commit of the extension>,
+#    "slicer_commit": ..., "slicer_revision": ...,
+#    "packages": {"linux": <asset>, "macos": ..., "windows": ..., "web": <wheel>},
+#    "web": <its entry of SlicerWeb's extension index>}
+#
+# so that a Slicer built from a commit finds, in each extension repository,
+# the packages built against it:
+#   https://github.com/<repository>/releases/download/slicer-<commit>/extension.json
 #
 # See Docs/developer_guide/build_instructions/github_actions.md
 name: Extension build
@@ -17,13 +33,17 @@ on:
   workflow_call:
     inputs:
       platforms:
-        description: "Platforms to build on (comma separated: linux,macos,windows)"
+        description: "Platforms to build on (comma separated: linux,macos,windows,web)"
         type: string
         default: "linux"
       source-directory:
         description: "Directory of the extension within the repository"
         type: string
         default: "."
+      extension-name:
+        description: "CMake project name of the extension (default: the repository name)"
+        type: string
+        default: ""
       cmake-options:
         description: "Additional options for the extension's configure step"
         type: string
@@ -70,20 +90,36 @@ on:
         description: "Qt version to install (default: the one the build was made with)"
         type: string
         default: ""
+      web-build-subdirectory:
+        description: >-
+          For the web platform, of an extension SlicerWeb's catalog does not
+          describe: where its superbuild builds the extension itself
+          ("inner-build"), or "." for an extension without a superbuild. The
+          description of the catalog says it for the others.
+        type: string
+        default: ""
       publish:
         description: >-
           Publish the packages to a release of the calling repository; the
           calling job must grant `contents: write`
         type: boolean
         default: false
-      publish-tag:
-        description: "Tag of the release the packages are published to"
+      publish-tag-prefix:
+        description: "Prefix of the tags of the releases, followed by the commit of Slicer"
         type: string
-        default: "nightly"
+        default: "slicer-"
+      keep-releases:
+        description: "Number of releases (one per Slicer commit) to keep"
+        type: number
+        default: 10
       timeout-minutes:
-        description: "Timeout of each platform's job"
+        description: "Timeout of each desktop platform's job"
         type: number
         default: 120
+      web-timeout-minutes:
+        description: "Timeout of the web platform's job"
+        type: number
+        default: 240
 
 permissions:
   contents: read
@@ -95,7 +131,9 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       found: ${{ steps.matrix.outputs.found }}
+      web: ${{ steps.matrix.outputs.web }}
       artifact-prefix: ${{ steps.matrix.outputs.artifact-prefix }}
+      extension-name: ${{ steps.matrix.outputs.extension-name }}
     steps:
       - name: Choose the platforms
         id: matrix
@@ -105,35 +143,55 @@ jobs:
           SLICER_REPOSITORY: ${{ inputs.slicer-repository }}
           RELEASE_TAG: ${{ inputs.release-tag }}
           ARTIFACT_PREFIX: ${{ inputs.artifact-prefix }}
+          EXTENSION_NAME: ${{ inputs.extension-name }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           prefix="$ARTIFACT_PREFIX"
           [ -n "$prefix" ] || prefix="${GITHUB_REPOSITORY##*/}"
           echo "artifact-prefix=$prefix" >> "$GITHUB_OUTPUT"
+          name="$EXTENSION_NAME"
+          [ -n "$name" ] || name="${GITHUB_REPOSITORY##*/}"
+          echo "extension-name=$name" >> "$GITHUB_OUTPUT"
           # There is nothing to build against until a Slicer build has been
           # published, which is not a failure: an extension repository enabling
           # this before the first nightly exists should not go red.
-          if ! gh release view "$RELEASE_TAG" -R "$SLICER_REPOSITORY" >/dev/null 2>&1; then
+          if ! assets="$(gh release view "$RELEASE_TAG" -R "$SLICER_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null)"; then
             echo "::notice::No '$RELEASE_TAG' release in $SLICER_REPOSITORY; nothing to build against."
             echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "web=false" >> "$GITHUB_OUTPUT"
             echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "found=true" >> "$GITHUB_OUTPUT"
-          entries=""
+          entries="" web=false
           for p in ${PLATFORMS//,/ }; do
             case "$p" in
               linux)   entries="$entries {\"platform\":\"linux\",\"runner\":\"ubuntu-22.04\"}," ;;
               macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15-intel\"}," ;;
               windows) entries="$entries {\"platform\":\"windows\",\"runner\":\"windows-2022\"}," ;;
+              web)
+                # Built against the web build tree, which a Slicer build
+                # publishes when web is among its platforms.
+                if grep -qx slicerweb-manifest.json <<< "$assets"; then
+                  web=true
+                else
+                  echo "::notice::The '$RELEASE_TAG' release of $SLICER_REPOSITORY has no web build tree; web skipped."
+                fi ;;
               *) echo "::warning::unknown platform '$p'" ;;
             esac
           done
-          [ -n "$entries" ] || { echo "::error::no known platform in '$PLATFORMS'"; exit 1; }
+          [ -n "$entries" ] || [ "$web" = "true" ] || { echo "::error::no platform to build in '$PLATFORMS'"; exit 1; }
+          # The desktop job is skipped when there is no desktop platform;
+          # GitHub rejects a matrix whose include is empty, so it is given a
+          # placeholder it never expands.
+          found=false
+          if [ -n "$entries" ]; then found=true; fi
           matrix="{\"include\":[${entries%,}]}"
+          [ "$found" = "true" ] || matrix='{"include":[{"platform":"none","runner":"ubuntu-latest"}]}'
+          echo "found=$found" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          echo "$matrix"
+          echo "$matrix; web: $web"
 
   build:
     name: ${{ matrix.platform }}
@@ -144,10 +202,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
-    outputs:
-      # The same value whichever platform writes it last: every platform builds
-      # against the same published Slicer.
-      slicer-revision: ${{ steps.slicer.outputs.slicer-revision }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -212,6 +266,25 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" extension-load'
 
+      # Which Slicer the package was built against: the publish job puts it in
+      # the release of that commit.
+      - name: Describe the package
+        if: inputs.package
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          SLICER_COMMIT: ${{ steps.slicer.outputs.slicer-commit }}
+          SLICER_REVISION: ${{ steps.slicer.outputs.slicer-revision }}
+        run: |
+          set -euo pipefail
+          cd "$SLICER_OUTPUT_DIR"
+          packages="$(ls *.tar.gz *.zip *.dmg 2>/dev/null | jq -R . | jq -sc .)"
+          jq -n --arg platform "$PLATFORM" --arg commit "$SLICER_COMMIT" \
+                --arg revision "$SLICER_REVISION" --argjson packages "$packages" \
+            '{platform: $platform, slicer_commit: $commit, slicer_revision: $revision, packages: $packages}' \
+            > "slicer-package-$PLATFORM.json"
+          cat "slicer-package-$PLATFORM.json"
+
       - name: Upload the package
         if: inputs.package && inputs.upload-package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -221,6 +294,7 @@ jobs:
             ${{ env.SLICER_OUTPUT_DIR }}/*.tar.gz
             ${{ env.SLICER_OUTPUT_DIR }}/*.zip
             ${{ env.SLICER_OUTPUT_DIR }}/*.dmg
+            ${{ env.SLICER_OUTPUT_DIR }}/slicer-package-*.json
           retention-days: 7
           compression-level: 0
           if-no-files-found: error
@@ -243,13 +317,141 @@ jobs:
           echo "::error::the extension's tests failed"
           exit 1
 
+  # The web platform: the extension built for SlicerWeb against the web build
+  # tree of the Slicer release (slicerweb-build.tar.zst), in SlicerWeb's
+  # toolchain container, with SlicerWeb's own extension stage, the way
+  # SlicerWeb builds the extensions of its catalog.
+  web:
+    name: web
+    needs: setup
+    if: needs.setup.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.web-timeout-minutes }}
+    env:
+      SLICERWEB_ROOT: /home/runner/SW
+      SLICERWEB_DIR: ${{ github.workspace }}/slicerweb
+      SLICERWEB_CI: ${{ github.workspace }}/.slicer-actions/.github/scripts/slicerweb-ci.sh
+      SLICER_CI: ${{ github.workspace }}/.slicer-actions/.github/scripts/slicer-ci.sh
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          path: extension
+          submodules: ${{ inputs.submodules }}
+
+      - name: Check out the Slicer actions
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.slicer-repository }}
+          ref: ${{ inputs.slicer-ref }}
+          path: .slicer-actions
+          sparse-checkout: .github
+
+      - name: Download the web build tree
+        id: tree
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLICER_REPOSITORY: ${{ inputs.slicer-repository }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SLICERWEB_ROOT/restore"
+          gh release download "$RELEASE_TAG" -R "$SLICER_REPOSITORY" -D "$SLICERWEB_ROOT/restore" --clobber \
+            -p slicerweb-manifest.json -p 'slicerweb-build.tar.zst*'
+          manifest="$SLICERWEB_ROOT/restore/slicerweb-manifest.json"
+          cat "$manifest"
+          {
+            echo "slicerweb-repository=$(jq -r .slicerweb_repository "$manifest")"
+            echo "slicerweb-commit=$(jq -r .slicerweb_commit "$manifest")"
+            echo "slicer-commit=$(jq -r .commit "$manifest")"
+          } >> "$GITHUB_OUTPUT"
+
+      # The SlicerWeb the tree was built with: its toolchain, and its
+      # extension stage.
+      - name: Check out SlicerWeb
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ steps.tree.outputs.slicerweb-repository }}
+          ref: ${{ steps.tree.outputs.slicerweb-commit }}
+          path: slicerweb
+
+      - name: Free disk space
+        shell: bash
+        run: bash "$SLICER_CI" free-disk-space
+
+      - name: Build the toolchain image
+        shell: bash
+        run: bash "$SLICERWEB_CI" image
+
+      - name: Restore the web build tree
+        shell: bash
+        run: bash "$SLICERWEB_CI" unpack "$SLICERWEB_ROOT/restore/slicerweb-build.tar.zst"
+
+      - name: Build
+        shell: bash
+        env:
+          NAME: ${{ needs.setup.outputs.extension-name }}
+          SOURCE_DIRECTORY: ${{ inputs.source-directory }}
+          SUBDIRECTORY: ${{ inputs.web-build-subdirectory }}
+        run: |
+          set -euo pipefail
+          src="$GITHUB_WORKSPACE/extension"
+          if [ "$SOURCE_DIRECTORY" != "." ]; then
+            echo "::error::the web platform builds an extension at the top of its repository"
+            exit 1
+          fi
+          bash "$SLICERWEB_CI" extension "$src" "$NAME" "$SLICERWEB_ROOT/out/package" "$SUBDIRECTORY"
+
+      - name: Describe the package
+        shell: bash
+        env:
+          SLICER_COMMIT: ${{ steps.tree.outputs.slicer-commit }}
+        run: |
+          set -euo pipefail
+          cd "$SLICERWEB_ROOT/out/package"
+          entry="$(cat extension-web.json)"
+          jq -n --arg commit "$SLICER_COMMIT" --argjson entry "$entry" \
+            '{platform: "web", slicer_commit: $commit, slicer_revision: "",
+              packages: ([$entry.wheel] + (if ($entry.icon // "") != "" then [$entry.icon] else [] end)),
+              web: $entry}' > slicer-package-web.json
+          rm extension-web.json
+          cat slicer-package-web.json
+          {
+            echo "### Web package"
+            echo ""
+            echo "Built against Slicer \`$SLICER_COMMIT\`: \`$(jq -r .wheel <<< "$entry")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the package
+        if: inputs.upload-package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ needs.setup.outputs.artifact-prefix }}-web
+          path: ${{ env.SLICERWEB_ROOT }}/out/package/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ needs.setup.outputs.artifact-prefix }}-logs-web
+          path: ${{ env.SLICERWEB_ROOT }}/dist/logs
+          retention-days: 7
+          if-no-files-found: ignore
+
   # Publishing is off by default: an extension repository opts in, and the job
   # that calls this workflow has to grant `contents: write` for it, since a
   # called workflow cannot give itself more than its caller has.
   publish:
     name: Publish
-    needs: [setup, build]
-    if: inputs.publish && needs.build.result == 'success'
+    needs: [setup, build, web]
+    if: >-
+      ${{ !cancelled() && inputs.publish
+          && (needs.build.result == 'success' || needs.build.result == 'skipped')
+          && (needs.web.result == 'success' || needs.web.result == 'skipped')
+          && (needs.build.result == 'success' || needs.web.result == 'success') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -261,49 +463,78 @@ jobs:
           path: downloaded
           merge-multiple: true
 
-      - name: Publish the release
+      - name: Publish the releases
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           # This job checks nothing out, so gh cannot infer the repository to
           # act on from a working tree.
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ inputs.publish-tag }}
-          PREFIX: ${{ needs.setup.outputs.artifact-prefix }}
-          SLICER_REVISION: ${{ needs.build.outputs.slicer-revision }}
+          PREFIX: ${{ inputs.publish-tag-prefix }}
+          NAME: ${{ needs.setup.outputs.extension-name }}
+          KEEP: ${{ inputs.keep-releases }}
         run: |
           set -euo pipefail
-          # The test results were downloaded alongside the packages; only the
-          # packages are released.
-          mkdir -p assets
-          find downloaded -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.dmg' \) \
-            -exec cp {} assets/ ';'
-          if [ -z "$(ls -A assets)" ]; then
-            echo "::error::no package to publish"
-            exit 1
-          fi
-          ls -lh assets
-          notes="Packages of ${PREFIX}, built against Slicer r${SLICER_REVISION}.
+          shopt -s nullglob
+          descriptions=(downloaded/slicer-package-*.json)
+          [ ${#descriptions[@]} -gt 0 ] || { echo "::error::no package to publish"; exit 1; }
+          # The packages of one run may have been built against different
+          # Slicer commits, when the nightly release holds a web build tree of
+          # another commit than the desktop ones: one release per commit.
+          commits="$(jq -r .slicer_commit "${descriptions[@]}" | sort -u)"
+          for commit in $commits; do
+            if [ -z "$commit" ] || [ "$commit" = "null" ]; then
+              echo "::warning::packages built against a Slicer build that does not record its commit; not published"
+              continue
+            fi
+            tag="$PREFIX$commit"
+            work="release-$commit"
+            rm -rf "$work"; mkdir -p "$work/assets"
+            # What the release already holds, from the runs of other platforms
+            # against the same Slicer commit.
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release download "$tag" -p extension.json -D "$work" 2>/dev/null || true
+            else
+              gh release create "$tag" --title "$NAME for Slicer ${commit:0:7}" --prerelease --latest=false \
+                --notes "Packages of $NAME built against Slicer $commit. extension.json says which file is which."
+            fi
+            [ -f "$work/extension.json" ] || echo '{"packages": {}}' > "$work/extension.json"
+            for d in "${descriptions[@]}"; do
+              [ "$(jq -r .slicer_commit "$d")" = "$commit" ] || continue
+              platform="$(jq -r .platform "$d")"
+              # The package that platform had before, replaced by this one.
+              jq -r --arg p "$platform" '.packages[$p] // empty | if type == "array" then .[] else . end' \
+                "$work/extension.json" > "$work/old-$platform.txt"
+              jq -r '.packages[]' "$d" | while read -r f; do cp "downloaded/$f" "$work/assets/"; done
+              # A desktop platform has one package; the web platform its wheel
+              # (and icon, kept in the web entry).
+              main="$(jq -r '.packages[0]' "$d")"
+              jq --slurpfile pkg "$d" --arg p "$platform" --arg main "$main" \
+                 --arg name "$NAME" --arg repo "$GITHUB_REPOSITORY" --arg rev "$GITHUB_SHA" --arg commit "$commit" \
+                '.name = $name | .repository = $repo | .revision = $rev | .slicer_commit = $commit
+                 | .packages[$p] = $main
+                 | (if ($pkg[0].slicer_revision // "") != "" then .slicer_revision = $pkg[0].slicer_revision else . end)
+                 | (if $p == "web" then .web = $pkg[0].web else . end)' \
+                "$work/extension.json" > "$work/extension.json.new"
+              mv "$work/extension.json.new" "$work/extension.json"
+            done
+            cp "$work/extension.json" "$work/assets/"
+            cat "$work/extension.json"
+            gh release upload "$tag" "$work"/assets/* --clobber
+            # Packages replaced by this run (their names carry the revision).
+            cat "$work"/old-*.txt 2>/dev/null | sort -u | while read -r old; do
+              [ -n "$old" ] || continue
+              [ -f "$work/assets/$old" ] && continue
+              echo "Removing the superseded asset $old"
+              gh release delete-asset "$tag" "$old" --yes || true
+            done
+            echo "Published $(ls "$work/assets" | wc -l) files to the release $tag." >> "$GITHUB_STEP_SUMMARY"
+          done
 
-          Built from \`$GITHUB_SHA\` on $(date -u +%Y-%m-%d)."
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --notes "$notes" --latest=false --prerelease
-          else
-            gh release create "$TAG" --title "$PREFIX $TAG" --notes "$notes" \
-              --prerelease --latest=false
-          fi
-          # The package name carries the revision it was built from, so
-          # uploading alone would accumulate one set per build rather than
-          # replacing the previous one; remove whatever this run did not
-          # produce.
-          gh release upload "$TAG" assets/* --clobber
-          ( cd assets && ls ) | LC_ALL=C sort -u > keep.txt
-          gh release view "$TAG" --json assets --jq '.assets[].name' \
-            | LC_ALL=C sort -u > have.txt
-          comm -13 keep.txt have.txt > stale.txt
-          while read -r asset; do
-            [ -n "$asset" ] || continue
-            echo "Removing the superseded asset $asset"
-            gh release delete-asset "$TAG" "$asset" --yes || true
-          done < stale.txt
-          echo "Published $(ls assets | wc -l) packages to the '$TAG' release." >> "$GITHUB_STEP_SUMMARY"
+          # Keep the releases of the most recent Slicer commits.
+          gh release list --limit 200 --json tagName,createdAt \
+            --jq ".[] | select(.tagName | startswith(\"$PREFIX\")) | \"\(.createdAt) \(.tagName)\"" \
+            | sort -r | tail -n +"$((KEEP + 1))" | while read -r _ old; do
+                echo "Removing the release $old"
+                gh release delete "$old" --cleanup-tag --yes || true
+              done

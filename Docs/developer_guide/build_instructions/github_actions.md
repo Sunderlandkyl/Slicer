@@ -210,15 +210,25 @@ jobs:
   build:
     uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
     with:
-      platforms: linux,macos,windows
+      platforms: linux,macos,windows,web
 ```
+
+`web` builds the extension for [SlicerWeb](https://github.com/lassoan/SlicerWeb),
+Slicer compiled to WebAssembly, against the web build tree the nightly
+publishes (`slicerweb-build.tar.zst`): in SlicerWeb's toolchain container, with
+SlicerWeb's own extension stage, into a Pyodide wheel. When SlicerWeb's catalog
+(its `extensions/` folder) describes the extension, that description is used:
+its build subdirectory, its dependencies, which are built first from their own
+repositories, and its browser-specific options. Otherwise the extension is
+built with `web-build-subdirectory` and no dependencies.
 
 Inputs:
 
 | Input | Default | Description |
 |---|---|---|
-| `platforms` | `linux` | Platforms to build on, comma separated |
+| `platforms` | `linux` | Platforms to build on, comma separated: `linux`, `macos`, `windows`, `web` |
 | `source-directory` | `.` | Directory of the extension within the repository |
+| `extension-name` | repository name | CMake project name of the extension |
 | `cmake-options` | | Additional options for the configure step |
 | `run-tests` | `true` | Run the extension's tests |
 | `package` | `true` | Build the extension's package |
@@ -230,9 +240,12 @@ Inputs:
 | `slicer-ref` | `main` | Ref of Slicer providing the actions and the helper script; pin it to whatever the workflow is pinned to |
 | `release-tag` | `nightly` | Release to build against |
 | `qt-version` | from the manifest | Qt version to install |
-| `publish` | `false` | Publish the packages to a release of the extension's own repository |
-| `publish-tag` | `nightly` | Tag of that release |
-| `timeout-minutes` | `120` | Timeout of each platform's job |
+| `web-build-subdirectory` | | For `web`, of an extension SlicerWeb's catalog does not describe: `inner-build` with a superbuild, `.` without |
+| `publish` | `false` | Publish the packages to releases of the extension's own repository |
+| `publish-tag-prefix` | `slicer-` | Prefix of the tags of those releases, followed by the Slicer commit |
+| `keep-releases` | `10` | Number of those releases to keep |
+| `timeout-minutes` | `120` | Timeout of each desktop platform's job |
+| `web-timeout-minutes` | `240` | Timeout of the web platform's job |
 
 ### Publishing the packages
 
@@ -252,10 +265,25 @@ jobs:
       publish: ${{ github.ref == 'refs/heads/main' }}
 ```
 
-The release holds one package per platform and is rewritten on each build:
-a package name carries the revision it was built from, so what the run did not
-produce is removed rather than left to accumulate. The notes record the commit
-and the Slicer revision it was built against.
+The packages go to one release per Slicer commit they were built against,
+tagged `slicer-<commit>`, with an `extension.json` saying what it holds:
+
+```json
+{"name": "SlicerIGSIO", "repository": "IGSIO/SlicerIGSIO",
+ "revision": "<commit of the extension>",
+ "slicer_commit": "<commit of Slicer>", "slicer_revision": "34012",
+ "packages": {"linux": "...", "macos": "...", "windows": "...", "web": "<wheel>"},
+ "web": {"name": "SlicerIGSIO", "wheel": "<wheel>", "depends": [], "...": "..."}}
+```
+
+A Slicer built from a commit therefore finds, in every extension repository,
+what was built against it, at
+`https://github.com/<repository>/releases/download/slicer-<commit>/extension.json`.
+The repositories are listed in `extension-repositories.json` on the nightly
+release: those the Slicer nightly GitHub App is installed in that have
+`slicer-nightly-build.yml` (see below). A new build against the same commit
+replaces the packages of its platforms; the releases of the
+`keep-releases` most recent Slicer commits are kept.
 
 A superbuild extension needs nothing extra: its own tree, `inner-build`, is
 where the tests, the package and the modules are looked for.

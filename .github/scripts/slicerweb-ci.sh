@@ -58,13 +58,23 @@ cmd_image() {
 
 # Run stages of SlicerWeb in its container.
 #
-#   run [--slicer <checkout>] <stage> [<stage> ...]
+#   run [--slicer <checkout>] [--extension <checkout> --descriptions <dir>]
+#       <stage> [<stage> ...]
 #
 # --slicer builds the commit checked out in <checkout> instead of the Slicer
-# revision SlicerWeb pins.
+# revision SlicerWeb pins. --extension mounts the checkout of an extension at
+# /ext, and --descriptions the folder of extension description files that
+# 80-extensions builds (see the extension command).
 cmd_run() {
-  local slicer=""
-  if [ "${1:-}" = "--slicer" ]; then slicer="$2"; shift 2; fi
+  local slicer="" extension="" descriptions=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --slicer) slicer="$2"; shift 2 ;;
+      --extension) extension="$2"; shift 2 ;;
+      --descriptions) descriptions="$2"; shift 2 ;;
+      *) break ;;
+    esac
+  done
   [ $# -gt 0 ] || die "run: no stage"
   mkdir -p "$SLICERWEB_ROOT/build" "$SLICERWEB_ROOT/dist"
   local args=(
@@ -86,7 +96,81 @@ cmd_run() {
     info "Slicer: $rev from $slicer"
     args+=(-v "$slicer:/slicer:ro" -e SW_SLICER_URL=/slicer -e "SW_SLICER_REV=$rev")
   fi
+  [ -z "$extension" ] || args+=(-v "$extension:/ext:ro")
+  [ -z "$descriptions" ] || args+=(-v "$descriptions:/extensions:ro" -e SW_EXTENSIONS_DIR=/extensions)
   docker run "${args[@]}" "$SLICERWEB_IMAGE" bash /work/scripts/build.sh "$@"
+}
+
+# Build an extension from its checkout against the restored build folder, as
+# the extension repository's own build does on the desktop platforms, with
+# SlicerWeb's 80-extensions stage, and gather its wheel.
+#
+#   extension <checkout> <name> <output> [<build subdirectory>]
+#
+# <name> is the CMake project name of the extension. Its description is the
+# one of SlicerWeb's catalog (extensions/<name>.json: build subdirectory,
+# dependencies, slicerweb options) when there is one, pointed at the checkout;
+# otherwise one is made, with <build subdirectory> ("inner-build" for an
+# extension with a superbuild, "." without). The extensions it depends on are
+# built first, from the descriptions of the catalog, but only its own wheel is
+# gathered: theirs are published by their own repositories.
+#
+# <output> receives the wheel, the icon if any, and extension-web.json, the
+# entry of the extension index SlicerWeb's Extensions Manager reads.
+cmd_extension() {
+  local src="${1:?extension: missing checkout}" name="${2:?extension: missing name}"
+  local output="${3:?extension: missing output}" sub="${4:-}"
+  local descriptions="$SLICERWEB_ROOT/extension-descriptions"
+  rm -rf "$descriptions"; mkdir -p "$descriptions" "$output"
+  local rev; rev="$(git -C "$src" rev-parse HEAD)"
+  python3 - "$SLICERWEB_DIR/extensions" "$descriptions" "$name" "$rev" "$sub" <<'PY'
+import json, os, sys
+catalog, out, name, rev, sub = sys.argv[1:6]
+def described(n):
+    path = os.path.join(catalog, n + ".json")
+    return json.load(open(path, encoding="utf8")) if os.path.isfile(path) else None
+own = described(name)
+if own is None:
+    print(f"{name} is not in SlicerWeb's catalog: building it with build subdirectory {sub or '.'!r} and no dependencies")
+    own = {"build_dependencies": []}
+else:
+    print(f"{name}: the description of SlicerWeb's catalog")
+if sub:
+    own["build_subdirectory"] = sub
+own.setdefault("build_subdirectory", ".")
+# The checkout, mounted at /ext, at its commit.
+own["scm_url"], own["scm_revision"] = "/ext", rev
+json.dump(own, open(os.path.join(out, name + ".json"), "w"), indent=1)
+pending, seen = list(own.get("build_dependencies") or []), set()
+while pending:
+    dep = pending.pop()
+    if dep in seen:
+        continue
+    seen.add(dep)
+    description = described(dep)
+    if description is None:
+        print(f"::warning::{name} depends on {dep}, which SlicerWeb's catalog does not describe")
+        continue
+    print(f"{name} depends on {dep}: built from {description['scm_url']} {description['scm_revision']}")
+    json.dump(description, open(os.path.join(out, dep + ".json"), "w"), indent=1)
+    pending.extend(description.get("build_dependencies") or [])
+PY
+  cmd_run --extension "$src" --descriptions "$descriptions" 80-extensions
+  local ext="$SLICERWEB_ROOT/dist/extensions"
+  python3 - "$ext" "$name" "$output" <<'PY'
+import json, os, shutil, sys
+folder, name, output = sys.argv[1:4]
+index = json.load(open(os.path.join(folder, "index.json")))["extensions"]
+entry = next((e for e in index if e["name"] == name), None)
+if entry is None:
+    sys.exit(f"::error::no wheel of {name} among {[e['name'] for e in index]}")
+for key in ("wheel", "icon"):
+    if entry.get(key) and os.path.isfile(os.path.join(folder, entry[key])):
+        shutil.copy(os.path.join(folder, entry[key]), output)
+json.dump(entry, open(os.path.join(output, "extension-web.json"), "w"), indent=1)
+print(json.dumps(entry, indent=1))
+PY
+  ls -l "$output"
 }
 
 # Archive the build folder. The container writes as root, hence sudo.
@@ -131,6 +215,8 @@ Commands:
   deps-key                     Print the key of the prerequisites
   image                        Build the toolchain image
   run [--slicer <dir>] <stage>...  Run SlicerWeb build stages
+  extension <checkout> <name> <output> [<build subdirectory>]
+                               Build an extension and gather its wheel
   pack <archive> [<exclude>...]    Archive the build folder
   unpack <archive>             Restore the build folder
 EOF
@@ -142,6 +228,7 @@ main() {
     deps-key) cmd_deps_key "$@" ;;
     image) cmd_image "$@" ;;
     run) cmd_run "$@" ;;
+    extension) cmd_extension "$@" ;;
     pack) cmd_pack "$@" ;;
     unpack) cmd_unpack "$@" ;;
     ""|-h|--help|help) usage ;;

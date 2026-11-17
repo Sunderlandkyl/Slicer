@@ -70,6 +70,9 @@ outputs:
   slicer-revision:
     description: "Revision of the restored build"
     value: ${{ steps.check.outputs.revision }}
+  slicer-commit:
+    description: "Commit of Slicer the restored build was made from"
+    value: ${{ steps.manifest.outputs.commit }}
   qt-dir:
     description: "Qt prefix the build was produced with"
     value: ${{ steps.qt-dir.outputs.qt-dir }}
@@ -143,10 +146,12 @@ runs:
         qt="${{ inputs.qt-version }}"
         version=""
         revision=""
+        commit=""
         if [ -f "$manifest" ]; then
           cat "$manifest"
           version="$("$SLICER_CI" manifest-get "$manifest" slicer_version)"
           revision="$("$SLICER_CI" manifest-get "$manifest" slicer_revision)"
+          commit="$("$SLICER_CI" manifest-get "$manifest" commit || true)"
           if [ -z "$qt" ]; then
             qt="$("$SLICER_CI" manifest-get "$manifest" qt_version)"
           fi
@@ -159,6 +164,7 @@ runs:
           echo "major=${qt%%.*}"
           echo "version=$version"
           echo "revision=$revision"
+          echo "commit=$commit"
         } >> "$GITHUB_OUTPUT"
         echo "SLICER_QT_VERSION=$qt" >> "$GITHUB_ENV"
 

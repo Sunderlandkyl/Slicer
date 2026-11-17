@@ -344,10 +344,11 @@ jobs:
           gh release view "$tag" --json assets --jq '.assets[].name' \
             | LC_ALL=C sort -u > have.txt
           # The prerequisites (slicer-deps-*) are managed by the stage that
-          # builds them, and are kept, and so is the web runtime (slicerweb-*)
-          # when this run did not build it.
-          keep='^slicer-deps-'
-          [ "$WEB" = "true" ] || keep='^(slicer-deps-|slicerweb-)'
+          # builds them, and the list of extension repositories by the job
+          # starting their builds, and are kept, and so is the web runtime
+          # (slicerweb-*) when this run did not build it.
+          keep='^(slicer-deps-|extension-repositories\.json$)'
+          [ "$WEB" = "true" ] || keep='^(slicer-deps-|extension-repositories\.json$|slicerweb-)'
           comm -13 keep.txt have.txt | { grep -vE "$keep" || true; } > stale.txt
           while read -r asset; do
             [ -n "$asset" ] || continue
@@ -382,11 +383,22 @@ jobs:
       ${{ !cancelled() && vars.SLICER_NIGHTLY_APP_ID != ''
           && (needs.publish.result == 'success' || inputs.notify-only) }}
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      # The list of extension repositories goes to the nightly release.
+      contents: write
     steps:
       - name: Start the builds
         shell: bash
         env:
+          # The registry of extensions: the repositories the app is installed
+          # in that have NIGHTLY_WORKFLOW, which build and publish their
+          # packages per Slicer commit (extension-build.yml). Uploaded to the
+          # nightly release as extension-repositories.json, for the Extensions
+          # Managers to find, in each, the release of the Slicer commit they
+          # were built from.
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REGISTRY_TAG: nightly
           APP_ID: ${{ vars.SLICER_NIGHTLY_APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.SLICER_NIGHTLY_APP_PRIVATE_KEY }}
           NIGHTLY_WORKFLOW: slicer-nightly-build.yml
@@ -414,7 +426,11 @@ jobs:
 
           key="$(mktemp)"
           summary="$(mktemp)"
-          trap 'rm -f "$key" "$summary"' EXIT
+          registry="$(mktemp)"
+          # Whether every installation could be listed: a registry missing
+          # some would drop their extensions, so it is then not uploaded.
+          complete=true
+          trap 'rm -f "$key" "$summary" "$registry"' EXIT
           printf '%s\n' "$APP_PRIVATE_KEY" > "$key"
 
           # The app authenticates as itself with a JWT valid for ten minutes at
@@ -495,6 +511,7 @@ jobs:
               echo "::warning::No token for installation $installation"
               echo "| installation $installation | **failed**: no token |" >> "$summary"
               failed=$((failed + 1))
+              complete=false
               continue
             fi
             echo "::add-mask::$token"
@@ -505,10 +522,15 @@ jobs:
                 echo "::warning::Could not list the repositories of installation $installation"
                 echo "| installation $installation | **failed**: could not list its repositories |" >> "$summary"
                 failed=$((failed + 1))
+                complete=false
                 break
               fi
               [ -n "$repos" ] || break
               while read -r repo branch; do
+                # An extension repository, whichever workflows this run starts.
+                if call "$token" "$api/repos/$repo/actions/workflows/$NIGHTLY_WORKFLOW" >/dev/null 2>&1; then
+                  echo "$repo $branch" >> "$registry"
+                fi
                 found=false
                 for workflow in "${workflows[@]}"; do
                   if ! call "$token" "$api/repos/$repo/actions/workflows/$workflow" >/dev/null 2>&1; then
@@ -549,3 +571,22 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Started $started, skipped $skipped, failed $failed."
+
+          if [ "$complete" != "true" ]; then
+            echo "::warning::Some installations could not be listed; extension-repositories.json left as it was."
+            exit 0
+          fi
+          list="$(dirname "$registry")/extension-repositories.json"
+          sort -u "$registry" | jq -R 'split(" ") | {repository: .[0], default_branch: .[1]}' \
+            | jq -s --arg date "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" --arg slicer "$GITHUB_REPOSITORY" \
+                '{date: $date, slicer_repository: $slicer,
+                  release_tag_prefix: "slicer-",
+                  description: "Repositories building Slicer extensions against this repository: the packages built against a commit of Slicer are in the release slicer-<commit> of each, which extension.json describes.",
+                  repositories: .}' > "$list"
+          cat "$list"
+          if gh release upload "$REGISTRY_TAG" "$list" --clobber; then
+            echo "Registered $(jq '.repositories | length' "$list") extension repositories." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Could not upload extension-repositories.json to the $REGISTRY_TAG release"
+          fi
+          rm -f "$list"
