@@ -38,9 +38,9 @@ name: Build a Slicer application
 #   test-results-<platform>   the JUnit report and the CTest logs
 #   logs-<platform>           the packaging log
 #   build-<platform>          the build trees and their manifest (archive-build-trees)
-#   package-web, package-web-extensions, build-web, logs-web
-#                             the web runtime, its extensions and its build tree,
-#                             when web is among the platforms (build-web.yml)
+#   package-web, build-web, logs-web
+#                             the web runtime and its build tree, when web is
+#                             among the platforms (build-web.yml)
 
 on:
   workflow_call:

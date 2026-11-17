@@ -281,16 +281,6 @@ jobs:
                 missing=1
               fi
             done
-            # The extensions are built in a job of their own, against the
-            # runtime of this run: when they fail, or are not built, the
-            # runtime is published with an empty extension index rather than
-            # with extensions built against another runtime.
-            if [ ! -f packages/slicerweb-extensions.zip ]; then
-              echo "::warning::web did not produce slicerweb-extensions.zip; publishing the runtime without extensions"
-              mkdir -p empty-extensions
-              echo '{"extensions": []}' > empty-extensions/index.json
-              (cd empty-extensions && zip -q -r ../packages/slicerweb-extensions.zip .)
-            fi
           fi
           [ "$missing" -eq 0 ] || exit 1
           echo "Every platform produced a complete set of artifacts."
@@ -325,12 +315,11 @@ jobs:
           \`Slicer/Slicer/.github/actions/setup-slicer-build\` action.
           See \`Docs/developer_guide/build_instructions/github_actions.md\`.
 
-          The \`slicerweb-wheels.zip\` and \`slicerweb-extensions.zip\` assets are
-          the WebAssembly runtime of SlicerWeb (https://github.com/lassoan/SlicerWeb):
-          the wheels.zip and extensions.zip a SlicerWeb site is built from;
-          \`slicerweb-build.tar.zst\` is the build tree they come from, which
-          web extensions are built against, and \`slicerweb-manifest.json\`
-          what it was built from.
+          \`slicerweb-wheels.zip\` is the WebAssembly runtime of SlicerWeb
+          (https://github.com/lassoan/SlicerWeb), the wheels.zip a SlicerWeb site
+          is built from; \`slicerweb-build.tar.zst\` is the build tree it comes
+          from, which web extensions are built against, and
+          \`slicerweb-manifest.json\` what it was built from.
 
           The \`slicer-deps-<platform>-<key>\` assets are the prebuilt
           prerequisites that the Build workflow reuses between runs."
