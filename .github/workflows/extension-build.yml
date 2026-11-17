@@ -415,9 +415,13 @@ jobs:
           set -euo pipefail
           cd "$SLICERWEB_ROOT/out/package"
           entry="$(cat extension-web.json)"
+          # The icon is a file next to the wheel, or the address the extension
+          # names (EXTENSION_ICONURL), which stays as it is.
           jq -n --arg commit "$SLICER_COMMIT" --argjson entry "$entry" \
             '{platform: "web", slicer_commit: $commit, slicer_revision: "",
-              packages: ([$entry.wheel] + (if ($entry.icon // "") != "" then [$entry.icon] else [] end)),
+              packages: ([$entry.wheel]
+                         + (if ($entry.icon // "") != "" and ($entry.icon | contains("://") | not)
+                            then [$entry.icon] else [] end)),
               web: $entry}' > slicer-package-web.json
           rm extension-web.json
           cat slicer-package-web.json
