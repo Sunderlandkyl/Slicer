@@ -277,8 +277,13 @@ jobs:
           SLICER_REVISION: ${{ steps.slicer.outputs.slicer-revision }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
           cd "$SLICER_OUTPUT_DIR"
-          packages="$(ls *.tar.gz *.zip *.dmg 2>/dev/null | jq -R . | jq -sc .)"
+          # A platform makes one kind of package: the other patterns match
+          # nothing.
+          files=(*.tar.gz *.zip *.dmg)
+          [ ${#files[@]} -gt 0 ] || { echo "::error::no package in $SLICER_OUTPUT_DIR"; exit 1; }
+          packages="$(printf '%s\n' "${files[@]}" | jq -R . | jq -sc .)"
           jq -n --arg platform "$PLATFORM" --arg commit "$SLICER_COMMIT" \
                 --arg revision "$SLICER_REVISION" --argjson packages "$packages" \
             '{platform: $platform, slicer_commit: $commit, slicer_revision: $revision, packages: $packages}' \
