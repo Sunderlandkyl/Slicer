@@ -370,13 +370,11 @@ jobs:
   # nightly release currently holds.
   #-----------------------------------------------------------------------------
   notify:
-    name: Start the extension builds
+    name: Start the builds that follow the nightly
     needs: [setup, publish]
-    # Not after a run of the web runtime alone: no extension builds against it.
     if: >-
       ${{ !cancelled() && vars.SLICER_NIGHTLY_APP_ID != ''
-          && ((needs.publish.result == 'success' && needs.setup.outputs.desktop == 'true')
-              || inputs.notify-only) }}
+          && (needs.publish.result == 'success' || inputs.notify-only) }}
     runs-on: ubuntu-latest
     permissions: {}
     steps:
@@ -386,6 +384,15 @@ jobs:
           APP_ID: ${{ vars.SLICER_NIGHTLY_APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.SLICER_NIGHTLY_APP_PRIVATE_KEY }}
           NIGHTLY_WORKFLOW: slicer-nightly-build.yml
+          # Started instead, or as well, when the run published the web
+          # runtime: by the repositories of SlicerWeb sites
+          # (lassoan/slicerweb-app and the like), which publish their site with
+          # it.
+          NIGHTLY_WEB_WORKFLOW: slicer-nightly-web.yml
+          # What this run published. A manual run with notify-only publishes
+          # nothing, and starts both against what the nightly holds.
+          DESKTOP: ${{ needs.setup.outputs.desktop || 'true' }}
+          WEB: ${{ needs.setup.outputs.web || 'true' }}
           # Between two requests that create something, to stay clear of the
           # secondary rate limit on content creation when many repositories
           # follow the nightly.
@@ -468,6 +475,11 @@ jobs:
           done
           echo "Installations: $(echo $installations | wc -w)"
 
+          workflows=()
+          [ "$DESKTOP" = "true" ] && workflows+=("$NIGHTLY_WORKFLOW")
+          [ "$WEB" = "true" ] && workflows+=("$NIGHTLY_WEB_WORKFLOW")
+          echo "Workflows to start: ${workflows[*]}"
+
           # From here on, one repository failing never stops the others.
           started=0 skipped=0 failed=0
           for installation in $installations; do
@@ -491,22 +503,28 @@ jobs:
               fi
               [ -n "$repos" ] || break
               while read -r repo branch; do
-                if ! call "$token" "$api/repos/$repo/actions/workflows/$NIGHTLY_WORKFLOW" >/dev/null 2>&1; then
-                  echo "$repo: no $NIGHTLY_WORKFLOW, skipped"
-                  echo "| $repo | skipped: no \`$NIGHTLY_WORKFLOW\` |" >> "$summary"
+                found=false
+                for workflow in "${workflows[@]}"; do
+                  if ! call "$token" "$api/repos/$repo/actions/workflows/$workflow" >/dev/null 2>&1; then
+                    continue
+                  fi
+                  found=true
+                  sleep "$PACE_SECONDS"
+                  if call "$token" -X POST "$api/repos/$repo/actions/workflows/$workflow/dispatches" \
+                       -d "{\"ref\":\"$branch\"}" >/dev/null; then
+                    echo "$repo: started $workflow on $branch"
+                    echo "| $repo | started \`$workflow\` on \`$branch\` |" >> "$summary"
+                    started=$((started + 1))
+                  else
+                    echo "::warning::$repo: could not start $workflow on $branch"
+                    echo "| $repo | **failed** to start \`$workflow\` on \`$branch\` |" >> "$summary"
+                    failed=$((failed + 1))
+                  fi
+                done
+                if [ "$found" = "false" ]; then
+                  echo "$repo: none of ${workflows[*]}, skipped"
+                  echo "| $repo | skipped: none of \`${workflows[*]}\` |" >> "$summary"
                   skipped=$((skipped + 1))
-                  continue
-                fi
-                sleep "$PACE_SECONDS"
-                if call "$token" -X POST "$api/repos/$repo/actions/workflows/$NIGHTLY_WORKFLOW/dispatches" \
-                     -d "{\"ref\":\"$branch\"}" >/dev/null; then
-                  echo "$repo: started $NIGHTLY_WORKFLOW on $branch"
-                  echo "| $repo | started on \`$branch\` |" >> "$summary"
-                  started=$((started + 1))
-                else
-                  echo "::warning::$repo: could not start $NIGHTLY_WORKFLOW on $branch"
-                  echo "| $repo | **failed** to start on \`$branch\` |" >> "$summary"
-                  failed=$((failed + 1))
                 fi
               done <<< "$repos"
               page=$((page + 1))
@@ -514,7 +532,7 @@ jobs:
           done
 
           {
-            echo "### Extension builds"
+            echo "### Builds following the nightly"
             echo
             echo "Started $started, skipped $skipped, failed $failed."
             if [ -s "$summary" ]; then

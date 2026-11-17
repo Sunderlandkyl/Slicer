@@ -359,6 +359,12 @@ published, the `Build` workflow lists the repositories the app is installed
 on and starts that workflow on the default branch of each. Repositories
 without it are skipped. Uninstalling the app opts out.
 
+The repository of a SlicerWeb site follows the web runtime in the same way,
+with a workflow named `.github/workflows/slicer-nightly-web.yml` instead: it is
+started whenever a run publishes the web runtime (`slicerweb-wheels.zip` and
+`slicerweb-extensions.zip`), including a run that builds the web runtime
+alone, which starts no extension build.
+
 The app holds the Actions permission, which starts workflows but cannot change
 code, and read access to the repository's contents, used only to see whether
 the workflow exists. It is a separate app from the one the Slicer repository
