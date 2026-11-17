@@ -38,7 +38,9 @@ name: Build a Slicer application
 #   test-results-<platform>   the JUnit report and the CTest logs
 #   logs-<platform>           the packaging log
 #   build-<platform>          the build trees and their manifest (archive-build-trees)
-#   package-web, logs-web     the web runtime, when web is among the platforms
+#   package-web, package-web-extensions, build-web, logs-web
+#                             the web runtime, its extensions and its build tree,
+#                             when web is among the platforms (build-web.yml)
 
 on:
   workflow_call:
@@ -576,6 +578,7 @@ jobs:
       slicerweb-repository: ${{ inputs.slicerweb-repository }}
       slicerweb-ref: ${{ inputs.slicerweb-ref }}
       slicer-from-checkout: ${{ inputs.web-slicer-from-checkout }}
+      archive-build-tree: ${{ inputs.archive-build-trees }}
       ci-repository: ${{ inputs.ci-repository }}
       ci-ref: ${{ inputs.ci-ref }}
       deps-key-version: ${{ inputs.deps-key-version }}

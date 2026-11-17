@@ -24,6 +24,10 @@ name: Build Slicer for the web
 #                           workflow reads
 #   package-web-extensions  slicerweb-extensions.zip, its extensions.zip: the
 #                           extension wheels and their index
+#   build-web               slicerweb-build.tar.zst (split in parts above 2 GB),
+#                           the build tree - /build of SlicerWeb's container -
+#                           and slicerweb-manifest.json, what it was built from
+#                           (archive-build-tree, and whenever extensions are built)
 #   logs-web, logs-web-extensions   the logs of the stages
 
 on:
@@ -50,6 +54,10 @@ on:
         description: "Build the extensions SlicerWeb describes (its extensions/ folder)"
         type: boolean
         default: true
+      archive-build-tree:
+        description: "Archive the build tree and its manifest (build-web), for building extensions against it"
+        type: boolean
+        default: false
       ci-repository:
         type: string
         default: "Slicer/Slicer"
@@ -373,19 +381,51 @@ jobs:
           retention-days: 7
           compression-level: 0
           if-no-files-found: error
-      # The extensions are built against this very tree: Slicer_DIR is its
-      # build tree of Slicer, and the extension wheels have to match the
-      # libraries of the runtime.
+      # The build tree, as the desktop platforms archive theirs: extensions
+      # are built against it (Slicer_DIR is its build tree of Slicer, and the
+      # extension wheels have to match the libraries of the runtime), by the
+      # job below and by whatever builds against the published nightly.
       - name: Archive the build tree
-        if: inputs.extensions
-        run: bash "$SLICERWEB_CI" pack "$SLICERWEB_ROOT/out/tree/web-build.tar.zst"
+        if: inputs.extensions || inputs.archive-build-tree
+        env:
+          FROM_CHECKOUT: ${{ inputs.slicer-from-checkout }}
+          SLICERWEB_REPOSITORY: ${{ inputs.slicerweb-repository }}
+          KEY: ${{ needs.key.outputs.key }}
+        run: |
+          set -euo pipefail
+          tree="$SLICERWEB_ROOT/out/tree"
+          mkdir -p "$tree"
+          # The whole of /build but the object files: the sources (Slicer's
+          # CMake macros are in its source tree), the install trees and the
+          # build trees the SDK points to (Slicer, teem, SlicerExecutionModel).
+          bash "$SLICERWEB_CI" pack "$tree/slicerweb-build.tar.zst"
+          bash "$SLICER_CI" split "$tree/slicerweb-build.tar.zst"
+          # What it was built from, as manifest-<platform>.json says for the
+          # desktop trees (named otherwise, so that the check of whether the
+          # nightly is up to date, which reads those, is not misled by a run of
+          # the web runtime alone).
+          slicer=""
+          if [ "$FROM_CHECKOUT" = "true" ]; then slicer="$(git -C slicer rev-parse HEAD)"; fi
+          jq -n --arg commit "$slicer" \
+                --arg slicerweb_repository "$SLICERWEB_REPOSITORY" \
+                --arg slicerweb_commit "$(git -C slicerweb rev-parse HEAD)" \
+                --arg run_id "$GITHUB_RUN_ID" \
+                --arg deps_key "$KEY" \
+                --arg date "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" \
+                '{platform: "web", commit: $commit, slicerweb_repository: $slicerweb_repository,
+                  slicerweb_commit: $slicerweb_commit, run_id: $run_id, deps_key: $deps_key,
+                  date: $date, root: "/build"}' > "$tree/slicerweb-manifest.json"
+          cat "$tree/slicerweb-manifest.json"
+          ls -lh "$tree"
       - name: Upload the build tree
-        if: inputs.extensions
+        if: inputs.extensions || inputs.archive-build-tree
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: web-build
-          path: ${{ env.SLICERWEB_ROOT }}/out/tree/web-build.tar.zst
-          retention-days: 2
+          name: build-web
+          path: |
+            ${{ env.SLICERWEB_ROOT }}/out/tree/slicerweb-manifest.json
+            ${{ env.SLICERWEB_ROOT }}/out/tree/slicerweb-build.tar.zst*
+          retention-days: 5
           compression-level: 0
           if-no-files-found: error
       - name: Upload the logs
@@ -424,10 +464,10 @@ jobs:
       - name: Download the build tree
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: web-build
+          name: build-web
           path: ${{ env.SLICERWEB_ROOT }}/restore
       - name: Restore the build tree
-        run: bash "$SLICERWEB_CI" unpack "$SLICERWEB_ROOT/restore/web-build.tar.zst"
+        run: bash "$SLICERWEB_CI" unpack "$SLICERWEB_ROOT/restore/slicerweb-build.tar.zst"
       # Each extension of SlicerWeb's extensions/ folder, at the revision its
       # description file names (a branch is taken as it is now), dependencies
       # first, superbuild included; then their wheels and index.

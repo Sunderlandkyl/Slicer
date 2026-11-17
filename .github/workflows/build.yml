@@ -211,7 +211,7 @@ jobs:
       test-exclude: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
       # The nightly run publishes packages even when tests fail.
       fail-on-test-failures: ${{ github.event_name != 'schedule' }}
-      archive-build-trees: ${{ needs.setup.outputs.publish == 'true' && needs.setup.outputs.desktop == 'true' }}
+      archive-build-trees: ${{ needs.setup.outputs.publish == 'true' }}
       macos-signing-identity: ${{ vars.MACOS_SIGNING_IDENTITY }}
 
   #-----------------------------------------------------------------------------
@@ -275,6 +275,12 @@ jobs:
               echo "::error::web did not produce slicerweb-wheels.zip"
               missing=1
             fi
+            for f in slicerweb-manifest.json slicerweb-build.tar.zst; do
+              if ! ls "assets/$f"* >/dev/null 2>&1; then
+                echo "::error::web did not produce $f"
+                missing=1
+              fi
+            done
             # The extensions are built in a job of their own, against the
             # runtime of this run: when they fail, or are not built, the
             # runtime is published with an empty extension index rather than
@@ -321,7 +327,10 @@ jobs:
 
           The \`slicerweb-wheels.zip\` and \`slicerweb-extensions.zip\` assets are
           the WebAssembly runtime of SlicerWeb (https://github.com/lassoan/SlicerWeb):
-          the wheels.zip and extensions.zip a SlicerWeb site is built from.
+          the wheels.zip and extensions.zip a SlicerWeb site is built from;
+          \`slicerweb-build.tar.zst\` is the build tree they come from, which
+          web extensions are built against, and \`slicerweb-manifest.json\`
+          what it was built from.
 
           The \`slicer-deps-<platform>-<key>\` assets are the prebuilt
           prerequisites that the Build workflow reuses between runs."
