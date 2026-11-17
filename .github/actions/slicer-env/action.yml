@@ -96,7 +96,22 @@ runs:
       shell: bash
       run: '"$SLICER_CI" install-system-packages'
 
+    # The action looks the version up through the GitHub API, which now and
+    # then answers "Server Error": try a second time before failing the job.
     - name: Install CMake
+      id: cmake
+      continue-on-error: true
+      uses: jwlawson/actions-setup-cmake@802fa1a2c4e212495c05bf94dba2704a92a472be # v2.0.2
+      with:
+        cmake-version: ${{ inputs.cmake-version }}
+
+    - name: Wait before installing CMake again
+      if: steps.cmake.outcome == 'failure'
+      shell: bash
+      run: sleep 30
+
+    - name: Install CMake (second attempt)
+      if: steps.cmake.outcome == 'failure'
       uses: jwlawson/actions-setup-cmake@802fa1a2c4e212495c05bf94dba2704a92a472be # v2.0.2
       with:
         cmake-version: ${{ inputs.cmake-version }}

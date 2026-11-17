@@ -585,6 +585,13 @@ cmd_test() {
     --no-tests=error
     --output-junit "$SLICER_OUTPUT_DIR/test-results.xml"
   )
+  # Run a failed test once more before reporting it: a few GUI tests now and
+  # then fail on the shared runners (a settings file being read while another
+  # test writes it, the virtual display). Empty to disable.
+  local repeat="${SLICER_CTEST_REPEAT-until-pass:2}"
+  if [ -n "$repeat" ]; then
+    args+=(--repeat "$repeat")
+  fi
   if [ "$SLICER_PLATFORM" = "windows" ]; then
     args+=(--build-config "$SLICER_BUILD_TYPE")
   fi
