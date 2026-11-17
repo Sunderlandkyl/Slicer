@@ -1,7 +1,8 @@
 name: Build
 
-# Builds Slicer on Linux, macOS and Windows, publishes the result as the nightly
-# release, and starts the builds of the extensions that follow it.
+# Builds Slicer on Linux, macOS and Windows, and for the web browser
+# (SlicerWeb), publishes the result as the nightly release, and starts the
+# builds of the extensions that follow it.
 #
 # The build itself is done by build-application.yml, which custom applications
 # based on Slicer call as well: the prerequisites (VTK, ITK, CTK, Python,
@@ -26,7 +27,7 @@ on:
     inputs:
       platforms:
         description: "Platforms to build (comma separated: linux,macos,windows,web)"
-        default: "linux,macos,windows"
+        default: "linux,macos,windows,web"
       run-tests:
         description: "Run the test suite"
         type: boolean
@@ -81,7 +82,10 @@ jobs:
         id: matrix
         shell: bash
         env:
-          PLATFORMS: ${{ github.event.inputs.platforms || 'linux,macos,windows' }}
+          # web with the desktop platforms, so that every platform of the
+          # nightly comes from the same commit, and extensions are built for
+          # all of them against it.
+          PLATFORMS: ${{ github.event.inputs.platforms || 'linux,macos,windows,web' }}
           EVENT: ${{ github.event_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           # Platforms built by a push to a branch other than the default one.
