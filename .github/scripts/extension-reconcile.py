@@ -338,8 +338,9 @@ def runs_in_progress(extension, token):
         status, body = request(f"{API}/repos/{extension.repository}/actions/workflows/{WORKFLOW}/runs"
                                f"?branch={extension.ref}&status={status_name}&per_page=20", token)
         if status == 200:
-            # Those that publish: a push builds and tests only.
-            found += [r for r in body["workflow_runs"] if r["event"] == "workflow_dispatch"]
+            # Those that publish: the ones started here or by hand, and the
+            # one of a commit to the branch, which the extension starts itself.
+            found += [r for r in body["workflow_runs"] if r["event"] in ("workflow_dispatch", "push")]
     return found
 
 
@@ -509,9 +510,11 @@ def main():
                         continue  # never started: started again
                     running.setdefault(int(run), (extension, [], attempt["run"]))[1].append(platform)
                 extension.attempts[platform] = attempt
-    # Builds that are going otherwise (started by hand, or by a pass that was
-    # cancelled) are waited for before anything is started for the extension:
-    # which platforms they build is not known.
+    # Builds that are going otherwise (of a commit to the extension, which it
+    # builds and publishes itself; started by hand; or by a pass that was
+    # cancelled) are left to finish: nothing is started for that extension
+    # meanwhile, since which platforms they build is not known. What depends on
+    # it is started platform by platform, as each is published.
     foreign = {}
     for extension in extensions:
         going = [r for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in running]
@@ -551,6 +554,12 @@ def main():
                 del running[run_id]
                 changed = True
         for extension in extensions:
+            if foreign.get(extension.repository):
+                # Such a build publishes its platforms one by one: what it has
+                # published so far is read, for what depends on it there.
+                before = json.dumps(extension.packages, sort_keys=True)
+                extension.read_published(targets)
+                changed = changed or json.dumps(extension.packages, sort_keys=True) != before
             for run_id in list(foreign.get(extension.repository, [])):
                 status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{run_id}", app.token(extension.repository))
                 if status != 200 or body["status"] == "completed":

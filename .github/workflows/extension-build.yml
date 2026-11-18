@@ -228,6 +228,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    # Publishing is off by default: an extension repository opts in, and the
+    # job that calls this workflow has to grant `contents: write` for it, since
+    # a called workflow cannot give itself more than its caller has.
+    permissions:
+      contents: write
     env:
       # Built at fixed paths (<root>/E/<Name>, from <root>/ES/<Name>), so that
       # its build tree can be restored by the extensions that depend on it.
@@ -320,8 +325,8 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" extension-load'
 
-      # Which Slicer the package was built against: the publish job puts it in
-      # the release of that commit.
+      # Which Slicer the package was built against, and with what: published
+      # with it.
       - name: Describe the package
         if: inputs.package
         shell: bash
@@ -370,6 +375,26 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+      # Each platform publishes what it built itself, as soon as it is built,
+      # packaged and loaded: a job that came after all of them would make the
+      # fastest wait for the slowest, and with it what depends on this
+      # extension there. Failing tests fail the run, further down, and withhold
+      # nothing, as for Slicer's own nightly; a platform that does not get here
+      # keeps the package the release had.
+      - name: Publish
+        if: inputs.package && inputs.publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.publish-tag }}
+          NAME: ${{ needs.setup.outputs.extension-name }}
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          py="$(command -v python3 || command -v python)"
+          "$py" "$(dirname "$SLICER_CI")/extension-publish.py" "$SLICER_OUTPUT_DIR"
+
       - name: Upload the test results
         if: always() && inputs.run-tests
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -398,6 +423,8 @@ jobs:
     if: needs.setup.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.web-timeout-minutes }}
+    permissions:
+      contents: write
     env:
       SLICERWEB_ROOT: /home/runner/SW
       SLICERWEB_DIR: ${{ github.workspace }}/slicerweb
@@ -542,6 +569,18 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+      # As soon as it is built, without waiting for the desktop platforms.
+      - name: Publish
+        if: inputs.publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.publish-tag }}
+          NAME: ${{ needs.setup.outputs.extension-name }}
+          REF: ${{ github.ref_name }}
+        run: python3 "$(dirname "$SLICERWEB_CI")/extension-publish.py" "$SLICERWEB_ROOT/out/package"
+
       - name: Upload the logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -550,172 +589,3 @@ jobs:
           path: ${{ env.SLICERWEB_ROOT }}/dist/logs
           retention-days: 7
           if-no-files-found: ignore
-
-  # Publishing is off by default: an extension repository opts in, and the job
-  # that calls this workflow has to grant `contents: write` for it, since a
-  # called workflow cannot give itself more than its caller has.
-  publish:
-    name: Publish
-    needs: [setup, build, web]
-    # Not conditioned on every platform succeeding: a platform is published
-    # when it built, packaged and loaded, which is when it uploaded its
-    # package. Failing tests fail the run but withhold nothing, as for Slicer's
-    # own nightly, and a platform that did not build keeps the package the
-    # release had.
-    if: ${{ !cancelled() && inputs.publish }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    # Two runs publishing the same platforms: one at a time, and neither over
-    # a newer commit (below). Not across platforms, which do not touch each
-    # other's files: of several jobs waiting in a group GitHub keeps one and
-    # cancels the others, which would drop the platforms of those.
-    concurrency:
-      group: slicer-extension-publish-${{ github.repository }}-${{ inputs.platforms }}
-      cancel-in-progress: false
-    steps:
-      - name: Download the packages
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: ${{ needs.setup.outputs.artifact-prefix }}-*
-          path: downloaded
-          merge-multiple: true
-
-      - name: Publish the release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # This job checks nothing out, so gh cannot infer the repository to
-          # act on from a working tree.
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ inputs.publish-tag }}
-          NAME: ${{ needs.setup.outputs.extension-name }}
-          REF: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import datetime, glob, hashlib, json, os, subprocess, sys, time
-
-          tag, name = os.environ["TAG"], os.environ["NAME"]
-          repository, commit = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
-
-          def gh(*args, check=True):
-              return subprocess.run(["gh", *args], check=check, capture_output=True, text=True)
-
-          # Not over a newer commit: the branch moved on while this was built,
-          # and the build of its head publishes instead.
-          head = gh("api", f"repos/{repository}/commits/{os.environ['REF']}", "--jq", ".sha", check=False).stdout.strip()
-          if head and head != commit:
-              print(f"::notice::{os.environ['REF']} is at {head[:10]} now, not {commit[:10]}; not published")
-              sys.exit(0)
-
-          def sha256(path):
-              digest = hashlib.sha256()
-              with open(path, "rb") as f:
-                  for block in iter(lambda: f.read(1 << 20), b""):
-                      digest.update(block)
-              return digest.hexdigest()
-
-          def files_of(entry):
-              """The assets of a package."""
-              tree = (entry or {}).get("build_tree") or {}
-              return {f for f in [(entry or {}).get("file"), (entry or {}).get("icon"), *tree.get("files", [])] if f}
-
-          descriptions = sorted(glob.glob("downloaded/slicer-package-*.json"))
-          if not descriptions:
-              print("::warning::no platform produced a package; nothing published")
-              sys.exit(0)
-
-          # The runs of the other platforms may be creating the release too.
-          if gh("release", "view", tag, check=False).returncode != 0:
-              gh("release", "create", tag, "--title", f"{name} {tag}", "--prerelease", "--latest=false",
-                 "--notes", f"Packages of {name}.", check=False)
-              for _ in range(5):
-                  if gh("release", "view", tag, check=False).returncode == 0:
-                      break
-                  time.sleep(5)
-          # What the release holds: the description of each platform. Only
-          # those of the platforms this run built are written.
-          os.makedirs("release", exist_ok=True)
-          gh("release", "download", tag, "-p", "extension-*.json", "-D", "release", "--clobber", check=False)
-
-          date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-          for description in descriptions:
-              package = json.load(open(description, encoding="utf8"))
-              platform = package["platform"]
-              files = package["packages"]
-              entry = {
-                  "file": files[0],
-                  "sha256": sha256(os.path.join("downloaded", files[0])),
-                  "revision": commit,
-                  "date": date,
-                  "slicer_commit": package["slicer_commit"],
-              }
-              if package.get("slicer_revision"):
-                  entry["slicer_revision"] = package["slicer_revision"]
-              if package.get("tests"):
-                  entry["tests"] = package["tests"]
-              if len(files) > 1:
-                  entry["icon"] = files[1]
-              entry["depends"] = package.get("depends") or []
-              entry["built_with"] = package.get("built_with") or {}
-              tree = package.get("build_tree")
-              if tree:
-                  entry["build_tree"] = dict(tree, sha256={f: sha256(os.path.join("downloaded", f)) for f in tree["files"]})
-
-              path = f"release/extension-{platform}.json"
-              described = json.load(open(path, encoding="utf8")) if os.path.isfile(path) else {}
-              old, previous = described.get("package"), described.get("previous")
-              # The package the platform had. Built against another Slicer, it
-              # is kept as the previous one, for the Slicer builds that are
-              # still offered it, in place of the one before it; without its
-              # build tree, which nothing is built against any more.
-              if old and old.get("slicer_commit") != entry["slicer_commit"]:
-                  superseded = files_of(previous) | set((old.get("build_tree") or {}).get("files", []))
-                  previous = {k: v for k, v in old.items() if k != "build_tree"}
-              else:
-                  superseded = files_of(old)
-              uploads = sorted(files_of(entry))
-              # A file name that does not change from one build to the next (a
-              # wheel's) now holds the new package: there is no previous one.
-              if files_of(previous) & set(uploads):
-                  previous = None
-              described = {"name": name, "repository": repository, "platform": platform, "date": date,
-                           "package": entry, "previous": previous}
-              if platform == "web":
-                  described["web"] = package["web"]
-              with open(path, "w", encoding="utf8") as f:
-                  json.dump(described, f, indent=1)
-              print(json.dumps(described, indent=1))
-              # The package first, its description, which names it, last.
-              gh("release", "upload", tag, *[os.path.join("downloaded", f) for f in uploads], "--clobber")
-              gh("release", "upload", tag, path, "--clobber")
-              for stale in sorted(superseded - set(uploads) - files_of(previous)):
-                  print(f"Removing the superseded asset {stale}")
-                  gh("release", "delete-asset", tag, stale, "--yes", check=False)
-
-          # The description of all the platforms in one file, of before there
-          # was one per platform.
-          gh("release", "delete-asset", tag, "extension.json", "--yes", check=False)
-
-          # The notes say what each package was built against.
-          lines = []
-          for path in sorted(glob.glob("release/extension-*.json")):
-              described = json.load(open(path, encoding="utf8"))
-              entry = described.get("package") or {}
-              line = f"- {described.get('platform')}: `{str(entry.get('revision'))[:10]}`, Slicer `{entry.get('slicer_commit')}`"
-              if entry.get("slicer_revision"):
-                  line += f" (r{entry['slicer_revision']})"
-              for dependency, used in sorted((entry.get("built_with") or {}).items()):
-                  line += f", {dependency} `{str(used.get('revision'))[:10]}`"
-              if entry.get("tests") == "failed":
-                  line += ", tests failed"
-              lines.append(f"{line}: {entry.get('file')}")
-          notes = (f"Packages of {name}: what each was built from, and against which Slicer and which of the"
-                   " extensions it depends on.\n\n" + "\n".join(lines) + "\n\n"
-                   "extension-<platform>.json says the same, for the catalog of the Slicer release, which\n"
-                   "the Extensions Managers read.")
-          gh("release", "edit", tag, "--notes", notes, "--latest=false", "--prerelease", check=False)
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
-              f.write(f"Published {', '.join(json.load(open(d))['platform'] for d in descriptions)} to the release {tag}.\n")
-          PY

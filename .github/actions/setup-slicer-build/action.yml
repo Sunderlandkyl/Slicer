@@ -96,9 +96,9 @@ runs:
         set -euo pipefail
         dir="${{ runner.temp }}/slicer-ci"
         mkdir -p "$dir"
-        # slicer-ci.sh, and what it runs: the resolver of the extensions an
-        # extension depends on.
-        for script in slicer-ci.sh slicer-extension-deps.py; do
+        # slicer-ci.sh, and what goes with it: the resolver of the extensions
+        # an extension depends on, and what publishes its package.
+        for script in slicer-ci.sh slicer-extension-deps.py extension-publish.py; do
           gh api "repos/${{ inputs.repository }}/contents/.github/scripts/$script?ref=${{ inputs.ref }}" \
             --jq '.content' | base64 -d > "$dir/$script"
         done

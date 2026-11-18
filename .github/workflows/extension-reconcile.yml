@@ -19,9 +19,10 @@
 # matter of how soon a change is seen:
 #   - the Build workflow, when it has published a nightly;
 #   - the relay of the webhook of the Slicer nightly GitHub App
-#     (.github/extension-webhook), when a commit lands on the branch an
-#     extension is built from, when a build this workflow started has ended,
-#     or when the app is installed in more repositories: no extension
+#     (.github/extension-webhook), when a platform of an extension has been
+#     built on the branch it is built from (a commit there, which the
+#     extension builds and publishes itself, or a build this workflow
+#     started), or when the app is installed in more repositories: no extension
 #     repository can start this workflow, the relay can. With the relay (the
 #     SLICER_EXTENSION_RELAY variable set to true), each run is one step: it
 #     starts the extensions whose dependencies are all current now, and

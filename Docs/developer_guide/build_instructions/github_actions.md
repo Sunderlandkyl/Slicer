@@ -272,9 +272,13 @@ jobs:
     uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
     with:
       platforms: linux,macos,windows
-      # Only the builds the Slicer repository starts publish (see below):
-      # a push or a pull request builds and tests.
-      publish: ${{ github.event_name == 'workflow_dispatch' }}
+      # A commit to the default branch, and the builds the Slicer repository
+      # starts (see below), publish; a pull request or another branch builds
+      # and tests.
+      publish: >-
+        ${{ github.event_name == 'workflow_dispatch'
+            || (github.event_name == 'push'
+                && github.ref_name == github.event.repository.default_branch) }}
 ```
 
 with, for the Slicer repository to start one run per platform:
@@ -377,29 +381,33 @@ those the Slicer nightly GitHub App is installed in that have
 
 The workflow remembers nothing between runs, so running it late, twice or
 after a failure does no harm, and what starts it only decides how soon a
-change is seen: the `Build` workflow when it has published a nightly, the
-relay of the app's webhook when a commit lands on an extension or a build
-ends (see below), a schedule every six hours as a backstop for a missed
-event, a manual run, or a `repository_dispatch` event of type
-`reconcile-extensions`. Only the builds it starts publish: an extension's
-workflow publishes on `workflow_dispatch` alone, and a push builds and tests.
-A publish over a newer commit of the branch is skipped.
+change is seen. There are two ways a chain starts:
 
-Without the relay, a run waits for the builds it starts and goes down the
-chains itself, looking at the heads of the extensions again every five
-minutes; it is started by the nightly, the schedule or by hand, so a commit to
-an extension is seen at the next of those. With the relay (the
+- **A nightly.** Each platform of Slicer publishes as soon as it is built, and
+  says so. The extensions that depend on no other are started for that
+  platform; when one has published, those that depend on it are, provided what
+  they depend on is current there; and so on, until none is left.
+- **A commit to an extension.** The extension builds it itself: its workflow
+  runs on the push and, on the default branch, publishes each platform as soon
+  as it is built, from the job that built it. When a platform is published,
+  the extensions that depend on it are started for that platform, provided
+  what they depend on is current there; and so on.
+
+In both, a platform never waits for another, and a publish over a newer commit
+of the branch is skipped.
+
+What tells the Slicer repository that a platform of an extension has been
+published is the relay of the app's webhook (see below). With it (the
 `SLICER_EXTENSION_RELAY` variable of the Slicer repository set to `true`),
-each run is one step: it starts what can be started and stops, so nothing
-waits on a runner. A commit to SlicerIGSIO then goes: the relay starts a step,
-which finds SlicerIGSIO out of date and starts its builds, one per platform;
-the end of each starts a step, which finds SlicerIGT out of date on that
-platform with its dependencies current, and starts it; the end of that starts
-SlicerHeart. An extension with several dependencies is started once all of
-them are current, not once per dependency, and what depends on a build that
-failed is left as it is. The builds a step started are taken up by the next
-one: only the platforms they build wait for them. The `wait` input runs the
-whole chain in one run all the same.
+each run of `Reconcile extensions` is one step: it starts what can be started
+and stops, so nothing waits on a runner, and the builds a step started are
+taken up by the next one. Without it, a run waits for the builds and goes down
+the chains itself, reading what the extensions have published as it goes; it
+is then started by the nightly, a schedule every six hours, or by hand, so a
+commit to an extension reaches what depends on it at the next of those. An
+extension with several dependencies is started once all of them are current,
+not once per dependency, and what depends on a build that failed is left as it
+is. The `wait` input runs the whole chain in one run all the same.
 
 A superbuild extension needs nothing extra: its own tree, `inner-build`, is
 where the tests, the package and the modules are looked for.
@@ -572,30 +580,31 @@ uses for its own automation, so installing it grants nothing more.
 
 The relay is what makes this prompt: a small Cloudflare Worker, in
 `.github/extension-webhook/`, that the webhook of the Slicer nightly app points
-to. The app is subscribed to the *Push* and *Workflow run* events, which its
-permissions already allow, so the installations are asked for nothing more.
-When a commit lands on the branch an extension is built from, when a build the
-reconciliation started ends, or when the app is installed in more
-repositories, the relay starts `Reconcile extensions`. It does so as a second
-app, the relay app, installed in the Slicer repository alone with the Actions
-permission: the relay holds the webhook secret of the nightly app, to know
-that an event is from GitHub, and the private key of the relay app, and
-nothing else. The private key of the nightly app, which starts builds in every
-extension repository, stays a secret of the Slicer repository's workflows, and
-the nightly app needs no installation in the Slicer repository. The schedule
-is only a backstop: GitHub starts scheduled runs late, or not at all, under
-load.
+to. The app is subscribed to the *Workflow job* and *Workflow run* events,
+which its Actions permission already allows, so the installations are asked
+for nothing more. When the job of a platform of an extension ends on the
+branch the extension is built from, when a build of one ends, or when the app
+is installed in more repositories, the relay starts `Reconcile extensions`.
+It can do so as the nightly app itself, installed in the Slicer repository
+too, or as a second app, the relay app, installed in the Slicer repository
+alone with the Actions permission. With a second app, the relay holds the
+webhook secret of the nightly app, to know that an event is from GitHub, and
+the private key of the relay app, and nothing else: the private key of the
+nightly app, which starts builds in every extension repository, stays a secret
+of the Slicer repository's workflows. The schedule is only a backstop: GitHub
+starts scheduled runs late, or not at all, under load.
 
 To set the relay up:
 
 1. Create the relay app (no webhook; repository permission *Actions: read and
-   write*), install it in the Slicer repository only, and convert its private
-   key to PKCS#8 (`openssl pkcs8 -topk8 -nocrypt -in relay.pem`).
+   write*) and install it in the Slicer repository only; or install the
+   nightly app there. Convert the private key of whichever it is to PKCS#8
+   (`openssl pkcs8 -topk8 -nocrypt -in relay.pem`).
 2. Fill in `RELAY_APP_ID`, `SLICER_REPOSITORY` and `SLICER_REF` in
    `wrangler.toml` and run `npx wrangler deploy`, then `npx wrangler secret
    put` for `WEBHOOK_SECRET` and `RELAY_APP_PRIVATE_KEY`.
 3. In the settings of the Slicer nightly app, set the webhook URL to the
-   Worker's, the same secret, and subscribe to *Push* and *Workflow run*.
+   Worker's, the same secret, and subscribe to *Workflow job* and *Workflow run*.
 4. Set the `SLICER_EXTENSION_RELAY` variable of the Slicer repository to
    `true`, so that a run of `Reconcile extensions` is one step.
 

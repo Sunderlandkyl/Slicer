@@ -16,13 +16,15 @@
 //
 // An event starts the reconciliation when:
 //
-//   - a commit lands on the branch an extension is built from (push). That
-//     build does not publish: a step of the reconciliation starts the builds
-//     that do, one per platform, when what the extension depends on is
-//     current;
-//   - a build the reconciliation started has ended (workflow_run, completed,
-//     of slicer-nightly-build.yml started by workflow_dispatch), published or
-//     failed: the next step starts what depended on it;
+//   - a platform of an extension has been built (workflow_job, completed, on
+//     the branch the extension is built from): the job publishes what it
+//     built itself, so what depends on the extension can be built for that
+//     platform, without waiting for the other platforms;
+//   - a build of an extension has ended (workflow_run, completed, of
+//     slicer-nightly-build.yml), whether a commit to the extension or the
+//     reconciliation started it, published or failed.
+//   A commit to an extension is not an event to act on: the extension builds
+//   and publishes it itself, and the two above follow.
 //   - the nightly app is installed in more repositories.
 //
 // Nothing is decided here beyond "something may have changed": the
@@ -47,6 +49,9 @@
 const API = "https://api.github.com";
 const WORKFLOW = "extension-reconcile.yml";
 const BUILD_WORKFLOW = "slicer-nightly-build.yml";
+// The job of a platform in extension-build.yml, as the workflow calling it
+// names it: "<calling job> / <platform>".
+const PLATFORM_JOB = /(?:^|\/ )(linux|macos|windows|web)$/;
 const encoder = new TextEncoder();
 
 export default {
@@ -101,20 +106,22 @@ function reasonOf(event, payload, env) {
   if (repository.full_name && repository.full_name === env.SLICER_REPOSITORY) {
     return null;
   }
-  if (event === "push") {
-    // A commit on the branch the extension is built from; not a tag, another
-    // branch, or the deletion of one.
-    if (payload.deleted || payload.ref !== `refs/heads/${branchOf(repository, env)}`) {
+  if (event === "workflow_job") {
+    const job = payload.workflow_job || {};
+    // A platform's job of the branch the extension is built from, which has
+    // published what it built (or failed to): "build / linux", "build / web".
+    if (payload.action !== "completed" || job.head_branch !== branchOf(repository, env)
+        || !PLATFORM_JOB.test(String(job.name)) || !["success", "failure"].includes(job.conclusion)) {
       return null;
     }
-    return `${repository.full_name} commit ${String(payload.after).slice(0, 10)}`;
+    return `${repository.full_name} ${String(job.name).match(PLATFORM_JOB)[1]} ${job.conclusion} ${String(job.head_sha).slice(0, 10)}`;
   }
   if (event === "workflow_run") {
     const run = payload.workflow_run || {};
-    // Only the builds that publish, which the reconciliation started; not
-    // those of a push or a pull request, which build and test.
+    // Only the builds that publish: of the branch, pushed or started by the
+    // reconciliation. Not those of pull requests or other branches.
     if (payload.action !== "completed" || !String(run.path).endsWith("/" + BUILD_WORKFLOW)
-        || run.head_branch !== branchOf(repository, env) || run.event !== "workflow_dispatch") {
+        || run.head_branch !== branchOf(repository, env) || !["push", "workflow_dispatch"].includes(run.event)) {
       return null;
     }
     return `${repository.full_name} ${run.conclusion} ${String(run.head_sha).slice(0, 10)}`;
