@@ -19,8 +19,11 @@ a failure converges on the same state.
      on have been dealt with there, whatever the other platforms are doing;
      when it finishes, what it published is read, and what depended on it is
      started. A build is started once for the same Slicer, head and
-     dependencies: one that fails is not started again until one of them
-     changes, and what depends on it is not built against anything else.
+     dependencies: one that fails is tried once more, then not started again
+     until one of them changes, and what depends on it is not built against
+     anything else. While a nightly is under way, nothing is started for the
+     platforms whose Slicer is not published yet: it would be built again
+     within hours.
   5. The catalog (extensions-catalog.json of the Slicer nightly release): per
      platform, the extensions that are current, with their package and its
      hash; the others, with the reason. One file, replaced at once, each time a
@@ -77,6 +80,9 @@ RETRY = env("RETRY") == "true"
 # .github/extension-webhook), which has to be there.
 WAIT = env("WAIT") == "true"
 DEADLINE = STARTED + 60 * float(env("DEADLINE_MINUTES", "300"))
+# How long a platform whose Slicer is older than the one just published for
+# another is taken to be still building, and its extensions left for then.
+SLICER_WAIT_HOURS = float(env("SLICER_WAIT_HOURS", "5"))
 # How many times the build of an extension is started for the same Slicer,
 # commit and dependencies, when it fails.
 MAX_TRIES = 2
@@ -467,13 +473,31 @@ def main():
     base = f"https://github.com/{SLICER}/releases/download/{TAG}"
     app = App(env("APP_ID"), env("APP_PRIVATE_KEY"))
 
+    behind = set()  # the platforms whose Slicer is still being built
+
     def targets_now():
-        targets = {}
+        targets, dates = {}, {}
         for platform in PLATFORMS:
             manifest = public_json(f"{base}/slicerweb-manifest.json" if platform == "web"
                                    else f"{base}/manifest-{platform}.json")
             if manifest and manifest.get("commit"):
                 targets[platform] = manifest["commit"]
+                try:
+                    dates[platform] = datetime.datetime.fromisoformat(str(manifest.get("date")).replace("Z", "+00:00"))
+                except ValueError:
+                    pass
+        # A nightly publishes its platforms one by one, hours apart. One that
+        # still holds the commit before, while another was published a short
+        # while ago from a newer one, is about to be replaced: what would be
+        # built for it now would be built again then. It is left for then,
+        # unless its Slicer does not come (its build failed), which the time
+        # allowed for it says.
+        behind.clear()
+        if dates:
+            newest = max(dates, key=dates.get)
+            recent = (datetime.datetime.now(datetime.timezone.utc) - dates[newest]).total_seconds() < 3600 * SLICER_WAIT_HOURS
+            if recent:
+                behind.update(p for p in targets if targets[p] != targets[newest] and p in dates)
         return targets
 
     targets = targets_now()
@@ -481,6 +505,8 @@ def main():
         log(f"::notice::The {TAG} release of {SLICER} holds no Slicer build; nothing to reconcile.")
         return
     log("Slicer: " + ", ".join(f"{p} {c[:10]}" for p, c in targets.items()))
+    if behind:
+        log(f"Slicer is still being built for {', '.join(sorted(behind))}: nothing is started for it until it is published")
 
     # The repositories: extensions, and sites.
     extensions, sites = [], []
@@ -606,7 +632,7 @@ def main():
         busy = {(e.repository, p) for e, platforms, _ in running.values() for p in platforms}
         todo = [(e, p) for e in extensions for p in targets
                 if state.startable(e, p) and (e.repository, p) not in busy and not foreign.get(e.repository)
-                and unstarted.get((e.repository, p), 0) < 3]
+                and unstarted.get((e.repository, p), 0) < 3 and p not in behind]
         if todo and time.time() > DEADLINE:
             again = True
             todo = []
