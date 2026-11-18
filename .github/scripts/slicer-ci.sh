@@ -976,7 +976,13 @@ extension_configure_args() {
   [ -n "$compiler" ] && args+=("-DCMAKE_CXX_COMPILER:FILEPATH=$compiler")
   case "$SLICER_PLATFORM" in
     windows)
-      args+=(-G "Visual Studio 17 2022" -A x64)
+      # /MP, as for Slicer itself: an extension works out its own compiler
+      # flags (UseSlicer.cmake), and without it each of its projects compiles
+      # its files one after the other, on one core of the runner's four.
+      args+=(-G "Visual Studio 17 2022" -A x64
+             -DCMAKE_CXX_MP_FLAG:BOOL=ON
+             -DADDITIONAL_C_FLAGS:STRING=/MP
+             -DADDITIONAL_CXX_FLAGS:STRING=/MP)
       # Rather than the git recorded in SlicerConfig.cmake, which may not
       # exist on this runner (see native_git).
       local git; git="$(native_git)"
@@ -1049,6 +1055,7 @@ cmd_extension_dependencies() {
 # when it has to be made again.
 extension_dependencies_once() {
   local again="$1"
+  ext_parallel_compile
   local src; src="$(ext_checkout_dir)"
   local root; root="$(ext_deps_dir)"
   local broot; broot="$(bash_path "$root")"
@@ -1173,6 +1180,15 @@ cmd_extension_tree() {
   cat "$out/extension-tree.json"
 }
 
+# On Windows, have MSBuild compile the files of a project in parallel whatever
+# flags the project was configured with: the projects an extension's
+# superbuild adds (its own inner build among them) do not all get /MP from the
+# options above. MSBuild reads its properties from the environment.
+ext_parallel_compile() {
+  [ "$SLICER_PLATFORM" = "windows" ] || return 0
+  export UseMultiToolTask=true EnforceProcessCountAcrossBuilds=true
+}
+
 cmd_extension_configure() {
   if ext_relocated; then
     # The copy the extension is built from, at its fixed path; without the
@@ -1202,6 +1218,7 @@ cmd_extension_configure() {
 }
 
 cmd_extension_build() {
+  ext_parallel_compile
   log "Build extension"
   cmake_build "$(ext_build_dir)"
   endlog
