@@ -607,7 +607,7 @@ cmd_manifest_files() {
 # build made before the files were recorded says nothing, and nothing is
 # checked.
 restore_check() {
-  local manifest="$1" dir="$2"
+  local manifest="$1" dir="$2"; shift 2
   local recorded; recorded="$(sed -nE 's/^  "sha256:([^"]+)": "([0-9a-f]+)",?$/\1 \2/p' "$manifest")"
   if [ -z "$recorded" ]; then
     info "the manifest does not record its files: not checked" >&2
@@ -629,16 +629,20 @@ restore_check() {
       return 0
     fi
   done
-  # ... and every file it records, of the archives that were asked for, is there.
-  local prefix
-  for f in "$dir"/*.tar.zst*; do
-    [ -f "$f" ] || continue
-    name="$(basename "$f")"; prefix="${name%%.tar.zst*}.tar.zst"
+  # ... and every file it records, of the archives that were asked for (the
+  # remaining arguments), is there: an archive that is being replaced is, for
+  # a moment, not on the release at all.
+  local archive found
+  for archive in "$@"; do
+    found=0
     while read -r name sum; do
       case "$name" in
-        "$prefix"*) [ -f "$dir/$name" ] || { echo "$name, which the manifest records, was not downloaded"; return 0; } ;;
+        "$archive".tar.zst*)
+          found=1
+          [ -f "$dir/$name" ] || { echo "$name, which the manifest records, was not downloaded"; return 0; } ;;
       esac
     done <<< "$recorded"
+    [ "$found" -eq 1 ] || { echo "the manifest records no $archive.tar.zst"; return 0; }
   done
 }
 
@@ -657,6 +661,13 @@ cmd_restore_release() {
   local dest; dest="$(bash_path "$SLICER_OUTPUT_DIR")/restore"
   mkdir -p "$dest"
 
+  # The archives asked for.
+  local archives=()
+  case "$what" in
+    build) archives=("slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}") ;;
+    deps)  archives=("deps-${SLICER_PLATFORM}") ;;
+    all)   archives=("deps-${SLICER_PLATFORM}" "slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}") ;;
+  esac
   local patterns=("-p" "manifest-${SLICER_PLATFORM}.json")
   case "$what" in
     build) patterns+=(-p "slicer-source-${SLICER_PLATFORM}.tar.zst*" -p "slicer-build-${SLICER_PLATFORM}.tar.zst*") ;;
@@ -685,7 +696,7 @@ cmd_restore_release() {
     if [ -z "$problem" ] && [ ! -f "$manifest" ]; then
       problem="the release has no manifest-${SLICER_PLATFORM}.json"
     fi
-    [ -n "$problem" ] || problem="$(restore_check "$manifest" "$dest")"
+    [ -n "$problem" ] || problem="$(restore_check "$manifest" "$dest" "${archives[@]}")"
     [ -n "$problem" ] || break
     if [ "$attempt" -lt 5 ]; then
       info "$problem: is the platform being published? Trying again in $((attempt * 60)) s"
@@ -702,9 +713,13 @@ cmd_restore_release() {
   # The external projects first: the inner build tree refers to them.
   local a
   for a in "deps-${SLICER_PLATFORM}" "slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}"; do
+    case " ${archives[*]} " in *" $a "*) ;; *) continue ;; esac
     if [ -f "$dest/$a.tar.zst" ] || ls "$dest/$a.tar.zst".part-* >/dev/null 2>&1; then
       cmd_unpack "$dest/$a.tar.zst"
       rm -f "$dest/$a.tar.zst" "$dest/$a.tar.zst".part-* 2>/dev/null || true
+    else
+      # Never skipped: what would be configured against is not all there.
+      die "restore-release: $a.tar.zst was asked for and is not in the release"
     fi
   done
   cmd_report
@@ -1017,11 +1032,21 @@ cmd_extension_dependencies() {
   rm -rf "$broot"; mkdir -p "$broot/download" "$out"
   : > "$broot/cmake-args.txt"; : > "$broot/module-paths.txt"
   log "Resolve the dependencies"
+  local rc=0
   "$py" "$here/slicer-extension-deps.py" --source "$src" --platform "$SLICER_PLATFORM" \
       --slicer-commit "$SLICER_COMMIT" --registry "${SLICER_EXT_REGISTRY:-}" \
       --index "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" \
-      --out "$root/plan.json" \
-    || { endlog; die "extension-dependencies: could not resolve the dependencies"; }
+      --out "$root/plan.json" || rc=$?
+  if [ "$rc" -eq 3 ] && [ "${SLICER_EXT_SKIP_UNREADY:-false}" = "true" ]; then
+    # What it depends on is not built for this Slicer yet (a nightly is being
+    # followed, or that build failed): nothing to build against, which is not
+    # a fault of this commit. The reconciliation builds it when it is there.
+    endlog
+    echo "::notice::$SLICER_PLATFORM skipped: an extension it depends on is not built for this Slicer yet (see above). It is built when that one is."
+    [ -z "${GITHUB_OUTPUT:-}" ] || echo "ready=false" >> "$GITHUB_OUTPUT"
+    return 0
+  fi
+  [ "$rc" -eq 0 ] || { endlog; die "extension-dependencies: could not resolve the dependencies"; }
   "$py" - "$root/plan.json" "$SLICER_OUTPUT_DIR/extension-built-with.json" > "$broot/plan.txt" <<'PY'
 import json, sys
 plan = json.load(open(sys.argv[1], encoding="utf8"))
@@ -1051,7 +1076,17 @@ PY
           || { endlog; die "could not download $a/$file"; }
         got="$(sha256 < "$broot/download/$file" | cut -d' ' -f1)"
         if [ -n "$sum" ] && [ "$got" != "$sum" ]; then
-          endlog; die "$file of $name is not the file its extension.json describes (sha256 $got, expected $sum)"
+          endlog
+          # The dependency is being published again: what it describes and
+          # what is there are, for a moment, of two builds. Resolved again.
+          local tries="${SLICER_EXT_DEPS_ATTEMPT:-1}"
+          if [ "$tries" -lt 4 ]; then
+            info "$file of $name is not the file its description records: is it being published? Trying again in $((tries * 60)) s"
+            sleep $((tries * 60))
+            SLICER_EXT_DEPS_ATTEMPT=$((tries + 1)) cmd_extension_dependencies
+            return
+          fi
+          die "$file of $name is not the file its description records (sha256 $got, expected $sum)"
         fi
       done
       cmd_unpack "$root/download/$first"

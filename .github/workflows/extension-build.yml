@@ -277,9 +277,15 @@ jobs:
       # published for this platform and this Slicer commit, restored. One that
       # no repository of the registry builds is built from the ExtensionsIndex.
       - name: Restore the dependencies
+        id: deps
         if: inputs.build-dependencies
         shell: bash
         env:
+          # A commit or a pull request is not at fault when what it depends on
+          # is not built for this Slicer yet: the platform is skipped, with a
+          # notice, and built when the dependency is there. A build the
+          # reconciliation started is only started when it is, and fails.
+          SLICER_EXT_SKIP_UNREADY: ${{ github.event_name != 'workflow_dispatch' }}
           SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
           SLICER_EXT_CMAKE_OPTIONS: ${{ inputs.cmake-options }}
           SLICER_COMMIT: ${{ steps.slicer.outputs.slicer-commit }}
@@ -287,6 +293,7 @@ jobs:
         run: '"$SLICER_CI" extension-dependencies'
 
       - name: Configure
+        if: steps.deps.outputs.ready != 'false'
         shell: bash
         env:
           SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
@@ -294,18 +301,19 @@ jobs:
         run: '"$SLICER_CI" extension-configure'
 
       - name: Build
+        if: steps.deps.outputs.ready != 'false'
         shell: bash
         run: '"$SLICER_CI" extension-build'
 
       - name: Package
         id: package
-        if: inputs.package
+        if: steps.deps.outputs.ready != 'false' && (inputs.package)
         shell: bash
         run: '"$SLICER_CI" extension-package'
 
       # Before the tests, which may leave files in the tree.
       - name: Archive the build tree
-        if: inputs.package && inputs.publish && inputs.publish-build-tree
+        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && inputs.publish-build-tree)
         shell: bash
         env:
           SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
@@ -313,7 +321,7 @@ jobs:
 
       - name: Test
         id: tests
-        if: inputs.run-tests
+        if: steps.deps.outputs.ready != 'false' && (inputs.run-tests)
         continue-on-error: true
         shell: bash
         env:
@@ -321,14 +329,14 @@ jobs:
         run: '"$SLICER_CI" extension-test'
 
       - name: Load in Slicer
-        if: inputs.load-in-slicer
+        if: steps.deps.outputs.ready != 'false' && (inputs.load-in-slicer)
         shell: bash
         run: '"$SLICER_CI" extension-load'
 
       # Which Slicer the package was built against, and with what: published
       # with it.
       - name: Describe the package
-        if: inputs.package
+        if: steps.deps.outputs.ready != 'false' && (inputs.package)
         shell: bash
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -361,7 +369,7 @@ jobs:
           cat "slicer-package-$PLATFORM.json"
 
       - name: Upload the package
-        if: inputs.package && inputs.upload-package
+        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.upload-package)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ needs.setup.outputs.artifact-prefix }}-${{ matrix.platform }}
@@ -382,7 +390,7 @@ jobs:
       # nothing, as for Slicer's own nightly; a platform that does not get here
       # keeps the package the release had.
       - name: Publish
-        if: inputs.package && inputs.publish
+        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -396,7 +404,7 @@ jobs:
           "$py" "$(dirname "$SLICER_CI")/extension-publish.py" "$SLICER_OUTPUT_DIR"
 
       - name: Upload the test results
-        if: always() && inputs.run-tests
+        if: steps.deps.outputs.ready != 'false' && (always() && inputs.run-tests)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ needs.setup.outputs.artifact-prefix }}-test-results-${{ matrix.platform }}
@@ -407,7 +415,7 @@ jobs:
       # Last, so that a test failure still leaves the package and the results
       # uploaded.
       - name: Fail on test failures
-        if: inputs.run-tests && steps.tests.outcome == 'failure'
+        if: steps.deps.outputs.ready != 'false' && (inputs.run-tests && steps.tests.outcome == 'failure')
         shell: bash
         run: |
           echo "::error::the extension's tests failed"
@@ -511,8 +519,11 @@ jobs:
         run: bash "$SLICERWEB_CI" unpack "$SLICERWEB_ROOT/restore/slicerweb-build.tar.zst"
 
       - name: Build
+        id: deps
         shell: bash
         env:
+          # As on the desktop platforms.
+          SLICER_EXT_SKIP_UNREADY: ${{ github.event_name != 'workflow_dispatch' }}
           NAME: ${{ needs.setup.outputs.extension-name }}
           SOURCE_DIRECTORY: ${{ inputs.source-directory }}
           SUBDIRECTORY: ${{ inputs.web-build-subdirectory }}
@@ -530,6 +541,7 @@ jobs:
           bash "$SLICERWEB_CI" extension "$src" "$NAME" "$SLICERWEB_ROOT/out/package" "$SUBDIRECTORY"
 
       - name: Describe the package
+        if: steps.deps.outputs.ready != 'false'
         shell: bash
         env:
           SLICER_COMMIT: ${{ steps.tree.outputs.slicer-commit }}
@@ -560,7 +572,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the package
-        if: inputs.upload-package
+        if: steps.deps.outputs.ready != 'false' && (inputs.upload-package)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ needs.setup.outputs.artifact-prefix }}-web
@@ -571,7 +583,7 @@ jobs:
 
       # As soon as it is built, without waiting for the desktop platforms.
       - name: Publish
-        if: inputs.publish
+        if: steps.deps.outputs.ready != 'false' && (inputs.publish)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

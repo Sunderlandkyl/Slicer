@@ -77,6 +77,9 @@ RETRY = env("RETRY") == "true"
 # .github/extension-webhook), which has to be there.
 WAIT = env("WAIT") == "true"
 DEADLINE = STARTED + 60 * float(env("DEADLINE_MINUTES", "300"))
+# How many times the build of an extension is started for the same Slicer,
+# commit and dependencies, when it fails.
+MAX_TRIES = 2
 REFS = json.loads(env("REFS") or "{}")
 
 
@@ -319,9 +322,23 @@ class State:
         if not self.reason(extension, platform):
             return True
         attempt = extension.attempts.get(platform)
+        if not attempt or attempt.get("key") != self.key(extension, platform):
+            return False
         # Not while its build is running: what depends on it waits for it.
-        return (bool(attempt) and attempt.get("conclusion") != "running"
-                and attempt.get("key") == self.key(extension, platform))
+        if attempt.get("conclusion") == "running":
+            return False
+        # A build that succeeded and left it as it was (the extension does not
+        # build that platform) says all there is to say. One that failed is
+        # tried once more: runners, downloads and tests fail for no reason of
+        # the extension's often enough, and nothing else would try again
+        # before Slicer, the extension or what it depends on changes.
+        return attempt.get("conclusion") == "success" or attempt.get("tries", 1) >= MAX_TRIES
+
+    def attempt(self, extension, platform):
+        """The record of a build about to be started: how many there have been for the same inputs."""
+        key, earlier = self.key(extension, platform), extension.attempts.get(platform) or {}
+        tries = earlier.get("tries", 1) + 1 if earlier.get("key") == key else 1
+        return {"key": key, "conclusion": "not started", "date": now(), "tries": tries}
 
     def startable(self, extension, platform):
         # Only against dependencies that are current: after one that failed,
@@ -333,15 +350,16 @@ class State:
 # --------------------------------------------------------------------- runs
 
 def runs_in_progress(extension, token):
-    found = []
-    for status_name in ("queued", "in_progress"):
-        status, body = request(f"{API}/repos/{extension.repository}/actions/workflows/{WORKFLOW}/runs"
-                               f"?branch={extension.ref}&status={status_name}&per_page=20", token)
-        if status == 200:
-            # Those that publish: the ones started here or by hand, and the
-            # one of a commit to the branch, which the extension starts itself.
-            found += [r for r in body["workflow_runs"] if r["event"] in ("workflow_dispatch", "push")]
-    return found
+    """The builds of the branch that have not ended, whatever their state: queued, waiting for
+    a runner or an approval, pending behind another, or running."""
+    status, body = request(f"{API}/repos/{extension.repository}/actions/workflows/{WORKFLOW}/runs"
+                           f"?branch={extension.ref}&per_page=50", token)
+    if status != 200:
+        return []
+    # Those that publish: the ones started here or by hand, and the one of a
+    # commit to the branch, which the extension starts itself.
+    return [r for r in body["workflow_runs"]
+            if r["status"] != "completed" and r["event"] in ("workflow_dispatch", "push")]
 
 
 def dispatch(extension, app, platforms, claimed):
@@ -603,15 +621,17 @@ def main():
             log(f"{extension.name}: starting {', '.join(platforms)} "
                 f"({'; '.join(f'{p}: {state.reason(extension, p)}' for p in platforms)})")
             for platform in platforms:
-                extension.attempts[platform] = {"key": state.key(extension, platform), "conclusion": "not started", "date": now()}
+                extension.attempts[platform] = state.attempt(extension, platform)
             run = dispatch(extension, app, platforms, set(running))
             started += 1
             if extension.one_run and len(platforms) == 1:
                 # It was found out by this start: the run builds the other platforms too.
+                group = list(platforms)
                 platforms = [p for p in targets if p in platforms
                              or (state.startable(extension, p) and (extension.repository, p) not in busy)]
                 for platform in platforms:
-                    extension.attempts[platform] = {"key": state.key(extension, platform), "conclusion": "not started", "date": now()}
+                    if platform not in group:
+                        extension.attempts[platform] = state.attempt(extension, platform)
             if run:
                 running[run[0]] = (extension, platforms, run[1])
                 for platform in platforms:
@@ -622,7 +642,10 @@ def main():
                 # it ended. It is tried again, a few times in this pass, and
                 # by the next pass, whatever starts it.
                 for platform in platforms:
-                    extension.attempts.pop(platform, None)
+                    # As it was before this start, which did not happen.
+                    earlier = dict(extension.attempts.pop(platform, None) or {})
+                    if earlier.get("tries", 1) > 1:
+                        extension.attempts[platform] = dict(earlier, tries=earlier["tries"] - 1, conclusion="failure")
                     unstarted[(extension.repository, platform)] = unstarted.get((extension.repository, platform), 0) + 1
                     retry_soon = retry_soon or unstarted[(extension.repository, platform)] < 3
                 # Unless it did start, and only its run was not found: that

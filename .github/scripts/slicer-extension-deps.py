@@ -102,6 +102,9 @@ def main():
 
     direct = args.depends.split() if args.depends is not None else cmake_depends(args.source)
     order, state, problems = [], {}, []
+    # Problems that time solves: the dependency is not built for this Slicer
+    # yet. Told apart (exit status 3) from the ones that need someone.
+    unready = []
 
     def resolve(name):
         if name in registered:
@@ -109,10 +112,10 @@ def main():
             described = get_json(f"{base}/extension-{args.platform}.json") or {}
             package = described.get("package")
             if not package:
-                problems.append(f"{name} ({repo}) has published nothing for {args.platform}")
+                unready.append(f"{name} ({repo}) has published nothing for {args.platform}")
                 return None, []
             if package.get("slicer_commit") != args.slicer_commit:
-                problems.append(
+                unready.append(
                     f"{name} ({repo}) is built against Slicer {str(package.get('slicer_commit'))[:10]}, "
                     f"not {args.slicer_commit[:10]}: it has to be built against this Slicer first")
                 return None, []
@@ -153,9 +156,13 @@ def main():
     for name in direct:
         visit(name, [])
     if problems:
-        for problem in problems:
+        for problem in problems + unready:
             print(f"::error::{problem}")
         sys.exit(1)
+    if unready:
+        for problem in unready:
+            print(f"::warning::{problem}")
+        sys.exit(3)
 
     built_with = {}
     for entry in order:

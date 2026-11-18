@@ -168,11 +168,19 @@ own["scm_url"], own["scm_revision"] = "/ext", rev
 json.dump(own, open(os.path.join(out, name + ".json"), "w"), indent=1)
 open(depends_file, "w").write(" ".join(own.get("build_dependencies") or []))
 PY
+  local rc=0
   python3 "$here/slicer-extension-deps.py" --source "$src" --platform web \
       --slicer-commit "$SLICER_COMMIT" --registry "${SLICER_EXT_REGISTRY:-}" \
       --index "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" \
-      --depends "$(cat "$work/depends.txt")" --out "$work/plan.json" \
-    || die "extension: could not resolve the dependencies"
+      --depends "$(cat "$work/depends.txt")" --out "$work/plan.json" || rc=$?
+  if [ "$rc" -eq 3 ] && [ "${SLICER_EXT_SKIP_UNREADY:-false}" = "true" ]; then
+    # As on the desktop platforms: nothing to build against yet, which is not
+    # a fault of this commit.
+    echo "::notice::web skipped: an extension it depends on is not built for this Slicer yet (see above). It is built when that one is."
+    [ -z "${GITHUB_OUTPUT:-}" ] || echo "ready=false" >> "$GITHUB_OUTPUT"
+    return 0
+  fi
+  [ "$rc" -eq 0 ] || die "extension: could not resolve the dependencies"
 
   # The description of each dependency (what SlicerWeb's catalog says of it:
   # build subdirectory, browser-specific options), which is how 80-extensions
@@ -214,7 +222,16 @@ PY
         || die "could not download $a/$file"
       got="$(sha256sum < "$work/download/$file" | cut -d' ' -f1)"
       if [ -n "$sum" ] && [ "$got" != "$sum" ]; then
-        die "$file of $dep is not the file its extension.json describes (sha256 $got, expected $sum)"
+        # The dependency is being published again: resolved again.
+        local tries="${SLICER_EXT_DEPS_ATTEMPT:-1}"
+        if [ "$tries" -lt 4 ]; then
+          endlog
+          info "$file of $dep is not the file its description records: is it being published? Trying again in $((tries * 60)) s"
+          sleep $((tries * 60))
+          SLICER_EXT_DEPS_ATTEMPT=$((tries + 1)) cmd_extension "$src" "$name" "$output" "$sub"
+          return
+        fi
+        die "$file of $dep is not the file its description records (sha256 $got, expected $sum)"
       fi
       zstd -d -q -c "$work/download/$file" | sudo tar -C "$SLICERWEB_ROOT/build" -xf -
       rm -f "$work/download/$file"

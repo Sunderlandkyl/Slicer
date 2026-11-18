@@ -406,8 +406,16 @@ the chains itself, reading what the extensions have published as it goes; it
 is then started by the nightly, a schedule every six hours, or by hand, so a
 commit to an extension reaches what depends on it at the next of those. An
 extension with several dependencies is started once all of them are current,
-not once per dependency, and what depends on a build that failed is left as it
-is. The `wait` input runs the whole chain in one run all the same.
+not once per dependency. A build that fails is started once more, since
+runners, downloads and tests fail for reasons that are not the extension's;
+after that it is left until Slicer, the extension or what it depends on
+changes, or the workflow is run with `retry`, and what depends on it is left
+as it is. The `wait` input runs the whole chain in one run all the same.
+
+A commit or a pull request to an extension is not at fault when what it
+depends on is not built for the current Slicer yet, as happens while a nightly
+is being followed: that platform is then skipped, with a notice, and the run
+stays green. It is built when the dependency is there.
 
 A superbuild extension needs nothing extra: its own tree, `inner-build`, is
 where the tests, the package and the modules are looked for.
@@ -585,21 +593,23 @@ which its Actions permission already allows, so the installations are asked
 for nothing more. When the job of a platform of an extension ends on the
 branch the extension is built from, when a build of one ends, or when the app
 is installed in more repositories, the relay starts `Reconcile extensions`.
-It can do so as the nightly app itself, installed in the Slicer repository
-too, or as a second app, the relay app, installed in the Slicer repository
-alone with the Actions permission. With a second app, the relay holds the
-webhook secret of the nightly app, to know that an event is from GitHub, and
-the private key of the relay app, and nothing else: the private key of the
-nightly app, which starts builds in every extension repository, stays a secret
-of the Slicer repository's workflows. The schedule is only a backstop: GitHub
-starts scheduled runs late, or not at all, under load.
+It does so as a second app, the relay app, installed in the Slicer repository
+alone with the Actions permission. The relay then holds the webhook secret of
+the nightly app, to know that an event is from GitHub, and the private key of
+the relay app, and nothing else: the private key of the nightly app, which
+starts builds in every extension repository, stays a secret of the Slicer
+repository's workflows, and the nightly app needs no installation in the
+Slicer repository. The relay runs just as well with the key of the nightly app
+itself, installed in the Slicer repository too, which saves an app when trying
+this on forks; it should not be set up that way for real, since that key then
+lives outside GitHub. The schedule is only a backstop: GitHub starts scheduled
+runs late, or not at all, under load.
 
 To set the relay up:
 
 1. Create the relay app (no webhook; repository permission *Actions: read and
-   write*) and install it in the Slicer repository only; or install the
-   nightly app there. Convert the private key of whichever it is to PKCS#8
-   (`openssl pkcs8 -topk8 -nocrypt -in relay.pem`).
+   write*), install it in the Slicer repository only, and convert its private
+   key to PKCS#8 (`openssl pkcs8 -topk8 -nocrypt -in relay.pem`).
 2. Fill in `RELAY_APP_ID`, `SLICER_REPOSITORY` and `SLICER_REF` in
    `wrangler.toml` and run `npx wrangler deploy`, then `npx wrangler secret
    put` for `WEBHOOK_SECRET` and `RELAY_APP_PRIVATE_KEY`.
