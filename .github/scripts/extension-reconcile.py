@@ -306,8 +306,9 @@ def start(extension, app):
     token = app.token(extension.repository)
     going = runs_in_progress(extension, token)
     if going:
+        # Not started for what is published now: waited for, then looked at again.
         log(f"{extension.name}: a build is already running ({going[0]['html_url']})")
-        return going[0]
+        return dict(going[0], found_running=True)
     since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=30)
     status, body = request(f"{API}/repos/{extension.repository}/actions/workflows/{WORKFLOW}/dispatches",
                            token, "POST", {"ref": extension.ref})
@@ -496,6 +497,8 @@ def main():
                     # Not waited for to its end: the next pass looks at it again.
                     extension.attempt["key"] = ""
                     again = True
+                elif runs[extension.repository].get("found_running"):
+                    extension.attempt = None
         log("::endgroup::")
         # A nightly published meanwhile changes the target: everything is compared with it.
         targets = targets_now() or targets
