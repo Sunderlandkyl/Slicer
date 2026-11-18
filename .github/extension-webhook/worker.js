@@ -69,6 +69,11 @@ export default {
     } catch {
       return new Response("not JSON\n", { status: 400 });
     }
+    // Said plainly, rather than as whatever fails first for lack of it.
+    const missing = ["RELAY_APP_ID", "RELAY_APP_PRIVATE_KEY", "SLICER_REPOSITORY", "SLICER_REF"].filter((k) => !env[k]);
+    if (missing.length) {
+      return new Response(`not configured: ${missing.join(", ")} missing\n`, { status: 500 });
+    }
     const reason = reasonOf(request.headers.get("X-GitHub-Event"), payload, env);
     if (!reason) {
       return new Response("ignored\n", { status: 202 });
@@ -122,6 +127,12 @@ function reasonOf(event, payload, env) {
     // reconciliation. Not those of pull requests or other branches.
     if (payload.action !== "completed" || !String(run.path).endsWith("/" + BUILD_WORKFLOW)
         || run.head_branch !== branchOf(repository, env) || !["push", "workflow_dispatch"].includes(run.event)) {
+      return null;
+    }
+    // A build that succeeded has been told of already, platform by platform,
+    // by its jobs: its end adds nothing, and would start the same step twice.
+    // One that did not may have ended without any platform's job saying so.
+    if (run.conclusion === "success") {
       return null;
     }
     return `${repository.full_name} ${run.conclusion} ${String(run.head_sha).slice(0, 10)}`;
