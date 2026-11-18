@@ -23,12 +23,8 @@
 #     built on the branch it is built from (a commit there, which the
 #     extension builds and publishes itself, or a build this workflow
 #     started), or when the app is installed in more repositories: no extension
-#     repository can start this workflow, the relay can. With the relay (the
-#     SLICER_EXTENSION_RELAY variable set to true), each run is one step: it
-#     starts the extensions whose dependencies are all current now, and
-#     stops; their ends start the next step, which starts what depended on
-#     them, and so down the chain. Without it, a run waits for the builds and
-#     carries on itself;
+#     repository can start this workflow, the relay can. It does when no run
+#     is waiting already: many events are one reason to look;
 #   - a schedule, as a backstop only, for an event that was missed: GitHub
 #     starts scheduled runs late or not at all under load, and stops them in
 #     a repository without activity. A pass with nothing to build stops
@@ -49,12 +45,8 @@ on:
         description: "What started it, for the run's name (the webhook says which build)"
         type: string
         default: ""
-      wait:
-        description: "Wait for the builds and carry on down the chain in this run, even with the relay"
-        type: boolean
-        default: false
       step:
-        description: "One step: start what can be started and stop, as with the relay"
+        description: "A single look: start what can be started and stop, without waiting for the builds"
         type: boolean
         default: false
       retry:
@@ -112,13 +104,15 @@ jobs:
           RETRY: ${{ inputs.retry || false }}
           # What started the run, for its summary.
           REASON: ${{ inputs.reason || (github.event_name == 'repository_dispatch' && 'a platform of Slicer was published') || github.event_name }}
-          # One step per run only when there is a relay to start the next
-          # one (.github/extension-webhook); otherwise the run waits for the
-          # builds and goes down the chain itself.
-          WAIT: ${{ inputs.wait || (!inputs.step && vars.SLICER_EXTENSION_RELAY != 'true') }}
+          # A run stays for as long as builds are going, and goes down the
+          # chains itself: one run for a whole burst of builds, not one per
+          # build that ends.
+          WAIT: ${{ !inputs.step }}
           REFS: ${{ inputs.refs || vars.SLICER_EXTENSION_REFS || '' }}
           START_SITES: ${{ github.event_name != 'workflow_dispatch' || inputs.start-sites }}
-          DEADLINE_MINUTES: "300"
+          # Well before the six hours a job may last: the run then starts its
+          # successor, which takes up the builds that are still going.
+          DEADLINE_MINUTES: "240"
           SELF_WORKFLOW: extension-reconcile.yml
           SELF_REF: ${{ github.ref_name }}
         run: python3 .github/scripts/extension-reconcile.py

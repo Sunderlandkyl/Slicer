@@ -396,21 +396,27 @@ change is seen. There are two ways a chain starts:
 In both, a platform never waits for another, and a publish over a newer commit
 of the branch is skipped.
 
-What tells the Slicer repository that a platform of an extension has been
-published is the relay of the app's webhook (see below). With it (the
-`SLICER_EXTENSION_RELAY` variable of the Slicer repository set to `true`),
-each run of `Reconcile extensions` is one step: it starts what can be started
-and stops, so nothing waits on a runner, and the builds a step started are
-taken up by the next one. Without it, a run waits for the builds and goes down
-the chains itself, reading what the extensions have published as it goes; it
-is then started by the nightly, a schedule every six hours, or by hand, so a
-commit to an extension reaches what depends on it at the next of those. An
+A run of `Reconcile extensions` stays for as long as builds are going: it
+looks at them every half minute, starts what depended on the ones that have
+published, and ends when nothing is running and nothing is left to start. One
+run covers a whole chain, however many builds end in it; while it is going it
+also looks, every minute and a half, for commits to the extensions, the builds
+they started themselves, and a new Slicer. A job may last six hours: after
+four, a run starts its successor and ends, and the successor takes up the
+builds that are still going.
+
+What wakes a run when none is going is the nightly, a schedule every six
+hours, a manual start, and the relay of the app's webhook (see below), which
+is what makes a commit to an extension reach what depends on it at once
+instead of at the next of the others. Many events are one reason to look: the
+relay starts a run only when none is waiting to start. Without the relay
+everything works the same, later. An
 extension with several dependencies is started once all of them are current,
 not once per dependency. A build that fails is started once more, since
 runners, downloads and tests fail for reasons that are not the extension's;
 after that it is left until Slicer, the extension or what it depends on
 changes, or the workflow is run with `retry`, and what depends on it is left
-as it is. The `wait` input runs the whole chain in one run all the same.
+as it is.
 
 A commit or a pull request to an extension is not at fault when what it
 depends on is not built for the current Slicer yet, as happens while a nightly
@@ -615,8 +621,6 @@ To set the relay up:
    put` for `WEBHOOK_SECRET` and `RELAY_APP_PRIVATE_KEY`.
 3. In the settings of the Slicer nightly app, set the webhook URL to the
    Worker's, the same secret, and subscribe to *Workflow job* and *Workflow run*.
-4. Set the `SLICER_EXTENSION_RELAY` variable of the Slicer repository to
-   `true`, so that a run of `Reconcile extensions` is one step.
 
 GitHub lists each delivery and its answer in the nightly app's *Advanced*
 settings, and can deliver one again from there.

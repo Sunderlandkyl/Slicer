@@ -26,13 +26,16 @@ a failure converges on the same state.
      hash; the others, with the reason. One file, replaced at once, each time a
      build changes what is current: what an Extensions Manager reads is always
      a consistent set.
-  With WAIT=true, one pass waits for the builds and carries on itself, down
-     the chains. Otherwise a run is one step: it starts what can be started
-     and stops. The end of each build, published or failed, and a commit to an
-     extension, start the next step, through the webhook of the app and its
-     relay (.github/extension-webhook), so nothing waits on a runner for
-     hours; the builds a step started are taken up by the next one, which
-     neither starts them again nor builds against them until they have ended.
+  A pass stays for as long as builds are going (WAIT=true, the default):
+     it looks at them every half minute, starts what depended on them, and
+     ends when nothing is running and nothing is left to start. One pass thus
+     covers a whole chain, however many builds end in it. The relay of the
+     app's webhook (.github/extension-webhook) wakes a pass when a commit to
+     an extension, or a build, changes something while none is waiting; while
+     one is going it keeps itself informed, of the commits and of the builds
+     the extensions start themselves. Near the time limit of a job it starts
+     its successor, which takes up the builds still going. With WAIT=false a
+     run is a single look: it starts what can be started and stops.
   6. The sites that carry the web packages (NIGHTLY_WEB_WORKFLOW) are started
      each time the web part of the catalog changed: an extension is on a site
      as soon as it is built, without waiting for the ones that depend on it.
@@ -78,6 +81,9 @@ RETRY = env("RETRY") == "true"
 WAIT = env("WAIT") == "true"
 DEADLINE = STARTED + 60 * float(env("DEADLINE_MINUTES", "300"))
 NOT_PUBLISHED = "not published for this platform"
+# How often a pass that is waiting for builds looks for what no build of its
+# own tells it: commits to the extensions, builds they started, a new Slicer.
+LOOK_SECONDS = float(env("LOOK_SECONDS", "90"))
 # How many times the build of an extension is started for the same Slicer,
 # commit and dependencies, when it fails.
 MAX_TRIES = 2
@@ -697,7 +703,9 @@ def main():
         # the target; a commit to an extension changes what it is built from,
         # and so what depends on it. A build already going for the old commit
         # finishes, and is built again after; what depends on it waits.
-        if time.time() - checked_targets > 300:
+        # A pass stays for as long as builds are going, and nothing wakes
+        # another one meanwhile: it keeps itself informed of what would have.
+        if time.time() - checked_targets > LOOK_SECONDS:
             checked_targets = time.time()
             for extension in extensions:
                 head = extension.head
@@ -705,6 +713,14 @@ def main():
                 if extension.head != head:
                     log(f"{extension.name}: new commit {extension.head[:10]} on {extension.ref}")
                     changed = True
+                # The build of that commit, which the extension starts itself,
+                # or one started by hand: left to finish, and read as it goes.
+                known = set(running) | set(foreign.get(extension.repository, []))
+                going = [r for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in known]
+                if going:
+                    foreign.setdefault(extension.repository, []).extend(r["id"] for r in going)
+                    log(f"{extension.name}: a build not started here is running ({', '.join(r['html_url'] for r in going)})")
+                    did["left"].append(extension.name + " (" + ", ".join(f"[run]({r['html_url']})" for r in going) + ")")
             latest = targets_now()
             if latest and latest != targets:
                 log("Slicer: " + ", ".join(f"{p} {c[:10]}" for p, c in latest.items()))
