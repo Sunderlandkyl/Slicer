@@ -36,13 +36,12 @@
 # See .github/scripts/extension-reconcile.py and
 # Docs/developer_guide/build_instructions/github_actions.md
 name: Reconcile extensions
-run-name: Reconcile extensions${{ inputs.reason && format(' ({0})', inputs.reason) || '' }}
 
 on:
   workflow_dispatch:
     inputs:
       reason:
-        description: "What started it, for the run's name (the webhook says which build)"
+        description: "What started it (the relay says which build); shown in the summary of the run"
         type: string
         default: ""
       step:
