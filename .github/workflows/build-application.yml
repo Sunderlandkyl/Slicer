@@ -120,6 +120,19 @@ on:
         description: "Archive the build trees and their manifest, for building extensions against them"
         type: boolean
         default: false
+      publish-release:
+        description: >-
+          Release each platform publishes what it built to (package, build
+          trees, manifest), as soon as it is built and without waiting for the
+          others; needs archive-build-trees. Empty: nothing is published.
+        type: string
+        default: ""
+      publish-dispatch-event:
+        description: >-
+          Type of the repository_dispatch event sent when a platform has
+          published, for the workflows that follow it
+        type: string
+        default: ""
       macos-signing-identity:
         description: "Developer ID the macOS bundle is signed with, when the signing secrets are given"
         type: string
@@ -310,6 +323,9 @@ jobs:
     if: ${{ !cancelled() && needs.deps.result == 'success' && needs.deps-key.outputs.desktop-count != '0' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    permissions:
+      # A platform publishes what it built itself (publish-release).
+      contents: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
@@ -542,6 +558,38 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+      # Each platform publishes as soon as it is built: a job that came after
+      # all of them would make the fastest wait for the slowest, and with it
+      # every build that follows this one. Before the step that fails the job
+      # on test failures, which withhold nothing.
+      - name: Publish
+        if: inputs.archive-build-trees && inputs.publish-release != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.publish-release }}
+          TITLE: ${{ inputs.prerequisites-release-title }}
+          PACKAGE: ${{ steps.package.outputs.package }}
+          EVENT: ${{ inputs.publish-dispatch-event }}
+        run: |
+          set -euo pipefail
+          p="$SLICER_PLATFORM"
+          out="$SLICER_OUTPUT_DIR"
+          # This platform's assets: its archives, and its package, whose name
+          # carries the date (yesterday's has another name).
+          stale="^(slicer-source-$p\.tar\.zst|slicer-build-$p\.tar\.zst|deps-$p\.tar\.zst)"
+          suffix="$(sed -nE 's/.*(-(linux|macosx|win)-[A-Za-z0-9_]+\..*)$/\1/p' <<< "$PACKAGE")"
+          [ -z "$suffix" ] || stale="$stale|$suffix\$"
+          bash "$(dirname "$SLICER_CI")/publish-release.sh" "$TAG" "$TITLE" "$stale" \
+            "$out/manifest-$p.json" "$out/$PACKAGE" \
+            "$out"/slicer-source-$p.tar.zst* "$out"/slicer-build-$p.tar.zst* "$out"/deps-$p.tar.zst*
+          echo "Published $p to the release $TAG." >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EVENT" ]; then
+            gh api "repos/$GH_REPO/dispatches" -f "event_type=$EVENT" \
+              || echo "::warning::Could not send the $EVENT event"
+          fi
+
       - name: Fail on test failures or an unusable package
         if: (steps.tests.outcome == 'failure' || steps.verify.outcome == 'failure') && inputs.fail-on-test-failures
         shell: bash
@@ -579,6 +627,8 @@ jobs:
       slicerweb-ref: ${{ inputs.slicerweb-ref }}
       slicer-from-checkout: ${{ inputs.web-slicer-from-checkout }}
       archive-build-tree: ${{ inputs.archive-build-trees }}
+      publish-release: ${{ inputs.publish-release }}
+      publish-dispatch-event: ${{ inputs.publish-dispatch-event }}
       ci-repository: ${{ inputs.ci-repository }}
       ci-ref: ${{ inputs.ci-ref }}
       deps-key-version: ${{ inputs.deps-key-version }}

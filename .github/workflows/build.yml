@@ -216,19 +216,24 @@ jobs:
       # The nightly run publishes packages even when tests fail.
       fail-on-test-failures: ${{ github.event_name != 'schedule' }}
       archive-build-trees: ${{ needs.setup.outputs.publish == 'true' }}
+      # Each platform publishes what it built to the nightly release as soon
+      # as it is built, and says so (extension-reconcile.yml listens): the
+      # extensions of a platform do not wait for the slowest platform.
+      publish-release: ${{ needs.setup.outputs.publish == 'true' && 'nightly' || '' }}
+      publish-dispatch-event: reconcile-extensions
       macos-signing-identity: ${{ vars.MACOS_SIGNING_IDENTITY }}
 
   #-----------------------------------------------------------------------------
-  # Publish the build trees so that extension repositories can build against
-  # the latest nightly Slicer.
+  # The platforms have published what they built themselves, each as soon as
+  # it was built (publish-release above). What is left for the end is what
+  # concerns them all: the provenance of the packages, and the notes of the
+  # release.
   #-----------------------------------------------------------------------------
   publish:
-    name: Publish nightly
+    name: Finish the nightly
     needs: [setup, build]
-    # Deliberately not conditioned on the build succeeding. The build fails
-    # when tests fail, which must not withhold packages that were built,
-    # verified and uploaded. Whether every platform actually produced its
-    # artifacts is checked below, so a failed build still blocks publishing.
+    # Not conditioned on the build succeeding: the build fails when tests
+    # fail, or when one platform does, which withholds nothing of the others.
     # Nor does it run when nothing was built: a scheduled run that finds the
     # nightly already up to date skips every build job.
     if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' && needs.setup.outputs.skip != 'true' && needs.build.result != 'cancelled' && needs.build.result != 'skipped' }}
@@ -238,56 +243,12 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Download build trees
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: build-*
-          path: assets
-          merge-multiple: true
-
       - name: Download packages
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: package-*
           path: packages
           merge-multiple: true
-
-      # A platform whose build or packaging failed never uploaded its
-      # artifacts. Publishing a release missing one would leave extension
-      # repositories building against a half-updated nightly.
-      - name: Check that every platform produced its artifacts
-        shell: bash
-        env:
-          MATRIX: ${{ needs.build.outputs.matrix }}
-          WEB: ${{ needs.setup.outputs.web }}
-        run: |
-          set -euo pipefail
-          missing=0
-          for platform in $(echo "$MATRIX" | jq -r '.include[]?.platform'); do
-            for f in "manifest-${platform}.json" "slicer-source-${platform}.tar.zst" \
-                     "slicer-build-${platform}.tar.zst" "deps-${platform}.tar.zst"; do
-              if ! ls "assets/$f"* >/dev/null 2>&1; then
-                echo "::error::$platform did not produce $f"
-                missing=1
-              fi
-            done
-          done
-          if [ "$WEB" = "true" ]; then
-            if [ ! -f packages/slicerweb-wheels.zip ]; then
-              echo "::error::web did not produce slicerweb-wheels.zip"
-              missing=1
-            fi
-            for f in slicerweb-manifest.json slicerweb-build.tar.zst; do
-              if ! ls "assets/$f"* >/dev/null 2>&1; then
-                echo "::error::web did not produce $f"
-                missing=1
-              fi
-            done
-          fi
-          [ "$missing" -eq 0 ] || exit 1
-          echo "Every platform produced a complete set of artifacts."
 
       # Provenance for the packages, verifiable with "gh attestation verify".
       # This is a statement about how the packages were built; it is unrelated
@@ -299,21 +260,25 @@ jobs:
         with:
           subject-path: packages/*
 
-      - name: Publish release
+      - name: Describe the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          DESKTOP: ${{ needs.setup.outputs.desktop }}
-          WEB: ${{ needs.setup.outputs.web }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          mkdir -p assets
-          cp packages/* assets/
-          ls -lh assets
           tag="nightly"
-          notes="Nightly Slicer build trees and packages.
+          dir="$(mktemp -d)"
+          gh release download "$tag" -D "$dir" --clobber -p 'manifest-*.json' -p slicerweb-manifest.json || true
+          # What the release holds of each platform, which is not necessarily
+          # of this run: a platform that failed keeps what it had.
+          built="$(for m in "$dir"/*.json; do
+                     [ -f "$m" ] || continue
+                     echo "- $(jq -r .platform "$m"): \`$(jq -r .commit "$m")\`, $(jq -r '.date | .[0:10]' "$m")"
+                   done)"
+          notes="Nightly Slicer build trees and packages, each platform built from:
 
-          Built from \`$GITHUB_SHA\` on $(date -u +%Y-%m-%d).
+          $built
 
           Extension repositories can build against this nightly with the
           \`Slicer/Slicer/.github/actions/setup-slicer-build\` action.
@@ -325,40 +290,12 @@ jobs:
           from, which web extensions are built against, and
           \`slicerweb-manifest.json\` what it was built from.
 
+          \`extensions-catalog.json\` lists the extensions built against these
+          builds, by their own repositories, that are consistent with each other.
+
           The \`slicer-deps-<platform>-<key>\` assets are the prebuilt
           prerequisites that the Build workflow reuses between runs."
-          if gh release view "$tag" >/dev/null 2>&1; then
-            # A run of the web runtime alone leaves the notes, which describe
-            # the desktop builds, as they are.
-            if [ "$DESKTOP" = "true" ]; then
-              gh release edit "$tag" --notes "$notes" --latest=false --prerelease
-            fi
-          else
-            gh release create "$tag" --title "Slicer nightly" --notes "$notes" --prerelease --latest=false
-          fi
-          # Replace all the assets of the release. The package name carries the
-          # date, so uploading alone would accumulate one package per day rather
-          # than replacing yesterday's; remove whatever this run did not produce.
-          gh release upload "$tag" assets/* --clobber
-          # A run of the web runtime alone replaces it and nothing else.
-          if [ "$DESKTOP" != "true" ]; then
-            exit 0
-          fi
-          ( cd assets && ls ) | LC_ALL=C sort -u > keep.txt
-          gh release view "$tag" --json assets --jq '.assets[].name' \
-            | LC_ALL=C sort -u > have.txt
-          # The prerequisites (slicer-deps-*) are managed by the stage that
-          # builds them, and the list of extension repositories by the job
-          # starting their builds, and are kept, and so is the web runtime
-          # (slicerweb-*) when this run did not build it.
-          keep='^(slicer-deps-|extension-repositories\.json$)'
-          [ "$WEB" = "true" ] || keep='^(slicer-deps-|extension-repositories\.json$|slicerweb-)'
-          comm -13 keep.txt have.txt | { grep -vE "$keep" || true; } > stale.txt
-          while read -r asset; do
-            [ -n "$asset" ] || continue
-            echo "Removing the superseded asset $asset"
-            gh release delete-asset "$tag" "$asset" --yes || true
-          done < stale.txt
+          gh release edit "$tag" --notes "$notes" --latest=false --prerelease
 
   #-----------------------------------------------------------------------------
   # Start the build of every extension repository following the nightly.

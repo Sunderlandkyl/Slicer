@@ -137,9 +137,19 @@ Each successful build publishes:
 Publishing does not wait on the tests. A package that was built and verified is
 published even when the suite reports failures, because withholding it would
 leave extension repositories building against a stale nightly over test
-problems they cannot act on. The run still turns red, and the publishing job
-refuses to update the release unless every platform produced a complete set of
-artifacts, so a failed *build* does block it.
+problems they cannot act on. The run still turns red.
+
+Nor does a platform wait for the others: each publishes its package, its build
+trees and its manifest to the `nightly` release at the end of its own job, and
+tells the `Reconcile extensions` workflow, which starts the extensions of that
+platform. Linux and the web are out, with their extensions under way, while
+Windows and macOS are still building. A platform whose build failed keeps what
+the release held of it, so the release can hold platforms built from different
+commits for a while; `manifest-<platform>.json` says which, and the extensions
+of a platform are built against the commit of that platform. The manifest is
+removed before a platform's files are replaced and uploaded after them, so it
+never describes files that are not all there. A last job attests the packages
+and writes the notes of the release.
 
 Archiving a build tree takes about fifteen minutes, so it is done only for the
 runs that publish: the scheduled one, a build of the default branch, and a

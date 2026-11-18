@@ -53,6 +53,14 @@ on:
         description: "Archive the build tree and its manifest (build-web), for building extensions against it"
         type: boolean
         default: false
+      publish-release:
+        description: "Release the runtime, its build tree and its manifest are published to, as soon as built; needs archive-build-tree"
+        type: string
+        default: ""
+      publish-dispatch-event:
+        description: "Type of the repository_dispatch event sent when they are published"
+        type: string
+        default: ""
       ci-repository:
         type: string
         default: "Slicer/Slicer"
@@ -282,6 +290,9 @@ jobs:
     if: ${{ !cancelled() && needs.ready.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    permissions:
+      # The runtime is published by the job that built it (publish-release).
+      contents: write
     steps:
       - name: Check out the sources
         if: inputs.slicer-from-checkout
@@ -422,6 +433,26 @@ jobs:
           retention-days: 5
           compression-level: 0
           if-no-files-found: error
+      # As soon as it is built, without waiting for the desktop platforms.
+      - name: Publish
+        if: inputs.archive-build-tree && inputs.publish-release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.publish-release }}
+          TITLE: ${{ inputs.prerequisites-release-title }}
+          EVENT: ${{ inputs.publish-dispatch-event }}
+        run: |
+          set -euo pipefail
+          tree="$SLICERWEB_ROOT/out/tree"
+          bash "$(dirname "$SLICER_CI")/publish-release.sh" "$TAG" "$TITLE" '^slicerweb-' \
+            "$tree/slicerweb-manifest.json" "$SLICERWEB_ROOT/out/package/slicerweb-wheels.zip" \
+            "$tree"/slicerweb-build.tar.zst*
+          echo "Published the web runtime to the release $TAG." >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EVENT" ]; then
+            gh api "repos/$GH_REPO/dispatches" -f "event_type=$EVENT" \
+              || echo "::warning::Could not send the $EVENT event"
+          fi
       - name: Upload the logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
