@@ -26,6 +26,13 @@ a failure converges on the same state.
      hash; the others, with the reason. One file, replaced at once, each time a
      build changes what is current: what an Extensions Manager reads is always
      a consistent set.
+  With WAIT=true, one pass waits for the builds and carries on itself, down
+     the chains. Otherwise a run is one step: it starts what can be started
+     and stops. The end of each build, published or failed, and a commit to an
+     extension, start the next step, through the webhook of the app and its
+     relay (.github/extension-webhook), so nothing waits on a runner for
+     hours; the builds a step started are taken up by the next one, which
+     neither starts them again nor builds against them until they have ended.
   6. The sites that carry the web packages (NIGHTLY_WEB_WORKFLOW) are started
      each time the web part of the catalog changed: an extension is on a site
      as soon as it is built, without waiting for the ones that depend on it.
@@ -64,6 +71,11 @@ TAG = env("RELEASE_TAG", "nightly")
 WORKFLOW = env("NIGHTLY_WORKFLOW", "slicer-nightly-build.yml")
 WEB_WORKFLOW = env("NIGHTLY_WEB_WORKFLOW", "slicer-nightly-web.yml")
 RETRY = env("RETRY") == "true"
+# true: wait for the builds, and start what depended on them, in one pass.
+# false: one step, which starts what can be started and stops; the end of each
+# build starts the next step (the relay of the app's webhook,
+# .github/extension-webhook), which has to be there.
+WAIT = env("WAIT") == "true"
 DEADLINE = STARTED + 60 * float(env("DEADLINE_MINUTES", "300"))
 REFS = json.loads(env("REFS") or "{}")
 
@@ -215,11 +227,16 @@ class Extension:
         status, commit = request(f"{API}/repos/{self.repository}/commits/{self.ref}", app.token(self.repository))
         if status != 200:
             status, commit = request(f"{API}/repos/{self.repository}/commits/{self.ref}", env("GH_TOKEN"))
-        self.head = commit["sha"] if status == 200 else None
-        if not self.head:
+        # Read again during a pass: a failure keeps what was read before.
+        if status != 200:
             return
+        if commit["sha"] == self.head:
+            return
+        self.head = commit["sha"]
         status, text = request(f"https://raw.githubusercontent.com/{self.repository}/{self.head}/CMakeLists.txt", raw=True)
-        text = text.decode("utf8", "replace") if status == 200 else ""
+        if status != 200:
+            return
+        text = text.decode("utf8", "replace")
         match = re.search(r"^\s*project\(\s*([A-Za-z0-9_]+)", text, re.M)
         if match:
             self.name = match.group(1)
@@ -253,9 +270,14 @@ class State:
         """The extensions it depends on that a repository builds."""
         return [self.by_name[d] for d in extension.depends if d in self.by_name and d != extension.name]
 
-    def reason(self, extension, platform, chain=()):
-        """Why the extension is not current on a platform; "" when it is."""
-        key = (extension.name, platform)
+    def reason(self, extension, platform, chain=(), heads=True):
+        """Why the extension is not current on a platform; "" when it is.
+
+        heads=False: whether it can be offered, that is, built against the
+        target Slicer and the packages its dependencies publish, whatever
+        commit of each it was built from. A new commit is a reason to build
+        again, not to withdraw the packages that are consistent meanwhile."""
+        key = (extension.name, platform, heads)
         if key in self._reason:
             return self._reason[key]
         if extension.name in chain:
@@ -266,7 +288,7 @@ class State:
             reason = "not published for this platform"
         elif package.get("slicer_commit") != target:
             reason = f"built against Slicer {str(package.get('slicer_commit'))[:10]}, not {str(target)[:10]}"
-        elif extension.head and package.get("revision") != extension.head:
+        elif heads and extension.head and package.get("revision") != extension.head:
             reason = f"built from {str(package.get('revision'))[:10]}, not {extension.head[:10]}"
         else:
             for name, used in sorted((package.get("built_with") or {}).items()):
@@ -277,7 +299,7 @@ class State:
                 if not theirs or not used.get("sha256") or theirs.get("sha256") != used.get("sha256"):
                     reason = f"built against another package of {name} than the one it publishes"
                     break
-                below = self.reason(dependency, platform, chain + (extension.name,))
+                below = self.reason(dependency, platform, chain + (extension.name,), heads)
                 if below:
                     reason = f"{name} is not current ({below})"
                     break
@@ -316,6 +338,7 @@ def runs_in_progress(extension, token):
         status, body = request(f"{API}/repos/{extension.repository}/actions/workflows/{WORKFLOW}/runs"
                                f"?branch={extension.ref}&status={status_name}&per_page=20", token)
         if status == 200:
+            # Those that publish: a push builds and tests only.
             found += [r for r in body["workflow_runs"] if r["event"] == "workflow_dispatch"]
     return found
 
@@ -366,7 +389,7 @@ def catalog_of(state):
     for platform, target in state.targets.items():
         offered, held = {}, {}
         for extension in sorted(state.extensions, key=lambda e: e.name):
-            reason = state.reason(extension, platform)
+            reason = state.reason(extension, platform, heads=False)
             package = extension.package(platform)
             if reason:
                 # An extension that has never built a platform is not withheld from it.
@@ -471,15 +494,25 @@ def main():
     earlier = (published or {}).get("extensions") or {}
     state = State(targets, extensions)
     # What an earlier pass started, for the same inputs, is not started again.
+    running = {}    # run id: (extension, platforms, url)
     for extension in extensions:
         for platform, attempt in ((earlier.get(extension.name) or {}).get("attempts") or {}).items():
             if not RETRY and platform in targets and attempt.get("key") == state.key(extension, platform):
+                # What an earlier step started and left running is taken up
+                # as if this one had started it: the platforms it builds, and
+                # those only, wait for it, as does what depends on them there.
+                if attempt.get("conclusion") == "running":
+                    run = (attempt.get("run") or "").rstrip("/").split("/")[-1]
+                    if not run.isdigit():
+                        continue  # never started: started again
+                    running.setdefault(int(run), (extension, [], attempt["run"]))[1].append(platform)
                 extension.attempts[platform] = attempt
-    # Builds that are going already (started by hand, or by a pass that was
-    # cancelled) are waited for before anything is started for the extension.
+    # Builds that are going otherwise (started by hand, or by a pass that was
+    # cancelled) are waited for before anything is started for the extension:
+    # which platforms they build is not known.
     foreign = {}
     for extension in extensions:
-        going = runs_in_progress(extension, app.token(extension.repository))
+        going = [r for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in running]
         if going:
             foreign[extension.repository] = [r["id"] for r in going]
             log(f"{extension.name}: waiting for the builds already running ({', '.join(r['html_url'] for r in going)})")
@@ -497,7 +530,6 @@ def main():
                                 app.token(repository), "POST", {"ref": branch})
             log(f"{repository}: {'started' if status in (200, 204) else f'could not start (HTTP {status})'} {WEB_WORKFLOW} on {branch}")
 
-    running = {}    # run id: (extension, platforms, url)
     started, again, checked_targets = 0, False, time.time()
     while True:
         changed = False
@@ -518,9 +550,18 @@ def main():
                     foreign[extension.repository].remove(run_id)
                     extension.read_published(targets)
                     changed = True
-        # A nightly published meanwhile, or one more platform of it, changes the target.
+        # A nightly published meanwhile, or one more platform of it, changes
+        # the target; a commit to an extension changes what it is built from,
+        # and so what depends on it. A build already going for the old commit
+        # finishes, and is built again after; what depends on it waits.
         if time.time() - checked_targets > 300:
             checked_targets = time.time()
+            for extension in extensions:
+                head = extension.head
+                extension.read_source(app)
+                if extension.head != head:
+                    log(f"{extension.name}: new commit {extension.head[:10]} on {extension.ref}")
+                    changed = True
             latest = targets_now()
             if latest and latest != targets:
                 log("Slicer: " + ", ".join(f"{p} {c[:10]}" for p, c in latest.items()))
@@ -569,13 +610,17 @@ def main():
             start_sites(catalog)
         if not running and not todo and not any(foreign.values()):
             break
+        if not WAIT:
+            # What was started tells, when it ends, that there is a next step.
+            break
         if time.time() > DEADLINE + 600:
             again = True
             break
         time.sleep(30)
 
-    # A build still going when time ran out is looked at again by the next pass.
-    for extension, platforms, _ in running.values():
+    # A build still going when time ran out is looked at again by the next
+    # pass; one a step started is looked up by the next step.
+    for extension, platforms, _ in (running.values() if WAIT else ()):
         for platform in platforms:
             extension.attempts[platform]["key"] = ""
     state = State(targets, extensions)

@@ -541,6 +541,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Two runs publishing the same platforms: one at a time, and neither over
+    # a newer commit (below). Not across platforms, which do not touch each
+    # other's files: of several jobs waiting in a group GitHub keeps one and
+    # cancels the others, which would drop the platforms of those.
+    concurrency:
+      group: slicer-extension-publish-${{ github.repository }}-${{ inputs.platforms }}
+      cancel-in-progress: false
     steps:
       - name: Download the packages
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -558,6 +565,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.publish-tag }}
           NAME: ${{ needs.setup.outputs.extension-name }}
+          REF: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -568,6 +576,13 @@ jobs:
 
           def gh(*args, check=True):
               return subprocess.run(["gh", *args], check=check, capture_output=True, text=True)
+
+          # Not over a newer commit: the branch moved on while this was built,
+          # and the build of its head publishes instead.
+          head = gh("api", f"repos/{repository}/commits/{os.environ['REF']}", "--jq", ".sha", check=False).stdout.strip()
+          if head and head != commit:
+              print(f"::notice::{os.environ['REF']} is at {head[:10]} now, not {commit[:10]}; not published")
+              sys.exit(0)
 
           def sha256(path):
               digest = hashlib.sha256()

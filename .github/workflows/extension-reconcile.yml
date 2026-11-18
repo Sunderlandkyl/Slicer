@@ -18,8 +18,20 @@
 # them. Starting it is therefore always safe, and what starts it is only a
 # matter of how soon a change is seen:
 #   - the Build workflow, when it has published a nightly;
-#   - a schedule, in case that was missed, and for the commits of the
-#     extensions;
+#   - the relay of the webhook of the Slicer nightly GitHub App
+#     (.github/extension-webhook), when a commit lands on the branch an
+#     extension is built from, when a build this workflow started has ended,
+#     or when the app is installed in more repositories: no extension
+#     repository can start this workflow, the relay can. With the relay (the
+#     SLICER_EXTENSION_RELAY variable set to true), each run is one step: it
+#     starts the extensions whose dependencies are all current now, and
+#     stops; their ends start the next step, which starts what depended on
+#     them, and so down the chain. Without it, a run waits for the builds and
+#     carries on itself;
+#   - a schedule, as a backstop only, for an event that was missed: GitHub
+#     starts scheduled runs late or not at all under load, and stops them in
+#     a repository without activity. A pass with nothing to build stops
+#     within a minute or two;
 #   - by hand, to get a commit of an extension out now;
 #   - a repository_dispatch event (reconcile-extensions), for whatever can
 #     report a commit to an extension.
@@ -27,10 +39,23 @@
 # See .github/scripts/extension-reconcile.py and
 # Docs/developer_guide/build_instructions/github_actions.md
 name: Reconcile extensions
+run-name: Reconcile extensions${{ inputs.reason && format(' ({0})', inputs.reason) || '' }}
 
 on:
   workflow_dispatch:
     inputs:
+      reason:
+        description: "What started it, for the run's name (the webhook says which build)"
+        type: string
+        default: ""
+      wait:
+        description: "Wait for the builds and carry on down the chain in this run, even with the relay"
+        type: boolean
+        default: false
+      step:
+        description: "One step: start what can be started and stop, as with the relay"
+        type: boolean
+        default: false
       retry:
         description: "Start again the builds that failed for the same Slicer, commit and dependencies"
         type: boolean
@@ -46,7 +71,7 @@ on:
   repository_dispatch:
     types: [reconcile-extensions]
   schedule:
-    - cron: "40 9 * * *"
+    - cron: "40 */6 * * *"
 
 permissions:
   contents: read
@@ -84,6 +109,10 @@ jobs:
           NIGHTLY_WORKFLOW: slicer-nightly-build.yml
           NIGHTLY_WEB_WORKFLOW: slicer-nightly-web.yml
           RETRY: ${{ inputs.retry || false }}
+          # One step per run only when there is a relay to start the next
+          # one (.github/extension-webhook); otherwise the run waits for the
+          # builds and goes down the chain itself.
+          WAIT: ${{ inputs.wait || (!inputs.step && vars.SLICER_EXTENSION_RELAY != 'true') }}
           REFS: ${{ inputs.refs || vars.SLICER_EXTENSION_REFS || '' }}
           START_SITES: ${{ github.event_name != 'workflow_dispatch' || inputs.start-sites }}
           DEADLINE_MINUTES: "300"

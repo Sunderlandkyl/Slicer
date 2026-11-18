@@ -1,0 +1,14 @@
+# The relay of the webhook of the Slicer nightly GitHub App: see worker.js.
+#   npx wrangler deploy
+#   npx wrangler secret put WEBHOOK_SECRET          # of the Slicer nightly app
+#   npx wrangler secret put RELAY_APP_PRIVATE_KEY   # of the relay app, PKCS#8
+name = "slicer-extension-webhook"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+# The relay app: installed in SLICER_REPOSITORY alone, Actions read and write.
+RELAY_APP_ID = ""
+SLICER_REPOSITORY = "Slicer/Slicer"
+SLICER_REF = "main"
+REFS = ""
