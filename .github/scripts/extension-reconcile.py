@@ -604,6 +604,10 @@ def main():
                     if not run.isdigit():
                         continue  # never started: started again
                     running.setdefault(int(run), (extension, [], attempt["run"]))[1].append(platform)
+                elif attempt.get("conclusion") == "failure" and not state.reason(extension, platform):
+                    # Recorded as failed for its tests alone, before a build
+                    # that publishes was told from one that does not.
+                    attempt = dict(attempt, conclusion="success")
                 extension.attempts[platform] = attempt
     # A commit to an extension is built by the extension itself. When that
     # build failed for a platform, it is the first try of that platform: one
@@ -652,10 +656,21 @@ def main():
         for run_id, (extension, platforms, url) in list(running.items()):
             status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{run_id}", app.token(extension.repository))
             if status == 200 and body["status"] == "completed":
-                log(f"{extension.name} ({', '.join(platforms)}): {body['conclusion']} {url}")
-                for platform in platforms:
-                    extension.attempts[platform]["conclusion"] = body["conclusion"]
                 extension.read_published(platforms)
+                for platform in platforms:
+                    # What counts is whether the platform was built and
+                    # published, from this commit and against this Slicer. A
+                    # run that did that and then failed for its tests is not a
+                    # build that failed: the tests are said with the package.
+                    package = extension.package(platform) or {}
+                    built = (package.get("slicer_commit") == targets.get(platform)
+                             and (not extension.head or package.get("revision") == extension.head))
+                    outcome = "success" if built else body["conclusion"]
+                    extension.attempts[platform]["conclusion"] = outcome
+                    if built and package.get("tests"):
+                        extension.attempts[platform]["tests"] = package["tests"]
+                    log(f"{extension.name} ({platform}): {'published' if built else body['conclusion']}"
+                        f"{', tests ' + package['tests'] if built and package.get('tests') else ''} {url}")
                 del running[run_id]
                 changed = True
         for extension in extensions:
@@ -782,8 +797,11 @@ def main():
         for platform in targets:
             reason, attempt = state.reason(extension, platform), extension.attempts.get(platform) or {}
             cell = "current" if not reason else reason
+            # Failing tests are said as such: they are not a build that failed.
+            if not reason and (extension.package(platform) or {}).get("tests") == "failed":
+                cell += ", tests failed"
             if attempt.get("run"):
-                cell += f" ([{attempt.get('conclusion')}]({attempt['run']}))"
+                cell += f" ([{'build' if not reason else attempt.get('conclusion')}]({attempt['run']}))"
             cells.append(cell)
         lines.append(f"| {extension.name}{' (' + extension.note + ')' if extension.note else ''} | " + " | ".join(cells) + " |")
     summary("\n".join(lines))
