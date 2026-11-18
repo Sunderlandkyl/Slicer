@@ -279,6 +279,10 @@ notes say which Slicer commit each was built against, as does the
  "web": {"name": "SlicerIGSIO", "wheel": "<wheel>", "depends": [], "...": "..."}}
 ```
 
+A platform is published when it built, packaged and loaded. Failing tests fail
+the run, and are noted in the release, but withhold nothing; a platform that
+did not build keeps the package the release had.
+
 An Extensions Manager reads
 `https://github.com/<repository>/releases/download/nightly/extension.json` in
 each extension repository, and offers the package of its platform when it was

@@ -292,6 +292,9 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           SLICER_COMMIT: ${{ steps.slicer.outputs.slicer-commit }}
           SLICER_REVISION: ${{ steps.slicer.outputs.slicer-revision }}
+          # passed, failed, or not run: published with the package, which a
+          # failing test does not withhold.
+          TESTS: ${{ steps.tests.outcome == 'success' && 'passed' || steps.tests.outcome == 'failure' && 'failed' || 'not run' }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -301,9 +304,9 @@ jobs:
           files=(*.tar.gz *.zip *.dmg)
           [ ${#files[@]} -gt 0 ] || { echo "::error::no package in $SLICER_OUTPUT_DIR"; exit 1; }
           packages="$(printf '%s\n' "${files[@]}" | jq -R . | jq -sc .)"
-          jq -n --arg platform "$PLATFORM" --arg commit "$SLICER_COMMIT" \
+          jq -n --arg platform "$PLATFORM" --arg commit "$SLICER_COMMIT" --arg tests "$TESTS" \
                 --arg revision "$SLICER_REVISION" --argjson packages "$packages" \
-            '{platform: $platform, slicer_commit: $commit, slicer_revision: $revision, packages: $packages}' \
+            '{platform: $platform, slicer_commit: $commit, slicer_revision: $revision, tests: $tests, packages: $packages}' \
             > "slicer-package-$PLATFORM.json"
           cat "slicer-package-$PLATFORM.json"
 
@@ -475,11 +478,12 @@ jobs:
   publish:
     name: Publish
     needs: [setup, build, web]
-    if: >-
-      ${{ !cancelled() && inputs.publish
-          && (needs.build.result == 'success' || needs.build.result == 'skipped')
-          && (needs.web.result == 'success' || needs.web.result == 'skipped')
-          && (needs.build.result == 'success' || needs.web.result == 'success') }}
+    # Not conditioned on every platform succeeding: a platform is published
+    # when it built, packaged and loaded, which is when it uploaded its
+    # package. Failing tests fail the run but withhold nothing, as for Slicer's
+    # own nightly, and a platform that did not build keeps the package the
+    # release had.
+    if: ${{ !cancelled() && inputs.publish }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -504,7 +508,10 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           descriptions=(downloaded/slicer-package-*.json)
-          [ ${#descriptions[@]} -gt 0 ] || { echo "::error::no package to publish"; exit 1; }
+          if [ ${#descriptions[@]} -eq 0 ]; then
+            echo "::warning::no platform produced a package; nothing published"
+            exit 0
+          fi
           work=release
           rm -rf "$work"; mkdir -p "$work/assets"
           # What the release holds of the platforms this run did not build is
@@ -532,6 +539,7 @@ jobs:
                --arg name "$NAME" --arg repo "$GITHUB_REPOSITORY" --arg rev "$GITHUB_SHA" \
               '.name = $name | .repository = $repo | .revision = $rev
                | .packages[$p] = ({file: $pkg[0].packages[0], slicer_commit: $pkg[0].slicer_commit}
+                   + (if ($pkg[0].tests // "") != "" then {tests: $pkg[0].tests} else {} end)
                    + (if ($pkg[0].slicer_revision // "") != "" then {slicer_revision: $pkg[0].slicer_revision} else {} end)
                    + (if ($pkg[0].packages | length) > 1 then {icon: $pkg[0].packages[1]} else {} end))
                | (if $p == "web" then .web = $pkg[0].web else . end)' \
@@ -544,7 +552,7 @@ jobs:
           # The notes say what each package was built against.
           notes="Packages of $NAME, built from \`$GITHUB_SHA\` on $(date -u +%Y-%m-%d), against Slicer:
 
-          $(jq -r '.packages | to_entries[] | "- \(.key): Slicer `\(.value.slicer_commit)`\(if .value.slicer_revision then " (r\(.value.slicer_revision))" else "" end): \(.value.file)"' "$work/extension.json")
+          $(jq -r '.packages | to_entries[] | "- \(.key): Slicer `\(.value.slicer_commit)`\(if .value.slicer_revision then " (r\(.value.slicer_revision))" else "" end)\(if .value.tests == "failed" then ", tests failed" else "" end): \(.value.file)"' "$work/extension.json")
 
           extension.json says the same, for the Extensions Managers: a package is
           offered to a Slicer built from the commit it was built against."
