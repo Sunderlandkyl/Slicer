@@ -96,8 +96,12 @@ runs:
         set -euo pipefail
         dir="${{ runner.temp }}/slicer-ci"
         mkdir -p "$dir"
-        gh api "repos/${{ inputs.repository }}/contents/.github/scripts/slicer-ci.sh?ref=${{ inputs.ref }}" \
-          --jq '.content' | base64 -d > "$dir/slicer-ci.sh"
+        # slicer-ci.sh, and what it runs: the resolver of the extensions an
+        # extension depends on.
+        for script in slicer-ci.sh slicer-extension-deps.py; do
+          gh api "repos/${{ inputs.repository }}/contents/.github/scripts/$script?ref=${{ inputs.ref }}" \
+            --jq '.content' | base64 -d > "$dir/$script"
+        done
         chmod +x "$dir/slicer-ci.sh"
         echo "SLICER_CI=$dir/slicer-ci.sh" >> "$GITHUB_ENV"
         "$dir/slicer-ci.sh" env

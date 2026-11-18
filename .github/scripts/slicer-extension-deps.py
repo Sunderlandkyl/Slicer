@@ -85,18 +85,18 @@ def main():
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
-    # The registry: name -> (repository, release url, extension.json).
-    published = {}
+    # The registry: name -> (repository, release url). It names the extension
+    # each repository builds, so that one that has published nothing for this
+    # platform yet is still known to be built by a repository.
+    registered = {}
     registry = get_json(args.registry) if args.registry else None
     if registry:
         tag = registry.get("release_tag", "nightly")
         for entry in registry.get("repositories", []):
             repo = entry["repository"]
-            base = f"https://github.com/{repo}/releases/download/{tag}"
-            described = get_json(f"{base}/extension.json")
-            if described and described.get("name"):
-                published[described["name"]] = (repo, base, described)
-        log(f"registry: {', '.join(f'{n} ({r})' for n, (r, _, _) in sorted(published.items())) or 'nothing published'}")
+            registered[entry.get("name") or repo.split("/")[-1]] = (
+                repo, f"https://github.com/{repo}/releases/download/{tag}")
+        log(f"registry: {', '.join(f'{n} ({r})' for n, (r, _) in sorted(registered.items())) or 'no repository'}")
     elif args.registry:
         log(f"no registry at {args.registry}")
 
@@ -104,9 +104,10 @@ def main():
     order, state, problems = [], {}, []
 
     def resolve(name):
-        if name in published:
-            repo, base, described = published[name]
-            package = (described.get("packages") or {}).get(args.platform)
+        if name in registered:
+            repo, base = registered[name]
+            described = get_json(f"{base}/extension-{args.platform}.json") or {}
+            package = described.get("package")
             if not package:
                 problems.append(f"{name} ({repo}) has published nothing for {args.platform}")
                 return None, []
@@ -125,7 +126,7 @@ def main():
                 "revision": package.get("revision") or described.get("revision"),
                 "package": package.get("file"), "sha256": package.get("sha256", ""),
                 "tree": dict(tree, base=base),
-            }, list(package.get("depends") or described.get("depends") or [])
+            }, list(package.get("depends") or [])
         described = get_json(f"{args.index}/{name}.json")
         if not described or not described.get("scm_url"):
             problems.append(f"{name} is neither in the registry nor in the ExtensionsIndex")

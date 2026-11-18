@@ -267,25 +267,37 @@ jobs:
       publish: ${{ github.event_name == 'workflow_dispatch' }}
 ```
 
-The packages go to the `nightly` release of the extension's repository, whose
-notes say what each was built against, as does the `extension.json` it holds:
+with, for the Slicer repository to start one run per platform:
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        default: ""
+# ...
+      platforms: ${{ inputs.platforms || 'linux,macos,windows' }}
+```
+
+The packages go to the `nightly` release of the extension's repository, with
+one description per platform, `extension-<platform>.json`, which says what the
+package was built from and against:
 
 ```json
-{"name": "SlicerIGT", "repository": "SlicerIGT/SlicerIGT",
- "revision": "<commit of the last build>",
- "packages": {
-   "linux": {"file": "...", "sha256": "...", "revision": "<commit of the extension>",
+{"name": "SlicerIGT", "repository": "SlicerIGT/SlicerIGT", "platform": "linux",
+ "package": {"file": "...", "sha256": "...", "revision": "<commit of the extension>",
              "slicer_commit": "<commit of Slicer>", "slicer_revision": "34012",
              "tests": "passed", "depends": ["SlicerIGSIO"],
              "built_with": {"SlicerIGSIO": {"repository": "IGSIO/SlicerIGSIO", "revision": "...",
                                             "package": "...", "sha256": "..."}},
              "build_tree": {"files": ["SlicerIGT-build-linux.tar.zst"], "sha256": {"...": "..."},
                             "config_dir": "E/SlicerIGT/inner-build", "subdirectory": "inner-build"}},
-   "macos": {"...": "..."}, "windows": {"...": "..."},
-   "web": {"file": "<wheel>", "slicer_commit": "<commit of Slicer>", "...": "..."}},
- "previous": {"linux": {"...": "the package built against the Slicer before"}},
- "web": {"name": "SlicerIGT", "wheel": "<wheel>", "depends": ["SlicerIGSIO"], "...": "..."}}
+ "previous": {"...": "the package built against the Slicer before"}}
 ```
+
+There is one per platform so that a platform is published as soon as it is
+built, by a run of its own, without waiting for the others. The one of `web`
+also holds the extension's entry of SlicerWeb's extension index.
 
 A platform is published when it built, packaged and loaded. Failing tests fail
 the run, and are noted in the release, but withhold nothing; a platform that
@@ -303,7 +315,7 @@ at fixed paths (`<root>/E/<Name>`, from a copy of its source in
 `<root>/ES/<Name>`; `/build/ext/<Name>` for the web), since the files CMake
 finds a build tree by record absolute paths. An extension that depends on it
 downloads that tree for its platform, checks it against the hash in
-`extension.json`, is handed it as `<Name>_DIR`, and records the package it was
+`extension-<platform>.json`, is handed it as `<Name>_DIR`, and records the package it was
 built against in `built_with`.
 
 So what an extension is linked against is, byte for byte, what its users
@@ -320,8 +332,12 @@ start a build in another, so the Slicer repository does it, with the
 workflow. From what is published, and nothing else, it works out which
 extensions are not *current*, that is, built against the Slicer commit of the
 nightly, from the head of their branch, and against the very packages their
-dependencies publish now; starts those whose dependencies have been dealt
-with; waits; and starts the next ones, until none is left. An extension is
+dependencies publish now. Each platform is a chain of its own: the build of
+an extension for a platform is started, as a run of its own (the extension's
+workflow takes the platform as its `platforms` input), as soon as the
+extensions it depends on are current on that platform, whatever the other
+platforms are doing, and the catalog below is published again each time one
+finishes. An extension is
 started once for the same Slicer, head and dependencies: one that fails is not
 started again until one of those changes (or the workflow is run with
 `retry`), and what depends on it is left as it is.
