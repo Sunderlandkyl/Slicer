@@ -501,6 +501,8 @@ def main():
                 # What an earlier step started and left running is taken up
                 # as if this one had started it: the platforms it builds, and
                 # those only, wait for it, as does what depends on them there.
+                if attempt.get("conclusion") == "not started":
+                    continue  # never started: started again
                 if attempt.get("conclusion") == "running":
                     run = (attempt.get("run") or "").rstrip("/").split("/")[-1]
                     if not run.isdigit():
@@ -531,6 +533,7 @@ def main():
             log(f"{repository}: {'started' if status in (200, 204) else f'could not start (HTTP {status})'} {WEB_WORKFLOW} on {branch}")
 
     started, again, checked_targets = 0, False, time.time()
+    unstarted = {}  # (repository, platform): how many times its build could not be started
     while True:
         changed = False
         # The builds that finished: what they published is read again.
@@ -571,7 +574,8 @@ def main():
         state = State(targets, extensions)
         busy = {(e.repository, p) for e, platforms, _ in running.values() for p in platforms}
         todo = [(e, p) for e in extensions for p in targets
-                if state.startable(e, p) and (e.repository, p) not in busy and not foreign.get(e.repository)]
+                if state.startable(e, p) and (e.repository, p) not in busy and not foreign.get(e.repository)
+                and unstarted.get((e.repository, p), 0) < 3]
         if todo and time.time() > DEADLINE:
             again = True
             todo = []
@@ -599,6 +603,18 @@ def main():
                 running[run[0]] = (extension, platforms, run[1])
                 for platform in platforms:
                     extension.attempts[platform].update(run=run[1], conclusion="running")
+            else:
+                # Not started, so not dealt with: nothing will ever say that
+                # it ended. It is tried again, a few times in this pass, and
+                # by the next pass, whatever starts it.
+                for platform in platforms:
+                    extension.attempts.pop(platform, None)
+                    unstarted[(extension.repository, platform)] = unstarted.get((extension.repository, platform), 0) + 1
+                # Unless it did start, and only its run was not found: that
+                # one is waited for like any build not started here.
+                lost = [r["id"] for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in running]
+                if lost:
+                    foreign[extension.repository] = lost
             time.sleep(1)
         if changed:
             # What is consistent now is offered now: a platform does not wait for the others.
