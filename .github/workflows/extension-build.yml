@@ -15,18 +15,29 @@
 # published with the nightly, and packages it as a Pyodide wheel.
 #
 # The packages are published to the nightly release of the calling repository,
-# whose notes, and extension.json, say which Slicer commit each was built
-# against:
+# whose notes, and extension.json, say what each was built from and against:
 #
-#   {"name": ..., "repository": ..., "revision": <commit of the extension>,
-#    "packages": {"linux": {"file": <asset>, "slicer_commit": ..., "slicer_revision": ...},
+#   {"name": ..., "repository": ..., "revision": <commit of the last build>,
+#    "packages": {"linux": {"file": <asset>, "sha256": ...,
+#                           "revision": <commit of the extension>,
+#                           "slicer_commit": ..., "slicer_revision": ...,
+#                           "tests": "passed" | "failed" | "not run",
+#                           "depends": [<Name>, ...],
+#                           "built_with": {<Name>: {"repository", "revision",
+#                                                   "package", "sha256"}},
+#                           "build_tree": {"files": [...], "sha256": {...},
+#                                          "config_dir": ..., "subdirectory": ...}},
 #                 "macos": ..., "windows": ...,
-#                 "web": {"file": <wheel>, "slicer_commit": ..., "icon": <asset, if any>}},
+#                 "web": {"file": <wheel>, ..., "icon": <asset, if any>}},
+#    "previous": {<platform>: <the package built against the Slicer before>},
 #    "web": <its entry of SlicerWeb's extension index>}
 #
-# so that a Slicer finds, in each extension repository, whether the package of
-# its platform was built against its commit:
-#   https://github.com/<repository>/releases/download/nightly/extension.json
+# built_with names the very packages of the extensions it depends on that it
+# was built against: an extension is not built again by the ones that depend on
+# it, they restore the build tree it published (publish-build-tree), as they do
+# Slicer's. So a set of packages is consistent when every built_with matches
+# what the named repository publishes, which is what the extensions catalog of
+# the Slicer release (extension-reconcile.yml) is made of.
 #
 # See Docs/developer_guide/build_instructions/github_actions.md
 name: Extension build
@@ -52,11 +63,19 @@ on:
         default: ""
       build-dependencies:
         description: >-
-          Build the extensions it depends on (EXTENSION_DEPENDS) first, from
-          the repositories of the registry of the Slicer release, at the
-          revision they published, or else from the Slicer ExtensionsIndex
+          Provide the extensions it depends on (EXTENSION_DEPENDS): the build
+          tree published by the repository of the registry of the Slicer
+          release that builds each, for the same Slicer commit; one that no
+          repository of the registry builds is built from the Slicer
+          ExtensionsIndex
         type: boolean
         default: true
+      publish-build-tree:
+        description: >-
+          Publish the build tree of each platform with its package, for the
+          extensions that depend on this one to build against; needs publish
+        type: boolean
+        default: false
       run-tests:
         description: "Run the extension's tests"
         type: boolean
@@ -207,6 +226,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    env:
+      # Built at fixed paths (<root>/E/<Name>, from <root>/ES/<Name>), so that
+      # its build tree can be restored by the extensions that depend on it.
+      SLICER_EXT_NAME: ${{ needs.setup.outputs.extension-name }}
+      SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -242,15 +266,16 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" install-software-opengl'
 
-      # The extensions it depends on (EXTENSION_DEPENDS), built from the
-      # repositories of the registry of the Slicer release, at the revision
-      # they published, or from the ExtensionsIndex.
-      - name: Build the dependencies
+      # The extensions it depends on (EXTENSION_DEPENDS): the build tree each
+      # published for this platform and this Slicer commit, restored. One that
+      # no repository of the registry builds is built from the ExtensionsIndex.
+      - name: Restore the dependencies
         if: inputs.build-dependencies
         shell: bash
         env:
           SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
           SLICER_EXT_CMAKE_OPTIONS: ${{ inputs.cmake-options }}
+          SLICER_COMMIT: ${{ steps.slicer.outputs.slicer-commit }}
           SLICER_EXT_REGISTRY: https://github.com/${{ inputs.slicer-repository }}/releases/download/${{ inputs.release-tag }}/extension-repositories.json
         run: '"$SLICER_CI" extension-dependencies'
 
@@ -271,11 +296,21 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" extension-package'
 
+      # Before the tests, which may leave files in the tree.
+      - name: Archive the build tree
+        if: inputs.package && inputs.publish && inputs.publish-build-tree
+        shell: bash
+        env:
+          SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
+        run: '"$SLICER_CI" extension-tree'
+
       - name: Test
         id: tests
         if: inputs.run-tests
         continue-on-error: true
         shell: bash
+        env:
+          SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
         run: '"$SLICER_CI" extension-test'
 
       - name: Load in Slicer
@@ -304,9 +339,17 @@ jobs:
           files=(*.tar.gz *.zip *.dmg)
           [ ${#files[@]} -gt 0 ] || { echo "::error::no package in $SLICER_OUTPUT_DIR"; exit 1; }
           packages="$(printf '%s\n' "${files[@]}" | jq -R . | jq -sc .)"
+          # What it was built with (extension-dependencies), and its build
+          # tree (extension-tree), when there are any.
+          with='{}' tree='null'
+          [ ! -f extension-built-with.json ] || with="$(tr -d '\r' < extension-built-with.json)"
+          [ ! -f extension-tree.json ] || tree="$(tr -d '\r' < extension-tree.json)"
           jq -n --arg platform "$PLATFORM" --arg commit "$SLICER_COMMIT" --arg tests "$TESTS" \
                 --arg revision "$SLICER_REVISION" --argjson packages "$packages" \
-            '{platform: $platform, slicer_commit: $commit, slicer_revision: $revision, tests: $tests, packages: $packages}' \
+                --argjson with "$with" --argjson tree "$tree" \
+            '{platform: $platform, slicer_commit: $commit, slicer_revision: $revision, tests: $tests, packages: $packages,
+              depends: ($with.depends // []), built_with: ($with.built_with // {})}
+             + (if $tree then {build_tree: $tree} else {} end)' \
             > "slicer-package-$PLATFORM.json"
           cat "slicer-package-$PLATFORM.json"
 
@@ -319,6 +362,7 @@ jobs:
             ${{ env.SLICER_OUTPUT_DIR }}/*.tar.gz
             ${{ env.SLICER_OUTPUT_DIR }}/*.zip
             ${{ env.SLICER_OUTPUT_DIR }}/*.dmg
+            ${{ env.SLICER_OUTPUT_DIR }}/*-build-*.tar.zst
             ${{ env.SLICER_OUTPUT_DIR }}/slicer-package-*.json
           retention-days: 7
           compression-level: 0
@@ -420,6 +464,8 @@ jobs:
           SUBDIRECTORY: ${{ inputs.web-build-subdirectory }}
           # Where the dependencies come from, as for the desktop platforms.
           SLICER_EXT_REGISTRY: ${{ inputs.build-dependencies && format('https://github.com/{0}/releases/download/{1}/extension-repositories.json', inputs.slicer-repository, inputs.release-tag) || '' }}
+          SLICER_COMMIT: ${{ steps.tree.outputs.slicer-commit }}
+          SLICER_EXT_TREE: ${{ inputs.publish && inputs.publish-build-tree }}
         run: |
           set -euo pipefail
           src="$GITHUB_WORKSPACE/extension"
@@ -439,13 +485,19 @@ jobs:
           entry="$(cat extension-web.json)"
           # The icon is a file next to the wheel, or the address the extension
           # names (EXTENSION_ICONURL), which stays as it is.
+          with='{}' tree='null'
+          [ ! -f extension-built-with.json ] || with="$(cat extension-built-with.json)"
+          [ ! -f extension-tree.json ] || tree="$(cat extension-tree.json)"
           jq -n --arg commit "$SLICER_COMMIT" --argjson entry "$entry" \
+                --argjson with "$with" --argjson tree "$tree" \
             '{platform: "web", slicer_commit: $commit, slicer_revision: "",
               packages: ([$entry.wheel]
                          + (if ($entry.icon // "") != "" and ($entry.icon | contains("://") | not)
                             then [$entry.icon] else [] end)),
-              web: $entry}' > slicer-package-web.json
-          rm extension-web.json
+              depends: ($with.depends // []), built_with: ($with.built_with // {}),
+              web: $entry}
+             + (if $tree then {build_tree: $tree} else {} end)' > slicer-package-web.json
+          rm -f extension-web.json extension-built-with.json extension-tree.json
           cat slicer-package-web.json
           {
             echo "### Web package"
@@ -506,63 +558,121 @@ jobs:
           NAME: ${{ needs.setup.outputs.extension-name }}
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          descriptions=(downloaded/slicer-package-*.json)
-          if [ ${#descriptions[@]} -eq 0 ]; then
-            echo "::warning::no platform produced a package; nothing published"
-            exit 0
-          fi
-          work=release
-          rm -rf "$work"; mkdir -p "$work/assets"
+          python3 - <<'PY'
+          import datetime, glob, hashlib, json, os, subprocess, sys
+
+          tag, name = os.environ["TAG"], os.environ["NAME"]
+          repository, commit = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
+
+          def gh(*args, check=True):
+              return subprocess.run(["gh", *args], check=check, capture_output=True, text=True)
+
+          def sha256(path):
+              digest = hashlib.sha256()
+              with open(path, "rb") as f:
+                  for block in iter(lambda: f.read(1 << 20), b""):
+                      digest.update(block)
+              return digest.hexdigest()
+
+          def files_of(entry):
+              """The assets of the package of a platform."""
+              tree = (entry or {}).get("build_tree") or {}
+              return {f for f in [(entry or {}).get("file"), (entry or {}).get("icon"), *tree.get("files", [])] if f}
+
+          descriptions = sorted(glob.glob("downloaded/slicer-package-*.json"))
+          if not descriptions:
+              print("::warning::no platform produced a package; nothing published")
+              sys.exit(0)
+
           # What the release holds of the platforms this run did not build is
           # kept: extension.json is updated, not replaced.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release download "$TAG" -p extension.json -D "$work" 2>/dev/null || true
-          else
-            gh release create "$TAG" --title "$NAME $TAG" --prerelease --latest=false --notes "Packages of $NAME."
-          fi
-          [ -f "$work/extension.json" ] || echo '{"packages": {}}' > "$work/extension.json"
-          # Older extension.json named one file per platform; the files of a
-          # platform are its package and, for web, the icon.
-          jq '.packages |= with_entries(.value |= (if type == "string" then {file: .} else . end))' \
-            "$work/extension.json" > "$work/extension.json.new" && mv "$work/extension.json.new" "$work/extension.json"
-          : > "$work/old.txt"
-          for d in "${descriptions[@]}"; do
-            platform="$(jq -r .platform "$d")"
-            # The files that platform had before, replaced by these.
-            jq -r --arg p "$platform" '.packages[$p] // {} | [.file, .icon] | .[] | select(. != null and . != "")' \
-              "$work/extension.json" >> "$work/old.txt"
-            jq -r '.packages[]' "$d" | while read -r f; do cp "downloaded/$f" "$work/assets/"; done
-            # The package, and the Slicer it was built against: a Slicer finds
-            # here whether the package of its platform matches its commit.
-            jq --slurpfile pkg "$d" --arg p "$platform" \
-               --arg name "$NAME" --arg repo "$GITHUB_REPOSITORY" --arg rev "$GITHUB_SHA" \
-              '.name = $name | .repository = $repo | .revision = $rev
-               | .packages[$p] = ({file: $pkg[0].packages[0], slicer_commit: $pkg[0].slicer_commit}
-                   + (if ($pkg[0].tests // "") != "" then {tests: $pkg[0].tests} else {} end)
-                   + (if ($pkg[0].slicer_revision // "") != "" then {slicer_revision: $pkg[0].slicer_revision} else {} end)
-                   + (if ($pkg[0].packages | length) > 1 then {icon: $pkg[0].packages[1]} else {} end))
-               | (if $p == "web" then .web = $pkg[0].web else . end)' \
-              "$work/extension.json" > "$work/extension.json.new"
-            mv "$work/extension.json.new" "$work/extension.json"
-          done
-          cp "$work/extension.json" "$work/assets/"
-          cat "$work/extension.json"
+          extension = {}
+          if gh("release", "view", tag, check=False).returncode == 0:
+              if gh("release", "download", tag, "-p", "extension.json", "-D", "release", "--clobber", check=False).returncode == 0:
+                  extension = json.load(open("release/extension.json", encoding="utf8"))
+          else:
+              gh("release", "create", tag, "--title", f"{name} {tag}", "--prerelease", "--latest=false",
+                 "--notes", f"Packages of {name}.")
+          # An older extension.json named one file per platform.
+          packages = {p: ({"file": e} if isinstance(e, str) else e) for p, e in (extension.get("packages") or {}).items()}
+          previous = dict(extension.get("previous") or {})
+
+          uploads, superseded = [], set()
+          for description in descriptions:
+              package = json.load(open(description, encoding="utf8"))
+              platform = package["platform"]
+              files = package["packages"]
+              entry = {
+                  "file": files[0],
+                  "sha256": sha256(os.path.join("downloaded", files[0])),
+                  "revision": commit,
+                  "slicer_commit": package["slicer_commit"],
+              }
+              if package.get("slicer_revision"):
+                  entry["slicer_revision"] = package["slicer_revision"]
+              if package.get("tests"):
+                  entry["tests"] = package["tests"]
+              if len(files) > 1:
+                  entry["icon"] = files[1]
+              entry["depends"] = package.get("depends") or []
+              entry["built_with"] = package.get("built_with") or {}
+              tree = package.get("build_tree")
+              if tree:
+                  entry["build_tree"] = dict(tree, sha256={f: sha256(os.path.join("downloaded", f)) for f in tree["files"]})
+              # The package that platform had. Built against another Slicer, it
+              # is kept as the previous generation, for the Slicer builds that
+              # are still offered it, in place of the one before it; without
+              # its build tree, which nothing is built against any more.
+              old = packages.get(platform)
+              if old and old.get("slicer_commit") != entry["slicer_commit"]:
+                  superseded |= files_of(previous.get(platform))
+                  superseded |= set((old.get("build_tree") or {}).get("files", []))
+                  previous[platform] = {k: v for k, v in old.items() if k != "build_tree"}
+              else:
+                  superseded |= files_of(old)
+              packages[platform] = entry
+              uploads += sorted(files_of(entry))
+              if platform == "web":
+                  extension["web"] = package["web"]
+
+          # A file name that does not change from one build to the next (a
+          # wheel's) now holds the new package: there is no previous one.
+          for platform in list(previous):
+              if files_of(previous[platform]) & set(uploads):
+                  del previous[platform]
+          extension.update(name=name, repository=repository, revision=commit,
+                           date=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                           packages=packages, previous=previous)
+          os.makedirs("release", exist_ok=True)
+          with open("release/extension.json", "w", encoding="utf8") as f:
+              json.dump(extension, f, indent=1)
+          print(json.dumps(extension, indent=1))
 
           # The notes say what each package was built against.
-          notes="Packages of $NAME, built from \`$GITHUB_SHA\` on $(date -u +%Y-%m-%d), against Slicer:
-
-          $(jq -r '.packages | to_entries[] | "- \(.key): Slicer `\(.value.slicer_commit)`\(if .value.slicer_revision then " (r\(.value.slicer_revision))" else "" end)\(if .value.tests == "failed" then ", tests failed" else "" end): \(.value.file)"' "$work/extension.json")
-
-          extension.json says the same, for the Extensions Managers: a package is
-          offered to a Slicer built from the commit it was built against."
-          gh release edit "$TAG" --notes "$notes" --latest=false --prerelease
-          gh release upload "$TAG" "$work"/assets/* --clobber
-          # Files replaced by this run (package names carry the revision).
-          sort -u "$work/old.txt" | while read -r old; do
-            [ -n "$old" ] || continue
-            [ -f "$work/assets/$old" ] && continue
-            echo "Removing the superseded asset $old"
-            gh release delete-asset "$TAG" "$old" --yes || true
-          done
-          echo "Published $(ls "$work/assets" | wc -l) files to the release $TAG." >> "$GITHUB_STEP_SUMMARY"
+          lines = []
+          for platform, entry in sorted(packages.items()):
+              line = f"- {platform}: Slicer `{entry.get('slicer_commit')}`"
+              if entry.get("slicer_revision"):
+                  line += f" (r{entry['slicer_revision']})"
+              for dependency, used in sorted((entry.get("built_with") or {}).items()):
+                  line += f", {dependency} `{str(used.get('revision'))[:10]}`"
+              if entry.get("tests") == "failed":
+                  line += ", tests failed"
+              lines.append(f"{line}: {entry.get('file')}")
+          notes = (f"Packages of {name}, built from `{commit}` on {extension['date'][:10]}, against Slicer"
+                   " and the extensions it depends on:\n\n" + "\n".join(lines) + "\n\n"
+                   "extension.json says the same, for the Extensions Managers: a package is\n"
+                   "offered to a Slicer built from the commit it was built against.")
+          gh("release", "edit", tag, "--notes", notes, "--latest=false", "--prerelease")
+          # The packages first, extension.json, which names them, last.
+          gh("release", "upload", tag, *[os.path.join("downloaded", f) for f in uploads], "--clobber")
+          gh("release", "upload", tag, "release/extension.json", "--clobber")
+          kept = set(uploads)
+          for entry in [*packages.values(), *previous.values()]:
+              kept |= files_of(entry)
+          for old in sorted(superseded - kept):
+              print(f"Removing the superseded asset {old}")
+              gh("release", "delete-asset", tag, old, "--yes", check=False)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(f"Published {len(uploads) + 1} files to the release {tag}.\n")
+          PY

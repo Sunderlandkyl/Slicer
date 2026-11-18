@@ -806,8 +806,30 @@ cmd_install_software_opengl() {
 # in SLICER_EXT_BUILD_DIR (default: <root>/ext-build, kept short because the
 # Windows path limit is reached quickly).
 
-ext_source_dir() { echo "${SLICER_EXT_SOURCE_DIR:-${GITHUB_WORKSPACE:-$PWD}}"; }
-ext_build_dir() { echo "${SLICER_EXT_BUILD_DIR:-$SLICER_ROOT/ext-build}"; }
+#
+# With SLICER_EXT_NAME (the CMake project name), the extension is built at
+# fixed paths, from a copy of its checkout: <root>/E/<Name>, from
+# <root>/ES/<Name>. CMake records absolute paths in the files a build tree is
+# found by (<Name>Config.cmake, the targets file), of the build tree and of the
+# source tree alike, so that only at paths that are the same in every job can
+# the tree be published (extension-tree) and restored by the extensions that
+# depend on it (extension-dependencies), the way the tree of Slicer itself is.
+
+# The checkout of the extension.
+ext_checkout_dir() { echo "${SLICER_EXT_SOURCE_DIR:-${GITHUB_WORKSPACE:-$PWD}}"; }
+# Whether the extension is built at the fixed paths: named, and a whole
+# repository (a subdirectory of one has no revision of its own to copy).
+ext_relocated() {
+  [ -n "${SLICER_EXT_NAME:-}" ] && [ -e "$(bash_path "$(ext_checkout_dir)")/.git" ]
+}
+ext_source_dir() {
+  if ext_relocated; then echo "$SLICER_ROOT/ES/$SLICER_EXT_NAME"; else ext_checkout_dir; fi
+}
+ext_build_dir() {
+  if [ -n "${SLICER_EXT_BUILD_DIR:-}" ]; then echo "$SLICER_EXT_BUILD_DIR"
+  elif ext_relocated; then echo "$SLICER_ROOT/E/$SLICER_EXT_NAME"
+  else echo "$SLICER_ROOT/ext-build"; fi
+}
 
 # An extension that uses a superbuild builds itself in `inner-build`, which is
 # where its targets, its tests and its package are; one that does not builds
@@ -877,141 +899,103 @@ extension_configure_args() {
 
 ext_deps_dir() { echo "${SLICER_EXT_DEPS_DIR:-$SLICER_ROOT/ext-deps}"; }
 
-# Build the extensions the extension depends on (EXTENSION_DEPENDS of its
-# CMakeLists.txt, and theirs in turn), dependencies first, against the same
-# Slicer build tree, as the Slicer extension build does. Each is taken from:
-#   - the registry (SLICER_EXT_REGISTRY, the extension-repositories.json of the
-#     Slicer release): the repository whose nightly extension.json names it,
-#     at the revision that release was built from, which is what a user
-#     installs beside the extension;
-#   - otherwise the Slicer ExtensionsIndex (SLICER_EXT_INDEX_URL): its scm_url
-#     at its scm_revision.
+# Provide the extensions the extension depends on (EXTENSION_DEPENDS of its
+# CMakeLists.txt, and theirs in turn), dependencies first, as
+# slicer-extension-deps.py resolves them:
+#   - one that a repository of the registry publishes (SLICER_EXT_REGISTRY,
+#     the extension-repositories.json of the Slicer release) is not built: the
+#     build tree that repository published for this platform, against this
+#     Slicer commit (SLICER_COMMIT), is restored, at the paths it was built at.
+#     What the extension is linked against is then what its users install.
+#     Without such a tree this fails;
+#   - one that nothing publishes is built from source, from the Slicer
+#     ExtensionsIndex (SLICER_EXT_INDEX_URL), against the same Slicer build
+#     tree, as the Slicer extension build does.
 # extension-configure then hands -D<Name>_DIR of each to the extension, and
-# extension-load loads their modules with it. Only the extension's own package
-# is made: its dependencies are published by their own repositories.
+# extension-load loads their modules with it. What it was built with is left in
+# <output>/extension-built-with.json, to be published with the package.
 cmd_extension_dependencies() {
-  local src; src="$(ext_source_dir)"
+  local src; src="$(ext_checkout_dir)"
   local root; root="$(ext_deps_dir)"
   local broot; broot="$(bash_path "$root")"
+  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
   local py; py="$(command -v python3 || command -v python)" || die "extension-dependencies: no python"
-  rm -rf "$broot"; mkdir -p "$broot"
+  local here; here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && { pwd -W 2>/dev/null || pwd; })"
+  [ -n "${SLICER_COMMIT:-}" ] || die "extension-dependencies: SLICER_COMMIT (the commit of the restored Slicer) is not set"
+  rm -rf "$broot"; mkdir -p "$broot/download" "$out"
   : > "$broot/cmake-args.txt"; : > "$broot/module-paths.txt"
   log "Resolve the dependencies"
-  "$py" - "$src" "$root" "${SLICER_EXT_REGISTRY:-}" \
-    "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" \
-    > "$broot/plan.txt" <<'PY' || { endlog; die "extension-dependencies: could not resolve the dependencies"; }
-import json, os, re, subprocess, sys, urllib.request
-src, root, registry_url, index_url = sys.argv[1:5]
-
-def log(message):
-    print(message, file=sys.stderr)
-
-def get_json(url, attempts=3):
-    """The JSON document at url, or None when there is none (404) or it cannot be read."""
-    import time, urllib.error
-    for attempt in range(attempts):
-        try:
-            with urllib.request.urlopen(url, timeout=60) as response:
-                return json.load(response)
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return None
-        except Exception:
-            pass
-        time.sleep(5 * (attempt + 1))
-    return None
-
-def depends(source):
-    """EXTENSION_DEPENDS of the CMakeLists.txt of an extension."""
-    try:
-        text = open(os.path.join(source, "CMakeLists.txt"), encoding="utf8", errors="replace").read()
-    except OSError:
-        return []
-    match = re.search(r"set\s*\(\s*EXTENSION_DEPENDS\s+([^)]*)\)", text, re.I)
-    if not match:
-        return []
-    names = [n.strip('"') for n in re.split(r"[\s;]+", match.group(1)) if n.strip('"')]
-    return [n for n in names if n not in ("NA", "")]
-
-# The registry: name -> (repository, revision) of what each repository published.
-published = {}
-registry = get_json(registry_url) if registry_url else None
-if registry:
-    tag = registry.get("release_tag", "nightly")
-    for entry in registry.get("repositories", []):
-        repo = entry["repository"]
-        described = get_json(f"https://github.com/{repo}/releases/download/{tag}/extension.json")
-        if described and described.get("name"):
-            published[described["name"]] = (repo, described.get("revision") or entry.get("default_branch"))
-    log(f"registry: {', '.join(f'{n} ({r})' for n, (r, _) in sorted(published.items())) or 'nothing published'}")
-elif registry_url:
-    log(f"no registry at {registry_url}")
-
-def fetch(name):
-    """The source of a dependency, fetched into <root>/src/<name>."""
-    if name in published:
-        repo, revision = published[name]
-        url, origin = f"https://github.com/{repo}.git", f"registry: {repo}"
+  "$py" "$here/slicer-extension-deps.py" --source "$src" --platform "$SLICER_PLATFORM" \
+      --slicer-commit "$SLICER_COMMIT" --registry "${SLICER_EXT_REGISTRY:-}" \
+      --index "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" \
+      --out "$root/plan.json" \
+    || { endlog; die "extension-dependencies: could not resolve the dependencies"; }
+  "$py" - "$root/plan.json" "$SLICER_OUTPUT_DIR/extension-built-with.json" > "$broot/plan.txt" <<'PY'
+import json, sys
+plan = json.load(open(sys.argv[1], encoding="utf8"))
+json.dump({"depends": plan["depends"], "built_with": plan["built_with"]}, open(sys.argv[2], "w"), indent=1)
+for d in plan["dependencies"]:
+    if d["kind"] == "tree":
+        tree = d["tree"]
+        files = " ".join(f"{f}={tree.get('sha256', {}).get(f, '')}" for f in tree["files"])
+        print("\t".join(["tree", d["name"], tree["base"], tree["config_dir"], files]))
     else:
-        described = get_json(f"{index_url}/{name}.json")
-        if not described or not described.get("scm_url"):
-            sys.exit(f"::error::{name} is neither in the registry nor in the ExtensionsIndex")
-        url, revision = described["scm_url"], described.get("scm_revision") or "HEAD"
-        origin = "ExtensionsIndex"
-    path = os.path.join(root, "src", name).replace("\\", "/")
-    os.makedirs(path, exist_ok=True)
-    git = lambda *args: subprocess.run(["git", "-C", path, *args], check=True, stdout=sys.stderr)
-    git("init", "-q")
-    git("remote", "add", "origin", url)
-    git("fetch", "-q", "--depth", "1", "origin", revision)
-    git("checkout", "-q", "FETCH_HEAD")
-    log(f"{name}: {url} {revision} ({origin})")
-    return path
-
-order, state = [], {}
-def visit(name, chain):
-    if state.get(name) == "done":
-        return
-    if state.get(name) == "visiting":
-        sys.exit("::error::dependency cycle: " + " -> ".join(chain + [name]))
-    state[name] = "visiting"
-    path = fetch(name)
-    for dependency in depends(path):
-        visit(dependency, chain + [name])
-    state[name] = "done"
-    order.append((name, path))
-
-for name in depends(src):
-    visit(name, [])
-for name, path in order:
-    print(f"{name}\t{path}")
+        print("\t".join(["source", d["name"], d["url"], d["revision"], "-"]))
 PY
   cat "$broot/plan.txt" >&2
   endlog
-  local name path build dir
-  while IFS=$'\t' read -r name path; do
-    [ -n "$name" ] || continue
-    build="$root/build/$name"
+  local kind name a b c dir
+  while IFS=$'\t' read -r kind name a b c; do
+    [ -n "$kind" ] || continue
+    c="${c%$'\r'}"
     log "Dependency $name"
-    local args=()
-    # The extension's configure arguments, with the dependencies built so far,
-    # for this one, without its tests.
-    while IFS= read -r line; do args+=("$line"); done < <(
-      SLICER_EXT_SOURCE_DIR="$path" SLICER_EXT_BUILD_DIR="$build" SLICER_EXT_CMAKE_OPTIONS="" \
-        extension_configure_args)
-    args+=(-DBUILD_TESTING:BOOL=OFF)
-    info "cmake ${args[*]}"
-    local rc=0
-    if [ "$SLICER_PLATFORM" = "windows" ]; then
-      MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "${args[@]}" || rc=$?
+    if [ "$kind" = "tree" ]; then
+      # a: the release, b: where its <Name>Config.cmake is, c: file=sha256 ...
+      local item file sum got first=""
+      for item in $c; do
+        file="${item%%=*}"; sum="${item#*=}"
+        [ -n "$first" ] || first="$file"
+        curl -fsSL --retry 3 --retry-delay 5 -o "$broot/download/$file" "$a/$file" \
+          || { endlog; die "could not download $a/$file"; }
+        got="$(sha256 < "$broot/download/$file" | cut -d' ' -f1)"
+        if [ -n "$sum" ] && [ "$got" != "$sum" ]; then
+          endlog; die "$file of $name is not the file its extension.json describes (sha256 $got, expected $sum)"
+        fi
+      done
+      cmd_unpack "$root/download/$first"
+      rm -f "$broot/download/$first"
+      dir="$SLICER_ROOT/$b"
+      ls "$(bash_path "$dir")"/*Config.cmake >/dev/null 2>&1 \
+        || { endlog; die "the build tree of $name has no CMake package configuration in $dir"; }
     else
-      cmake "${args[@]}" || rc=$?
+      # a: the repository, b: the revision.
+      local path="$root/src/$name" build="$root/build/$name"
+      mkdir -p "$(bash_path "$path")"
+      git -C "$(bash_path "$path")" init -q
+      git -C "$(bash_path "$path")" remote add origin "$a"
+      git -C "$(bash_path "$path")" fetch -q --depth 1 origin "$b" \
+        || { endlog; die "could not fetch $b of $a"; }
+      git -C "$(bash_path "$path")" checkout -q FETCH_HEAD
+      local args=()
+      # The extension's configure arguments, with the dependencies provided so
+      # far, for this one, without its tests.
+      while IFS= read -r line; do args+=("$line"); done < <(
+        SLICER_EXT_NAME="" SLICER_EXT_SOURCE_DIR="$path" SLICER_EXT_BUILD_DIR="$build" \
+          SLICER_EXT_CMAKE_OPTIONS="" extension_configure_args)
+      args+=(-DBUILD_TESTING:BOOL=OFF)
+      info "cmake ${args[*]}"
+      local rc=0
+      if [ "$SLICER_PLATFORM" = "windows" ]; then
+        MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "${args[@]}" || rc=$?
+      else
+        cmake "${args[@]}" || rc=$?
+      fi
+      [ $rc -eq 0 ] || { endlog; dump_cmake_logs "$build"; die "configuring the dependency $name failed"; }
+      cmake_build "$build"
+      # Where the extension itself is: inner-build for one with a superbuild.
+      dir="$build"
+      [ -f "$(bash_path "$build")/inner-build/CMakeCache.txt" ] && dir="$build/inner-build"
     fi
-    [ $rc -eq 0 ] || { endlog; dump_cmake_logs "$build"; die "configuring the dependency $name failed"; }
-    cmake_build "$build"
-    # Where the extension itself is: inner-build for one with a superbuild.
-    dir="$build"
-    [ -f "$(bash_path "$build")/inner-build/CMakeCache.txt" ] && dir="$build/inner-build"
     echo "-D${name}_DIR:PATH=$dir" >> "$broot/cmake-args.txt"
     echo "$dir" >> "$broot/module-paths.txt"
     endlog
@@ -1019,7 +1003,38 @@ PY
   info "dependencies: $(tr '\n' ' ' < "$broot/cmake-args.txt")"
 }
 
+# Archive the build tree of the extension, for the extensions that depend on
+# it: <output>/<Name>-build-<platform>.tar.zst, of <root>/E/<Name> and the
+# source it was built from, <root>/ES/<Name>, and <output>/extension-tree.json,
+# which says where its <Name>Config.cmake is. Object files and the staging
+# area of the package are left out: a dependent links against the libraries.
+cmd_extension_tree() {
+  local name="${SLICER_EXT_NAME:-}"
+  [ -n "$name" ] || die "extension-tree: SLICER_EXT_NAME is not set"
+  ext_relocated || die "extension-tree: the build tree of an extension in a subdirectory of its repository cannot be published"
+  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
+  local file="$name-build-$SLICER_PLATFORM.tar.zst"
+  cmd_pack "$SLICER_OUTPUT_DIR/$file" --exclude '*/.git' --exclude '*.o' --exclude '*.obj' \
+    --exclude '*/_CPack_Packages' "E/$name" "ES/$name"
+  local size; size="$(wc -c < "$out/$file" | tr -d ' ')"
+  [ "$size" -lt 2000000000 ] || die "extension-tree: $file is $size bytes, more than a release asset holds"
+  local sub="."
+  [ -f "$(bash_path "$SLICER_ROOT")/E/$name/inner-build/CMakeCache.txt" ] && sub="inner-build"
+  local dir="E/$name"; [ "$sub" = "." ] || dir="$dir/$sub"
+  printf '{"files": ["%s"], "config_dir": "%s", "subdirectory": "%s"}\n' "$file" "$dir" "$sub" \
+    > "$out/extension-tree.json"
+  cat "$out/extension-tree.json"
+}
+
 cmd_extension_configure() {
+  if ext_relocated; then
+    # The copy the extension is built from, at its fixed path; without the
+    # actions of Slicer, which the workflow checks out inside the checkout.
+    local from; from="$(bash_path "$(ext_checkout_dir)")"
+    local to; to="$(bash_path "$(ext_source_dir)")"
+    rm -rf "$to"; mkdir -p "$to"
+    tar -C "$from" --exclude ./.slicer-actions -cf - . | tar -C "$to" -xf -
+  fi
   local src; src="$(bash_path "$(ext_source_dir)")"
   [ -f "$src/CMakeLists.txt" ] || die "extension-configure: no CMakeLists.txt in $(ext_source_dir)"
   [ -f "$(bash_path "$SLICER_BUILD_DIR")/SlicerConfig.cmake" ] \
@@ -1185,7 +1200,8 @@ Commands:
   restore-release <repo> <tag> [build|deps|all]
                                Restore a published build under the build root
   test                         Run ctest on the inner build
-  extension-dependencies       Build the extensions the extension depends on
+  extension-dependencies       Restore, or build, the extensions the extension depends on
+  extension-tree               Archive the build tree of the extension
   extension-configure          Configure an extension against the restored Slicer
   extension-build              Build the configured extension
   extension-test               Run the tests of the extension
@@ -1218,6 +1234,7 @@ main() {
     restore-release) cmd_restore_release "$@" ;;
     test) cmd_test "$@" ;;
     extension-dependencies) cmd_extension_dependencies "$@" ;;
+    extension-tree) cmd_extension_tree "$@" ;;
     extension-configure) cmd_extension_configure "$@" ;;
     extension-build) cmd_extension_build "$@" ;;
     extension-test) cmd_extension_test "$@" ;;

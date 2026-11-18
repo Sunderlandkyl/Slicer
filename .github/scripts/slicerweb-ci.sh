@@ -98,6 +98,9 @@ cmd_run() {
   fi
   [ -z "$extension" ] || args+=(-v "$extension:/ext:ro")
   [ -z "$descriptions" ] || args+=(-v "$descriptions:/extensions:ro" -e SW_EXTENSIONS_DIR=/extensions)
+  # Which extensions of the descriptions 80-extensions builds; the others keep
+  # what is in the build folder.
+  [ -z "${SW_EXTENSIONS:-}" ] || args+=(-e "SW_EXTENSIONS=$SW_EXTENSIONS")
   docker run "${args[@]}" "$SLICERWEB_IMAGE" bash /work/scripts/build.sh "$@"
 }
 
@@ -111,39 +114,35 @@ cmd_run() {
 # one of SlicerWeb's catalog (extensions/<name>.json: build subdirectory,
 # dependencies, slicerweb options) when there is one, pointed at the checkout;
 # otherwise one is made, with <build subdirectory> ("inner-build" for an
-# extension with a superbuild, "." without). The extensions it depends on are
-# built first, from the descriptions of the catalog, but only its own wheel is
-# gathered: theirs are published by their own repositories.
+# extension with a superbuild, "." without).
 #
-# <output> receives the wheel, the icon if any, and extension-web.json, the
-# entry of the extension index SlicerWeb's Extensions Manager reads.
+# The extensions it depends on are provided as on the desktop platforms
+# (slicer-extension-deps.py): one that a repository of the registry publishes
+# (SLICER_EXT_REGISTRY) is not built, the build tree it published for the web,
+# against this Slicer commit (SLICER_COMMIT), is restored into the build
+# folder; one that nothing publishes is built from source. Only the extension's
+# own wheel is gathered: theirs are published by their own repositories.
+#
+# <output> receives the wheel, the icon if any, extension-web.json (the entry
+# of the extension index SlicerWeb's Extensions Manager reads) and
+# extension-built-with.json. With SLICER_EXT_TREE=true it also receives the
+# build tree of the extension, for the extensions that depend on it
+# (<name>-build-web.tar.zst, and extension-tree.json).
 cmd_extension() {
   local src="${1:?extension: missing checkout}" name="${2:?extension: missing name}"
   local output="${3:?extension: missing output}" sub="${4:-}"
   local descriptions="$SLICERWEB_ROOT/extension-descriptions"
-  rm -rf "$descriptions"; mkdir -p "$descriptions" "$output"
+  local work="$SLICERWEB_ROOT/extension-deps"
+  local here; here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  rm -rf "$descriptions" "$work"; mkdir -p "$descriptions" "$output" "$work/download"
   local rev; rev="$(git -C "$src" rev-parse HEAD)"
-  python3 - "$SLICERWEB_DIR/extensions" "$descriptions" "$name" "$rev" "$sub" "$src" \
-    "${SLICER_EXT_REGISTRY:-}" "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" <<'PY'
-import json, os, re, sys, time, urllib.error, urllib.request
-catalog, out, name, rev, sub, src, registry_url, index_url = sys.argv[1:9]
+  [ -n "${SLICER_COMMIT:-}" ] || die "extension: SLICER_COMMIT (the commit of the restored Slicer) is not set"
 
-def get_json(url, attempts=3):
-    for attempt in range(attempts):
-        try:
-            with urllib.request.urlopen(url, timeout=60) as response:
-                return json.load(response)
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return None
-        except Exception:
-            pass
-        time.sleep(5 * (attempt + 1))
-    return None
-
-def described(n):
-    path = os.path.join(catalog, n + ".json")
-    return json.load(open(path, encoding="utf8")) if os.path.isfile(path) else None
+  # Its own description, and what that says it depends on (the catalog's list
+  # may be shorter than EXTENSION_DEPENDS: what it needs in the browser).
+  python3 - "$SLICERWEB_DIR/extensions" "$descriptions" "$name" "$rev" "$sub" "$src" "$work/depends.txt" <<'PY'
+import json, os, re, sys
+catalog, out, name, rev, sub, src, depends_file = sys.argv[1:8]
 
 def cmake_depends(source):
     try:
@@ -154,53 +153,76 @@ def cmake_depends(source):
     names = [n.strip('"') for n in re.split(r"[\s;]+", match.group(1))] if match else []
     return [n for n in names if n and n != "NA"]
 
-# The registry: name -> (repository, revision) of what each repository published.
-published = {}
-registry = get_json(registry_url) if registry_url else None
-if registry:
-    tag = registry.get("release_tag", "nightly")
-    for entry in registry.get("repositories", []):
-        repo = entry["repository"]
-        e = get_json(f"https://github.com/{repo}/releases/download/{tag}/extension.json")
-        if e and e.get("name"):
-            published[e["name"]] = (repo, e.get("revision") or entry.get("default_branch"))
-
-own = described(name)
-if own is None:
+path = os.path.join(catalog, name + ".json")
+if os.path.isfile(path):
+    own = json.load(open(path, encoding="utf8"))
+    print(f"{name}: the description of SlicerWeb's catalog")
+else:
     print(f"{name} is not in SlicerWeb's catalog: building it with build subdirectory {sub or '.'!r}")
     own = {"build_dependencies": cmake_depends(src)}
-else:
-    print(f"{name}: the description of SlicerWeb's catalog")
 if sub:
     own["build_subdirectory"] = sub
 own.setdefault("build_subdirectory", ".")
 # The checkout, mounted at /ext, at its commit.
 own["scm_url"], own["scm_revision"] = "/ext", rev
 json.dump(own, open(os.path.join(out, name + ".json"), "w"), indent=1)
-
-# Its dependencies: what SlicerWeb's catalog says of each (build subdirectory,
-# browser-specific options), else the ExtensionsIndex; from the repository of
-# the registry that published it, at the revision it published, as on the
-# desktop platforms, else from where that description says.
-pending, seen = list(own.get("build_dependencies") or []), set()
-while pending:
-    dep = pending.pop()
-    if dep in seen:
-        continue
-    seen.add(dep)
-    description = described(dep) or get_json(f"{index_url}/{dep}.json")
-    if description is None and dep not in published:
-        print(f"::warning::{name} depends on {dep}, which neither the registry, SlicerWeb's catalog nor the ExtensionsIndex describes")
-        continue
-    description = dict(description or {"build_subdirectory": "."})
-    if dep in published:
-        repo, revision = published[dep]
-        description["scm_url"], description["scm_revision"] = f"https://github.com/{repo}.git", revision
-    print(f"{name} depends on {dep}: built from {description['scm_url']} {description['scm_revision']}")
-    json.dump(description, open(os.path.join(out, dep + ".json"), "w"), indent=1)
-    pending.extend(description.get("build_dependencies") or [])
+open(depends_file, "w").write(" ".join(own.get("build_dependencies") or []))
 PY
-  cmd_run --extension "$src" --descriptions "$descriptions" 80-extensions
+  python3 "$here/slicer-extension-deps.py" --source "$src" --platform web \
+      --slicer-commit "$SLICER_COMMIT" --registry "${SLICER_EXT_REGISTRY:-}" \
+      --index "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" \
+      --depends "$(cat "$work/depends.txt")" --out "$work/plan.json" \
+    || die "extension: could not resolve the dependencies"
+
+  # The description of each dependency (what SlicerWeb's catalog says of it:
+  # build subdirectory, browser-specific options), which is how 80-extensions
+  # finds its build tree and hands it on; and what there is to restore.
+  python3 - "$SLICERWEB_DIR/extensions" "$descriptions" "$work/plan.json" "$output/extension-built-with.json" \
+      > "$work/plan.txt" <<'PY'
+import json, os, sys
+catalog, out, plan_file, built_with_file = sys.argv[1:5]
+plan = json.load(open(plan_file, encoding="utf8"))
+json.dump({"depends": plan["depends"], "built_with": plan["built_with"]}, open(built_with_file, "w"), indent=1)
+for d in plan["dependencies"]:
+    path = os.path.join(catalog, d["name"] + ".json")
+    description = json.load(open(path, encoding="utf8")) if os.path.isfile(path) else dict(d.get("description") or {})
+    if d["kind"] == "tree":
+        tree = d["tree"]
+        description["build_subdirectory"] = tree.get("subdirectory", ".")
+        description["scm_url"] = f"https://github.com/{d['repository']}.git"
+        description["scm_revision"] = d["revision"]
+        files = " ".join(f"{f}={tree.get('sha256', {}).get(f, '')}" for f in tree["files"])
+        print("\t".join(["tree", d["name"], tree["base"], files]))
+    else:
+        description.setdefault("build_subdirectory", ".")
+        description["scm_url"], description["scm_revision"] = d["url"], d["revision"]
+        print("\t".join(["source", d["name"], d["url"], d["revision"]]))
+    json.dump(description, open(os.path.join(out, d["name"] + ".json"), "w"), indent=1)
+PY
+  cat "$work/plan.txt"
+  local build=("$name") kind dep a b item file sum got
+  while IFS=$'\t' read -r kind dep a b; do
+    [ -n "$kind" ] || continue
+    if [ "$kind" = "source" ]; then
+      build+=("$dep")
+      continue
+    fi
+    log "Dependency $dep: its build tree"
+    for item in $b; do
+      file="${item%%=*}"; sum="${item#*=}"
+      curl -fsSL --retry 3 --retry-delay 5 -o "$work/download/$file" "$a/$file" \
+        || die "could not download $a/$file"
+      got="$(sha256sum < "$work/download/$file" | cut -d' ' -f1)"
+      if [ -n "$sum" ] && [ "$got" != "$sum" ]; then
+        die "$file of $dep is not the file its extension.json describes (sha256 $got, expected $sum)"
+      fi
+      zstd -d -q -c "$work/download/$file" | sudo tar -C "$SLICERWEB_ROOT/build" -xf -
+      rm -f "$work/download/$file"
+    done
+    endlog
+  done < "$work/plan.txt"
+
+  SW_EXTENSIONS="${build[*]}" cmd_run --extension "$src" --descriptions "$descriptions" 80-extensions
   local ext="$SLICERWEB_ROOT/dist/extensions"
   python3 - "$ext" "$name" "$output" <<'PY'
 import json, os, shutil, sys
@@ -215,6 +237,23 @@ for key in ("wheel", "icon"):
 json.dump(entry, open(os.path.join(output, "extension-web.json"), "w"), indent=1)
 print(json.dumps(entry, indent=1))
 PY
+
+  if [ "${SLICER_EXT_TREE:-false}" = "true" ]; then
+    # What an extension that depends on this one needs of the build folder:
+    # its build tree (<Name>Config.cmake, the libraries), the source that tree
+    # refers to, and what it installed, which the wheels are made of.
+    local tree="$name-build-web.tar.zst"
+    local subdirectory; subdirectory="$(jq -r '.build_subdirectory // "."' "$descriptions/$name.json")"
+    log "Pack the build tree of $name -> $tree"
+    sudo tar -C "$SLICERWEB_ROOT/build" --exclude '*.o' --exclude "src/$name/.git" -cf - \
+        "ext/$name" "install/ext/$name" "src/$name" \
+      | zstd -T0 -3 -q -o "$output/$tree" --force
+    ls -lh "$output/$tree"
+    endlog
+    local dir="ext/$name"; [ "$subdirectory" = "." ] || dir="$dir/$subdirectory"
+    jq -n --arg file "$tree" --arg dir "$dir" --arg sub "$subdirectory" \
+      '{files: [$file], config_dir: $dir, subdirectory: $sub}' > "$output/extension-tree.json"
+  fi
   ls -l "$output"
 }
 

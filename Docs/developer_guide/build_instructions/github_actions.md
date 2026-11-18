@@ -230,7 +230,7 @@ Inputs:
 | `source-directory` | `.` | Directory of the extension within the repository |
 | `extension-name` | repository name | CMake project name of the extension |
 | `cmake-options` | | Additional options for the configure step |
-| `build-dependencies` | `true` | Build the extensions it depends on (`EXTENSION_DEPENDS`) first, see below |
+| `build-dependencies` | `true` | Provide the extensions it depends on (`EXTENSION_DEPENDS`), see below |
 | `run-tests` | `true` | Run the extension's tests |
 | `package` | `true` | Build the extension's package |
 | `load-in-slicer` | `true` | Load the built extension into Slicer |
@@ -244,6 +244,7 @@ Inputs:
 | `web-build-subdirectory` | | For `web`, of an extension SlicerWeb's catalog does not describe: `inner-build` with a superbuild, `.` without |
 | `publish` | `false` | Publish the packages to a release of the extension's own repository |
 | `publish-tag` | `nightly` | Tag of that release |
+| `publish-build-tree` | `false` | Publish the build tree with the package, for the extensions that depend on this one |
 | `timeout-minutes` | `120` | Timeout of each desktop platform's job |
 | `web-timeout-minutes` | `240` | Timeout of the web platform's job |
 
@@ -261,44 +262,97 @@ jobs:
     uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
     with:
       platforms: linux,macos,windows
-      # Only the branch that should publish, so a pull request does not.
-      publish: ${{ github.ref == 'refs/heads/main' }}
+      # Only the builds the Slicer repository starts publish (see below):
+      # a push or a pull request builds and tests.
+      publish: ${{ github.event_name == 'workflow_dispatch' }}
 ```
 
 The packages go to the `nightly` release of the extension's repository, whose
-notes say which Slicer commit each was built against, as does the
-`extension.json` it holds:
+notes say what each was built against, as does the `extension.json` it holds:
 
 ```json
-{"name": "SlicerIGSIO", "repository": "IGSIO/SlicerIGSIO",
- "revision": "<commit of the extension>",
+{"name": "SlicerIGT", "repository": "SlicerIGT/SlicerIGT",
+ "revision": "<commit of the last build>",
  "packages": {
-   "linux": {"file": "...", "slicer_commit": "<commit of Slicer>", "slicer_revision": "34012"},
+   "linux": {"file": "...", "sha256": "...", "revision": "<commit of the extension>",
+             "slicer_commit": "<commit of Slicer>", "slicer_revision": "34012",
+             "tests": "passed", "depends": ["SlicerIGSIO"],
+             "built_with": {"SlicerIGSIO": {"repository": "IGSIO/SlicerIGSIO", "revision": "...",
+                                            "package": "...", "sha256": "..."}},
+             "build_tree": {"files": ["SlicerIGT-build-linux.tar.zst"], "sha256": {"...": "..."},
+                            "config_dir": "E/SlicerIGT/inner-build", "subdirectory": "inner-build"}},
    "macos": {"...": "..."}, "windows": {"...": "..."},
-   "web": {"file": "<wheel>", "slicer_commit": "<commit of Slicer>"}},
- "web": {"name": "SlicerIGSIO", "wheel": "<wheel>", "depends": [], "...": "..."}}
+   "web": {"file": "<wheel>", "slicer_commit": "<commit of Slicer>", "...": "..."}},
+ "previous": {"linux": {"...": "the package built against the Slicer before"}},
+ "web": {"name": "SlicerIGT", "wheel": "<wheel>", "depends": ["SlicerIGSIO"], "...": "..."}}
 ```
 
 A platform is published when it built, packaged and loaded. Failing tests fail
 the run, and are noted in the release, but withhold nothing; a platform that
-did not build keeps the package the release had.
+did not build keeps the package the release had. When Slicer moves on, the
+package built against the Slicer before is kept as `previous` until the next
+one replaces it, so that the Slicer builds still in use are not left without.
 
-An Extensions Manager reads
-`https://github.com/<repository>/releases/download/nightly/extension.json` in
-each extension repository, and offers the package of its platform when it was
-built against the commit Slicer was built from. The repositories are listed in
-`extension-repositories.json` on the nightly release: those the Slicer nightly
-GitHub App is installed in that have `slicer-nightly-build.yml` (see below). A
-build replaces the packages of the platforms it built, and keeps the others.
+### Extensions that depend on other extensions
 
 The extensions an extension depends on (`EXTENSION_DEPENDS` of its
-`CMakeLists.txt`, and theirs in turn) are built first, in the same job and
-against the same Slicer build, as the Slicer extension build does, and handed
-to it as `<Name>_DIR`: its tests and the load check find their modules. Each is
-taken from the repository of the registry that publishes it, at the revision
-of its nightly release, which is what a user installs beside the extension, or
-else from its entry in the [ExtensionsIndex](https://github.com/Slicer/ExtensionsIndex).
-Only the extension's own package is published.
+`CMakeLists.txt`, and theirs in turn) are treated the way an extension treats
+Slicer: they are not built again, their published build tree is restored. An
+extension that others depend on sets `publish-build-tree: true`, and is built
+at fixed paths (`<root>/E/<Name>`, from a copy of its source in
+`<root>/ES/<Name>`; `/build/ext/<Name>` for the web), since the files CMake
+finds a build tree by record absolute paths. An extension that depends on it
+downloads that tree for its platform, checks it against the hash in
+`extension.json`, is handed it as `<Name>_DIR`, and records the package it was
+built against in `built_with`.
+
+So what an extension is linked against is, byte for byte, what its users
+install beside it. There is no fallback: when the dependency has not been
+built against the same Slicer commit, or publishes no build tree, the build
+fails and says so. Only a dependency that no registered repository builds is
+built from source, in the same job, from its entry in the
+[ExtensionsIndex](https://github.com/Slicer/ExtensionsIndex).
+
+That makes the order of the builds matter, and a change in an extension a
+reason to build the ones that depend on it again. No extension repository can
+start a build in another, so the Slicer repository does it, with the
+[`Reconcile extensions`](https://github.com/Slicer/Slicer/actions/workflows/extension-reconcile.yml)
+workflow. From what is published, and nothing else, it works out which
+extensions are not *current*, that is, built against the Slicer commit of the
+nightly, from the head of their branch, and against the very packages their
+dependencies publish now; starts those whose dependencies have been dealt
+with; waits; and starts the next ones, until none is left. An extension is
+started once for the same Slicer, head and dependencies: one that fails is not
+started again until one of those changes (or the workflow is run with
+`retry`), and what depends on it is left as it is.
+
+It then publishes `extensions-catalog.json` to the nightly release:
+
+```json
+{"platforms": {"linux": {"slicer_commit": "...", "extensions": {
+     "SlicerIGT": {"repository": "...", "revision": "...", "file": "...", "url": "...",
+                   "sha256": "...", "depends": ["SlicerIGSIO"], "tests": "passed"}}},
+               "web": {"...": "..."}},
+ "withheld": {"linux": {"SlicerHeart": "SlicerIGT is not current (...)"}},
+ "extensions": {"SlicerIGT": {"repository": "...", "branch": "...", "head": "...",
+                              "attempt": {"run": "...", "conclusion": "success"}}}}
+```
+
+This one file is what an Extensions Manager reads: per platform, the
+extensions that are current, which are consistent with each other by
+construction, with the address and the hash of each package. It is replaced
+at once, so a reader sees the set before or the set after, whatever is being
+built meanwhile. `extension-repositories.json`, on the same release, lists the
+repositories: those the Slicer nightly GitHub App is installed in that have
+`slicer-nightly-build.yml` (see below).
+
+The workflow remembers nothing between runs, so running it late, twice or
+after a failure does no harm, and what starts it only decides how soon a
+change is seen: the `Build` workflow when it has published a nightly, a daily
+schedule, a manual run (to get a commit of an extension out now), or a
+`repository_dispatch` event of type `reconcile-extensions`. Because only the
+builds it starts should publish, an extension's workflow publishes on
+`workflow_dispatch` alone.
 
 A superbuild extension needs nothing extra: its own tree, `inner-build`, is
 where the tests, the package and the modules are looked for.
@@ -453,15 +507,16 @@ rather than waiting for its own schedule:
 2. Install the Slicer nightly GitHub App on the repository.
 
 Nothing has to be registered with the Slicer repository: once a nightly is
-published, the `Build` workflow lists the repositories the app is installed
-on and starts that workflow on the default branch of each. Repositories
-without it are skipped. Uninstalling the app opts out.
+published, the `Reconcile extensions` workflow lists the repositories the app
+is installed on and starts that workflow on the default branch of each, in the
+order of their dependencies (see above). Repositories without it are skipped.
+Uninstalling the app opts out.
 
 The repository of a SlicerWeb site follows the web runtime in the same way,
 with a workflow named `.github/workflows/slicer-nightly-web.yml` instead: it is
-started whenever a run publishes the web runtime (`slicerweb-wheels.zip` and
-`slicerweb-extensions.zip`), including a run that builds the web runtime
-alone, which starts no extension build.
+started when the catalog changed, which a new web runtime
+(`slicerweb-wheels.zip`) makes it do, after the extensions have been built
+against it.
 
 The app holds the Actions permission, which starts workflows but cannot change
 code, and read access to the repository's contents, used only to see whether
