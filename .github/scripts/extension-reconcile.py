@@ -798,6 +798,7 @@ def main():
     if not again:
         start_sites(catalog)
 
+    waited = {text.split(" (")[0] for text in did["left"]}
     lines = ["### What this step did", ""]
     if env("REASON"):
         lines += [f"Woken by: {env('REASON')}", ""]
@@ -813,6 +814,10 @@ def main():
         for platform in targets:
             reason, attempt = state.reason(extension, platform), extension.attempts.get(platform) or {}
             cell = "current" if not reason else reason
+            # A build that was not started here is running: nothing is started
+            # for the extension meanwhile, which the cell would not say.
+            if reason and extension.name in waited and not attempt.get("run"):
+                cell += " (waiting for a build that is running)"
             # Failing tests are said as such: they are not a build that failed.
             if not reason and (extension.package(platform) or {}).get("tests") == "failed":
                 cell += ", tests failed"
