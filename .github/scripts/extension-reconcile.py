@@ -134,6 +134,33 @@ def public_json(url):
     return document if status == 200 else None
 
 
+def release_json(repository, *patterns):
+    """The JSON files of the release TAG of a repository that match the patterns: {name: document}.
+
+    Read through the API (gh), which serves the asset that is there now. The
+    public download address of an asset can go on serving, for a while, the
+    file it held before it was replaced; a step that read the catalog of the
+    step before that way took a build that step had started for one it knew
+    nothing of."""
+    folder = tempfile.mkdtemp()
+    arguments = ["release", "download", TAG, "-R", repository, "-D", folder, "--clobber"]
+    for pattern in patterns:
+        arguments += ["-p", pattern]
+    found = {}
+    for attempt in range(3):
+        result = subprocess.run(["gh", *arguments], capture_output=True, text=True)
+        if result.returncode == 0 or "no assets" in result.stderr.lower() or "not found" in result.stderr.lower():
+            break
+        time.sleep(5 * (attempt + 1))
+    for name in os.listdir(folder):
+        try:
+            with open(os.path.join(folder, name), encoding="utf8") as document:
+                found[name] = json.load(document)
+        except ValueError:
+            pass
+    return found
+
+
 # ------------------------------------------------------------------- the app
 
 class App:
@@ -249,8 +276,9 @@ class Extension:
 
     def read_published(self, platforms):
         """What it published for the platforms."""
+        files = release_json(self.repository, *[f"extension-{platform}.json" for platform in platforms])
         for platform in platforms:
-            described = public_json(f"https://github.com/{self.repository}/releases/download/{TAG}/extension-{platform}.json")
+            described = files.get(f"extension-{platform}.json")
             if described and isinstance(described.get("package"), dict):
                 self.packages[platform] = described["package"]
                 if platform == "web":
@@ -469,9 +497,9 @@ def main():
 
     def targets_now():
         targets = {}
+        files = release_json(SLICER, "manifest-*.json", "slicerweb-manifest.json")
         for platform in PLATFORMS:
-            manifest = public_json(f"{base}/slicerweb-manifest.json" if platform == "web"
-                                   else f"{base}/manifest-{platform}.json")
+            manifest = files.get("slicerweb-manifest.json" if platform == "web" else f"manifest-{platform}.json")
             if manifest and manifest.get("commit"):
                 targets[platform] = manifest["commit"]
         return targets
@@ -506,10 +534,10 @@ def main():
                            "built against. extensions-catalog.json lists the ones that are consistent with each other.",
             "repositories": [{"repository": e.repository, "name": e.name, "default_branch": e.ref} for e in extensions],
         }
-        if not same(registry, public_json(f"{base}/extension-repositories.json")):
+        if not same(registry, release_json(SLICER, "extension-repositories.json").get("extension-repositories.json")):
             upload("extension-repositories.json", registry)
 
-    published = public_json(f"{base}/extensions-catalog.json")
+    published = release_json(SLICER, "extensions-catalog.json").get("extensions-catalog.json")
     earlier = (published or {}).get("extensions") or {}
     state = State(targets, extensions)
     # What an earlier pass started, for the same inputs, is not started again.
