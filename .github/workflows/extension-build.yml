@@ -63,6 +63,13 @@ on:
         description: "Additional options for the extension's configure step"
         type: string
         default: ""
+      generator:
+        description: >-
+          CMake generator on Linux and macOS (default: Ninja). "Unix Makefiles"
+          is what the Slicer extension build uses, for an extension that does
+          not build with Ninja
+        type: string
+        default: ""
       build-dependencies:
         description: >-
           Provide the extensions it depends on (EXTENSION_DEPENDS): the build
@@ -238,6 +245,7 @@ jobs:
       # its build tree can be restored by the extensions that depend on it.
       SLICER_EXT_NAME: ${{ needs.setup.outputs.extension-name }}
       SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
+      SLICER_EXT_GENERATOR: ${{ inputs.generator }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:

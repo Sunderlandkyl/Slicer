@@ -240,6 +240,7 @@ Inputs:
 | `source-directory` | `.` | Directory of the extension within the repository |
 | `extension-name` | repository name | CMake project name of the extension |
 | `cmake-options` | | Additional options for the configure step |
+| `generator` | Ninja | CMake generator on Linux and macOS. `Unix Makefiles` is what the Slicer extension build uses, for an extension that does not build with Ninja |
 | `build-dependencies` | `true` | Provide the extensions it depends on (`EXTENSION_DEPENDS`), see below |
 | `run-tests` | `true` | Run the extension's tests |
 | `package` | `true` | Build the extension's package |

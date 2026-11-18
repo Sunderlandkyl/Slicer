@@ -983,7 +983,11 @@ extension_configure_args() {
       [ -n "$git" ] && args+=("-DGIT_EXECUTABLE:FILEPATH=$git")
       ;;
     *)
-      args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE")
+      # Ninja, as Slicer itself, unless the extension asks for another
+      # generator (SLICER_EXT_GENERATOR): the extensions are built with
+      # Makefiles by the Slicer extension build, and Ninja refuses what those
+      # let through, such as two modules installing a file of the same name.
+      args+=(-G "${SLICER_EXT_GENERATOR:-Ninja}" "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE")
       ;;
   esac
   if [ -n "${SLICER_COMPILER_LAUNCHER:-}" ]; then
