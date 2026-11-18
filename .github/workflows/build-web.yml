@@ -411,7 +411,12 @@ jobs:
           # the web runtime alone).
           slicer=""
           if [ "$FROM_CHECKOUT" = "true" ]; then slicer="$(git -C slicer rev-parse HEAD)"; fi
-          jq -n --arg commit "$slicer" \
+          # The files it is published with, each with its sha256: a build
+          # against them checks that what it downloaded is this very set.
+          files="$(cd "$tree" && for a in slicerweb-build.tar.zst*; do
+                     jq -n --arg n "$a" --arg s "$(sha256sum < "$a" | cut -d' ' -f1)" '{($n): $s}'
+                   done | jq -s add)"
+          jq -n --arg commit "$slicer" --argjson files "$files" \
                 --arg slicerweb_repository "$SLICERWEB_REPOSITORY" \
                 --arg slicerweb_commit "$(git -C slicerweb rev-parse HEAD)" \
                 --arg run_id "$GITHUB_RUN_ID" \
@@ -419,7 +424,7 @@ jobs:
                 --arg date "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" \
                 '{platform: "web", commit: $commit, slicerweb_repository: $slicerweb_repository,
                   slicerweb_commit: $slicerweb_commit, run_id: $run_id, deps_key: $deps_key,
-                  date: $date, root: "/build"}' > "$tree/slicerweb-manifest.json"
+                  date: $date, root: "/build", files: $files}' > "$tree/slicerweb-manifest.json"
           cat "$tree/slicerweb-manifest.json"
           ls -lh "$tree"
       - name: Upload the build tree

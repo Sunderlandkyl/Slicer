@@ -426,10 +426,35 @@ jobs:
           RELEASE_TAG: ${{ inputs.release-tag }}
         run: |
           set -euo pipefail
-          mkdir -p "$SLICERWEB_ROOT/restore"
-          gh release download "$RELEASE_TAG" -R "$SLICER_REPOSITORY" -D "$SLICERWEB_ROOT/restore" --clobber \
-            -p slicerweb-manifest.json -p 'slicerweb-build.tar.zst*'
+          # The manifest records the files it was published with. The web
+          # runtime is published while extensions build against it (manifest
+          # removed first, uploaded last), so what is downloaded can be a mix
+          # of two builds, or lack the manifest: waited out, and tried again.
           manifest="$SLICERWEB_ROOT/restore/slicerweb-manifest.json"
+          for attempt in 1 2 3 4 5; do
+            problem=""
+            rm -rf "$SLICERWEB_ROOT/restore"; mkdir -p "$SLICERWEB_ROOT/restore"
+            gh release download "$RELEASE_TAG" -R "$SLICER_REPOSITORY" -D "$SLICERWEB_ROOT/restore" --clobber \
+              -p slicerweb-manifest.json -p 'slicerweb-build.tar.zst*' || problem="the download failed"
+            if [ -z "$problem" ] && [ ! -f "$manifest" ]; then
+              problem="the release has no slicerweb-manifest.json"
+            elif [ -z "$problem" ] && [ "$(jq -r '.files // {} | length' "$manifest")" != "0" ]; then
+              recorded="$(jq -r '.files | keys[]' "$manifest" | LC_ALL=C sort)"
+              have="$(cd "$SLICERWEB_ROOT/restore" && ls slicerweb-build.tar.zst* | LC_ALL=C sort)"
+              [ "$recorded" = "$have" ] || problem="the files are not the ones the manifest records"
+              for f in $recorded; do
+                [ -z "$problem" ] || break
+                [ "$(sha256sum < "$SLICERWEB_ROOT/restore/$f" | cut -d' ' -f1)" = "$(jq -r --arg f "$f" '.files[$f]' "$manifest")" ] \
+                  || problem="$f is not the file the manifest records"
+              done
+            fi
+            [ -n "$problem" ] || break
+            if [ "$attempt" -lt 5 ]; then
+              echo "$problem: is the web runtime being published? Trying again in $((attempt * 60)) s"
+              sleep $((attempt * 60))
+            fi
+          done
+          [ -z "$problem" ] || { echo "::error::$problem"; exit 1; }
           cat "$manifest"
           {
             echo "slicerweb-repository=$(jq -r .slicerweb_repository "$manifest")"

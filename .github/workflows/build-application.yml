@@ -543,6 +543,12 @@ jobs:
           "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst" --exclude "SR/Slicer-build*" SR
           for a in "$SLICER_OUTPUT_DIR"/*.tar.zst; do "$SLICER_CI" split "$a"; done
           ls -lh "$SLICER_OUTPUT_DIR"
+          # The manifest records the files it is published with: a build
+          # against them checks that what it downloaded is this very set.
+          "$SLICER_CI" manifest-files "$SLICER_OUTPUT_DIR/manifest-${SLICER_PLATFORM}.json" \
+            "$SLICER_OUTPUT_DIR"/slicer-source-${SLICER_PLATFORM}.tar.zst* \
+            "$SLICER_OUTPUT_DIR"/slicer-build-${SLICER_PLATFORM}.tar.zst* \
+            "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst*
 
       - name: Upload the build tree
         if: inputs.archive-build-trees

@@ -570,14 +570,86 @@ cmd_split() {
   fi
 }
 
+# Record in a manifest the files published with it, each with its sha256:
+# what makes the manifest the record of a set of files that belong together,
+# which restore-release checks what it downloads against.
+#
+#   manifest-files <manifest> <file>...
+#
+# One "sha256:<name>" entry per file, so that the manifest stays a flat list
+# of values (manifest-get).
+cmd_manifest_files() {
+  local file="${1:?manifest-files: missing manifest}"; shift
+  file="$(bash_path "$file")"
+  [ -f "$file" ] || die "manifest-files: $file does not exist"
+  local entries="" f sum
+  for f in "$@"; do
+    f="$(bash_path "$f")"
+    [ -f "$f" ] || die "manifest-files: $f does not exist"
+    sum="$(sha256 < "$f" | cut -d' ' -f1)"
+    entries="$entries  \"sha256:$(basename "$f")\": \"$sum\","$'\n'
+  done
+  local line
+  { while IFS= read -r line; do
+      case "$line" in
+        *'"sha256:'*) continue ;;                       # written again
+        *'"manifest_version"'*) printf '%s' "$entries" ;;
+      esac
+      printf '%s\n' "$line"
+    done < "$file"
+  } > "$file.new"
+  mv "$file.new" "$file"
+  cat "$file"
+}
+
+# Whether the archives downloaded into <dir> are the ones <manifest> records:
+# prints what is wrong, nothing when all is as recorded. The manifest of a
+# build made before the files were recorded says nothing, and nothing is
+# checked.
+restore_check() {
+  local manifest="$1" dir="$2"
+  local recorded; recorded="$(sed -nE 's/^  "sha256:([^"]+)": "([0-9a-f]+)",?$/\1 \2/p' "$manifest")"
+  if [ -z "$recorded" ]; then
+    info "the manifest does not record its files: not checked" >&2
+    return 0
+  fi
+  local f name sum got
+  # Every archive downloaded is one the manifest records, unchanged...
+  for f in "$dir"/*.tar.zst*; do
+    [ -f "$f" ] || continue
+    name="$(basename "$f")"
+    sum="$(awk -v n="$name" '$1 == n {print $2}' <<< "$recorded")"
+    if [ -z "$sum" ]; then
+      echo "$name is not a file of the manifest"
+      return 0
+    fi
+    got="$(sha256 < "$f" | cut -d' ' -f1)"
+    if [ "$got" != "$sum" ]; then
+      echo "$name is not the file the manifest records"
+      return 0
+    fi
+  done
+  # ... and every file it records, of the archives that were asked for, is there.
+  local prefix
+  for f in "$dir"/*.tar.zst*; do
+    [ -f "$f" ] || continue
+    name="$(basename "$f")"; prefix="${name%%.tar.zst*}.tar.zst"
+    while read -r name sum; do
+      case "$name" in
+        "$prefix"*) [ -f "$dir/$name" ] || { echo "$name, which the manifest records, was not downloaded"; return 0; } ;;
+      esac
+    done <<< "$recorded"
+  done
+}
+
 # Download the assets of a release published by the Slicer build workflow and
 # restore them under the build root.
 #
 #   restore-release <repository> <tag> [build|deps|all]
 #
 # `build` restores the source tree and the inner build tree, `deps` the
-# external projects, `all` both. The manifest, when present, is left in
-# <output>/restore so that the caller can read the recorded versions.
+# external projects, `all` both. The manifest is left in <output>/restore so
+# that the caller can read the recorded versions.
 cmd_restore_release() {
   local repo="${1:?restore-release: missing repository}"
   local tag="${2:?restore-release: missing tag}"
@@ -594,17 +666,37 @@ cmd_restore_release() {
     *) die "restore-release: unknown selection '$what'" ;;
   esac
 
-  log "Download $tag from $repo"
-  gh release download "$tag" -R "$repo" -D "$dest" --clobber "${patterns[@]}"
-  ls -la "$dest"
-  endlog
-
+  # The manifest is the record of a set of files that belong together: it
+  # names each archive, and each part of one, with its sha256. A platform
+  # publishes while others build against it (publish-release.sh: the manifest
+  # is removed first and uploaded last), so what is downloaded can be a mix of
+  # two builds, or lack the manifest. That is seen here, waited out, and
+  # downloaded again, rather than built against under the wrong commit.
   local manifest="$dest/manifest-${SLICER_PLATFORM}.json"
-  if [ -f "$manifest" ]; then
-    local root; root="$(cmd_manifest_get "$manifest" root)"
-    if [ -n "$root" ] && [ "$root" != "$SLICER_ROOT" ]; then
-      die "the build was produced at '$root' but this runner uses '$SLICER_ROOT'"
+  local attempt problem
+  for attempt in 1 2 3 4 5; do
+    problem=""
+    rm -rf "$dest"; mkdir -p "$dest"
+    log "Download $tag from $repo"
+    gh release download "$tag" -R "$repo" -D "$dest" --clobber "${patterns[@]}" \
+      || problem="the download failed"
+    ls -la "$dest"
+    endlog
+    if [ -z "$problem" ] && [ ! -f "$manifest" ]; then
+      problem="the release has no manifest-${SLICER_PLATFORM}.json"
     fi
+    [ -n "$problem" ] || problem="$(restore_check "$manifest" "$dest")"
+    [ -n "$problem" ] || break
+    if [ "$attempt" -lt 5 ]; then
+      info "$problem: is the platform being published? Trying again in $((attempt * 60)) s"
+      sleep $((attempt * 60))
+    fi
+  done
+  [ -z "$problem" ] || die "restore-release: $problem"
+
+  local root; root="$(cmd_manifest_get "$manifest" root)"
+  if [ -n "$root" ] && [ "$root" != "$SLICER_ROOT" ]; then
+    die "the build was produced at '$root' but this runner uses '$SLICER_ROOT'"
   fi
 
   # The external projects first: the inner build tree refers to them.
@@ -1241,6 +1333,7 @@ main() {
     extension-package) cmd_extension_package "$@" ;;
     extension-load) cmd_extension_load "$@" ;;
     manifest) cmd_manifest "$@" ;;
+    manifest-files) cmd_manifest_files "$@" ;;
     manifest-get) cmd_manifest_get "$@" ;;
     report) cmd_report "$@" ;;
     stage-summary) cmd_stage_summary "$@" ;;
