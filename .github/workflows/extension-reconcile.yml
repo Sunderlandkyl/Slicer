@@ -110,6 +110,8 @@ jobs:
           NIGHTLY_WORKFLOW: slicer-nightly-build.yml
           NIGHTLY_WEB_WORKFLOW: slicer-nightly-web.yml
           RETRY: ${{ inputs.retry || false }}
+          # What started the run, for its summary.
+          REASON: ${{ inputs.reason || (github.event_name == 'repository_dispatch' && 'a platform of Slicer was published') || github.event_name }}
           # One step per run only when there is a relay to start the next
           # one (.github/extension-webhook); otherwise the run waits for the
           # builds and goes down the chain itself.

@@ -591,6 +591,8 @@ def main():
     state = State(targets, extensions)
     # What an earlier pass started, for the same inputs, is not started again.
     running = {}    # run id: (extension, platforms, url)
+    # What this pass did, for its summary: what the name of a run cannot say.
+    did = {"started": [], "finished": [], "left": [], "site": []}
     for extension in extensions:
         for platform, attempt in ((earlier.get(extension.name) or {}).get("attempts") or {}).items():
             if not RETRY and platform in targets and attempt.get("key") == state.key(extension, platform):
@@ -630,6 +632,7 @@ def main():
         if going:
             foreign[extension.repository] = [r["id"] for r in going]
             log(f"{extension.name}: waiting for the builds already running ({', '.join(r['html_url'] for r in going)})")
+            did["left"].append(extension.name + " (" + ", ".join(f"[run]({r['html_url']})" for r in going) + ")")
 
     web_of = lambda c: json.dumps((c or {}).get("platforms", {}).get("web"), sort_keys=True)
     sites_seen = web_of(published) if env("FORCE_SITES") != "true" else ""
@@ -643,6 +646,8 @@ def main():
             status, _ = request(f"{API}/repos/{repository}/actions/workflows/{WEB_WORKFLOW}/dispatches",
                                 app.token(repository), "POST", {"ref": branch})
             log(f"{repository}: {'started' if status in (200, 204) else f'could not start (HTTP {status})'} {WEB_WORKFLOW} on {branch}")
+            if status in (200, 204):
+                did["site"].append(repository)
 
     started, again, checked_targets = 0, False, time.time()
     unstarted = {}  # (repository, platform): how many times its build could not be started
@@ -669,8 +674,10 @@ def main():
                     extension.attempts[platform]["conclusion"] = outcome
                     if built and package.get("tests"):
                         extension.attempts[platform]["tests"] = package["tests"]
-                    log(f"{extension.name} ({platform}): {'published' if built else body['conclusion']}"
-                        f"{', tests ' + package['tests'] if built and package.get('tests') else ''} {url}")
+                    outcome = ("published" if built else body["conclusion"]) + (
+                        ", tests " + package["tests"] if built and package.get("tests") else "")
+                    log(f"{extension.name} ({platform}): {outcome} {url}")
+                    did["finished"].append(f"[{extension.name} {platform}]({url}): {outcome}")
                 del running[run_id]
                 changed = True
         for extension in extensions:
@@ -736,6 +743,7 @@ def main():
                         extension.attempts[platform] = state.attempt(extension, platform)
             if run:
                 running[run[0]] = (extension, platforms, run[1])
+                did["started"].append(f"[{extension.name} {', '.join(platforms)}]({run[1]})")
                 for platform in platforms:
                     extension.attempts[platform].update(run=run[1], conclusion="running")
                     unstarted.pop((extension.repository, platform), None)
@@ -790,8 +798,16 @@ def main():
     if not again:
         start_sites(catalog)
 
-    lines = ["### Extensions", "", f"Builds started: {started}.", "",
-             "| Extension | " + " | ".join(targets) + " |", "|---|" + "---|" * len(targets)]
+    lines = ["### What this step did", ""]
+    if env("REASON"):
+        lines += [f"Woken by: {env('REASON')}", ""]
+    lines += [f"- **Started ({len(did['started'])}):** " + ("; ".join(did["started"]) or "nothing"),
+              "- **Finished since the step before:** " + ("; ".join(did["finished"]) or "nothing"),
+              "- **Site rebuilt:** " + (", ".join(sorted(set(did["site"]))) or "no")]
+    if did["left"]:
+        lines.append("- **Left alone, a build not started here is running:** " + "; ".join(did["left"]))
+    lines += ["", "### Where every extension stands", "",
+              "| Extension | " + " | ".join(targets) + " |", "|---|" + "---|" * len(targets)]
     for extension in sorted(extensions, key=lambda e: e.name):
         cells = []
         for platform in targets:
