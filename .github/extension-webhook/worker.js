@@ -96,7 +96,7 @@ function branchOf(repository, env) {
 // Why the reconciliation should run; null when the event changes nothing it
 // looks at. Kept short, and of letters GitHub chose: it becomes the name of
 // the run.
-export function reasonOf(event, payload, env) {
+function reasonOf(event, payload, env) {
   const repository = payload.repository || {};
   if (repository.full_name && repository.full_name === env.SLICER_REPOSITORY) {
     return null;
@@ -150,7 +150,7 @@ function base64url(bytes) {
   return btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export async function appJwt(appId, pem) {
+async function appJwt(appId, pem) {
   if (pem.includes("BEGIN RSA PRIVATE KEY")) {
     throw new Error("RELAY_APP_PRIVATE_KEY is PKCS#1; convert it: openssl pkcs8 -topk8 -nocrypt -in relay.pem");
   }
@@ -180,7 +180,7 @@ function github(path, token, init = {}) {
 // Starts the workflow with a token of the relay app's installation in the
 // Slicer repository, limited to that repository and to the Actions
 // permission; the HTTP status of the start, or of the step that failed.
-export async function dispatch(env, reason) {
+async function dispatch(env, reason) {
   const jwt = await appJwt(env.RELAY_APP_ID, env.RELAY_APP_PRIVATE_KEY);
   let response = await github(`/repos/${env.SLICER_REPOSITORY}/installation`, jwt);
   if (!response.ok) {
