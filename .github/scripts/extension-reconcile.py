@@ -534,8 +534,12 @@ def main():
 
     started, again, checked_targets = 0, False, time.time()
     unstarted = {}  # (repository, platform): how many times its build could not be started
+    # What is published may already differ from the catalog (a commit, a build
+    # that ended since the last pass): the catalog is made at once, not only
+    # when a build of this pass ends.
+    first = True
     while True:
-        changed = False
+        changed, first = first, False
         # The builds that finished: what they published is read again.
         for run_id, (extension, platforms, url) in list(running.items()):
             status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{run_id}", app.token(extension.repository))
