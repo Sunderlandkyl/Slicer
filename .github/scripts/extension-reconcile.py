@@ -581,7 +581,7 @@ def main():
             todo = []
         # One run per platform, so that no platform waits for another; one for
         # all the platforms of an extension whose workflow cannot be told which.
-        groups = {}
+        groups, retry_soon = {}, False
         for extension, platform in todo:
             groups.setdefault((extension.repository, None if extension.one_run else platform), (extension, []))[1].append(platform)
         for extension, platforms in groups.values():
@@ -603,6 +603,7 @@ def main():
                 running[run[0]] = (extension, platforms, run[1])
                 for platform in platforms:
                     extension.attempts[platform].update(run=run[1], conclusion="running")
+                    unstarted.pop((extension.repository, platform), None)
             else:
                 # Not started, so not dealt with: nothing will ever say that
                 # it ended. It is tried again, a few times in this pass, and
@@ -610,6 +611,7 @@ def main():
                 for platform in platforms:
                     extension.attempts.pop(platform, None)
                     unstarted[(extension.repository, platform)] = unstarted.get((extension.repository, platform), 0) + 1
+                    retry_soon = retry_soon or unstarted[(extension.repository, platform)] < 3
                 # Unless it did start, and only its run was not found: that
                 # one is waited for like any build not started here.
                 lost = [r["id"] for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in running]
@@ -626,8 +628,10 @@ def main():
             start_sites(catalog)
         if not running and not todo and not any(foreign.values()):
             break
-        if not WAIT:
+        if not WAIT and not retry_soon:
             # What was started tells, when it ends, that there is a next step.
+            # A build that could not be started tells nothing: the step stays
+            # to try it again, a few times.
             break
         if time.time() > DEADLINE + 600:
             again = True
