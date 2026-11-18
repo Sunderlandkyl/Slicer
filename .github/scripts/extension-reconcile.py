@@ -27,7 +27,8 @@ a failure converges on the same state.
      build changes what is current: what an Extensions Manager reads is always
      a consistent set.
   6. The sites that carry the web packages (NIGHTLY_WEB_WORKFLOW) are started
-     when the web part of the catalog changed and no web build is left.
+     each time the web part of the catalog changed: an extension is on a site
+     as soon as it is built, without waiting for the ones that depend on it.
 
 Environment: GH_TOKEN (of the workflow: the release of this repository, and
 starting itself), APP_ID and APP_PRIVATE_KEY (the app: starting the builds),
@@ -483,7 +484,7 @@ def main():
             foreign[extension.repository] = [r["id"] for r in going]
             log(f"{extension.name}: waiting for the builds already running ({', '.join(r['html_url'] for r in going)})")
 
-    web_of = lambda c: json.dumps([(c or {}).get("platforms", {}).get("web"), (c or {}).get("withheld", {}).get("web")], sort_keys=True)
+    web_of = lambda c: json.dumps((c or {}).get("platforms", {}).get("web"), sort_keys=True)
     sites_seen = web_of(published) if env("FORCE_SITES") != "true" else ""
 
     def start_sites(catalog):
@@ -564,10 +565,8 @@ def main():
             if not same(catalog, published):
                 upload("extensions-catalog.json", catalog)
                 published = catalog
-            web_busy = any("web" in platforms for _, platforms, _ in running.values()) \
-                or any(state.startable(e, "web") for e in extensions)
-            if not web_busy:
-                start_sites(catalog)
+            # The sites show each web package as soon as it is offered.
+            start_sites(catalog)
         if not running and not todo and not any(foreign.values()):
             break
         if time.time() > DEADLINE + 600:
