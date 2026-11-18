@@ -29,12 +29,13 @@
 //
 // Nothing is decided here beyond "something may have changed": the
 // reconciliation works out what to build from what is published. Many events
-// are one reason to look: a run is started only when none is waiting to
-// start. One that is running stays for as long as builds are going and keeps
-// itself informed; the one started behind it looks once more when it ends,
-// which covers whatever the first was told too late. So a burst of builds is
-// two runs, not one per build, and a missed event is caught by the backstop
-// schedule.
+// are one reason to look: a run is started only when none is running or
+// waiting to start. One that is running stays for as long as builds are
+// going, sees the end of each itself, and looks for commits to the
+// extensions and the builds they start; it needs no telling. What an event
+// arriving in its last seconds is about is followed by other events once it
+// has ended (a commit is followed by the end of its build), or is caught by
+// the backstop schedule. So a burst of builds is one run.
 //
 // A Cloudflare Worker (wrangler.toml); it uses nothing but fetch and WebCrypto,
 // so it runs on any similar runtime. Configuration:
@@ -93,7 +94,7 @@ export default {
     // Not 2xx when the start failed, so that GitHub lists the delivery as
     // failed, from where it can be delivered again.
     if (status === 208) {
-      return new Response(`${reason}: a run is waiting already\n`, { status: 200 });
+      return new Response(`${reason}: a run is going already\n`, { status: 200 });
     }
     return new Response(`${reason}: HTTP ${status}\n`, { status: status === 204 || status === 200 ? 200 : 502 });
   },
@@ -224,11 +225,11 @@ async function dispatch(env, reason) {
     return response.status;
   }
   const { token } = await response.json();
-  // A run that has not started yet will see what this event is about.
+  // A run that is going, or about to, sees what this event is about.
   response = await github(`/repos/${env.SLICER_REPOSITORY}/actions/workflows/${WORKFLOW}/runs?per_page=20`, token);
   if (response.ok) {
     const { workflow_runs: runs } = await response.json();
-    if ((runs || []).some((run) => run.status !== "completed" && run.status !== "in_progress")) {
+    if ((runs || []).some((run) => run.status !== "completed")) {
       return 208;
     }
   }

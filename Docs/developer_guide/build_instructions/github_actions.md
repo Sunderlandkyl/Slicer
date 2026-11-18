@@ -409,7 +409,7 @@ What wakes a run when none is going is the nightly, a schedule every six
 hours, a manual start, and the relay of the app's webhook (see below), which
 is what makes a commit to an extension reach what depends on it at once
 instead of at the next of the others. Many events are one reason to look: the
-relay starts a run only when none is waiting to start. Without the relay
+relay starts a run only when none is running or waiting. Without the relay
 everything works the same, later. An
 extension with several dependencies is started once all of them are current,
 not once per dependency. A build that fails is started once more, since
