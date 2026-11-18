@@ -77,6 +77,7 @@ RETRY = env("RETRY") == "true"
 # .github/extension-webhook), which has to be there.
 WAIT = env("WAIT") == "true"
 DEADLINE = STARTED + 60 * float(env("DEADLINE_MINUTES", "300"))
+NOT_PUBLISHED = "not published for this platform"
 # How many times the build of an extension is started for the same Slicer,
 # commit and dependencies, when it fails.
 MAX_TRIES = 2
@@ -147,11 +148,16 @@ def release_json(repository, *patterns):
     for pattern in patterns:
         arguments += ["-p", pattern]
     found = {}
-    for attempt in range(3):
+    for attempt in range(4):
         result = subprocess.run(["gh", *arguments], capture_output=True, text=True)
-        if result.returncode == 0 or "no assets" in result.stderr.lower() or "not found" in result.stderr.lower():
+        if result.returncode == 0 or "no assets" in result.stderr.lower() or "release not found" in result.stderr.lower():
             break
         time.sleep(5 * (attempt + 1))
+    else:
+        # Not "there is no such file": it could not be read. Nothing is
+        # decided, and nothing published, on what was not read: the pass
+        # stops, and the next one starts from what is published.
+        raise RuntimeError(f"could not read {', '.join(patterns)} of {repository}: {result.stderr.strip()[:300]}")
     for name in os.listdir(folder):
         try:
             with open(os.path.join(folder, name), encoding="utf8") as document:
@@ -251,6 +257,7 @@ class Extension:
         self.attempts = {}      # platform: {key, run, conclusion, date}, of this pass or an earlier one
         self.note = ""
         self.one_run = False    # its workflow takes no `platforms` input: one run builds every platform
+        self.known = set()      # the platforms it is known to have published
 
     def read_source(self, app):
         """The head of its branch, its name and what it depends on."""
@@ -276,15 +283,27 @@ class Extension:
 
     def read_published(self, platforms):
         """What it published for the platforms."""
-        files = release_json(self.repository, *[f"extension-{platform}.json" for platform in platforms])
+        names = {platform: f"extension-{platform}.json" for platform in platforms}
+        files = release_json(self.repository, *names.values())
+        # A description is replaced by removing it and uploading the new one:
+        # in between it is not there, which does not mean that the platform
+        # was never published. One that was there before is looked for again.
+        for _ in range(4):
+            missing = [p for p in platforms if p in self.known and names[p] not in files]
+            if not missing:
+                break
+            time.sleep(4)
+            files.update(release_json(self.repository, *[names[p] for p in missing]))
         for platform in platforms:
-            described = files.get(f"extension-{platform}.json")
+            described = files.get(names[platform])
             if described and isinstance(described.get("package"), dict):
                 self.packages[platform] = described["package"]
+                self.known.add(platform)
                 if platform == "web":
                     self.web = described.get("web")
             else:
                 self.packages.pop(platform, None)
+                self.known.discard(platform)
 
     def package(self, platform):
         return self.packages.get(platform)
@@ -316,7 +335,7 @@ class State:
         package, target = extension.package(platform), self.targets.get(platform)
         reason = ""
         if not package:
-            reason = "not published for this platform"
+            reason = NOT_PUBLISHED
         elif package.get("slicer_commit") != target:
             reason = f"built against Slicer {str(package.get('slicer_commit'))[:10]}, not {str(target)[:10]}"
         elif heads and extension.head and package.get("revision") != extension.head:
@@ -388,6 +407,22 @@ def runs_in_progress(extension, token):
     # commit to the branch, which the extension starts itself.
     return [r for r in body["workflow_runs"]
             if r["status"] != "completed" and r["event"] in ("workflow_dispatch", "push")]
+
+
+def push_failures(extension, token):
+    """{platform: run url} of the platforms that failed in the build of the commit at the head of the branch."""
+    status, body = request(f"{API}/repos/{extension.repository}/actions/workflows/{WORKFLOW}/runs"
+                           f"?head_sha={extension.head}&event=push&status=completed&per_page=5", token)
+    runs = [r for r in (body or {}).get("workflow_runs", []) if r.get("conclusion") == "failure"] if status == 200 else []
+    if not runs:
+        return {}
+    status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{runs[0]['id']}/jobs?per_page=100", token)
+    failed = {}
+    for job in (body or {}).get("jobs", []) if status == 200 else []:
+        match = re.search(r"(?:^|/ )(linux|macos|windows|web)$", job.get("name") or "")
+        if match and job.get("conclusion") == "failure":
+            failed[match.group(1)] = runs[0]["html_url"]
+    return failed
 
 
 def dispatch(extension, app, platforms, claimed):
@@ -495,13 +530,25 @@ def main():
     base = f"https://github.com/{SLICER}/releases/download/{TAG}"
     app = App(env("APP_ID"), env("APP_PRIVATE_KEY"))
 
+    # The catalog of the pass before: what it offered, and what it started.
+    published = release_json(SLICER, "extensions-catalog.json").get("extensions-catalog.json")
+    earlier = (published or {}).get("extensions") or {}
+    # The Slicer commit last seen for each platform.
+    seen = {p: v.get("slicer_commit") for p, v in ((published or {}).get("platforms") or {}).items() if v.get("slicer_commit")}
+
     def targets_now():
         targets = {}
         files = release_json(SLICER, "manifest-*.json", "slicerweb-manifest.json")
         for platform in PLATFORMS:
             manifest = files.get("slicerweb-manifest.json" if platform == "web" else f"manifest-{platform}.json")
             if manifest and manifest.get("commit"):
-                targets[platform] = manifest["commit"]
+                targets[platform] = seen[platform] = manifest["commit"]
+            elif platform in seen:
+                # A platform of Slicer takes its manifest away while it
+                # replaces its files, for minutes: the platform is not gone,
+                # and its extensions are not to be dropped from the catalog.
+                # It stays as it was until its manifest is back.
+                targets[platform] = seen[platform]
         return targets
 
     targets = targets_now()
@@ -521,6 +568,10 @@ def main():
     log(f"Extensions: {', '.join(e.repository for e in extensions) or 'none'}; sites: {', '.join(s for s, _ in sites) or 'none'}")
     for extension in extensions:
         extension.read_source(app)
+        # Where the pass before found a package of it.
+        extension.known = {p for p in PLATFORMS
+                           if extension.name in ((published or {}).get("platforms", {}).get(p, {}).get("extensions") or {})
+                           or ((published or {}).get("withheld", {}).get(p, {}).get(extension.name) or NOT_PUBLISHED) != NOT_PUBLISHED}
         extension.read_published(targets)
         status = request(f"{API}/repos/{extension.repository}/contents/.github/workflows/{WORKFLOW}?ref={extension.ref}",
                          app.token(extension.repository))[0]
@@ -537,8 +588,6 @@ def main():
         if not same(registry, release_json(SLICER, "extension-repositories.json").get("extension-repositories.json")):
             upload("extension-repositories.json", registry)
 
-    published = release_json(SLICER, "extensions-catalog.json").get("extensions-catalog.json")
-    earlier = (published or {}).get("extensions") or {}
     state = State(targets, extensions)
     # What an earlier pass started, for the same inputs, is not started again.
     running = {}    # run id: (extension, platforms, url)
@@ -556,6 +605,16 @@ def main():
                         continue  # never started: started again
                     running.setdefault(int(run), (extension, [], attempt["run"]))[1].append(platform)
                 extension.attempts[platform] = attempt
+    # A commit to an extension is built by the extension itself. When that
+    # build failed for a platform, it is the first try of that platform: one
+    # more follows, not two.
+    for extension in extensions:
+        waiting = [p for p in targets if state.reason(extension, p) and p not in extension.attempts]
+        if waiting and extension.head:
+            for platform, run in push_failures(extension, app.token(extension.repository)).items():
+                if platform in waiting:
+                    extension.attempts[platform] = dict(state.attempt(extension, platform), conclusion="failure", run=run)
+                    log(f"{extension.name} ({platform}): the build of its commit failed ({run}); one more try")
     # Builds that are going otherwise (of a commit to the extension, which it
     # builds and publishes itself; started by hand; or by a pass that was
     # cancelled) are left to finish: nothing is started for that extension
@@ -671,9 +730,9 @@ def main():
                 # by the next pass, whatever starts it.
                 for platform in platforms:
                     # As it was before this start, which did not happen.
-                    earlier = dict(extension.attempts.pop(platform, None) or {})
-                    if earlier.get("tries", 1) > 1:
-                        extension.attempts[platform] = dict(earlier, tries=earlier["tries"] - 1, conclusion="failure")
+                    before = dict(extension.attempts.pop(platform, None) or {})
+                    if before.get("tries", 1) > 1:
+                        extension.attempts[platform] = dict(before, tries=before["tries"] - 1, conclusion="failure")
                     unstarted[(extension.repository, platform)] = unstarted.get((extension.repository, platform), 0) + 1
                     retry_soon = retry_soon or unstarted[(extension.repository, platform)] < 3
                 # Unless it did start, and only its run was not found: that

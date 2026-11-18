@@ -1022,6 +1022,29 @@ ext_deps_dir() { echo "${SLICER_EXT_DEPS_DIR:-$SLICER_ROOT/ext-deps}"; }
 # extension-load loads their modules with it. What it was built with is left in
 # <output>/extension-built-with.json, to be published with the package.
 cmd_extension_dependencies() {
+  # A dependency that is being published again describes, for a moment, a
+  # build tree that is not the one there: everything is then resolved and
+  # downloaded again, a few times. A loop around one attempt, which says that
+  # it has to be made again by leaving a file: it starts by clearing what the
+  # one before it left, which it could not do from inside it.
+  local again; again="$(bash_path "$SLICER_OUTPUT_DIR")/extension-dependencies-again"
+  mkdir -p "$(dirname "$again")"
+  local tries
+  for tries in 1 2 3 4; do
+    rm -f "$again"
+    extension_dependencies_once "$again"
+    [ -f "$again" ] || return 0
+    [ "$tries" -lt 4 ] || break
+    info "$(cat "$again"): is it being published? Trying again in $((tries * 60)) s"
+    sleep $((tries * 60))
+  done
+  die "$(cat "$again")"
+}
+
+# One attempt of extension-dependencies; leaves the reason in the file given
+# when it has to be made again.
+extension_dependencies_once() {
+  local again="$1"
   local src; src="$(ext_checkout_dir)"
   local root; root="$(ext_deps_dir)"
   local broot; broot="$(bash_path "$root")"
@@ -1077,16 +1100,9 @@ PY
         got="$(sha256 < "$broot/download/$file" | cut -d' ' -f1)"
         if [ -n "$sum" ] && [ "$got" != "$sum" ]; then
           endlog
-          # The dependency is being published again: what it describes and
-          # what is there are, for a moment, of two builds. Resolved again.
-          local tries="${SLICER_EXT_DEPS_ATTEMPT:-1}"
-          if [ "$tries" -lt 4 ]; then
-            info "$file of $name is not the file its description records: is it being published? Trying again in $((tries * 60)) s"
-            sleep $((tries * 60))
-            SLICER_EXT_DEPS_ATTEMPT=$((tries + 1)) cmd_extension_dependencies
-            return
-          fi
-          die "$file of $name is not the file its description records (sha256 $got, expected $sum)"
+          # What it describes and what is there are of two builds.
+          echo "$file of $name is not the file its description records (sha256 $got, expected $sum)" > "$again"
+          return 0
         fi
       done
       cmd_unpack "$root/download/$first"

@@ -45,9 +45,11 @@ jobs:
             preview="false"
 
           elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            slicer_repository=${{ github.event.inputs.slicer_repository }}
-            slicer_ref=${{ github.event.inputs.slicer_ref }}
-            preview=${{ github.event.inputs.preview }}
+            # From the environment, not written into this script: what is
+            # typed into an input would otherwise be run as part of it.
+            slicer_repository="$INPUT_SLICER_REPOSITORY"
+            slicer_ref="$INPUT_SLICER_REF"
+            preview="$INPUT_PREVIEW"
 
           else
             echo "::error ::Unsupported EVENT_NAME [$EVENT_NAME]"
@@ -64,6 +66,9 @@ jobs:
           echo "preview=$preview" >> $GITHUB_OUTPUT
         env:
           EVENT_NAME: ${{ github.event_name }}
+          INPUT_SLICER_REPOSITORY: ${{ github.event.inputs.slicer_repository }}
+          INPUT_SLICER_REF: ${{ github.event.inputs.slicer_ref }}
+          INPUT_PREVIEW: ${{ github.event.inputs.preview }}
 
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
