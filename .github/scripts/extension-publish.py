@@ -25,12 +25,18 @@ repository, commit = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
 def gh(*args, check=True):
     return subprocess.run(["gh", *args], check=check, capture_output=True, text=True)
 
-# Not over a newer commit: the branch moved on while this was built,
-# and the build of its head publishes instead.
-head = gh("api", f"repos/{repository}/commits/{os.environ['REF']}", "--jq", ".sha", check=False).stdout.strip()
-if head and head != commit:
-    print(f"::notice::{os.environ['REF']} is at {head[:10]} now, not {commit[:10]}; not published")
-    sys.exit(0)
+def newer_is_published(old):
+    """Whether the package a platform has is of a commit after this one.
+
+    Not whether the branch has moved on since this build started: what it built
+    is still newer than a package of an earlier commit, or than none, and is
+    published; the build of the head replaces it in turn."""
+    revision = (old or {}).get("revision")
+    if not revision or revision == commit:
+        return False
+    # "ahead": what is published has commits this build does not.
+    status = gh("api", f"repos/{repository}/compare/{commit}...{revision}", "--jq", ".status", check=False).stdout.strip()
+    return status == "ahead"
 
 def sha256(path):
     digest = hashlib.sha256()
@@ -63,6 +69,7 @@ release = tempfile.mkdtemp()
 gh("release", "download", tag, "-p", "extension-*.json", "-D", release, "--clobber", check=False)
 
 date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+done = []
 for description in descriptions:
     package = json.load(open(description, encoding="utf8"))
     platform = package["platform"]
@@ -89,6 +96,11 @@ for description in descriptions:
     path = os.path.join(release, f"extension-{platform}.json")
     described = json.load(open(path, encoding="utf8")) if os.path.isfile(path) else {}
     old, previous = described.get("package"), described.get("previous")
+    if newer_is_published(old):
+        print(f"::notice::{platform}: the release holds the package of a newer commit "
+              f"({str(old.get('revision'))[:10]}, this is {commit[:10]}); not published")
+        continue
+    done.append(platform)
     # The package the platform had. Built against another Slicer, it
     # is kept as the previous one, for the Slicer builds that are
     # still offered it, in place of the one before it; without its
@@ -141,4 +153,4 @@ notes = (f"Packages of {name}: what each was built from, and against which Slice
          "the Extensions Managers read.")
 gh("release", "edit", tag, "--notes", notes, "--latest=false", "--prerelease", check=False)
 with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
-    f.write(f"Published {', '.join(json.load(open(d))['platform'] for d in descriptions)} to the release {tag}.\n")
+    f.write(f"Published {', '.join(done) or 'nothing'} to the release {tag}.\n")
