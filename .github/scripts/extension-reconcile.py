@@ -415,6 +415,17 @@ def runs_in_progress(extension, token):
             if r["status"] != "completed" and r["event"] in ("workflow_dispatch", "push")]
 
 
+def run_platforms(extension, run_id, token):
+    """The platforms a run builds, from the names of its jobs; None while they are not known."""
+    status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{run_id}/jobs?per_page=100", token)
+    platforms = set()
+    for job in (body or {}).get("jobs", []) if status == 200 else []:
+        match = re.search(r"(?:^|/ )(linux|macos|windows|web)$", job.get("name") or "")
+        if match and job.get("conclusion") != "skipped":
+            platforms.add(match.group(1))
+    return platforms or None
+
+
 def push_failures(extension, token):
     """{platform: run url} of the platforms that failed in the build of the commit at the head of the branch."""
     status, body = request(f"{API}/repos/{extension.repository}/actions/workflows/{WORKFLOW}/runs"
@@ -629,14 +640,21 @@ def main():
                     log(f"{extension.name} ({platform}): the build of its commit failed ({run}); one more try")
     # Builds that are going otherwise (of a commit to the extension, which it
     # builds and publishes itself; started by hand; or by a pass that was
-    # cancelled) are left to finish: nothing is started for that extension
-    # meanwhile, since which platforms they build is not known. What depends on
-    # it is started platform by platform, as each is published.
-    foreign = {}
+    # cancelled) are left to finish: nothing is started meanwhile for the
+    # platforms they build, which their jobs say. The other platforms of the
+    # extension are not held back, and what depends on it is started platform
+    # by platform, as each is published.
+    foreign = {}    # repository: {run id: the platforms it builds, None while not known}
+
+    def held(extension, platform):
+        """Whether a build not started here is building that platform of the extension."""
+        return any(platforms is None or platform in platforms
+                   for platforms in foreign.get(extension.repository, {}).values())
     for extension in extensions:
         going = [r for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in running]
         if going:
-            foreign[extension.repository] = [r["id"] for r in going]
+            foreign[extension.repository] = {r["id"]: run_platforms(extension, r["id"], app.token(extension.repository))
+                                             for r in going}
             log(f"{extension.name}: waiting for the builds already running ({', '.join(r['html_url'] for r in going)})")
             did["left"].append(extension.name + " (" + ", ".join(f"[run]({r['html_url']})" for r in going) + ")")
 
@@ -693,10 +711,13 @@ def main():
                 before = json.dumps(extension.packages, sort_keys=True)
                 extension.read_published(targets)
                 changed = changed or json.dumps(extension.packages, sort_keys=True) != before
-            for run_id in list(foreign.get(extension.repository, [])):
+            for run_id in list(foreign.get(extension.repository, {})):
                 status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{run_id}", app.token(extension.repository))
+                if status == 200 and body["status"] != "completed" and foreign[extension.repository][run_id] is None:
+                    # Its jobs had not been made yet: which platforms it builds.
+                    foreign[extension.repository][run_id] = run_platforms(extension, run_id, app.token(extension.repository))
                 if status != 200 or body["status"] == "completed":
-                    foreign[extension.repository].remove(run_id)
+                    del foreign[extension.repository][run_id]
                     extension.read_published(targets)
                     changed = True
         # A nightly published meanwhile, or one more platform of it, changes
@@ -715,10 +736,11 @@ def main():
                     changed = True
                 # The build of that commit, which the extension starts itself,
                 # or one started by hand: left to finish, and read as it goes.
-                known = set(running) | set(foreign.get(extension.repository, []))
+                known = set(running) | set(foreign.get(extension.repository, {}))
                 going = [r for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in known]
                 if going:
-                    foreign.setdefault(extension.repository, []).extend(r["id"] for r in going)
+                    foreign.setdefault(extension.repository, {}).update(
+                        {r["id"]: run_platforms(extension, r["id"], app.token(extension.repository)) for r in going})
                     log(f"{extension.name}: a build not started here is running ({', '.join(r['html_url'] for r in going)})")
                     did["left"].append(extension.name + " (" + ", ".join(f"[run]({r['html_url']})" for r in going) + ")")
             latest = targets_now()
@@ -730,7 +752,7 @@ def main():
         state = State(targets, extensions)
         busy = {(e.repository, p) for e, platforms, _ in running.values() for p in platforms}
         todo = [(e, p) for e in extensions for p in targets
-                if state.startable(e, p) and (e.repository, p) not in busy and not foreign.get(e.repository)
+                if state.startable(e, p) and (e.repository, p) not in busy and not held(e, p)
                 and unstarted.get((e.repository, p), 0) < 3]
         if todo and time.time() > DEADLINE:
             again = True
@@ -778,7 +800,7 @@ def main():
                 # one is waited for like any build not started here.
                 lost = [r["id"] for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in running]
                 if lost:
-                    foreign[extension.repository] = lost
+                    foreign[extension.repository] = {run_id: None for run_id in lost}
             time.sleep(1)
         if changed:
             # What is consistent now is offered now: a platform does not wait for the others.
