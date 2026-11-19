@@ -29,7 +29,9 @@ set -euo pipefail
 detect_platform() {
   case "$(uname -s)" in
     Linux*) echo "linux" ;;
-    Darwin*) echo "macos" ;;
+    # Apple silicon is a platform of its own: nothing built for one
+    # architecture is usable by the other.
+    Darwin*) if [ "$(uname -m)" = "arm64" ]; then echo "macos-arm64"; else echo "macos"; fi ;;
     MINGW*|MSYS*|CYGWIN*|Windows*) echo "windows" ;;
     *) echo "unknown" ;;
   esac
@@ -38,7 +40,7 @@ detect_platform() {
 default_root() {
   case "$1" in
     linux) echo "/home/runner/S" ;;
-    macos) echo "/Users/runner/S" ;;
+    macos|macos-arm64) echo "/Users/runner/S" ;;
     windows) echo "${SLICER_WINDOWS_ROOT:-C:/S}" ;;
     *) echo "$HOME/S" ;;
   esac
@@ -287,6 +289,12 @@ configure_args() {
              "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${SLICER_MACOS_DEPLOYMENT_TARGET:-14.0}"
              -DCMAKE_OSX_ARCHITECTURES:STRING=x86_64)
       ;;
+    macos-arm64)
+      args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
+             -DCMAKE_C_COMPILER:FILEPATH=/usr/bin/cc -DCMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++
+             "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${SLICER_MACOS_DEPLOYMENT_TARGET:-14.0}"
+             -DCMAKE_OSX_ARCHITECTURES:STRING=arm64)
+      ;;
     *)
       args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
              -DCMAKE_C_COMPILER:FILEPATH=/usr/bin/cc -DCMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++)
@@ -453,7 +461,7 @@ cmd_package() {
 # install names were not rewritten builds, packages and uploads cleanly, and
 # only fails on a user's machine with a dyld "Library not loaded" error.
 cmd_verify_package() {
-  if [ "$SLICER_PLATFORM" != "macos" ]; then
+  if [ "${SLICER_PLATFORM%%-*}" != "macos" ]; then
     info "verify-package: nothing to check on $SLICER_PLATFORM"
     return 0
   fi
@@ -859,7 +867,7 @@ cmd_install_system_packages() {
         ${available[@]+"${available[@]}"}
       endlog
       ;;
-    macos)
+    macos|macos-arm64)
       log "Install system packages"
       brew install ninja zstd >/dev/null || brew upgrade ninja zstd || true
       endlog
