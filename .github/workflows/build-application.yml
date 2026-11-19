@@ -90,7 +90,7 @@ on:
           Qt version of the macos-arm64 platform, which cannot use Qt 5: Qt
           provides no arm64 build of it
         type: string
-        default: "6.11.1"
+        default: "6.11.2"
       deps-key-version:
         description: "Bump to force a rebuild of the prerequisites of every platform"
         type: string

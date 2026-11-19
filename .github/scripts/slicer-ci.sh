@@ -57,6 +57,14 @@ SLICER_OUTPUT_DIR="${SLICER_OUTPUT_DIR:-$SLICER_ROOT/out}"
 # CMakeLists.txt from the environment, so it has to be set before the tree is
 # configured for the first time.
 export ExternalData_OBJECT_STORES="${ExternalData_OBJECT_STORES:-$SLICER_ROOT/ExternalData}"
+# On Apple silicon, Homebrew (/opt/homebrew) is among the prefixes CMake
+# searches by default, so a Qt installed there would provide the Qt tools
+# (qmake, moc, ...) in place of those of the Qt being built with. Set in the
+# environment, so that it also applies to every external project (CTK, ...),
+# as the Slicer factory does: https://github.com/Slicer/Slicer/issues/9484
+if [ "$SLICER_PLATFORM" = "macos-arm64" ] && [ -n "${SLICER_QT_DIR:-}" ]; then
+  export CMAKE_PREFIX_PATH="$SLICER_QT_DIR"
+fi
 nproc_count() {
   if [ -n "${NUMBER_OF_PROCESSORS:-}" ]; then echo "$NUMBER_OF_PROCESSORS"
   elif command -v nproc >/dev/null 2>&1; then nproc
