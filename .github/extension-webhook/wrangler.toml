@@ -12,3 +12,6 @@ RELAY_APP_ID = ""
 SLICER_REPOSITORY = "Slicer/Slicer"
 SLICER_REF = "main"
 REFS = ""
+# The release whose wheels are handed to the pages that install extensions
+# (GET /gh/...); nightly when empty.
+RELEASE_TAG = ""

@@ -370,12 +370,27 @@ It then publishes `extensions-catalog.json` to the nightly release:
 ```json
 {"platforms": {"linux": {"slicer_commit": "...", "extensions": {
      "SlicerIGT": {"repository": "...", "revision": "...", "file": "...", "url": "...",
-                   "sha256": "...", "depends": ["SlicerIGSIO"], "tests": "passed"}}},
+                   "sha256": "...", "depends": ["SlicerIGSIO"], "tests": "passed", "tier": 5}}},
                "web": {"...": "..."}},
  "withheld": {"linux": {"SlicerHeart": "SlicerIGT is not current (...)"}},
- "extensions": {"SlicerIGT": {"repository": "...", "branch": "...", "head": "...",
-                              "attempt": {"run": "...", "conclusion": "success"}}}}
+ "extensions": {"SlicerIGT": {"repository": "...", "branch": "...", "head": "...", "tier": 5,
+                              "attempts": {"linux": {"run": "...", "conclusion": "success"}}}}}
 ```
+
+`tier` says whether the extension is reviewed. Installing the Slicer nightly
+app is all it takes for a repository to be built and listed, so being listed
+says nothing about it. An extension described in the
+[Slicer ExtensionsIndex](https://github.com/Slicer/ExtensionsIndex) has the
+tier given there (1 to 5), provided the repository that builds it is the one
+its description names (`scm_url`): the tier is that of the repository, and a
+repository that takes the name of a reviewed extension does not take its
+tier. Every other extension is of tier 0, not reviewed, and it is for what
+reads the catalog to decide what to do with those: the SlicerWeb application
+offers them only to a user who asks for them. A fork is not the repository it
+copies; the forks an organization builds its extensions from are named in the
+`SLICER_EXTENSION_TRUSTED_FORKS` repository variable
+(`{"fork": "repository"}`), and the catalog then says which repository each
+stands for (`reviewed_as`).
 
 This one file is what an Extensions Manager reads: per platform, the
 extensions built against the Slicer commit of the nightly and against the
@@ -633,6 +648,15 @@ To set the relay up:
 
 GitHub lists each delivery and its answer in the nightly app's *Advanced*
 settings, and can deliver one again from there.
+
+The same Worker hands the web packages of the extensions to the pages that
+install them: `GET /gh/<owner>/<repository>/nightly/<file>.whl`. A page cannot
+download a file of a GitHub release, which answers without the header that
+lets another site read it, so a site offering extensions would otherwise have
+to carry a copy of each, the unreviewed ones included. Only the wheels of the
+nightly release of the repositories listed in `extension-repositories.json`
+are handed out. The page checks what it receives against the hash the catalog
+gives, so the Worker is trusted with nothing but being there.
 
 To try this on forks, create a private GitHub App with these permissions,
 install it on the fork of the extension, and set its ID and private key as the

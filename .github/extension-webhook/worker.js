@@ -37,6 +37,17 @@
 // has ended (a commit is followed by the end of its build), or is caught by
 // the backstop schedule. So a burst of builds is one run.
 //
+// It also hands the web packages of the extensions to the pages that install
+// them (GET /gh/<owner>/<repository>/<tag>/<file>.whl): a page cannot download
+// a file of a GitHub release, which answers without the header that lets
+// another site read it, so a site that offers extensions would have to carry
+// a copy of each. Only the wheels of the release RELEASE_TAG of the
+// repositories that build extensions (extension-repositories.json of the
+// Slicer release) are handed out, so that this is not a relay for anything
+// else. What a wheel contains is not looked at here: the page checks it
+// against the hash the extensions catalog gives. This part needs none of the
+// secrets.
+//
 // A Cloudflare Worker (wrangler.toml); it uses nothing but fetch and WebCrypto,
 // so it runs on any similar runtime. Configuration:
 //   secrets  WEBHOOK_SECRET         the webhook secret of the Slicer nightly app
@@ -50,6 +61,10 @@
 //                                   the branches built instead of the default
 //                                   one, as SLICER_EXTENSION_REFS of the Slicer
 //                                   repository
+//            RELEASE_TAG            optional (nightly): the release of the Slicer
+//                                   repository that lists the extension
+//                                   repositories, and of each of those, whose
+//                                   wheels are handed out
 
 const API = "https://api.github.com";
 const WORKFLOW = "extension-reconcile.yml";
@@ -58,10 +73,23 @@ const BUILD_WORKFLOW = "slicer-nightly-build.yml";
 // names it: "<calling job> / <platform>".
 const PLATFORM_JOB = /(?:^|\/ )(linux|macos|windows|web)$/;
 const encoder = new TextEncoder();
+// What a page of any site may read of the answers to the requests for a wheel.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+  "Access-Control-Expose-Headers": "Content-Length",
+};
+const WHEEL = /^\/gh\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.+-]+\.whl)$/;
+// The repositories that build extensions, as last read, and when.
+let registry = { repositories: null, read: 0, from: "" };
 
 export default {
   async fetch(request, env) {
     if (request.method !== "POST") {
+      const path = new URL(request.url).pathname;
+      if (path.startsWith("/gh/")) {
+        return wheel(request, path, env);
+      }
       return new Response("Slicer extension webhook\n", { status: 200 });
     }
     const body = await request.text();
@@ -99,6 +127,73 @@ export default {
     return new Response(`${reason}: HTTP ${status}\n`, { status: status === 204 || status === 200 ? 200 : 502 });
   },
 };
+
+// The wheel of an extension, for a page to read: see the top of the file.
+async function wheel(request, path, env) {
+  const refuse = (status, text) => new Response(text + "\n", { status, headers: CORS });
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: { ...CORS, "Access-Control-Max-Age": "86400" } });
+  }
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return refuse(405, "GET only");
+  }
+  const match = WHEEL.exec(path);
+  if (!match) {
+    return refuse(404, "not the address of a wheel: /gh/<owner>/<repository>/<tag>/<file>.whl");
+  }
+  const [, owner, name, tag, file] = match;
+  if (!env.SLICER_REPOSITORY) {
+    return refuse(500, "not configured: SLICER_REPOSITORY missing");
+  }
+  const release = env.RELEASE_TAG || "nightly";
+  if (tag !== release) {
+    return refuse(403, `only the wheels of the release ${release}`);
+  }
+  let repositories;
+  try {
+    repositories = await extensionRepositories(env.SLICER_REPOSITORY, release);
+  } catch (error) {
+    return refuse(502, `the list of the extension repositories could not be read: ${error}`);
+  }
+  if (!repositories.includes(`${owner}/${name}`.toLowerCase())) {
+    return refuse(403, `${owner}/${name} is not a repository that builds an extension for ${env.SLICER_REPOSITORY}`);
+  }
+  const asset = await fetch(`https://github.com/${owner}/${name}/releases/download/${tag}/${file}`, {
+    method: request.method,
+    headers: { "User-Agent": "slicer-extension-webhook" },
+    redirect: "follow",
+  });
+  if (!asset.ok) {
+    return refuse(asset.status === 404 ? 404 : 502, `${owner}/${name}: ${file}: HTTP ${asset.status}`);
+  }
+  const headers = new Headers(CORS);
+  headers.set("Content-Type", "application/octet-stream");
+  headers.set("X-Content-Type-Options", "nosniff");
+  // The file of a name is replaced by the next build: not kept for long.
+  headers.set("Cache-Control", "public, max-age=300");
+  for (const kept of ["Content-Length", "ETag", "Last-Modified"]) {
+    if (asset.headers.get(kept)) headers.set(kept, asset.headers.get(kept));
+  }
+  return new Response(asset.body, { status: 200, headers });
+}
+
+// owner/name, in lower case, of the repositories that build extensions: read
+// again after a minute, and what was read before stands when that fails.
+async function extensionRepositories(slicer, release) {
+  const from = `https://github.com/${slicer}/releases/download/${release}/extension-repositories.json`;
+  if (registry.repositories && registry.from === from && Date.now() - registry.read < 60000) {
+    return registry.repositories;
+  }
+  try {
+    const response = await fetch(from, { headers: { "User-Agent": "slicer-extension-webhook" }, redirect: "follow" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const listed = (await response.json()).repositories || [];
+    registry = { repositories: listed.map((r) => String(r.repository || "").toLowerCase()).filter(Boolean), read: Date.now(), from };
+  } catch (error) {
+    if (!registry.repositories || registry.from !== from) throw error;
+  }
+  return registry.repositories;
+}
 
 // The branch an extension repository is built from.
 function branchOf(repository, env) {

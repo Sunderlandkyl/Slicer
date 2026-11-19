@@ -88,6 +88,15 @@ LOOK_SECONDS = float(env("LOOK_SECONDS", "90"))
 # commit and dependencies, when it fails.
 MAX_TRIES = 2
 REFS = json.loads(env("REFS") or "{}")
+# Where the reviewed extensions are described: the Slicer ExtensionsIndex, one
+# <Name>.json each, which names the repository of the extension (scm_url) and
+# its tier (1 to 5). An extension that is not there, or that another
+# repository builds than the one named there, is of tier 0: not reviewed.
+EXTENSIONS_INDEX = env("EXTENSIONS_INDEX") or "https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main"
+# {"fork": "repository"}: a fork that stands for the repository it is a fork
+# of, for its tier. For the forks an organization builds its extensions from;
+# nothing else makes a fork as trusted as what it copies.
+TRUSTED_FORKS = {k.lower(): v for k, v in json.loads(env("TRUSTED_FORKS") or "{}").items()}
 
 
 def now():
@@ -133,6 +142,34 @@ def request(url, token=None, method="GET", data=None, attempts=4, raw=False):
         return status, json.loads(text) if text else None
     except ValueError:
         return status, None
+
+
+def repository_of(url):
+    """owner/name, in lower case, of the address of a GitHub repository; "" when it is not one."""
+    match = re.match(r"^(?:https?://|git://|git@)(?:www\.)?github\.com[:/]+([^/\s]+)/([^/\s]+?)(?:\.git)?/?$",
+                     (url or "").strip(), re.I)
+    return f"{match.group(1)}/{match.group(2)}".lower() if match else ""
+
+
+def tier_of(name, repository, described):
+    """(tier, the repository it is reviewed as) of an extension, from its description in the ExtensionsIndex.
+
+    The tier is that of the repository, not of the name: a repository that
+    takes the name of a reviewed extension does not take its tier.
+    """
+    reviewed = repository_of((described or {}).get("scm_url"))
+    if not reviewed:
+        return 0, ""
+    built = repository.lower()
+    stands_for = TRUSTED_FORKS.get(built, "").lower()
+    if reviewed not in (built, stands_for):
+        return 0, ""
+    try:
+        tier = int(described.get("tier", 1))
+    except (TypeError, ValueError):
+        tier = 1
+    # What is in the index is of tier 1 at least.
+    return max(tier, 1), ("" if reviewed == built else reviewed)
 
 
 def public_json(url):
@@ -260,6 +297,8 @@ class Extension:
         self.depends = []       # EXTENSION_DEPENDS, at the head
         self.packages = {}      # platform: "package" of its extension-<platform>.json
         self.web = None         # its entry of SlicerWeb's extension index
+        self.tier = 0           # of the ExtensionsIndex (1 to 5); 0: not reviewed
+        self.reviewed_as = ""   # the repository it is a trusted fork of, when its tier is that one's
         self.attempts = {}      # platform: {key, run, conclusion, date}, of this pass or an earlier one
         self.note = ""
         self.one_run = False    # its workflow takes no `platforms` input: one run builds every platform
@@ -286,6 +325,20 @@ class Extension:
         match = re.search(r"set\s*\(\s*EXTENSION_DEPENDS\s+([^)]*)\)", text, re.I)
         names = [n.strip('"') for n in re.split(r"[\s;]+", match.group(1))] if match else []
         self.depends = [n for n in names if n and n != "NA"]
+
+    def read_tier(self, earlier):
+        """Its tier. When the ExtensionsIndex cannot be read, the tier it had, in the catalog of the pass before."""
+        status, described = request(f"{EXTENSIONS_INDEX}/{self.name}.json")
+        if status == 200 and isinstance(described, dict):
+            self.tier, self.reviewed_as = tier_of(self.name, self.repository, described)
+        elif status == 404:
+            self.tier, self.reviewed_as = 0, ""
+        else:
+            before = earlier.get(self.name) or {}
+            same_repository = before.get("repository") == self.repository
+            self.tier = int(before.get("tier") or 0) if same_repository else 0
+            self.reviewed_as = (before.get("reviewed_as") or "") if same_repository else ""
+            log(f"::warning::{self.name}: the ExtensionsIndex could not be read ({status}); tier {self.tier}, as before")
 
     def read_published(self, platforms):
         """What it published for the platforms."""
@@ -501,6 +554,7 @@ def catalog_of(state):
                 "file": package["file"], "url": f"{base}/{package['file']}", "sha256": package.get("sha256", ""),
                 "depends": sorted(n for n in (package.get("built_with") or {}) if n in state.by_name),
                 "tests": package.get("tests", ""),
+                "tier": extension.tier,
             }
             if package.get("icon"):
                 entry["icon"] = f"{base}/{package['icon']}"
@@ -513,9 +567,11 @@ def catalog_of(state):
         "date": now(), "slicer_repository": SLICER, "release_tag": TAG,
         "description": "The extensions built against the Slicer builds of this release, by their own repositories: "
                        "per platform, those whose package is built against this Slicer commit and against the very "
-                       "packages, listed here too, of the extensions it depends on.",
+                       "packages, listed here too, of the extensions it depends on. tier is that of the Slicer "
+                       "ExtensionsIndex (1 to 5) when the repository is the one it names; 0: not reviewed.",
         "platforms": platforms, "withheld": withheld,
         "extensions": {e.name: {"repository": e.repository, "branch": e.ref, "head": e.head, "depends": e.depends,
+                                "tier": e.tier, **({"reviewed_as": e.reviewed_as} if e.reviewed_as else {}),
                                 "attempts": e.attempts, **({"note": e.note} if e.note else {})}
                        for e in sorted(state.extensions, key=lambda e: e.name)},
     }
@@ -585,6 +641,7 @@ def main():
     log(f"Extensions: {', '.join(e.repository for e in extensions) or 'none'}; sites: {', '.join(s for s, _ in sites) or 'none'}")
     for extension in extensions:
         extension.read_source(app)
+        extension.read_tier(earlier)
         # Where the pass before found a package of it.
         extension.known = {p for p in PLATFORMS
                            if extension.name in ((published or {}).get("platforms", {}).get(p, {}).get("extensions") or {})
