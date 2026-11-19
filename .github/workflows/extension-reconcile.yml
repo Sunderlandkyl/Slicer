@@ -108,6 +108,11 @@ jobs:
           # build that ends.
           WAIT: ${{ !inputs.step }}
           REFS: ${{ inputs.refs || vars.SLICER_EXTENSION_REFS || '' }}
+          # The tier of an extension is that of the Slicer ExtensionsIndex,
+          # when the repository is the one it names. A fork listed here
+          # ({"fork": "repository"}) stands for the repository it is a fork of.
+          TRUSTED_FORKS: ${{ vars.SLICER_EXTENSION_TRUSTED_FORKS || '' }}
+          EXTENSIONS_INDEX: ${{ vars.SLICER_EXTENSIONS_INDEX || '' }}
           START_SITES: ${{ github.event_name != 'workflow_dispatch' || inputs.start-sites }}
           # Well before the six hours a job may last: the run then starts its
           # successor, which takes up the builds that are still going.
