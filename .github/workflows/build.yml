@@ -23,7 +23,12 @@ on:
     branches:
       - "*"
   schedule:
-    # Nightly, after the preview branch has been updated.
+    # Nightly, after the preview branch has been updated. GitHub starts
+    # scheduled runs late, by hours at times, so the nightly is started on time
+    # by the relay of the extension webhook (.github/extension-webhook, a
+    # manual run with the nightly input), and this is what is left when the
+    # relay is not there: a run that finds the nightly already built stops
+    # within a minute.
     - cron: "30 4 * * *"
   workflow_dispatch:
     inputs:
@@ -40,6 +45,10 @@ on:
         default: false
       rebuild-prerequisites:
         description: "Force a rebuild of the prerequisites"
+        type: boolean
+        default: false
+      nightly:
+        description: "Run as the scheduled nightly does: publish, build nothing when the nightly release already holds this commit, and let failing tests withhold nothing"
         type: boolean
         default: false
       force:
@@ -81,7 +90,9 @@ jobs:
           # nightly comes from the same commit, and extensions are built for
           # all of them against it.
           PLATFORMS: ${{ github.event.inputs.platforms || 'linux,macos,windows,web' }}
-          EVENT: ${{ github.event_name }}
+          # A manual run with the nightly input is the scheduled run, started
+          # by something that keeps time.
+          EVENT: ${{ github.event.inputs.nightly == 'true' && 'schedule' || github.event_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           # Platforms built by a push to a branch other than the default one.
           # Set the SLICER_CI_PLATFORMS repository variable to work on a single
@@ -140,7 +151,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event.inputs.nightly == 'true' && 'schedule' || github.event_name }}
           FORCE: ${{ github.event.inputs.force || 'false' }}
           RELEASE_TAG: nightly
         run: |
@@ -212,7 +223,7 @@ jobs:
       run-tests: ${{ needs.setup.outputs.run-tests == 'true' }}
       test-exclude: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
       # The nightly run publishes packages even when tests fail.
-      fail-on-test-failures: ${{ github.event_name != 'schedule' }}
+      fail-on-test-failures: ${{ github.event_name != 'schedule' && github.event.inputs.nightly != 'true' }}
       archive-build-trees: ${{ needs.setup.outputs.publish == 'true' }}
       # Each platform publishes what it built to the nightly release as soon
       # as it is built, and says so (extension-reconcile.yml listens): the

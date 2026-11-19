@@ -646,6 +646,14 @@ To set the relay up:
 GitHub lists each delivery and its answer in the nightly app's *Advanced*
 settings, and can deliver one again from there.
 
+The Worker also starts the nightly build on time. GitHub starts the scheduled
+runs of a workflow late, by hours at times (a nightly due at 04:30 UTC has
+started at 13:41), so the cron trigger of `wrangler.toml` starts the workflow
+named by `NIGHTLY_WORKFLOW` (`build.yml`) on `SLICER_REF`, as the relay app,
+with its `nightly` input: the run then behaves as the scheduled one does. The
+schedule of the workflow stays for when the Worker is not there; a run it
+starts later finds the nightly already built and stops within a minute.
+
 The same Worker hands the web packages of the extensions to the pages that
 install them: `GET /gh/<owner>/<repository>/nightly/<file>.whl`. A page cannot
 download a file of a GitHub release, which answers without the header that
@@ -683,6 +691,7 @@ for the action) to consume a fork's releases:
 | `run-tests` | Run the test suite |
 | `publish` | Publish the result to the `nightly` release |
 | `rebuild-prerequisites` | Ignore the prerequisites cache and rebuild them |
+| `nightly` | Run as the scheduled nightly does: publish, build nothing when the nightly release already holds the commit, and let failing tests withhold nothing |
 
 Pull requests build and test Linux only. Pushes to the default branch and the
 nightly schedule build all three platforms.
