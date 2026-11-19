@@ -16,7 +16,14 @@
 # carries the date; the parts of an archive that is no longer split) are
 # removed.
 #
-# Uses gh, with GH_TOKEN and GH_REPO.
+# RELEASE_NOTES, when set, is the text the notes of the release end with. They
+# are then written again here, each time: what the release holds of each
+# platform (its manifests), followed by that text. They are worked out from
+# the release rather than edited, so platforms publishing at the same time
+# cannot damage them: at worst a line is of the previous build until the next
+# platform publishes.
+#
+# Uses gh and jq, with GH_TOKEN and GH_REPO.
 set -euo pipefail
 
 tag="${1:?missing tag}"; title="${2:?missing title}"; stale="${3:?missing stale regex}"
@@ -55,4 +62,22 @@ gh release view "$tag" --json assets --jq '.assets[].name' | tr -d '\r' | LC_ALL
   gh release delete-asset "$tag" "$asset" --yes || true
 done
 rm -f "$kept"
+
+if [ -n "${RELEASE_NOTES:-}" ]; then
+  dir="$(mktemp -d)"
+  gh release download "$tag" -D "$dir" --clobber -p '*manifest*.json' >/dev/null 2>&1 || true
+  {
+    echo "Each platform built from:"
+    echo ""
+    for m in "$dir"/*.json; do
+      [ -f "$m" ] || continue
+      jq -r 'select(.platform and .commit) | "- \(.platform): `\(.commit)`, \((.date // "")[0:10])"' "$m"
+    done
+    echo ""
+    echo "$RELEASE_NOTES"
+  } > "$dir/notes.md"
+  (cd "$dir" && gh release edit "$tag" --notes-file notes.md --latest=false --prerelease) \
+    || echo "::warning::Could not write the notes of the release $tag"
+  rm -rf "$dir"
+fi
 echo "Published $(($# + 1)) files to the release $tag."
