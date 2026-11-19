@@ -63,6 +63,17 @@ on:
         description: "Additional options for the extension's configure step"
         type: string
         default: ""
+      source-ref:
+        description: >-
+          Branch, tag or commit of the extension to build instead of the one
+          the workflow runs for: to try a branch that does not have the
+          workflow. Such a build is not published
+        type: string
+        default: ""
+      source-repository:
+        description: "Repository of source-ref (default: this one), e.g. the one this is a fork of"
+        type: string
+        default: ""
       generator:
         description: >-
           CMake generator on Linux and macOS (default: Ninja). "Unix Makefiles"
@@ -249,6 +260,8 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          repository: ${{ inputs.source-repository || github.repository }}
+          ref: ${{ inputs.source-ref }}
           submodules: ${{ inputs.submodules }}
 
       # A reusable workflow resolves a local action path against the repository
@@ -321,7 +334,7 @@ jobs:
 
       # Before the tests, which may leave files in the tree.
       - name: Archive the build tree
-        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && inputs.publish-build-tree)
+        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && !inputs.source-ref && inputs.publish-build-tree)
         shell: bash
         env:
           SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
@@ -398,7 +411,7 @@ jobs:
       # nothing, as for Slicer's own nightly; a platform that does not get here
       # keeps the package the release had.
       - name: Publish
-        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish)
+        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && !inputs.source-ref)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -449,6 +462,8 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          repository: ${{ inputs.source-repository || github.repository }}
+          ref: ${{ inputs.source-ref }}
           path: extension
           submodules: ${{ inputs.submodules }}
 
@@ -538,7 +553,7 @@ jobs:
           # Where the dependencies come from, as for the desktop platforms.
           SLICER_EXT_REGISTRY: ${{ inputs.build-dependencies && format('https://github.com/{0}/releases/download/{1}/extension-repositories.json', inputs.slicer-repository, inputs.release-tag) || '' }}
           SLICER_COMMIT: ${{ steps.tree.outputs.slicer-commit }}
-          SLICER_EXT_TREE: ${{ inputs.publish && inputs.publish-build-tree }}
+          SLICER_EXT_TREE: ${{ inputs.publish && !inputs.source-ref && inputs.publish-build-tree }}
         run: |
           set -euo pipefail
           src="$GITHUB_WORKSPACE/extension"
@@ -591,7 +606,7 @@ jobs:
 
       # As soon as it is built, without waiting for the desktop platforms.
       - name: Publish
-        if: steps.deps.outputs.ready != 'false' && (inputs.publish)
+        if: steps.deps.outputs.ready != 'false' && (inputs.publish && !inputs.source-ref)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
