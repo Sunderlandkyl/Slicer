@@ -151,8 +151,9 @@ the release held of it, so the release can hold platforms built from different
 commits for a while; `manifest-<platform>.json` says which, and the extensions
 of a platform are built against the commit of that platform. The manifest is
 removed before a platform's files are replaced and uploaded after them, so it
-never describes files that are not all there. A last job attests the packages
-and writes the notes of the release.
+never describes files that are not all there. Each platform then attests its
+package and writes the notes of the release again, from the manifests the
+release holds: no job comes after the platforms.
 
 Archiving a build tree takes about fifteen minutes, so it is done only for the
 runs that publish: the scheduled one, a build of the default branch, and a
@@ -178,7 +179,9 @@ jobs:
   build:
     uses: Slicer/Slicer/.github/workflows/build-application.yml@main
     permissions:
-      contents: write   # the prerequisites are stored on a release
+      contents: write       # the prerequisites are stored on a release
+      id-token: write       # to attest the packages it publishes; a called
+      attestations: write   # workflow cannot ask for more than it is granted
     with:
       name: MyApp
       ci-ref: main      # the same ref as on the `uses:` line
@@ -726,9 +729,9 @@ that carry a different signature, and the just-in-time compilation QtWebEngine
 performs. Apple reports which entitlements a submission actually used, so that
 list should be trimmed once the first notarization succeeds.
 
-Every published package is also attested, in the publish job, with
-`actions/attest-build-provenance`, which records how it was built and can be
-checked with `gh attestation verify`. That
+Every published package is also attested, by the job that built it and as
+soon as it is published, with `actions/attest-build-provenance`, which records
+how it was built and can be checked with `gh attestation verify`. That
 is supply-chain evidence and has nothing to do with whether an operating system
 will run the package.
 

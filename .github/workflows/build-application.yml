@@ -13,6 +13,9 @@ name: Build a Slicer application
 #       uses: Slicer/Slicer/.github/workflows/build-application.yml@main
 #       permissions:
 #         contents: write
+#         # To attest the packages it publishes (publish-release).
+#         id-token: write
+#         attestations: write
 #       with:
 #         name: MyApp
 #         ci-ref: main          # the same ref as on the `uses:` line
@@ -139,6 +142,13 @@ on:
         description: >-
           Type of the repository_dispatch event sent when a platform has
           published, for the workflows that follow it
+        type: string
+        default: ""
+      release-notes:
+        description: >-
+          Text the notes of publish-release end with, after what the release
+          holds of each platform; each platform writes them as it publishes.
+          Empty: the notes are left as they are.
         type: string
         default: ""
       macos-signing-identity:
@@ -335,8 +345,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     permissions:
-      # A platform publishes what it built itself (publish-release).
+      # A platform publishes what it built itself (publish-release), and
+      # attests its package.
       contents: write
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
@@ -589,6 +602,7 @@ jobs:
           TITLE: ${{ inputs.prerequisites-release-title }}
           PACKAGE: ${{ steps.package.outputs.package }}
           EVENT: ${{ inputs.publish-dispatch-event }}
+          RELEASE_NOTES: ${{ inputs.release-notes }}
         run: |
           set -euo pipefail
           p="$SLICER_PLATFORM"
@@ -606,6 +620,18 @@ jobs:
             gh api "repos/$GH_REPO/dispatches" -f "event_type=$EVENT" \
               || echo "::warning::Could not send the $EVENT event"
           fi
+
+      # Provenance for the package, verifiable with "gh attestation verify",
+      # by the job that built it and as soon as it is published. This is a
+      # statement about how the package was built; it is unrelated to code
+      # signing and does not affect whether an operating system will run it.
+      # A failure to attest withholds nothing.
+      - name: Attest the package
+        if: inputs.archive-build-trees && inputs.publish-release != ''
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.SLICER_OUTPUT_DIR }}/${{ steps.package.outputs.package }}
 
       - name: Fail on test failures or an unusable package
         if: (steps.tests.outcome == 'failure' || steps.verify.outcome == 'failure') && inputs.fail-on-test-failures
@@ -638,6 +664,8 @@ jobs:
     uses: ./.github/workflows/build-web.yml
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     with:
       name: ${{ inputs.name }}
       slicerweb-repository: ${{ inputs.slicerweb-repository }}
@@ -646,6 +674,7 @@ jobs:
       archive-build-tree: ${{ inputs.archive-build-trees }}
       publish-release: ${{ inputs.publish-release }}
       publish-dispatch-event: ${{ inputs.publish-dispatch-event }}
+      release-notes: ${{ inputs.release-notes }}
       ci-repository: ${{ inputs.ci-repository }}
       ci-ref: ${{ inputs.ci-ref }}
       deps-key-version: ${{ inputs.deps-key-version }}

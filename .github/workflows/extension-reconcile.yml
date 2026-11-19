@@ -17,7 +17,7 @@
 # dependencies publish, waits for them, and starts the ones that depended on
 # them. Starting it is therefore always safe, and what starts it is only a
 # matter of how soon a change is seen:
-#   - the Build workflow, when it has published a nightly;
+#   - the Build workflow, each time one of its platforms has published;
 #   - the relay of the webhook of the Slicer nightly GitHub App
 #     (.github/extension-webhook), when a platform of an extension has been
 #     built on the branch it is built from (a commit there, which the

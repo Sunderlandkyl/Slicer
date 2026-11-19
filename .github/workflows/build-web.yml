@@ -61,6 +61,13 @@ on:
         description: "Type of the repository_dispatch event sent when they are published"
         type: string
         default: ""
+      release-notes:
+        description: >-
+          Text the notes of publish-release end with, after what the release
+          holds of each platform; each platform writes them as it publishes.
+          Empty: the notes are left as they are.
+        type: string
+        default: ""
       ci-repository:
         type: string
         default: "Slicer/Slicer"
@@ -291,8 +298,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
-      # The runtime is published by the job that built it (publish-release).
+      # The runtime is published by the job that built it (publish-release),
+      # which attests it.
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - name: Check out the sources
         if: inputs.slicer-from-checkout
@@ -447,6 +457,7 @@ jobs:
           TAG: ${{ inputs.publish-release }}
           TITLE: ${{ inputs.prerequisites-release-title }}
           EVENT: ${{ inputs.publish-dispatch-event }}
+          RELEASE_NOTES: ${{ inputs.release-notes }}
         run: |
           set -euo pipefail
           tree="$SLICERWEB_ROOT/out/tree"
@@ -458,6 +469,13 @@ jobs:
             gh api "repos/$GH_REPO/dispatches" -f "event_type=$EVENT" \
               || echo "::warning::Could not send the $EVENT event"
           fi
+      # As the desktop platforms attest their package.
+      - name: Attest the runtime
+        if: inputs.archive-build-tree && inputs.publish-release != ''
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.SLICERWEB_ROOT }}/out/package/*
       - name: Upload the logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -1,8 +1,10 @@
 name: Build
 
 # Builds Slicer on Linux, macOS and Windows, and for the web browser
-# (SlicerWeb), publishes the result as the nightly release, and starts the
-# builds of the extensions that follow it.
+# (SlicerWeb), and publishes the result as the nightly release. Each platform
+# publishes what it built as soon as it is built, attests its package, and
+# says so (extension-reconcile.yml listens, and builds the extensions that
+# follow it): nothing is left to do once they are all built.
 #
 # The build itself is done by build-application.yml, which custom applications
 # based on Slicer call as well: the prerequisites (VTK, ITK, CTK, Python,
@@ -44,10 +46,6 @@ on:
         description: "Build even if the nightly release already holds this commit"
         type: boolean
         default: false
-      notify-only:
-        description: "Build nothing; only start the extension builds against the published nightly"
-        type: boolean
-        default: false
 
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
@@ -62,9 +60,6 @@ jobs:
   #-----------------------------------------------------------------------------
   setup:
     name: Setup
-    # Every other job but notify depends on this one, so skipping it builds
-    # and publishes nothing.
-    if: ${{ !inputs.notify-only }}
     runs-on: ubuntu-latest
     outputs:
       platforms: ${{ steps.matrix.outputs.platforms }}
@@ -190,6 +185,9 @@ jobs:
     permissions:
       # The prerequisites are stored on the nightly release.
       contents: write
+      # Each platform attests the package it publishes.
+      id-token: write
+      attestations: write
     secrets: inherit
     with:
       name: Slicer
@@ -221,121 +219,22 @@ jobs:
       # extensions of a platform do not wait for the slowest platform.
       publish-release: ${{ needs.setup.outputs.publish == 'true' && 'nightly' || '' }}
       publish-dispatch-event: reconcile-extensions
+      release-notes: |
+        Nightly Slicer build trees and packages.
+
+        Extension repositories can build against this nightly with the
+        `Slicer/Slicer/.github/actions/setup-slicer-build` action.
+        See `Docs/developer_guide/build_instructions/github_actions.md`.
+
+        `slicerweb-wheels.zip` is the WebAssembly runtime of SlicerWeb
+        (https://github.com/lassoan/SlicerWeb), the wheels.zip a SlicerWeb site
+        is built from; `slicerweb-build.tar.zst` is the build tree it comes
+        from, which web extensions are built against, and
+        `slicerweb-manifest.json` what it was built from.
+
+        `extensions-catalog.json` lists the extensions built against these
+        builds, by their own repositories, that are consistent with each other.
+
+        The `slicer-deps-<platform>-<key>` assets are the prebuilt
+        prerequisites that the Build workflow reuses between runs.
       macos-signing-identity: ${{ vars.MACOS_SIGNING_IDENTITY }}
-
-  #-----------------------------------------------------------------------------
-  # The platforms have published what they built themselves, each as soon as
-  # it was built (publish-release above). What is left for the end is what
-  # concerns them all: the provenance of the packages, and the notes of the
-  # release.
-  #-----------------------------------------------------------------------------
-  publish:
-    name: Finish the nightly
-    needs: [setup, build]
-    # Not conditioned on the build succeeding: the build fails when tests
-    # fail, or when one platform does, which withholds nothing of the others.
-    # Nor does it run when nothing was built: a scheduled run that finds the
-    # nightly already up to date skips every build job.
-    if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' && needs.setup.outputs.skip != 'true' && needs.build.result != 'cancelled' && needs.build.result != 'skipped' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    steps:
-      - name: Download packages
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: package-*
-          path: packages
-          merge-multiple: true
-
-      # Provenance for the packages, verifiable with "gh attestation verify".
-      # This is a statement about how the packages were built; it is unrelated
-      # to code signing and does not affect whether an operating system will
-      # run them. It is done here rather than on each build runner so that a
-      # network failure while attesting cannot withhold a platform's artifacts.
-      - name: Attest the packages
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: packages/*
-
-      - name: Describe the release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          tag="nightly"
-          dir="$(mktemp -d)"
-          gh release download "$tag" -D "$dir" --clobber -p 'manifest-*.json' -p slicerweb-manifest.json || true
-          # What the release holds of each platform, which is not necessarily
-          # of this run: a platform that failed keeps what it had.
-          built="$(for m in "$dir"/*.json; do
-                     [ -f "$m" ] || continue
-                     echo "- $(jq -r .platform "$m"): \`$(jq -r .commit "$m")\`, $(jq -r '.date | .[0:10]' "$m")"
-                   done)"
-          notes="Nightly Slicer build trees and packages, each platform built from:
-
-          $built
-
-          Extension repositories can build against this nightly with the
-          \`Slicer/Slicer/.github/actions/setup-slicer-build\` action.
-          See \`Docs/developer_guide/build_instructions/github_actions.md\`.
-
-          \`slicerweb-wheels.zip\` is the WebAssembly runtime of SlicerWeb
-          (https://github.com/lassoan/SlicerWeb), the wheels.zip a SlicerWeb site
-          is built from; \`slicerweb-build.tar.zst\` is the build tree it comes
-          from, which web extensions are built against, and
-          \`slicerweb-manifest.json\` what it was built from.
-
-          \`extensions-catalog.json\` lists the extensions built against these
-          builds, by their own repositories, that are consistent with each other.
-
-          The \`slicer-deps-<platform>-<key>\` assets are the prebuilt
-          prerequisites that the Build workflow reuses between runs."
-          gh release edit "$tag" --notes "$notes" --latest=false --prerelease
-
-  #-----------------------------------------------------------------------------
-  # Start the build of every extension repository following the nightly.
-  #
-  # A repository follows the nightly by installing the Slicer nightly GitHub
-  # App: the app's installations are the list of repositories to notify, so
-  # nothing has to be registered here. The app only holds the Actions
-  # permission, which starts workflows and cannot change code, plus read access
-  # to see whether the workflow exists.
-  #
-  # This is a separate app from the one in SLICER_APP_ID, whose permissions on
-  # this repository must not be granted to every extension installing it.
-  #
-  # What is started is the workflow named by NIGHTLY_WORKFLOW, on the default
-  # branch of the repository, which declares `on: workflow_dispatch`.
-  # Repositories without it are skipped. See
-  # Docs/developer_guide/build_instructions/github_actions.md
-  #
-  # Run alone with the notify-only input of a manual run, against whatever the
-  # nightly release currently holds.
-  #-----------------------------------------------------------------------------
-  notify:
-    name: Start the builds that follow the nightly
-    needs: [setup, publish]
-    if: >-
-      ${{ !cancelled() && vars.SLICER_NIGHTLY_APP_ID != ''
-          && (needs.publish.result == 'success' || inputs.notify-only) }}
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      # The extensions are built by their own repositories, in the order of
-      # their dependencies, and the sites that carry the web packages after
-      # them: extension-reconcile.yml works that out from what is published.
-      # It is only told here that there is something new to look at.
-      - name: Start the reconciliation of the extensions
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          gh workflow run extension-reconcile.yml --ref "$GITHUB_REF_NAME"
-          echo "Started extension-reconcile.yml on $GITHUB_REF_NAME." >> "$GITHUB_STEP_SUMMARY"
