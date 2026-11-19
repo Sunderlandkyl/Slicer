@@ -37,6 +37,10 @@ jobs:
           - ScriptedLoadableExtensionTemplate
           - CLIExtensionTemplate
     uses: ./.github/workflows/extension-build.yml
+    # What the jobs of that workflow ask for, which a caller has to grant; it
+    # publishes nothing here, as publish is not asked for.
+    permissions:
+      contents: write
     with:
       platforms: ${{ inputs.platforms || 'linux' }}
       source-directory: Extensions/Testing/${{ matrix.extension }}

@@ -6,12 +6,18 @@ name = "slicer-extension-webhook"
 main = "worker.js"
 compatibility_date = "2026-11-01"
 
+# When the nightly build of Slicer (NIGHTLY_WORKFLOW) is started, in UTC.
+[triggers]
+crons = ["30 5 * * *"]
+
 [vars]
 # The relay app: installed in SLICER_REPOSITORY alone, Actions read and write.
 RELAY_APP_ID = ""
 SLICER_REPOSITORY = "Slicer/Slicer"
 SLICER_REF = "main"
 REFS = ""
+# The workflow the cron trigger starts, with its nightly input; none when empty.
+NIGHTLY_WORKFLOW = "build.yml"
 # The release whose wheels are handed to the pages that install extensions
 # (GET /gh/...); nightly when empty.
 RELEASE_TAG = ""

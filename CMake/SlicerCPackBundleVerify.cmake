@@ -362,6 +362,23 @@ foreach(_f IN LISTS _maybe_exes)
   endif()
 endforeach()
 
+# Each file is verified once, where it really is: dyld expands @loader_path
+# from the real location of a binary, not from a symbolic link to it. The
+# frameworks of Qt 6 find one another through a "@loader_path/../../.."
+# run-path, which leads to Contents/Frameworks from Versions/A only, not from
+# the links <Name>.framework/<Name> and Versions/Current/<Name>.
+set(_real_macho_files "")
+foreach(_f IN LISTS macho_files)
+  get_filename_component(_real "${_f}" REALPATH)
+  string(FIND "${_real}" "${app_real}/" _idx)
+  if(_idx EQUAL 0)
+    list(APPEND _real_macho_files "${_real}")
+  else()
+    # A link out of the bundle: reported for what it refers to, as before.
+    list(APPEND _real_macho_files "${_f}")
+  endif()
+endforeach()
+set(macho_files "${_real_macho_files}")
 if(macho_files)
   list(REMOVE_DUPLICATES macho_files)
 endif()

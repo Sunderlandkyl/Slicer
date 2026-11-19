@@ -48,6 +48,12 @@
 // against the hash the extensions catalog gives. This part needs none of the
 // secrets.
 //
+// And it starts the nightly build of Slicer on time (the cron trigger of
+// wrangler.toml): GitHub starts the scheduled runs of a workflow late, by hours
+// at times. It starts NIGHTLY_WORKFLOW with the nightly input, as the relay
+// app, which makes the run behave as the scheduled one; the schedule of the
+// workflow stays, for when this is not there, and finds nothing left to do.
+//
 // A Cloudflare Worker (wrangler.toml); it uses nothing but fetch and WebCrypto,
 // so it runs on any similar runtime. Configuration:
 //   secrets  WEBHOOK_SECRET         the webhook secret of the Slicer nightly app
@@ -61,6 +67,9 @@
 //                                   the branches built instead of the default
 //                                   one, as SLICER_EXTENSION_REFS of the Slicer
 //                                   repository
+//            NIGHTLY_WORKFLOW       optional, e.g. build.yml: the workflow the
+//                                   cron trigger starts, on SLICER_REF; none
+//                                   when empty
 //            RELEASE_TAG            optional (nightly): the release of the Slicer
 //                                   repository that lists the extension
 //                                   repositories, and of each of those, whose
@@ -125,6 +134,26 @@ export default {
       return new Response(`${reason}: a run is going already\n`, { status: 200 });
     }
     return new Response(`${reason}: HTTP ${status}\n`, { status: status === 204 || status === 200 ? 200 : 502 });
+  },
+
+  // The cron trigger: the nightly build. A failure is thrown, so that
+  // Cloudflare lists the invocation as failed.
+  async scheduled(event, env) {
+    if (!env.NIGHTLY_WORKFLOW) {
+      console.log("NIGHTLY_WORKFLOW is not set: no nightly build to start");
+      return;
+    }
+    const missing = ["RELAY_APP_ID", "RELAY_APP_PRIVATE_KEY", "SLICER_REPOSITORY", "SLICER_REF"].filter((k) => !env[k]);
+    if (missing.length) {
+      throw new Error(`not configured: ${missing.join(", ")} missing`);
+    }
+    // Not held back by a run that is going: the workflow lets one build of a
+    // branch run at a time, and a nightly that finds nothing new stops.
+    const status = await start(env, env.NIGHTLY_WORKFLOW, { nightly: "true" }, false);
+    console.log(`nightly ${env.NIGHTLY_WORKFLOW} on ${env.SLICER_REF}: HTTP ${status}`);
+    if (status !== 204 && status !== 200) {
+      throw new Error(`the nightly build could not be started: HTTP ${status}`);
+    }
   },
 };
 
@@ -298,10 +327,16 @@ function github(path, token, init = {}) {
   });
 }
 
-// Starts the workflow with a token of the relay app's installation in the
-// Slicer repository, limited to that repository and to the Actions
-// permission; the HTTP status of the start, or of the step that failed.
-async function dispatch(env, reason) {
+// Starts the reconciliation, unless a run of it is going or about to.
+function dispatch(env, reason) {
+  return start(env, WORKFLOW, { reason }, true);
+}
+
+// Starts a workflow of the Slicer repository, on SLICER_REF, with a token of
+// the relay app's installation there, limited to that repository and to the
+// Actions permission; the HTTP status of the start, or of the step that
+// failed. With `once`, 208 and nothing started when a run of it is not over.
+async function start(env, workflow, inputs, once) {
   const jwt = await appJwt(env.RELAY_APP_ID, env.RELAY_APP_PRIVATE_KEY);
   let response = await github(`/repos/${env.SLICER_REPOSITORY}/installation`, jwt);
   if (!response.ok) {
@@ -321,16 +356,18 @@ async function dispatch(env, reason) {
   }
   const { token } = await response.json();
   // A run that is going, or about to, sees what this event is about.
-  response = await github(`/repos/${env.SLICER_REPOSITORY}/actions/workflows/${WORKFLOW}/runs?per_page=20`, token);
-  if (response.ok) {
-    const { workflow_runs: runs } = await response.json();
-    if ((runs || []).some((run) => run.status !== "completed")) {
-      return 208;
+  if (once) {
+    response = await github(`/repos/${env.SLICER_REPOSITORY}/actions/workflows/${workflow}/runs?per_page=20`, token);
+    if (response.ok) {
+      const { workflow_runs: runs } = await response.json();
+      if ((runs || []).some((run) => run.status !== "completed")) {
+        return 208;
+      }
     }
   }
-  response = await github(`/repos/${env.SLICER_REPOSITORY}/actions/workflows/${WORKFLOW}/dispatches`, token, {
+  response = await github(`/repos/${env.SLICER_REPOSITORY}/actions/workflows/${workflow}/dispatches`, token, {
     method: "POST",
-    body: JSON.stringify({ ref: env.SLICER_REF, inputs: { reason } }),
+    body: JSON.stringify({ ref: env.SLICER_REF, inputs }),
   });
   if (!response.ok && response.status !== 204) {
     console.log(await response.text());
