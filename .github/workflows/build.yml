@@ -29,7 +29,7 @@ on:
     # manual run with the nightly input), and this is what is left when the
     # relay is not there: a run that finds the nightly already built stops
     # within a minute.
-    - cron: "30 4 * * *"
+    - cron: "30 5 * * *"
   workflow_dispatch:
     inputs:
       platforms:

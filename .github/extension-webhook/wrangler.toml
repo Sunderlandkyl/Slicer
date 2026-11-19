@@ -8,7 +8,7 @@ compatibility_date = "2026-11-01"
 
 # When the nightly build of Slicer (NIGHTLY_WORKFLOW) is started, in UTC.
 [triggers]
-crons = ["30 4 * * *"]
+crons = ["30 5 * * *"]
 
 [vars]
 # The relay app: installed in SLICER_REPOSITORY alone, Actions read and write.

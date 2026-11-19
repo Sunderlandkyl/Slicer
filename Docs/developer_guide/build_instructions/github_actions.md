@@ -647,7 +647,7 @@ GitHub lists each delivery and its answer in the nightly app's *Advanced*
 settings, and can deliver one again from there.
 
 The Worker also starts the nightly build on time. GitHub starts the scheduled
-runs of a workflow late, by hours at times (a nightly due at 04:30 UTC has
+runs of a workflow late, by hours at times (a nightly due at 04:30 UTC once
 started at 13:41), so the cron trigger of `wrangler.toml` starts the workflow
 named by `NIGHTLY_WORKFLOW` (`build.yml`) on `SLICER_REF`, as the relay app,
 with its `nightly` input: the run then behaves as the scheduled one does. The
