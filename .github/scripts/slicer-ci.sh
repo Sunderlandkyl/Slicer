@@ -65,6 +65,15 @@ export ExternalData_OBJECT_STORES="${ExternalData_OBJECT_STORES:-$SLICER_ROOT/Ex
 if [ "$SLICER_PLATFORM" = "macos-arm64" ] && [ -n "${SLICER_QT_DIR:-}" ]; then
   export CMAKE_PREFIX_PATH="$SLICER_QT_DIR"
 fi
+# The Apple silicon runner has 7 GB of memory for its 3 cores, half of what the
+# Intel one has. The build of an external project runs as many compilers as
+# its build tool sees fit (Ninja: the cores and two more), and five of the
+# largest files of VTK at once do not fit: the build then swaps, and hardly
+# advances. cmake --build, which builds each external project, takes its
+# number of jobs from this.
+if [ "$SLICER_PLATFORM" = "macos-arm64" ]; then
+  export CMAKE_BUILD_PARALLEL_LEVEL="${SLICER_EP_PARALLEL:-2}"
+fi
 nproc_count() {
   if [ -n "${NUMBER_OF_PROCESSORS:-}" ]; then echo "$NUMBER_OF_PROCESSORS"
   elif command -v nproc >/dev/null 2>&1; then nproc
