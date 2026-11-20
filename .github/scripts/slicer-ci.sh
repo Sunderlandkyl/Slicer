@@ -763,6 +763,9 @@ cmd_test() {
   local build; build="$(bash_path "$SLICER_BUILD_DIR")"
   local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
   mkdir -p "$out"
+  # The tests of the extensions manager are those of the extensions server of
+  # Slicer, whatever the application is built to use by default.
+  export SLICER_EXTENSIONS_MANAGER_SERVER_API="${SLICER_EXTENSIONS_MANAGER_SERVER_API:-Girder_v1}"
   local args=(
     --test-dir "$SLICER_BUILD_DIR"
     --parallel "${SLICER_CTEST_PARALLEL:-$SLICER_PARALLEL}"
