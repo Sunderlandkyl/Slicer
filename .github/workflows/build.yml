@@ -34,7 +34,7 @@ on:
     inputs:
       platforms:
         description: "Platforms to build (comma separated: linux,macos,macos-arm64,windows,web)"
-        default: "linux,macos,windows,web"
+        default: "linux,macos,macos-arm64,windows,web"
       run-tests:
         description: "Run the test suite"
         type: boolean
@@ -89,7 +89,7 @@ jobs:
           # web with the desktop platforms, so that every platform of the
           # nightly comes from the same commit, and extensions are built for
           # all of them against it.
-          PLATFORMS: ${{ github.event.inputs.platforms || 'linux,macos,windows,web' }}
+          PLATFORMS: ${{ github.event.inputs.platforms || 'linux,macos,macos-arm64,windows,web' }}
           # A manual run with the nightly input is the scheduled run, started
           # by something that keeps time.
           EVENT: ${{ github.event.inputs.nightly == 'true' && 'schedule' || github.event_name }}
