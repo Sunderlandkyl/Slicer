@@ -228,24 +228,10 @@ jobs:
       # Each platform publishes what it built to the nightly release as soon
       # as it is built, and says so (extension-reconcile.yml listens): the
       # extensions of a platform do not wait for the slowest platform.
-      publish-release: ${{ needs.setup.outputs.publish == 'true' && 'nightly' || '' }}
-      publish-dispatch-event: reconcile-extensions
-      release-notes: |
-        Nightly Slicer build trees and packages.
-
-        Extension repositories can build against this nightly with the
-        `Slicer/Slicer/.github/actions/setup-slicer-build` action.
-        See `Docs/developer_guide/build_instructions/github_actions.md`.
-
-        `slicerweb-wheels.zip` is the WebAssembly runtime of SlicerWeb
-        (https://github.com/lassoan/SlicerWeb), the wheels.zip a SlicerWeb site
-        is built from; `slicerweb-build.tar.zst` is the build tree it comes
-        from, which web extensions are built against, and
-        `slicerweb-manifest.json` what it was built from.
-
-        `extensions-catalog.json` lists the extensions built against these
-        builds, by their own repositories, that are consistent with each other.
-
-        The `slicer-deps-<platform>-<key>` assets are the prebuilt
-        prerequisites that the Build workflow reuses between runs.
+      # This branch is a preview: what it builds goes to a release of its
+      # own, never to the nightly one, and starts no build of an extension.
+      publish-release: ${{ needs.setup.outputs.publish == 'true' && 'preview-lightbox' || '' }}
+      publish-dispatch-event: ""
+      # The notes of the preview release are left as they are.
+      release-notes: ""
       macos-signing-identity: ${{ vars.MACOS_SIGNING_IDENTITY }}
