@@ -283,7 +283,9 @@ void qSlicerExtensionsManagerWidgetPrivate::applyCatalogView()
   Q_Q(qSlicerExtensionsManagerWidget);
   qSlicerExtensionsManagerModel* model = q->extensionsManagerModel();
   const bool listed = this->isCatalogListed();
-  this->ExtensionsCatalogWidget->setExtensionsManagerModel(listed ? model : nullptr);
+  // The view that is not shown keeps the model: the model goes on telling it of what happens, whatever
+  // it has been told of the model (neither view stops listening to a model it is told to leave).
+  this->ExtensionsCatalogWidget->setExtensionsManagerModel(this->isCatalogServer() ? model : nullptr);
   this->ExtensionsCatalogWidget->setVisible(listed);
   this->CatalogCategoryComboBox->setVisible(listed);
   if (!listed)
@@ -291,8 +293,8 @@ void qSlicerExtensionsManagerWidgetPrivate::applyCatalogView()
     this->ExtensionDetailsBrowser->setVisible(false);
   }
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
-  // The browser has nothing to show when the application lists the extensions itself.
-  this->ExtensionsServerWidget->setExtensionsManagerModel(listed ? nullptr : model);
+  // The browser is not shown when the application lists the extensions itself.
+  this->ExtensionsServerWidget->setExtensionsManagerModel(model);
   this->ExtensionsServerWidget->setVisible(!listed);
   if (!listed && model && this->isCatalogServer())
   {

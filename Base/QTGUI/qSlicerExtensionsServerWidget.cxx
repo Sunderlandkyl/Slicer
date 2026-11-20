@@ -402,7 +402,10 @@ void qSlicerExtensionsServerWidget::onLoadFinished(bool ok)
 bool qSlicerExtensionsServerWidget::acceptNavigationRequest(const QUrl& url, QWebEnginePage::NavigationType type, bool isMainFrame)
 {
   Q_D(qSlicerExtensionsServerWidget);
-  d->InternalHosts = QStringList() << this->extensionsManagerModel()->frontendServerUrl().host();
+  if (this->extensionsManagerModel())
+  {
+    d->InternalHosts = QStringList() << this->extensionsManagerModel()->frontendServerUrl().host();
+  }
   return Superclass::acceptNavigationRequest(url, type, isMainFrame);
 }
 
