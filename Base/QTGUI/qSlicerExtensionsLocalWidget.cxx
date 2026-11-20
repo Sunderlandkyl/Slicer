@@ -33,6 +33,7 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPushButton>
+#include <QSettings>
 #include <QSignalMapper>
 #include <QStyledItemDelegate>
 #include <QTextBlock>
@@ -104,6 +105,7 @@ public:
   QHash<QString, QNetworkReply*> IconDownloads;
 
   QString SearchText;
+  bool ServerExtensionsListed{ false };
 
   qSlicerExtensionsManagerModel* ExtensionsManagerModel;
 };
@@ -644,7 +646,19 @@ QListWidgetItem* qSlicerExtensionsLocalWidgetPrivate::updateExtensionItem(const 
 
   // Remove the item if it is no longer bookmarked nor installed
   bool removeItem = false;
-  if (!metadata["bookmarked"].toBool() && !metadata["installed"].toBool())
+  // An extension that the Slicer extensions index does not have has not been reviewed.
+  const bool unreviewed = metadataFromServer.value("tier").toString() == "0";
+  if (this->ServerExtensionsListed)
+  {
+    // What the server offers is listed: remove the item if the server does not offer it,
+    // or if it is not reviewed and those are not asked for.
+    if (metadataFromServer.value("revision").toString().isEmpty() //
+        || (unreviewed && !metadata["installed"].toBool() && !QSettings().value("Extensions/ShowUnreviewedExtensions", false).toBool()))
+    {
+      removeItem = true;
+    }
+  }
+  else if (!metadata["bookmarked"].toBool() && !metadata["installed"].toBool())
   {
     removeItem = true;
   }
@@ -660,6 +674,12 @@ QListWidgetItem* qSlicerExtensionsLocalWidgetPrivate::updateExtensionItem(const 
     {
       QString description = this->ExtensionsManagerModel->extensionDescription(extensionName);
       includeExtension = description.contains(this->SearchText, Qt::CaseInsensitive);
+    }
+    if (!includeExtension && this->ServerExtensionsListed)
+    {
+      // An extension that is not installed is described by the server only
+      includeExtension = metadata.value("description").toString().contains(this->SearchText, Qt::CaseInsensitive) //
+                         || metadata.value("category").toString().contains(this->SearchText, Qt::CaseInsensitive);
     }
     if (!includeExtension)
     {
@@ -698,6 +718,15 @@ QListWidgetItem* qSlicerExtensionsLocalWidgetPrivate::updateExtensionItem(const 
   if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
   {
     moreLinkTarget = QString("slicer:%1").arg(extensionName);
+  }
+  else if (serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
+  {
+    // There is no page of the extension on the server: its own page, opened in the web browser.
+    moreLinkTarget = metadata.value("homepage").toString();
+    if (!moreLinkTarget.startsWith("http://") && !moreLinkTarget.startsWith("https://"))
+    {
+      moreLinkTarget.clear();
+    }
   }
   else
   {
@@ -744,7 +773,12 @@ QListWidgetItem* qSlicerExtensionsLocalWidgetPrivate::updateExtensionItem(const 
   item->setData(Self::OnServerExtensionUpdatedRole, metadataFromServer["updated"].toString());
   item->setData(Self::UpdateAvailableRole, q->extensionsManagerModel()->isExtensionUpdateAvailable(extensionName));
   item->setData(Self::MoreLinkRole, moreLinkTarget);
-  item->setData(Self::DescriptionRole, metadata["description"].toString());
+  QString description = metadata["description"].toString();
+  if (unreviewed && this->ServerExtensionsListed)
+  {
+    description = qSlicerExtensionsLocalWidget::tr("Not reviewed: this extension is not in the Slicer extensions index.") + QString(" ") + description;
+  }
+  item->setData(Self::DescriptionRole, description);
   item->setData(Self::CompatibleRole, q->extensionsManagerModel()->isExtensionCompatible(extensionName).isEmpty());
   item->setData(Self::LoadedRole, metadata["loaded"].toBool());
   item->setData(Self::InstalledRole, metadata["installed"].toBool());
@@ -1147,7 +1181,7 @@ void qSlicerExtensionsLocalWidget::onModelUpdated()
     d->updateExtensionItem(extensionName);
   }
   // Show all other extensions
-  QStringList managedExtensions = d->ExtensionsManagerModel->managedExtensions();
+  QStringList managedExtensions = d->ServerExtensionsListed ? d->ExtensionsManagerModel->serverExtensions() : d->ExtensionsManagerModel->managedExtensions();
   managedExtensions.sort();
   for (const QString& extensionName : managedExtensions)
   {
@@ -1237,6 +1271,28 @@ void qSlicerExtensionsLocalWidget::setSearchText(const QString& newText)
   }
   d->SearchText = newText;
   this->onModelUpdated();
+}
+
+// --------------------------------------------------------------------------
+bool qSlicerExtensionsLocalWidget::serverExtensionsListed() const
+{
+  Q_D(const qSlicerExtensionsLocalWidget);
+  return d->ServerExtensionsListed;
+}
+
+// --------------------------------------------------------------------------
+void qSlicerExtensionsLocalWidget::setServerExtensionsListed(bool listed)
+{
+  Q_D(qSlicerExtensionsLocalWidget);
+  if (d->ServerExtensionsListed == listed)
+  {
+    return;
+  }
+  d->ServerExtensionsListed = listed;
+  if (d->ExtensionsManagerModel)
+  {
+    this->onModelUpdated();
+  }
 }
 
 // --------------------------------------------------------------------------

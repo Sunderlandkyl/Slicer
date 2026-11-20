@@ -36,6 +36,7 @@ class Q_SLICER_BASE_QTGUI_EXPORT qSlicerExtensionsLocalWidget : public QListWidg
 {
   Q_OBJECT
   Q_PROPERTY(QString searchText READ searchText WRITE setSearchText)
+  Q_PROPERTY(bool serverExtensionsListed READ serverExtensionsListed WRITE setServerExtensionsListed)
 public:
   /// Superclass typedef
   typedef QListWidget Superclass;
@@ -51,6 +52,12 @@ public:
 
   /// Allow filtering of extensions list
   QString searchText() const;
+
+  /// What is listed: the managed extensions (installed or bookmarked), by default, or the extensions
+  /// that the server offers for this application, to install them. Of the latter, those that have
+  /// not been reviewed are listed only if the Extensions/ShowUnreviewedExtensions setting is true.
+  bool serverExtensionsListed() const;
+  void setServerExtensionsListed(bool listed);
 
 signals:
   void linkActivated(const QUrl& link);

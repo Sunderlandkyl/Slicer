@@ -151,6 +151,13 @@ on:
           Empty: the notes are left as they are.
         type: string
         default: ""
+      extensions-catalog-url:
+        description: >-
+          Address of the extensions catalog (extensions-catalog.json) the
+          extensions manager of the application installs extensions from.
+          Empty: the extensions server of Slicer.
+        type: string
+        default: ""
       macos-signing-identity:
         description: "Developer ID the macOS bundle is signed with, when the signing secrets are given"
         type: string
@@ -344,6 +351,9 @@ jobs:
     if: ${{ !cancelled() && needs.deps.result == 'success' && needs.deps-key.outputs.desktop-count != '0' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    env:
+      # Read when the application is configured (slicer-ci.sh configure).
+      SLICER_EXTENSIONS_CATALOG_URL: ${{ inputs.extensions-catalog-url }}
     permissions:
       # A platform publishes what it built itself (publish-release), and
       # attests its package.

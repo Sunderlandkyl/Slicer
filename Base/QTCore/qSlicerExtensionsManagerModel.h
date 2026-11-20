@@ -92,9 +92,18 @@ public:
   /// \brief Extension metadata typedef
   typedef QVariantMap ExtensionMetadataType;
 
+  /// Girder_v1: the server is a Girder instance with the Slicer package manager plugin
+  /// (\a serverUrl), browsed with the web application at \a frontendServerUrl.
+  ///
+  /// GitHub_v1: \a serverUrl is the address of an extensions catalog, a JSON file that
+  /// the continuous integration of Slicer publishes with a Slicer build: for each
+  /// platform, the packages that the repositories of the extensions built against that
+  /// build, each with its address, its SHA-256 and what the extension says of itself.
+  /// There is no web application: the extensions are listed by the application itself.
   enum ServerAPI
   {
     Girder_v1 = 1,
+    GitHub_v1 = 2,
     ServerAPI_Last
   };
 
@@ -167,6 +176,16 @@ public:
 
   /// \brief Return names of all managed extensions, i.e., installed or bookmarked extensions
   QStringList managedExtensions() const;
+
+  /// \brief Return names of the extensions that the server offers for this application
+  /// (revision, operating system and architecture), from the metadata last retrieved.
+  /// \sa updateExtensionsMetadataFromServer()
+  Q_INVOKABLE QStringList serverExtensions() const;
+
+  /// \brief Return what there is to say of the metadata last retrieved from the server,
+  /// for example that the server offers extensions for another revision of the application
+  /// only. Empty when there is nothing to say.
+  Q_INVOKABLE QString serverNote() const;
 
   /// \brief Return True if the \a extensionName is loaded
   bool isExtensionLoaded(const QString& extensionName) const;

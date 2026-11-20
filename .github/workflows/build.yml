@@ -230,6 +230,10 @@ jobs:
       # extensions of a platform do not wait for the slowest platform.
       publish-release: ${{ needs.setup.outputs.publish == 'true' && 'nightly' || '' }}
       publish-dispatch-event: reconcile-extensions
+      # The extensions manager of the application installs the extensions
+      # built against the nightly by their own repositories, which the
+      # catalog of the nightly release lists (extension-reconcile.yml).
+      extensions-catalog-url: ${{ github.server_url }}/${{ github.repository }}/releases/download/nightly/extensions-catalog.json
       release-notes: |
         Nightly Slicer build trees and packages.
 

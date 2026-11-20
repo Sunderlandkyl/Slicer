@@ -24,6 +24,7 @@
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QInputDialog>
+#include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
 #include <QRegularExpression>
@@ -43,6 +44,7 @@
 
 // QtGUI includes
 #include <qSlicerApplication.h>
+#include "qSlicerExtensionsLocalWidget.h"
 #include "qSlicerExtensionsManagerWidget.h"
 #include "qSlicerExtensionsManagerModel.h"
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
@@ -173,6 +175,12 @@ public:
   qSlicerExtensionsServerWidget* ExtensionsServerWidget;
 #endif
 
+  /// Whether the application itself lists the extensions that the server offers (ExtensionsCatalogWidget),
+  /// because the server has no web application to browse them with.
+  bool isCatalogListed() const;
+  qSlicerExtensionsLocalWidget* ExtensionsCatalogWidget{ nullptr };
+  QLabel* ExtensionsCatalogNoteLabel{ nullptr };
+
   qSlicerExtensionsToolsWidget* ToolsWidget;
   QString LastInstallWidgetSearchText;
   QUrl LastInstallWidgetUrl;
@@ -197,11 +205,32 @@ qSlicerExtensionsManagerWidgetPrivate::qSlicerExtensionsManagerWidgetPrivate(qSl
 }
 
 // --------------------------------------------------------------------------
+bool qSlicerExtensionsManagerWidgetPrivate::isCatalogListed() const
+{
+  Q_Q(const qSlicerExtensionsManagerWidget);
+  return q->extensionsManagerModel() && q->extensionsManagerModel()->serverAPI() == qSlicerExtensionsManagerModel::GitHub_v1;
+}
+
+// --------------------------------------------------------------------------
 void qSlicerExtensionsManagerWidgetPrivate::init()
 {
   Q_Q(qSlicerExtensionsManagerWidget);
 
   this->setupUi(q);
+
+  // The extensions that the server offers, listed by the application: in place of the browser
+  // of the "Install Extensions" tab when the server has no web application (setExtensionsManagerModel).
+  this->ExtensionsCatalogNoteLabel = new QLabel(this->InstallExtensionsTab);
+  this->ExtensionsCatalogNoteLabel->setObjectName("ExtensionsCatalogNoteLabel");
+  this->ExtensionsCatalogNoteLabel->setWordWrap(true);
+  this->ExtensionsCatalogNoteLabel->setMargin(6);
+  this->ExtensionsCatalogNoteLabel->setVisible(false);
+  this->InstallExtensionsTabLayout->addWidget(this->ExtensionsCatalogNoteLabel);
+  this->ExtensionsCatalogWidget = new qSlicerExtensionsLocalWidget(this->InstallExtensionsTab);
+  this->ExtensionsCatalogWidget->setObjectName("ExtensionsCatalogWidget");
+  this->ExtensionsCatalogWidget->setServerExtensionsListed(true);
+  this->ExtensionsCatalogWidget->setVisible(false);
+  this->InstallExtensionsTabLayout->addWidget(this->ExtensionsCatalogWidget);
 
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
   // Setup browser for "Install Extensions" tab
@@ -323,9 +352,14 @@ void qSlicerExtensionsManagerWidget::setExtensionsManagerModel(qSlicerExtensions
   disconnect(this, SLOT(onMessageLogged(QString, ctkErrorLogLevel::LogLevels)));
 
   d->ExtensionsLocalWidget->setExtensionsManagerModel(model);
+  const bool catalogListed = model && model->serverAPI() == qSlicerExtensionsManagerModel::GitHub_v1;
+  d->ExtensionsCatalogWidget->setExtensionsManagerModel(catalogListed ? model : nullptr);
+  d->ExtensionsCatalogWidget->setVisible(catalogListed);
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
   d->ExtensionsManageBrowser->setExtensionsManagerModel(model);
-  d->ExtensionsServerWidget->setExtensionsManagerModel(model);
+  // The browser has no page to show of a server that has no web application.
+  d->ExtensionsServerWidget->setExtensionsManagerModel(catalogListed ? nullptr : model);
+  d->ExtensionsServerWidget->setVisible(!catalogListed);
 #endif
 
   if (model)
@@ -377,7 +411,10 @@ void qSlicerExtensionsManagerWidget::refreshInstallWidget()
   this->extensionsManagerModel()->updateModel();
 
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
-  d->ExtensionsServerWidget->refresh();
+  if (!d->isCatalogListed())
+  {
+    d->ExtensionsServerWidget->refresh();
+  }
 #endif
 }
 
@@ -388,6 +425,11 @@ void qSlicerExtensionsManagerWidget::onModelUpdated()
 
   int manageExtensionsTabIndex = d->tabWidget->indexOf(d->ManageExtensionsTab);
   int managedExtensionsCount = this->extensionsManagerModel()->managedExtensionsCount();
+
+  // What there is to say of what the server offers, for example that it is for another revision
+  const QString serverNote = d->isCatalogListed() ? this->extensionsManagerModel()->serverNote() : QString();
+  d->ExtensionsCatalogNoteLabel->setText(serverNote);
+  d->ExtensionsCatalogNoteLabel->setVisible(!serverNote.isEmpty());
 
   // Get the list of extensions that have update available but not updated yet
   QStringList extensionsToUpdate = this->extensionsManagerModel()->availableUpdateExtensions();
@@ -492,6 +534,10 @@ void qSlicerExtensionsManagerWidget::onCurrentTabChanged(int index)
   Q_D(qSlicerExtensionsManagerWidget);
   Q_UNUSED(index);
   if (d->tabWidget->currentWidget() == d->ManageExtensionsTab)
+  {
+    d->ToolsWidget->SearchBox->setEnabled(true);
+  }
+  else if (d->tabWidget->currentWidget() == d->InstallExtensionsTab && d->isCatalogListed())
   {
     d->ToolsWidget->SearchBox->setEnabled(true);
   }
@@ -609,6 +655,10 @@ void qSlicerExtensionsManagerWidget::processSearchTextChange()
   if (d->tabWidget->currentWidget() == d->ManageExtensionsTab)
   {
     d->ExtensionsLocalWidget->setSearchText(searchText);
+  }
+  else if (d->tabWidget->currentWidget() == d->InstallExtensionsTab && d->isCatalogListed())
+  {
+    d->ExtensionsCatalogWidget->setSearchText(searchText);
   }
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
   else if (d->tabWidget->currentWidget() == d->InstallExtensionsTab)

@@ -19,9 +19,12 @@
 ==============================================================================*/
 
 // Qt includes
+#include <QCryptographicHash>
 #include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMessageBox>
@@ -246,6 +249,18 @@ public:
 
   qRestAPI ExtensionsMetadataFromServerAPI;
   QMap<QString, QVariantMap> ExtensionsMetadataFromServer;
+
+  // GitHub_v1: the extensions catalog
+  /// Name of the platform in the extensions catalog; empty if it has no name there.
+  static QString catalogPlatform(const QString& os, const QString& arch);
+  /// Fill ExtensionsMetadataFromServer from the content of an extensions catalog.
+  bool readCatalog(const QByteArray& content);
+  void onCatalogReplyFinished();
+  /// False, with an error reported, if \a data is not the file that \a metadata describes (sha256).
+  bool verifyDownload(const QVariantMap& metadata, const QByteArray& data, const QUrl& url) const;
+  QNetworkReply* CatalogReply{ nullptr }; // if not null then the download of the catalog is in progress
+  bool CatalogRead{ false };
+  QString ServerNote;
   QUuid ExtensionsMetadataFromServerQueryUID; // if not null then it means that query is in progress
 
   QHash<QString, UpdateDownloadInformation> AvailableUpdates;
@@ -973,6 +988,18 @@ bool qSlicerExtensionsManagerModelPrivate::validateExtensionMetadata(const Exten
                          << "meta.revision"
                          << "meta.screenshots";
   }
+  else if (serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
+  {
+    // The metadata is made from the catalog (readCatalog), in the keys of the application.
+    requiredNonEmptyKeys << "extensionname"
+                         << "extension_id"
+                         << "revision"
+                         << "archivename"
+                         << "download_url";
+    expectedNonEmptyKeys << "sha256"
+                         << "category"
+                         << "description";
+  }
   else
   {
     qWarning() << Q_FUNC_INFO << " failed: missing implementation for serverAPI" << serverAPI;
@@ -1063,7 +1090,11 @@ qSlicerExtensionsManagerModel::~qSlicerExtensionsManagerModel() = default;
 // --------------------------------------------------------------------------
 int qSlicerExtensionsManagerModel::serverAPI() const
 {
-  int defaultServerAPI = Self::Girder_v1;
+  int defaultServerAPI = Self::serverAPIFromString(Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_API);
+  if (defaultServerAPI == -1)
+  {
+    defaultServerAPI = Self::Girder_v1;
+  }
   QString serverApiStr = qEnvironmentVariable("SLICER_EXTENSIONS_MANAGER_SERVER_API", Self::serverAPIToString(defaultServerAPI));
   int serverAPI = Self::serverAPIFromString(serverApiStr);
   if (serverAPI == -1)
@@ -1081,6 +1112,7 @@ QString qSlicerExtensionsManagerModel::serverAPIToString(int serverAPI)
   switch (serverAPI)
   {
     case Girder_v1: return "Girder_v1";
+    case GitHub_v1: return "GitHub_v1";
     default: return "";
   }
 }
@@ -1096,6 +1128,188 @@ int qSlicerExtensionsManagerModel::serverAPIFromString(const QString& str)
     }
   }
   return -1;
+}
+
+// --------------------------------------------------------------------------
+QString qSlicerExtensionsManagerModelPrivate::catalogPlatform(const QString& os, const QString& arch)
+{
+  if (os == "linux" && arch == "amd64")
+  {
+    return "linux";
+  }
+  if (os == "win" && arch == "amd64")
+  {
+    return "windows";
+  }
+  if (os == "macosx")
+  {
+    return arch == "arm64" ? QString("macos-arm64") : (arch == "amd64" ? QString("macos") : QString());
+  }
+  return QString();
+}
+
+// --------------------------------------------------------------------------
+bool qSlicerExtensionsManagerModelPrivate::readCatalog(const QByteArray& content)
+{
+  QJsonParseError parseError;
+  const QJsonDocument document = QJsonDocument::fromJson(content, &parseError);
+  if (parseError.error != QJsonParseError::NoError || !document.isObject())
+  {
+    this->warning(qSlicerExtensionsManagerModel::tr("Failed to read the extensions catalog: %1").arg(parseError.errorString()));
+    return false;
+  }
+  this->ExtensionsMetadataFromServer.clear();
+  this->ServerNote.clear();
+
+  const QString platform = Self::catalogPlatform(this->SlicerOs, this->SlicerArch);
+  const QJsonObject platforms = document.object().value("platforms").toObject();
+  if (platform.isEmpty() || !platforms.contains(platform))
+  {
+    this->ServerNote = qSlicerExtensionsManagerModel::tr("The server has no extensions for this platform (%1 %2).").arg(this->SlicerOs).arg(this->SlicerArch);
+    return true;
+  }
+
+  // The packages of a platform are built against one build of Slicer, the latest one: those built
+  // against another revision than this application cannot be installed in it.
+  QStringList otherSlicerRevisions;
+  const QJsonObject extensions = platforms.value(platform).toObject().value("extensions").toObject();
+  for (const QString& extensionName : extensions.keys())
+  {
+    const QJsonObject entry = extensions.value(extensionName).toObject();
+    const QJsonObject described = entry.value("metadata").toObject();
+    const QString archiveName = entry.value("file").toString();
+    const QString downloadUrl = entry.value("url").toString();
+    if (archiveName.isEmpty() || downloadUrl.isEmpty())
+    {
+      continue;
+    }
+    // The name of a package starts with the Slicer revision it is built for.
+    QString slicerRevision = entry.value("slicer_revision").toString();
+    if (slicerRevision.isEmpty())
+    {
+      slicerRevision = archiveName.section('-', 0, 0);
+    }
+    if (slicerRevision != this->SlicerRevision)
+    {
+      if (!otherSlicerRevisions.contains(slicerRevision))
+      {
+        otherSlicerRevisions << slicerRevision;
+      }
+      continue;
+    }
+    QStringList depends;
+    for (const QJsonValue& dependency : entry.value("depends").toArray())
+    {
+      depends << dependency.toString();
+    }
+    const QString repository = entry.value("repository").toString();
+    QString scmUrl = described.value("scmurl").toString();
+    if (scmUrl.isEmpty() && !repository.isEmpty())
+    {
+      scmUrl = QString("https://github.com/%1").arg(repository);
+    }
+
+    qSlicerExtensionsManagerModel::ExtensionMetadataType metadata;
+    metadata.insert("extensionname", extensionName);
+    // What an extension is asked by: there is one package of an extension for this application.
+    metadata.insert("extension_id", extensionName);
+    metadata.insert("revision", entry.value("revision").toString());
+    metadata.insert("slicer_revision", slicerRevision);
+    metadata.insert("os", this->SlicerOs);
+    metadata.insert("arch", this->SlicerArch);
+    metadata.insert("depends", depends.isEmpty() ? QString("NA") : depends.join(" "));
+    metadata.insert("scm", "git");
+    metadata.insert("scmurl", scmUrl);
+    metadata.insert("homepage", described.value("homepage").toString());
+    metadata.insert("iconurl", described.value("iconurl").toString());
+    metadata.insert("category", described.value("category").toString());
+    metadata.insert("contributors", described.value("contributors").toString());
+    metadata.insert("description", described.value("description").toString());
+    metadata.insert("screenshots", described.value("screenshoturls").toString());
+    metadata.insert("updated", entry.value("date").toString());
+    metadata.insert("archivename", archiveName);
+    metadata.insert("download_url", downloadUrl);
+    metadata.insert("sha256", entry.value("sha256").toString().toLower());
+    // 1 to 5: the tier of the extension in the Slicer extensions index; 0: not reviewed.
+    metadata.insert("tier", QString::number(entry.value("tier").toInt(0)));
+    metadata.insert("tests", entry.value("tests").toString());
+    this->ExtensionsMetadataFromServer[extensionName] = metadata;
+  }
+  if (this->ExtensionsMetadataFromServer.isEmpty() && !otherSlicerRevisions.isEmpty())
+  {
+    this->ServerNote = qSlicerExtensionsManagerModel::tr("The extensions on the server are built for revision %1 of the application, and this is revision %2: "
+                                                         "extensions can be installed and updated in the latest version of the application only.")
+                         .arg(otherSlicerRevisions.join(", "))
+                         .arg(this->SlicerRevision);
+    this->warning(this->ServerNote);
+  }
+  return true;
+}
+
+// --------------------------------------------------------------------------
+void qSlicerExtensionsManagerModelPrivate::onCatalogReplyFinished()
+{
+  Q_Q(qSlicerExtensionsManagerModel);
+  QNetworkReply* const reply = this->CatalogReply;
+  if (!reply)
+  {
+    return;
+  }
+  this->CatalogReply = nullptr;
+  reply->deleteLater();
+
+  bool success = false;
+  if (reply->error() != QNetworkReply::NoError)
+  {
+    this->warning(qSlicerExtensionsManagerModel::tr("Failed to download extension metadata from server") + QString(": %1 (%2)").arg(reply->errorString()).arg(reply->url().toString()));
+  }
+  else
+  {
+    success = this->readCatalog(reply->readAll());
+  }
+  this->CatalogRead = success;
+  if (success)
+  {
+    this->saveExtensionsMetadataFromServerToCache();
+    q->updateModel();
+  }
+  emit q->updateExtensionsMetadataFromServerCompleted(success);
+}
+
+// --------------------------------------------------------------------------
+bool qSlicerExtensionsManagerModelPrivate::verifyDownload(const QVariantMap& metadata, const QByteArray& data, const QUrl& url) const
+{
+  const QString expected = metadata.value("sha256").toString().toLower();
+  if (expected.isEmpty())
+  {
+    // The server does not say what the file is.
+    return true;
+  }
+  const QString actual = QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex());
+  if (actual == expected)
+  {
+    return true;
+  }
+  this->critical(qSlicerExtensionsManagerModel::tr("The package of the %1 extension downloaded from %2 is not the file the server describes (SHA-256 %3, expected %4): it is not installed.")
+                   .arg(metadata.value("extensionname").toString())
+                   .arg(url.toString())
+                   .arg(actual)
+                   .arg(expected));
+  return false;
+}
+
+// --------------------------------------------------------------------------
+QStringList qSlicerExtensionsManagerModel::serverExtensions() const
+{
+  Q_D(const qSlicerExtensionsManagerModel);
+  return d->ExtensionsMetadataFromServer.keys();
+}
+
+// --------------------------------------------------------------------------
+QString qSlicerExtensionsManagerModel::serverNote() const
+{
+  Q_D(const qSlicerExtensionsManagerModel);
+  return d->ServerNote;
 }
 
 // --------------------------------------------------------------------------
@@ -1638,13 +1852,27 @@ qSlicerExtensionDownloadTask* qSlicerExtensionsManagerModelPrivate::downloadExte
     downloadUrl.setPath(downloadUrl.path() + QString("/api/v1/file/%1/download").arg(file_id));
     extensionMetadata.insert("archivename", archivename);
   }
+  else if (q->serverAPI() == qSlicerExtensionsManagerModel::GitHub_v1)
+  {
+    // The catalog gives the address of the package, and its name.
+    downloadUrl = QUrl(extensionMetadata.value("download_url").toString());
+    if (!downloadUrl.isValid() || downloadUrl.isEmpty() || extensionMetadata.value("archivename").toString().isEmpty())
+    {
+      this->critical(qSlicerExtensionsManagerModel::tr("Failed to retrieve %1 extension package: the extensions catalog does not give its address").arg(extensionName));
+      return nullptr;
+    }
+    this->debug(qSlicerExtensionsManagerModel::tr("Downloading %1 extension from %2").arg(extensionName).arg(downloadUrl.toString()));
+  }
   else
   {
     qWarning() << Q_FUNC_INFO << " failed: missing implementation for serverAPI" << q->serverAPI();
     return nullptr;
   }
 
-  QNetworkReply* const reply = this->NetworkManager.get(QNetworkRequest(downloadUrl));
+  // The package may be served from another address than the one it is asked at (a release asset is).
+  QNetworkRequest downloadRequest(downloadUrl);
+  downloadRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+  QNetworkReply* const reply = this->NetworkManager.get(downloadRequest);
   qSlicerExtensionDownloadTask* const task = new qSlicerExtensionDownloadTask(reply);
   this->ActiveTasks[task] = QString("install %1 extension").arg(extensionMetadata["extensionname"].toString());
 
@@ -1838,7 +2066,6 @@ void qSlicerExtensionsManagerModel::onInstallDownloadFinished(qSlicerExtensionDo
 
   QNetworkReply* const reply = task->reply();
   QUrl downloadUrl = reply->url();
-  Q_ASSERT(downloadUrl.path().contains("/download"));
 
   emit this->downloadFinished(reply);
 
@@ -1860,7 +2087,14 @@ void qSlicerExtensionsManagerModel::onInstallDownloadFinished(qSlicerExtensionDo
     emit activeTasksChanged();
     return;
   }
-  file.write(reply->readAll());
+  const QByteArray package = reply->readAll();
+  if (!d->verifyDownload(task->metadata(), package, downloadUrl))
+  {
+    d->ActiveTasks.remove(task);
+    emit activeTasksChanged();
+    return;
+  }
+  file.write(package);
   file.close();
   this->installExtension(extensionName, task->metadata(), file.fileName(), task->installDependencies());
   d->ActiveTasks.remove(task);
@@ -2105,6 +2339,43 @@ bool qSlicerExtensionsManagerModel::updateExtensionsMetadataFromServer(bool forc
     return true;
   }
 
+  if (this->serverAPI() == qSlicerExtensionsManagerModel::GitHub_v1)
+  {
+    if (this->serverUrl().toString().isEmpty())
+    {
+      // server address has not been specified, normal at very first startup
+      // (default server address is set up by an application settings page)
+      return false;
+    }
+    if (!d->CatalogReply)
+    {
+      // download is not in progress yet, start it
+      QNetworkRequest request(this->serverUrl());
+      request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+      d->CatalogRead = false;
+      d->CatalogReply = d->NetworkManager.get(request);
+      QObject::connect(d->CatalogReply, &QNetworkReply::finished, this, [this]() { this->d_func()->onCatalogReplyFinished(); });
+    }
+    if (!waitForCompletion)
+    {
+      return true;
+    }
+    QEventLoop eventLoop;
+    QTimer timeoutTimer;
+    timeoutTimer.setSingleShot(true);
+    QObject::connect(&timeoutTimer, &QTimer::timeout, &eventLoop, &QEventLoop::quit);
+    // Connected after onCatalogReplyFinished: the catalog has been read when the loop ends.
+    QObject::connect(d->CatalogReply, &QNetworkReply::finished, &eventLoop, &QEventLoop::quit);
+    timeoutTimer.start(30000);
+    eventLoop.exec(QEventLoop::ExcludeUserInputEvents);
+    if (d->CatalogReply)
+    {
+      d->warning(tr("Update extension information from server failed: timed out while waiting for server response from %1").arg(this->serverUrl().toString()));
+      return false;
+    }
+    return d->CatalogRead;
+  }
+
   if (d->ExtensionsMetadataFromServerQueryUID.isNull())
   {
     // query is not in progress yet, start it
@@ -2325,7 +2596,6 @@ void qSlicerExtensionsManagerModel::onUpdateDownloadFinished(qSlicerExtensionDow
   // Get network reply
   QNetworkReply* const reply = task->reply();
   QUrl downloadUrl = reply->url();
-  Q_ASSERT(downloadUrl.path().contains("/download"));
 
   // Notify observers of event
   emit this->downloadFinished(reply);
@@ -2374,7 +2644,16 @@ void qSlicerExtensionsManagerModel::onUpdateDownloadFinished(qSlicerExtensionDow
       return;
     }
 
-    file.write(reply->readAll());
+    const QByteArray package = reply->readAll();
+    if (!d->verifyDownload(task->metadata(), package, downloadUrl))
+    {
+      file.close();
+      file.remove();
+      d->ActiveTasks.remove(task);
+      emit activeTasksChanged();
+      return;
+    }
+    file.write(package);
     file.close();
 
     // Schedule install of update
@@ -3371,6 +3650,11 @@ QUrl qSlicerExtensionsManagerModel::extensionsListUrl() const
   if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
   {
     url.setPath(url.path() + QString("/catalog/All/%1/%2/%3").arg(d->SlicerRevision).arg(d->SlicerOs).arg(d->SlicerArch));
+  }
+  else if (serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
+  {
+    // The extensions are listed by the application (serverExtensions): there is no page.
+    url = QUrl();
   }
   else
   {

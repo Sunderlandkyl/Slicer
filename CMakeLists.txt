@@ -383,6 +383,20 @@ mark_as_superbuild(Slicer_BUILD_QT_DESIGNER_PLUGINS)
 option(Slicer_BUILD_EXTENSIONMANAGER_SUPPORT "Build Slicer extensions manager" ON)
 mark_as_superbuild(Slicer_BUILD_EXTENSIONMANAGER_SUPPORT)
 
+# Where the extensions manager finds extensions, unless the user says otherwise.
+# Girder_v1: a Girder server with the Slicer package manager plugin, and its web application.
+# GitHub_v1: the extensions catalog (a JSON file) published with a build of the application.
+set(Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_API "Girder_v1" CACHE STRING "API of the default extensions server: Girder_v1 or GitHub_v1")
+set_property(CACHE Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_API PROPERTY STRINGS "Girder_v1" "GitHub_v1")
+mark_as_advanced(Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_API)
+mark_as_superbuild(Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_API)
+set(Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_URL "" CACHE STRING "Address of the default extensions server (empty: https://slicer-packages.kitware.com with Girder_v1)")
+mark_as_advanced(Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_URL)
+mark_as_superbuild(Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_URL)
+set(Slicer_EXTENSIONS_MANAGER_DEFAULT_FRONTEND_SERVER_URL "" CACHE STRING "Address of the web application of the default extensions server (empty: https://extensions.slicer.org with Girder_v1)")
+mark_as_advanced(Slicer_EXTENSIONS_MANAGER_DEFAULT_FRONTEND_SERVER_URL)
+mark_as_superbuild(Slicer_EXTENSIONS_MANAGER_DEFAULT_FRONTEND_SERVER_URL)
+
 option(Slicer_BUILD_APPLICATIONUPDATE_SUPPORT "Build Slicer with application update support" ON)
 mark_as_superbuild(Slicer_BUILD_APPLICATIONUPDATE_SUPPORT)
 

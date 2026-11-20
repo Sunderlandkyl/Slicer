@@ -338,6 +338,14 @@ cmd_configure() {
     args+=("-DCMAKE_C_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER"
            "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER")
   fi
+  # Where the extensions manager of the application finds extensions: the
+  # extensions catalog published with the build (extension-reconcile.yml),
+  # in place of the extensions server of Slicer. Not part of
+  # `configure_args` either: no prerequisite is built differently for it.
+  if [ -n "${SLICER_EXTENSIONS_CATALOG_URL:-}" ]; then
+    args+=("-DSlicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_API:STRING=GitHub_v1"
+           "-DSlicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_URL:STRING=$SLICER_EXTENSIONS_CATALOG_URL")
+  fi
   log "Configure superbuild"
   info "cmake ${args[*]}"
   local rc=0

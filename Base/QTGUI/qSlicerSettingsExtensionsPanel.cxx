@@ -30,6 +30,8 @@
 #include "qSlicerSettingsExtensionsPanel.h"
 #include "ui_qSlicerSettingsExtensionsPanel.h"
 
+#include "vtkSlicerConfigure.h" // For Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_URL
+
 // --------------------------------------------------------------------------
 // qSlicerSettingsExtensionsPanelPrivate
 
@@ -66,10 +68,21 @@ void qSlicerSettingsExtensionsPanelPrivate::init()
 
   // Default values
   this->ExtensionsManagerEnabledCheckBox->setChecked(true);
+  // The defaults of the build are those of the server API of the build.
+  const bool defaultServerAPI = app->extensionsManagerModel()->serverAPI() //
+                                == qSlicerExtensionsManagerModel::serverAPIFromString(Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_API);
+  const QString defaultServerUrl = defaultServerAPI ? QString(Slicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_URL) : QString();
+  const QString defaultFrontendServerUrl = defaultServerAPI ? QString(Slicer_EXTENSIONS_MANAGER_DEFAULT_FRONTEND_SERVER_URL) : QString();
   if (app->extensionsManagerModel()->serverAPI() == qSlicerExtensionsManagerModel::Girder_v1)
   {
-    this->ExtensionsServerUrlLineEdit->setText("https://slicer-packages.kitware.com");
-    this->ExtensionsFrontendServerUrlLineEdit->setText("https://extensions.slicer.org");
+    this->ExtensionsServerUrlLineEdit->setText(defaultServerUrl.isEmpty() ? QString("https://slicer-packages.kitware.com") : defaultServerUrl);
+    this->ExtensionsFrontendServerUrlLineEdit->setText(defaultFrontendServerUrl.isEmpty() ? QString("https://extensions.slicer.org") : defaultFrontendServerUrl);
+  }
+  else if (app->extensionsManagerModel()->serverAPI() == qSlicerExtensionsManagerModel::GitHub_v1)
+  {
+    // The address of an extensions catalog; there is no web application.
+    this->ExtensionsServerUrlLineEdit->setText(defaultServerUrl);
+    this->ExtensionsFrontendServerUrlLineEdit->setText(defaultFrontendServerUrl);
   }
   else
   {
