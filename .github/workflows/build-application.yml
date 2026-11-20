@@ -237,8 +237,8 @@ jobs:
           {
             echo "### Prerequisites"
             echo ""
-            echo "| Platform | Key | Already built |"
-            echo "|---|---|---|"
+            echo "| Platform | Key | Already built | Stages reused |"
+            echo "|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           for platform in ${PLATFORMS//,/ }; do
             # The runner image is part of the key: a new image brings a new
@@ -263,10 +263,27 @@ jobs:
             if [ "$FORCE" != "true" ] && grep -qxF "$key.parts" <<< "$assets"; then
               cached=true
             fi
+            # The stages the prerequisites are built in have a key each, and
+            # keep the tree they leave under it: the build starts from that of
+            # the last stage whose key the release has (from; 0: from nothing).
+            stages='{}' from=0 n=0
+            for hash in $(SLICER_PLATFORM="$platform" \
+                          SLICER_RUNNER_IMAGE="$runner" \
+                          SLICER_QT_VERSION="$qt" \
+                          SLICER_SOURCE_DIR="$GITHUB_WORKSPACE" \
+                          "$ci" deps-stage-keys || true); do
+              n=$((n + 1))
+              stage="slicer-stage$n-$platform-$hash"
+              stages="$(jq -c --arg n "stage$n" --arg k "$stage" '. + {($n): $k}' <<< "$stages")"
+              if [ "$FORCE" != "true" ] && grep -qxF "$stage.parts" <<< "$assets"; then
+                from=$n
+              fi
+            done
             entries="$(echo "$entries" | jq -c \
               --arg p "$platform" --arg r "$runner" --arg q "$qt" --arg k "$key" --argjson c "$cached" \
-              '. + [{platform: $p, runner: $r, qt: $q, key: $k, cached: $c}]')"
-            echo "| $platform | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
+              --argjson s "$stages" --argjson f "$from" \
+              '. + [{platform: $p, runner: $r, qt: $q, key: $k, cached: $c, from: $f} + $s]')"
+            echo "| $platform | \`$key\` | $cached | $([ "$cached" = "true" ] && echo "-" || echo "$from of $n") |" >> "$GITHUB_STEP_SUMMARY"
           done
           desktop="$(echo "$entries" | jq 'length')"
           [ "$desktop" -gt 0 ] || [ "$web" = "true" ] || { echo "::error::no known platform in '$PLATFORMS'"; exit 1; }

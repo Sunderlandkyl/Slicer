@@ -14,12 +14,19 @@ name: Build the prerequisites
 # stage builds a group of external projects in the superbuild tree produced by
 # the previous one. The groups follow the critical path: VTK, then ITK, which
 # needs VTK because Slicer enables ITKVtkGlue, then CTK, which needs both.
+#
+# A stage has a key of its own (slicer-ci.sh deps-stage-keys), made of the key
+# of the stage before it and of what describes the external projects it
+# builds, and keeps the tree it leaves in the release under that key. A run
+# starts from the tree of the last stage whose key the release has
+# (matrix.from): a change to CTK builds CTK and what follows it, on the VTK
+# and ITK of an earlier run. The stages up to that one do nothing.
 
 on:
   workflow_call:
     inputs:
       matrix:
-        description: "Matrix of the platforms to build, as JSON: {include: [{platform, runner, qt, key}]}"
+        description: "Matrix of the platforms to build, as JSON: {include: [{platform, runner, qt, key, from, stage1, stage2, stage3, stage4}]}"
         type: string
         required: true
       ci-repository:
@@ -58,6 +65,9 @@ jobs:
     name: "Deps 1/5: what VTK and ITK need (${{ matrix.platform }})"
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    permissions:
+      # The stage keeps the tree it leaves in the release.
+      contents: write
     env:
       SLICER_STAGE_NAME: "Deps 1/5: what VTK and ITK need"
     strategy:
@@ -65,10 +75,12 @@ jobs:
       matrix: ${{ fromJSON(inputs.matrix) }}
     steps:
       - name: Check out the sources
+        if: (matrix.from || 0) < 1
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
       - name: Check out the Slicer CI scripts
+        if: (matrix.from || 0) < 1
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.ci-repository }}
@@ -76,6 +88,7 @@ jobs:
           path: .slicer-ci
           sparse-checkout: .github
       - name: Set up environment
+        if: (matrix.from || 0) < 1
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt || inputs.qt-version }}
@@ -84,6 +97,7 @@ jobs:
           # up the build of the application itself.
           compiler-cache: "false"
       - name: Build base
+        if: (matrix.from || 0) < 1
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
           # The dependencies of VTK and ITK, and nothing else. Naming their
@@ -95,7 +109,10 @@ jobs:
           # Naming such a project here would build the whole of VTK in this
           # stage instead, which is what teem used to do.
           target: "python DCMTK tbb"
-          archive-paths: "SR Slicer"
+          archive-paths: "SR"
+          publish-release-key: ${{ matrix.stage1 || '' }}
+          release-tag: ${{ inputs.prerequisites-release }}
+          release-title: ${{ inputs.prerequisites-release-title }}
           archive-name: deps-stage
           upload-artifact: deps-stage1-${{ matrix.platform }}
 
@@ -104,6 +121,9 @@ jobs:
     needs: deps-1
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    permissions:
+      # The stage keeps the tree it leaves in the release.
+      contents: write
     env:
       SLICER_STAGE_NAME: "Deps 2/5: VTK"
     strategy:
@@ -111,10 +131,12 @@ jobs:
       matrix: ${{ fromJSON(inputs.matrix) }}
     steps:
       - name: Check out the sources
+        if: (matrix.from || 0) < 2
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
       - name: Check out the Slicer CI scripts
+        if: (matrix.from || 0) < 2
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.ci-repository }}
@@ -122,17 +144,23 @@ jobs:
           path: .slicer-ci
           sparse-checkout: .github
       - name: Set up environment
+        if: (matrix.from || 0) < 2
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt || inputs.qt-version }}
           compiler-cache: "false"
       - name: Build VTK
+        if: (matrix.from || 0) < 2
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
           target: "VTK"
           restore-artifact: deps-stage1-${{ matrix.platform }}
           restore-archive: deps-stage
-          archive-paths: "SR Slicer"
+          archive-paths: "SR"
+          restore-release-key: ${{ (matrix.from || 0) == 1 && matrix.stage1 || '' }}
+          publish-release-key: ${{ matrix.stage2 || '' }}
+          release-tag: ${{ inputs.prerequisites-release }}
+          release-title: ${{ inputs.prerequisites-release-title }}
           archive-name: deps-stage
           upload-artifact: deps-stage2-${{ matrix.platform }}
 
@@ -141,6 +169,9 @@ jobs:
     needs: deps-2
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    permissions:
+      # The stage keeps the tree it leaves in the release.
+      contents: write
     env:
       SLICER_STAGE_NAME: "Deps 3/5: ITK"
     strategy:
@@ -148,10 +179,12 @@ jobs:
       matrix: ${{ fromJSON(inputs.matrix) }}
     steps:
       - name: Check out the sources
+        if: (matrix.from || 0) < 3
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
       - name: Check out the Slicer CI scripts
+        if: (matrix.from || 0) < 3
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.ci-repository }}
@@ -159,18 +192,24 @@ jobs:
           path: .slicer-ci
           sparse-checkout: .github
       - name: Set up environment
+        if: (matrix.from || 0) < 3
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt || inputs.qt-version }}
           compiler-cache: "false"
       - name: Build ITK
+        if: (matrix.from || 0) < 3
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
           # ITK needs VTK, because Slicer enables ITKVtkGlue.
           target: "ITK"
           restore-artifact: deps-stage2-${{ matrix.platform }}
           restore-archive: deps-stage
-          archive-paths: "SR Slicer"
+          archive-paths: "SR"
+          restore-release-key: ${{ (matrix.from || 0) == 2 && matrix.stage2 || '' }}
+          publish-release-key: ${{ matrix.stage3 || '' }}
+          release-tag: ${{ inputs.prerequisites-release }}
+          release-title: ${{ inputs.prerequisites-release-title }}
           archive-name: deps-stage
           upload-artifact: deps-stage3-${{ matrix.platform }}
 
@@ -179,6 +218,9 @@ jobs:
     needs: deps-3
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
+    permissions:
+      # The stage keeps the tree it leaves in the release.
+      contents: write
     env:
       SLICER_STAGE_NAME: "Deps 4/5: CTK"
     strategy:
@@ -186,10 +228,12 @@ jobs:
       matrix: ${{ fromJSON(inputs.matrix) }}
     steps:
       - name: Check out the sources
+        if: (matrix.from || 0) < 4
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
       - name: Check out the Slicer CI scripts
+        if: (matrix.from || 0) < 4
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.ci-repository }}
@@ -197,11 +241,13 @@ jobs:
           path: .slicer-ci
           sparse-checkout: .github
       - name: Set up environment
+        if: (matrix.from || 0) < 4
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt || inputs.qt-version }}
           compiler-cache: "false"
       - name: Build CTK
+        if: (matrix.from || 0) < 4
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
           # CTK needs VTK, ITK, Python and DCMTK, so it comes last on the
@@ -209,7 +255,11 @@ jobs:
           target: "CTK"
           restore-artifact: deps-stage3-${{ matrix.platform }}
           restore-archive: deps-stage
-          archive-paths: "SR Slicer"
+          archive-paths: "SR"
+          restore-release-key: ${{ (matrix.from || 0) == 3 && matrix.stage3 || '' }}
+          publish-release-key: ${{ matrix.stage4 || '' }}
+          release-tag: ${{ inputs.prerequisites-release }}
+          release-title: ${{ inputs.prerequisites-release-title }}
           archive-name: deps-stage
           upload-artifact: deps-stage4-${{ matrix.platform }}
 
@@ -254,6 +304,9 @@ jobs:
           restore-artifact: deps-stage4-${{ matrix.platform }}
           restore-archive: deps-stage
           archive-paths: "SR"
+          restore-release-key: ${{ (matrix.from || 0) == 4 && matrix.stage4 || '' }}
+          release-tag: ${{ inputs.prerequisites-release }}
+          release-title: ${{ inputs.prerequisites-release-title }}
           archive-name: deps-${{ matrix.platform }}
           upload-artifact: deps-${{ matrix.platform }}
 

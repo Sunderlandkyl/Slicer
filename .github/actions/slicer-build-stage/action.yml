@@ -17,6 +17,23 @@ inputs:
   restore-archive:
     description: "Name of the archive inside the restored artifact (without extension)"
     default: "stage"
+  restore-release-key:
+    description: >-
+      Key of a stage whose superbuild tree is kept in the release
+      (release-tag), restored in place of restore-artifact: the tree a stage of
+      an earlier run left, when the stages up to it have nothing new to build.
+    default: ""
+  publish-release-key:
+    description: >-
+      Key the archive is kept under in the release (release-tag), for the runs
+      whose stages up to this one have nothing new to build; empty to skip.
+    default: ""
+  release-tag:
+    description: "Release of restore-release-key and publish-release-key"
+    default: ""
+  release-title:
+    description: "Title given to that release if it has to be created"
+    default: "CI prerequisites"
   strip:
     description: >-
       Options passed to the 'strip' command of the helper script, for example
@@ -91,15 +108,24 @@ runs:
         git -C "$src" log -1 --oneline || true
         git -C "$src" status --short | head -n 5 || true
 
+    - name: Restore the stage kept in the release
+      if: inputs.restore-release-key != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        KEY: ${{ inputs.restore-release-key }}
+        TAG: ${{ inputs.release-tag }}
+      run: '"$SLICER_CI" stage-restore "$TAG" "$KEY"'
+
     - name: Download previous stage
-      if: inputs.restore-artifact != ''
+      if: inputs.restore-artifact != '' && inputs.restore-release-key == ''
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: ${{ inputs.restore-artifact }}
         path: ${{ env.SLICER_OUTPUT_DIR }}/restore
 
     - name: Restore previous stage
-      if: inputs.restore-artifact != ''
+      if: inputs.restore-artifact != '' && inputs.restore-release-key == ''
       shell: bash
       run: |
         set -euo pipefail
@@ -157,3 +183,17 @@ runs:
         retention-days: ${{ inputs.retention-days }}
         compression-level: 0
         if-no-files-found: error
+
+    # After the artifact, which the next stage of this run starts from: this
+    # is for the runs to come.
+    - name: Keep the stage in the release
+      if: inputs.publish-release-key != '' && inputs.archive-name != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        KEY: ${{ inputs.publish-release-key }}
+        TAG: ${{ inputs.release-tag }}
+        TITLE: ${{ inputs.release-title }}
+      run: |
+        set -euo pipefail
+        "$SLICER_CI" stage-publish "$TAG" "$TITLE" "$KEY" "$SLICER_OUTPUT_DIR/${{ inputs.archive-name }}.tar.zst"

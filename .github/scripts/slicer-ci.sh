@@ -272,6 +272,97 @@ _deps_key_slicer() {
   )
 }
 
+# The targets of the stages the prerequisites of Slicer are built in, but the
+# last, which builds everything else: those of build-prerequisites.yml.
+SLICER_DEPS_STAGE_TARGETS=("python DCMTK tbb" "VTK" "ITK" "CTK")
+
+# Print the key of each of those stages, one per line: see
+# deps-stage-keys.py. A stage whose key has not changed is not built again:
+# the superbuild tree it left, kept in the release under that key, is what
+# the stage after it starts from. Nothing is printed for a custom
+# application, whose prerequisites are built in one piece.
+#
+# The key of the whole set (deps-key) is not made of these: it stays what it
+# was, and is what says whether there is anything to build at all.
+cmd_deps_stage_keys() {
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  [ -f "$src/SuperBuild.cmake" ] || return 0
+  # One that runs: on Windows, python3 may be the stub that offers to install it.
+  local py="" candidate
+  for candidate in python3 python; do
+    if "$candidate" -c "" >/dev/null 2>&1; then py="$candidate"; break; fi
+  done
+  [ -n "$py" ] || return 0
+  local script; script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deps-stage-keys.py"
+  (
+    cd "$src"
+    {
+      for f in CMake/ExternalProject*.cmake; do echo "== $f"; cat "$f"; done
+      echo "== CMakeLists.txt (subset)"
+      grep -E 'option\(|Slicer_REQUIRED_|_VERSION|CMAKE_CXX_STANDARD|Slicer_VTK_|Slicer_ITK_|Slicer_USE_|Slicer_BUILD_' CMakeLists.txt || true
+      echo "== configure arguments"
+      SLICER_QT_DIR="" configure_args
+      echo "platform=$SLICER_PLATFORM"
+      echo "runner=${SLICER_RUNNER_IMAGE:-}"
+      echo "qt=${SLICER_QT_VERSION:-}"
+      echo "key-version=${SLICER_DEPS_KEY_VERSION:-1}"
+    } | "$py" "$script" . "${SLICER_DEPS_STAGE_TARGETS[@]}"
+  )
+}
+
+# Restore the superbuild tree a stage left in a release.
+#
+#   stage-restore <tag> <key>
+cmd_stage_restore() {
+  local tag="${1:?stage-restore: missing tag}" key="${2:?stage-restore: missing key}"
+  local dir; dir="$(bash_path "$SLICER_OUTPUT_DIR")/restore"
+  rm -rf "$dir"; mkdir -p "$dir"
+  gh release download "$tag" -R "$GITHUB_REPOSITORY" -D "$dir" --clobber -p "$key.tar.zst*"
+  cmd_unpack "$SLICER_OUTPUT_DIR/restore/$key.tar.zst"
+  rm -rf "$dir"
+}
+
+# Keep the superbuild tree a stage left, in a release, under its key, for the
+# builds whose earlier stages have the same keys; and remove what the stage
+# kept before the two most recent ones.
+#
+#   stage-publish <tag> <title> <key> <archive>
+#
+# <key> is slicer-stage<n>-<platform>-<hash>. The archive is left where it is.
+cmd_stage_publish() {
+  local tag="${1:?stage-publish: missing tag}" title="${2:-CI prerequisites}"
+  local key="${3:?stage-publish: missing key}" archive="${4:?stage-publish: missing archive}"
+  archive="$(bash_path "$archive")"
+  [ -f "$archive" ] || die "stage-publish: $archive does not exist"
+  local upload; upload="$(bash_path "$SLICER_OUTPUT_DIR")/stage-publish"
+  rm -rf "$upload"; mkdir -p "$upload"
+  cp "$archive" "$upload/$key.tar.zst"
+  cmd_split "$upload/$key.tar.zst"
+  gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "$title" --prerelease --latest=false \
+    --notes "Prebuilt prerequisites reused by the build workflow. The slicer-deps-* and slicer-stage* assets are regenerated on demand." \
+    2>/dev/null || true
+  gh release upload "$tag" -R "$GITHUB_REPOSITORY" "$upload"/* --clobber
+  # The list of parts goes last: its presence marks the set as complete.
+  (cd "$upload" && ls) > "$upload/$key.parts"
+  gh release upload "$tag" -R "$GITHUB_REPOSITORY" "$upload/$key.parts" --clobber
+  rm -rf "$upload"
+
+  # slicer-stage<n>-<platform>-: what this stage of this platform kept.
+  local family="${key%-*}-"
+  local names
+  names="$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json assets \
+             --jq '.assets[] | "\(.createdAt) \(.name)"')"
+  { grep -E " ${family}[0-9a-f]+\.parts$" <<< "$names" || true; } \
+    | sort -r | tail -n +3 | while read -r _ list; do
+        local old="${list%.parts}"
+        echo "Removing the superseded stage $old"
+        gh release delete-asset "$tag" "$list" -R "$GITHUB_REPOSITORY" --yes || true
+        awk '{print $2}' <<< "$names" | { grep -F "$old.tar.zst" || true; } | while read -r asset; do
+          gh release delete-asset "$tag" "$asset" -R "$GITHUB_REPOSITORY" --yes || true
+        done
+      done
+}
+
 # Print, one per line, the arguments the superbuild tree is configured with.
 #
 # This is also what identifies the prerequisites: two trees configured with the
@@ -1416,6 +1507,9 @@ main() {
   case "$cmd" in
     env) cmd_env "$@" ;;
     deps-key) cmd_deps_key "$@" ;;
+    deps-stage-keys) cmd_deps_stage_keys "$@" ;;
+    stage-restore) cmd_stage_restore "$@" ;;
+    stage-publish) cmd_stage_publish "$@" ;;
     free-disk-space) cmd_free_disk_space "$@" ;;
     install-system-packages) cmd_install_system_packages "$@" ;;
     install-software-opengl) cmd_install_software_opengl "$@" ;;
