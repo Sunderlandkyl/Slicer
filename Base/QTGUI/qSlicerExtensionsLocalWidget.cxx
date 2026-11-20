@@ -783,7 +783,8 @@ QListWidgetItem* qSlicerExtensionsLocalWidgetPrivate::updateExtensionItem(const 
   item->setData(Self::LoadedRole, metadata["loaded"].toBool());
   item->setData(Self::InstalledRole, metadata["installed"].toBool());
   item->setData(Self::BookmarkedRole, metadata["bookmarked"].toBool());
-  item->setData(Self::EnabledRole, metadata["enabled"].toBool());
+  // An extension that is offered is not drawn as one that is disabled.
+  item->setData(Self::EnabledRole, metadata["enabled"].toBool() || (this->ServerExtensionsListed && !metadata["installed"].toBool()));
   item->setData(Self::ScheduledForUpdateRole, q->extensionsManagerModel()->isExtensionScheduledForUpdate(extensionName));
   item->setData(Self::ScheduledForUninstallRole, q->extensionsManagerModel()->isExtensionScheduledForUninstall(extensionName));
 

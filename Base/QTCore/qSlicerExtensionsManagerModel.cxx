@@ -1261,7 +1261,7 @@ void qSlicerExtensionsManagerModelPrivate::onCatalogReplyFinished()
   bool success = false;
   if (reply->error() != QNetworkReply::NoError)
   {
-    this->warning(qSlicerExtensionsManagerModel::tr("Failed to download extension metadata from server") + QString(": %1 (%2)").arg(reply->errorString()).arg(reply->url().toString()));
+    this->warning(qSlicerExtensionsManagerModel::tr("Failed to download extension metadata from server") + QString(": %1 (%2)").arg(reply->errorString(), q->serverUrl().toString()));
   }
   else
   {
@@ -1290,11 +1290,15 @@ bool qSlicerExtensionsManagerModelPrivate::verifyDownload(const QVariantMap& met
   {
     return true;
   }
+  // The address the package was asked at: the one it was served from is long, and of no use to anyone.
+  QString address = metadata.value("download_url").toString();
+  if (address.isEmpty())
+  {
+    address = url.toString(QUrl::RemoveQuery);
+  }
+  // All at once: an address has "%2F" in it, which a later arg() would take for a place marker.
   this->critical(qSlicerExtensionsManagerModel::tr("The package of the %1 extension downloaded from %2 is not the file the server describes (SHA-256 %3, expected %4): it is not installed.")
-                   .arg(metadata.value("extensionname").toString())
-                   .arg(url.toString())
-                   .arg(actual)
-                   .arg(expected));
+                   .arg(metadata.value("extensionname").toString(), address, actual, expected));
   return false;
 }
 
@@ -1861,7 +1865,7 @@ qSlicerExtensionDownloadTask* qSlicerExtensionsManagerModelPrivate::downloadExte
       this->critical(qSlicerExtensionsManagerModel::tr("Failed to retrieve %1 extension package: the extensions catalog does not give its address").arg(extensionName));
       return nullptr;
     }
-    this->debug(qSlicerExtensionsManagerModel::tr("Downloading %1 extension from %2").arg(extensionName).arg(downloadUrl.toString()));
+    this->debug(qSlicerExtensionsManagerModel::tr("Downloading %1 extension from %2").arg(extensionName, downloadUrl.toString()));
   }
   else
   {
