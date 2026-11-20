@@ -80,7 +80,7 @@ const WORKFLOW = "extension-reconcile.yml";
 const BUILD_WORKFLOW = "slicer-nightly-build.yml";
 // The job of a platform in extension-build.yml, as the workflow calling it
 // names it: "<calling job> / <platform>".
-const PLATFORM_JOB = /(?:^|\/ )(linux|macos|windows|web)$/;
+const PLATFORM_JOB = /(?:^|\/ )(linux|macos|macos-arm64|windows|web)$/;
 const encoder = new TextEncoder();
 // What a page of any site may read of the answers to the requests for a wheel.
 const CORS = {

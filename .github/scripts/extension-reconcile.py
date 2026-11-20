@@ -61,7 +61,7 @@ import urllib.error
 import urllib.request
 
 API = "https://api.github.com"
-PLATFORMS = ("linux", "macos", "windows", "web")
+PLATFORMS = ("linux", "macos", "macos-arm64", "windows", "web")
 STARTED = time.time()
 
 
@@ -473,7 +473,7 @@ def run_platforms(extension, run_id, token):
     status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{run_id}/jobs?per_page=100", token)
     platforms = set()
     for job in (body or {}).get("jobs", []) if status == 200 else []:
-        match = re.search(r"(?:^|/ )(linux|macos|windows|web)$", job.get("name") or "")
+        match = re.search(r"(?:^|/ )(linux|macos|macos-arm64|windows|web)$", job.get("name") or "")
         if match and job.get("conclusion") != "skipped":
             platforms.add(match.group(1))
     return platforms or None
@@ -489,7 +489,7 @@ def push_failures(extension, token):
     status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{runs[0]['id']}/jobs?per_page=100", token)
     failed = {}
     for job in (body or {}).get("jobs", []) if status == 200 else []:
-        match = re.search(r"(?:^|/ )(linux|macos|windows|web)$", job.get("name") or "")
+        match = re.search(r"(?:^|/ )(linux|macos|macos-arm64|windows|web)$", job.get("name") or "")
         if match and job.get("conclusion") == "failure":
             failed[match.group(1)] = runs[0]["html_url"]
     return failed
