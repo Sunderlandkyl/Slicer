@@ -558,6 +558,14 @@ def catalog_of(state):
             }
             if package.get("icon"):
                 entry["icon"] = f"{base}/{package['icon']}"
+            # For Slicer's Extensions Manager: the Slicer revision the package
+            # names itself after, and what the extension says of itself.
+            if package.get("slicer_revision"):
+                entry["slicer_revision"] = package["slicer_revision"]
+            if package.get("date"):
+                entry["date"] = package["date"]
+            if package.get("metadata"):
+                entry["metadata"] = package["metadata"]
             if platform == "web" and extension.web:
                 entry["web"] = extension.web
             offered[extension.name] = entry

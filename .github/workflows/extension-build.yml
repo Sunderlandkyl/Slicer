@@ -378,14 +378,18 @@ jobs:
           packages="$(printf '%s\n' "${files[@]}" | jq -R . | jq -sc .)"
           # What it was built with (extension-dependencies), and its build
           # tree (extension-tree), when there are any.
-          with='{}' tree='null'
+          with='{}' tree='null' metadata='{}'
           [ ! -f extension-built-with.json ] || with="$(tr -d '\r' < extension-built-with.json)"
           [ ! -f extension-tree.json ] || tree="$(tr -d '\r' < extension-tree.json)"
+          # What the extension says of itself (extension-package): its
+          # description, category, icon..., for Slicer's Extensions Manager.
+          [ ! -f extension-metadata.json ] || metadata="$(tr -d '\r' < extension-metadata.json)"
           jq -n --arg platform "$PLATFORM" --arg commit "$SLICER_COMMIT" --arg tests "$TESTS" \
                 --arg revision "$SLICER_REVISION" --argjson packages "$packages" \
-                --argjson with "$with" --argjson tree "$tree" \
+                --argjson with "$with" --argjson tree "$tree" --argjson metadata "$metadata" \
             '{platform: $platform, slicer_commit: $commit, slicer_revision: $revision, tests: $tests, packages: $packages,
               depends: ($with.depends // []), built_with: ($with.built_with // {})}
+             + (if ($metadata | length) > 0 then {metadata: $metadata} else {} end)
              + (if $tree then {build_tree: $tree} else {} end)' \
             > "slicer-package-$PLATFORM.json"
           cat "slicer-package-$PLATFORM.json"

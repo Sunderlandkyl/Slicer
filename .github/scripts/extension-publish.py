@@ -85,6 +85,8 @@ for description in descriptions:
         entry["slicer_revision"] = package["slicer_revision"]
     if package.get("tests"):
         entry["tests"] = package["tests"]
+    if package.get("metadata"):
+        entry["metadata"] = package["metadata"]
     if len(files) > 1:
         entry["icon"] = files[1]
     entry["depends"] = package.get("depends") or []

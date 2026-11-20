@@ -1299,6 +1299,14 @@ cmd_extension_package() {
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "packages=${names% }" >> "$GITHUB_OUTPUT"
   fi
+  # What the extension says of itself (its .s4ext), for the lists that offer
+  # it before it is installed. Not having it withholds nothing.
+  local py; py="$(command -v python3 || command -v python || true)"
+  if [ -n "$py" ]; then
+    "$py" "$(dirname "${BASH_SOURCE[0]}")/extension-description.py" \
+      "$(bash_path "$inner")" "$out/extension-metadata.json" \
+      || echo "::warning::extension-package: the description of the extension could not be read"
+  fi
 }
 
 # Load the built extension into the restored Slicer, which is what proves the
