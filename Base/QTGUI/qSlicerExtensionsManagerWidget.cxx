@@ -21,7 +21,14 @@
 #include "vtkSlicerConfigure.h" // For Slicer_BUILD_WEBENGINE_SUPPORT
 
 // Qt includes
+#include <QComboBox>
 #include <QDateTime>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QPointer>
+#include <QSettings>
+#include <QTextBrowser>
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QInputDialog>
@@ -150,10 +157,38 @@ public:
     configureMenu->addAction(this->AutoInstallDependenciesAction);
     configureMenu->addAction(this->EditBookmarksAction);
     configureMenu->addAction(this->OpenExtensionsCatalogWebsiteAction);
+    // Of an extensions catalog, which has no web application: the page that comes with the application,
+    // in place of the list. Shown when there is a choice (qSlicerExtensionsManagerWidgetPrivate::applyCatalogView).
+    this->CatalogPageAction = new QAction(qSlicerExtensionsManagerWidget::tr("Show the extensions as a web page"), this);
+    this->CatalogPageAction->setCheckable(true);
+    this->CatalogPageAction->setVisible(false);
+    configureMenu->addAction(this->CatalogPageAction);
 
     this->ConfigureButton->setMenu(configureMenu);
     invalidateSizeHint(this->ConfigureButton);
   }
+  QAction* CatalogPageAction{ nullptr };
+};
+
+// --------------------------------------------------------------------------
+/// What the server says of an extension, with the images it names, which are retrieved by who shows this.
+class qSlicerExtensionDetailsBrowser : public QTextBrowser
+{
+public:
+  qSlicerExtensionDetailsBrowser(QWidget* parent = nullptr)
+    : QTextBrowser(parent)
+  {
+  }
+  QVariant loadResource(int type, const QUrl& name) override
+  {
+    if (type == QTextDocument::ImageResource && (name.scheme() == "http" || name.scheme() == "https"))
+    {
+      // What has been retrieved, or nothing yet: never retrieved from here
+      return this->Images.contains(name.toString()) ? QVariant(this->Images.value(name.toString())) : QVariant();
+    }
+    return this->QTextBrowser::loadResource(type, name);
+  }
+  QHash<QString, QImage> Images;
 };
 
 } // namespace
@@ -178,6 +213,18 @@ public:
 
   /// Whether the application itself lists the extensions that the server offers (ExtensionsCatalogWidget),
   /// because the server has no web application to browse them with.
+  /// Whether the server is an extensions catalog, which has no web application.
+  bool isCatalogServer() const;
+  /// Show what an extensions catalog offers as the list of the application or as the page that comes
+  /// with it, as chosen (Extensions/CatalogView setting: "list", the default, or "page").
+  void applyCatalogView();
+  void updateCatalogCategories();
+  void showExtensionDetails(const QString& extensionName);
+  QComboBox* CatalogCategoryComboBox{ nullptr };
+  qSlicerExtensionDetailsBrowser* ExtensionDetailsBrowser{ nullptr };
+  QString ExtensionDetailsShown;
+  QNetworkAccessManager DetailsImageManager;
+  QStringList DetailsImagesRequested;
   bool isCatalogListed() const;
   /// Retrieve what the server offers, unless it has been retrieved in the last minutes: what is listed
   /// is what was last retrieved, and nothing retrieves it otherwise unless updates are checked for automatically.
@@ -210,10 +257,183 @@ qSlicerExtensionsManagerWidgetPrivate::qSlicerExtensionsManagerWidgetPrivate(qSl
 }
 
 // --------------------------------------------------------------------------
-bool qSlicerExtensionsManagerWidgetPrivate::isCatalogListed() const
+bool qSlicerExtensionsManagerWidgetPrivate::isCatalogServer() const
 {
   Q_Q(const qSlicerExtensionsManagerWidget);
   return q->extensionsManagerModel() && q->extensionsManagerModel()->serverAPI() == qSlicerExtensionsManagerModel::GitHub_v1;
+}
+
+// --------------------------------------------------------------------------
+bool qSlicerExtensionsManagerWidgetPrivate::isCatalogListed() const
+{
+  if (!this->isCatalogServer())
+  {
+    return false;
+  }
+#ifdef Slicer_BUILD_WEBENGINE_SUPPORT
+  return QSettings().value("Extensions/CatalogView", "list").toString() != "page";
+#else
+  return true;
+#endif
+}
+
+// --------------------------------------------------------------------------
+void qSlicerExtensionsManagerWidgetPrivate::applyCatalogView()
+{
+  Q_Q(qSlicerExtensionsManagerWidget);
+  qSlicerExtensionsManagerModel* model = q->extensionsManagerModel();
+  const bool listed = this->isCatalogListed();
+  this->ExtensionsCatalogWidget->setExtensionsManagerModel(listed ? model : nullptr);
+  this->ExtensionsCatalogWidget->setVisible(listed);
+  this->CatalogCategoryComboBox->setVisible(listed);
+  if (!listed)
+  {
+    this->ExtensionDetailsBrowser->setVisible(false);
+  }
+#ifdef Slicer_BUILD_WEBENGINE_SUPPORT
+  // The browser has nothing to show when the application lists the extensions itself.
+  this->ExtensionsServerWidget->setExtensionsManagerModel(listed ? nullptr : model);
+  this->ExtensionsServerWidget->setVisible(!listed);
+  if (!listed && model && this->isCatalogServer())
+  {
+    this->ExtensionsServerWidget->refresh();
+  }
+  QSignalBlocker blocker(this->ToolsWidget->CatalogPageAction);
+  this->ToolsWidget->CatalogPageAction->setVisible(this->isCatalogServer());
+  this->ToolsWidget->CatalogPageAction->setChecked(this->isCatalogServer() && !listed);
+#endif
+  if (listed)
+  {
+    this->updateCatalogCategories();
+  }
+}
+
+// --------------------------------------------------------------------------
+void qSlicerExtensionsManagerWidgetPrivate::updateCatalogCategories()
+{
+  Q_Q(qSlicerExtensionsManagerWidget);
+  if (!q->extensionsManagerModel())
+  {
+    return;
+  }
+  QStringList categories;
+  for (const QString& extensionName : q->extensionsManagerModel()->serverExtensions())
+  {
+    const QString category = q->extensionsManagerModel()->extensionMetadata(extensionName, qSlicerExtensionsManagerModel::MetadataServer).value("category").toString();
+    for (const QString& name : category.split(QRegularExpression("[;,]"), Qt::SkipEmptyParts))
+    {
+      if (!categories.contains(name.trimmed()))
+      {
+        categories << name.trimmed();
+      }
+    }
+  }
+  categories.sort(Qt::CaseInsensitive);
+  const QString current = this->CatalogCategoryComboBox->currentData().toString();
+  QSignalBlocker blocker(this->CatalogCategoryComboBox);
+  this->CatalogCategoryComboBox->clear();
+  this->CatalogCategoryComboBox->addItem(qSlicerExtensionsManagerWidget::tr("All categories"), QString());
+  for (const QString& category : categories)
+  {
+    this->CatalogCategoryComboBox->addItem(category, category);
+  }
+  const int index = this->CatalogCategoryComboBox->findData(current);
+  this->CatalogCategoryComboBox->setCurrentIndex(index < 0 ? 0 : index);
+  if (index < 0 && !current.isEmpty())
+  {
+    // The category that was chosen is no more
+    this->ExtensionsCatalogWidget->setCategoryFilter(QString());
+  }
+}
+
+// --------------------------------------------------------------------------
+void qSlicerExtensionsManagerWidgetPrivate::showExtensionDetails(const QString& extensionName)
+{
+  Q_Q(qSlicerExtensionsManagerWidget);
+  if (!q->extensionsManagerModel())
+  {
+    return;
+  }
+  const qSlicerExtensionsManagerModel::ExtensionMetadataType metadata =
+    q->extensionsManagerModel()->extensionMetadata(extensionName, qSlicerExtensionsManagerModel::MetadataServer);
+  this->ExtensionDetailsShown = extensionName;
+
+  // What an extension says of itself is text, with <br> for its line breaks.
+  auto text = [](const QString& value) { return value.toHtmlEscaped().replace("&lt;br&gt;", "<br>", Qt::CaseInsensitive); };
+  auto isAddress = [](const QString& value) { return value.startsWith("http://") || value.startsWith("https://"); };
+  QStringList images;
+  QString html = QString("<p align=\"right\"><a href=\"close:\">%1</a></p>").arg(qSlicerExtensionsManagerWidget::tr("Close"));
+  const QString icon = metadata.value("iconurl").toString();
+  html += "<table><tr>";
+  if (isAddress(icon))
+  {
+    images << icon;
+    html += QString("<td><img src=\"%1\" width=\"64\" height=\"64\"></td>").arg(icon.toHtmlEscaped());
+  }
+  html += QString("<td>&nbsp;</td><td><h2>%1</h2>%2</td></tr></table>").arg(extensionName.toHtmlEscaped(), text(metadata.value("category").toString()));
+  if (metadata.value("tier").toString() == "0")
+  {
+    html += QString("<p><b>%1</b></p>").arg(qSlicerExtensionsManagerWidget::tr("Not reviewed: this extension is not in the Slicer extensions index."));
+  }
+  html += QString("<p>%1</p>").arg(text(metadata.value("description").toString()));
+  html += "<table>";
+  auto row = [&html](const QString& name, const QString& value)
+  {
+    if (!value.isEmpty())
+    {
+      html += QString("<tr><td><i>%1</i>&nbsp;&nbsp;</td><td>%2</td></tr>").arg(name, value);
+    }
+  };
+  auto link = [&isAddress](const QString& value) { return isAddress(value) ? QString("<a href=\"%1\">%1</a>").arg(value.toHtmlEscaped()) : QString(); };
+  const QString depends = metadata.value("depends").toString();
+  row(qSlicerExtensionsManagerWidget::tr("Contributors"), text(metadata.value("contributors").toString()));
+  row(qSlicerExtensionsManagerWidget::tr("Home page"), link(metadata.value("homepage").toString()));
+  row(qSlicerExtensionsManagerWidget::tr("Source"), link(metadata.value("scmurl").toString()));
+  row(qSlicerExtensionsManagerWidget::tr("Revision"), metadata.value("revision").toString().left(10).toHtmlEscaped());
+  row(qSlicerExtensionsManagerWidget::tr("Updated"), metadata.value("updated").toString().left(10).toHtmlEscaped());
+  row(qSlicerExtensionsManagerWidget::tr("Requires"), depends == "NA" ? QString() : depends.toHtmlEscaped());
+  html += "</table>";
+  for (const QString& screenshot : metadata.value("screenshots").toString().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts))
+  {
+    if (isAddress(screenshot))
+    {
+      images << screenshot;
+      html += QString("<p><img src=\"%1\"></p>").arg(screenshot.toHtmlEscaped());
+    }
+  }
+  this->ExtensionDetailsBrowser->setHtml(html);
+  this->ExtensionDetailsBrowser->setVisible(true);
+
+  // The images are retrieved once, and the details shown again when one is there.
+  for (const QString& image : images)
+  {
+    if (this->DetailsImagesRequested.contains(image))
+    {
+      continue;
+    }
+    this->DetailsImagesRequested << image;
+    QNetworkRequest request{ QUrl(image) };
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    QNetworkReply* reply = this->DetailsImageManager.get(request);
+    QObject::connect(reply, &QNetworkReply::finished, q, [this, reply, image]()
+    {
+      reply->deleteLater();
+      QImage loaded;
+      if (reply->error() != QNetworkReply::NoError || !loaded.loadFromData(reply->readAll()))
+      {
+        return;
+      }
+      if (loaded.width() > 640)
+      {
+        loaded = loaded.scaledToWidth(640, Qt::SmoothTransformation);
+      }
+      this->ExtensionDetailsBrowser->Images.insert(image, loaded);
+      if (this->ExtensionDetailsBrowser->isVisible() && !this->ExtensionDetailsShown.isEmpty())
+      {
+        this->showExtensionDetails(this->ExtensionDetailsShown);
+      }
+    });
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -253,7 +473,37 @@ void qSlicerExtensionsManagerWidgetPrivate::init()
   this->ExtensionsCatalogWidget->setObjectName("ExtensionsCatalogWidget");
   this->ExtensionsCatalogWidget->setServerExtensionsListed(true);
   this->ExtensionsCatalogWidget->setVisible(false);
-  this->InstallExtensionsTabLayout->addWidget(this->ExtensionsCatalogWidget);
+  this->CatalogCategoryComboBox = new QComboBox(this->InstallExtensionsTab);
+  this->CatalogCategoryComboBox->setObjectName("CatalogCategoryComboBox");
+  this->CatalogCategoryComboBox->setVisible(false);
+  this->InstallExtensionsTabLayout->addWidget(this->CatalogCategoryComboBox);
+  this->InstallExtensionsTabLayout->addWidget(this->ExtensionsCatalogWidget, 3);
+  // What the server says of the extension whose "More..." link is activated
+  this->ExtensionDetailsBrowser = new qSlicerExtensionDetailsBrowser(this->InstallExtensionsTab);
+  this->ExtensionDetailsBrowser->setObjectName("ExtensionDetailsBrowser");
+  this->ExtensionDetailsBrowser->setOpenLinks(false);
+  this->ExtensionDetailsBrowser->setVisible(false);
+  this->InstallExtensionsTabLayout->addWidget(this->ExtensionDetailsBrowser, 2);
+  QObject::connect(this->CatalogCategoryComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), q, [this](int)
+  {
+    this->ExtensionsCatalogWidget->setCategoryFilter(this->CatalogCategoryComboBox->currentData().toString());
+  });
+  QObject::connect(this->ExtensionsCatalogWidget, &qSlicerExtensionsLocalWidget::extensionDetailsRequested, q, [this](const QString& extensionName)
+  {
+    this->showExtensionDetails(extensionName);
+  });
+  QObject::connect(this->ExtensionDetailsBrowser, &QTextBrowser::anchorClicked, q, [this](const QUrl& url)
+  {
+    if (url.scheme() == "close")
+    {
+      this->ExtensionDetailsBrowser->setVisible(false);
+      this->ExtensionDetailsShown.clear();
+    }
+    else
+    {
+      QDesktopServices::openUrl(url);
+    }
+  });
 
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
   // Setup browser for "Install Extensions" tab
@@ -287,6 +537,14 @@ void qSlicerExtensionsManagerWidgetPrivate::init()
   QObject::connect(this->ToolsWidget->AutoUpdateCheckAction, SIGNAL(toggled(bool)), q, SLOT(setAutoUpdateCheck(bool)));
   QObject::connect(this->ToolsWidget->AutoUpdateInstallAction, SIGNAL(toggled(bool)), q, SLOT(setAutoUpdateInstall(bool)));
   QObject::connect(this->ToolsWidget->AutoInstallDependenciesAction, SIGNAL(toggled(bool)), q, SLOT(setAutoInstallDependencies(bool)));
+  QObject::connect(this->ToolsWidget->CatalogPageAction, &QAction::toggled, q, [this, q](bool page)
+  {
+    QSettings().setValue("Extensions/CatalogView", page ? "page" : "list");
+    this->applyCatalogView();
+    q->onModelUpdated();
+    this->LastInstallWidgetSearchText.clear();
+    q->processSearchTextChange();
+  });
 
   this->tabWidget->setCornerWidget(this->ToolsWidget, Qt::TopRightCorner);
 
@@ -375,15 +633,11 @@ void qSlicerExtensionsManagerWidget::setExtensionsManagerModel(qSlicerExtensions
   disconnect(this, SLOT(onMessageLogged(QString, ctkErrorLogLevel::LogLevels)));
 
   d->ExtensionsLocalWidget->setExtensionsManagerModel(model);
-  const bool catalogListed = model && model->serverAPI() == qSlicerExtensionsManagerModel::GitHub_v1;
-  d->ExtensionsCatalogWidget->setExtensionsManagerModel(catalogListed ? model : nullptr);
-  d->ExtensionsCatalogWidget->setVisible(catalogListed);
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
   d->ExtensionsManageBrowser->setExtensionsManagerModel(model);
-  // The browser has no page to show of a server that has no web application.
-  d->ExtensionsServerWidget->setExtensionsManagerModel(catalogListed ? nullptr : model);
-  d->ExtensionsServerWidget->setVisible(!catalogListed);
 #endif
+  // Of an extensions catalog: its list or its page, as chosen; the web application of another server.
+  d->applyCatalogView();
 
   if (model)
   {
@@ -464,6 +718,10 @@ void qSlicerExtensionsManagerWidget::onModelUpdated()
   }
   d->ExtensionsCatalogNoteLabel->setText(serverNote);
   d->ExtensionsCatalogNoteLabel->setVisible(!serverNote.isEmpty());
+  if (d->isCatalogListed())
+  {
+    d->updateCatalogCategories();
+  }
 
   // Get the list of extensions that have update available but not updated yet
   QStringList extensionsToUpdate = this->extensionsManagerModel()->availableUpdateExtensions();
@@ -586,7 +844,7 @@ void qSlicerExtensionsManagerWidget::onCurrentTabChanged(int index)
     }
     bool isCatalogPage = false;
     int serverAPI = this->extensionsManagerModel()->serverAPI();
-    if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
+    if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1 || serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
     {
       isCatalogPage = d->LastInstallWidgetUrl.path().contains("/catalog");
     }
@@ -606,6 +864,10 @@ void qSlicerExtensionsManagerWidget::onCurrentTabChanged(int index)
         if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
         {
           lastSearchTextLoaded = QUrlQuery(d->LastInstallWidgetUrl).queryItemValue("q");
+        }
+        else
+        {
+          lastSearchTextLoaded = d->ToolsWidget->SearchBox->text();
         }
         d->ToolsWidget->SearchBox->setText(lastSearchTextLoaded);
       }
@@ -649,6 +911,12 @@ void qSlicerExtensionsManagerWidget::onInstallUrlChanged(const QUrl& newUrl)
   if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
   {
     lastSearchTextLoaded = QUrlQuery(newUrl).queryItemValue("q");
+    isCatalogPage = newUrl.path().contains("/catalog");
+  }
+  else if (serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
+  {
+    // The page that comes with the application: it is searched as it is, and has no address of its own for it.
+    lastSearchTextLoaded = d->ToolsWidget->SearchBox->text();
     isCatalogPage = newUrl.path().contains("/catalog");
   }
   if (isCatalogPage)
@@ -701,7 +969,7 @@ void qSlicerExtensionsManagerWidget::processSearchTextChange()
     if (searchText != d->LastInstallWidgetSearchText)
     {
       int serverAPI = this->extensionsManagerModel()->serverAPI();
-      if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
+      if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1 || serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
       {
         d->ExtensionsServerWidget->webView()->page()->runJavaScript("app.search(" + jsQuote(searchText) + ");");
       }

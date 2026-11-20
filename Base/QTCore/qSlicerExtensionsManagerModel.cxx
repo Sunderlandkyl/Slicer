@@ -3662,8 +3662,12 @@ QUrl qSlicerExtensionsManagerModel::extensionsListUrl() const
   }
   else if (serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
   {
-    // The extensions are listed by the application (serverExtensions): there is no page.
-    url = QUrl();
+    // The server has no web application: the page that comes with the application, which shows
+    // what the model has retrieved, unless another one is given as the frontend server.
+    if (url.isEmpty())
+    {
+      url = QUrl("qrc:/extensions/catalog/index.html");
+    }
   }
   else
   {

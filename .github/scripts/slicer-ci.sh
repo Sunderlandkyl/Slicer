@@ -346,6 +346,13 @@ cmd_configure() {
     args+=("-DSlicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_API:STRING=GitHub_v1"
            "-DSlicer_EXTENSIONS_MANAGER_DEFAULT_SERVER_URL:STRING=$SLICER_EXTENSIONS_CATALOG_URL")
   fi
+  # A build that names itself after another revision than its own: to try a
+  # change with the extensions built for a published build, which are
+  # installed in a Slicer of that revision only. Never for a build that is
+  # published.
+  if [ -n "${SLICER_FORCED_REVISION:-}" ]; then
+    args+=("-DSlicer_FORCED_REVISION:STRING=$SLICER_FORCED_REVISION")
+  fi
   log "Configure superbuild"
   info "cmake ${args[*]}"
   local rc=0

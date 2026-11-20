@@ -23,6 +23,7 @@
 #include <QDesktopServices>
 #include <QStyle>
 #include <QUrlQuery>
+#include <QWebEngineSettings>
 #include <QWebEngineView>
 
 // CTK includes
@@ -154,7 +155,7 @@ void qSlicerExtensionsServerWidgetPrivate::setDarkThemeEnabled(bool enabled)
     return;
   }
   int serverAPI = this->ExtensionsManagerModel->serverAPI();
-  if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
+  if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1 || serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
   {
     q->evalJS(QString("app.$vuetify.theme.dark = %1;").arg(enabled ? "true" : "false"));
   }
@@ -273,6 +274,11 @@ void qSlicerExtensionsServerWidget::refresh()
     d->setFailurePage(errors);
     return;
   }
+  if (this->extensionsManagerModel()->serverAPI() == qSlicerExtensionsManagerModel::GitHub_v1)
+  {
+    // The page comes with the application, and shows the icons and screenshots the extensions name.
+    this->webView()->settings()->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, true);
+  }
   this->webView()->setUrl(this->extensionsManagerModel()->extensionsListUrl());
 }
 
@@ -283,7 +289,7 @@ void qSlicerExtensionsServerWidget::onExtensionInstalled(const QString& extensio
   if (d->BrowsingEnabled)
   {
     int serverAPI = d->ExtensionsManagerModel->serverAPI();
-    if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
+    if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1 || serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
     {
       this->evalJS(QString("app.setExtensionButtonState('%1', 'Installed');").arg(extensionName));
     }
@@ -301,7 +307,7 @@ void qSlicerExtensionsServerWidget::onExtensionScheduledForUninstall(const QStri
   if (d->BrowsingEnabled)
   {
     int serverAPI = d->ExtensionsManagerModel->serverAPI();
-    if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
+    if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1 || serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
     {
       this->evalJS(QString("app.setExtensionButtonState('%1', 'ScheduledForUninstall');").arg(extensionName));
     }
@@ -350,7 +356,7 @@ void qSlicerExtensionsServerWidget::onMessageLogged(const QString& text, ctkErro
     state = "error";
   }
   int serverAPI = d->ExtensionsManagerModel->serverAPI();
-  if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1)
+  if (serverAPI == qSlicerExtensionsManagerModel::Girder_v1 || serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
   {
     this->evalJS(QString("app.createNotice('%1', %2, '%3')").arg(escapedText).arg(delay).arg(state));
   }

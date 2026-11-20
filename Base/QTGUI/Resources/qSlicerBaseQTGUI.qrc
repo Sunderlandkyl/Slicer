@@ -1,4 +1,7 @@
 <RCC>
+    <qresource prefix="/extensions/catalog">
+        <file alias="index.html">ExtensionsCatalog/index.html</file>
+    </qresource>
     <qresource prefix="/Icons">
         <file alias="Add.svg">Icons/Add.svg</file>
         <file alias="Bookmark.svg">Icons/Bookmark.svg</file>

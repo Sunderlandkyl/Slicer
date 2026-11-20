@@ -51,6 +51,9 @@ on:
         description: "Run as the scheduled nightly does: publish, build nothing when the nightly release already holds this commit, and let failing tests withhold nothing"
         type: boolean
         default: false
+      forced-revision:
+        description: "Revision the build names itself after, to try a change with the extensions of the nightly; ignored by a build that publishes"
+        default: ""
       force:
         description: "Build even if the nightly release already holds this commit"
         type: boolean
@@ -233,6 +236,7 @@ jobs:
       # The extensions manager of the application installs the extensions
       # built against the nightly by their own repositories, which the
       # catalog of the nightly release lists (extension-reconcile.yml).
+      forced-revision: ${{ needs.setup.outputs.publish != 'true' && github.event.inputs.forced-revision || '' }}
       extensions-catalog-url: ${{ github.server_url }}/${{ github.repository }}/releases/download/nightly/extensions-catalog.json
       release-notes: |
         Nightly Slicer build trees and packages.

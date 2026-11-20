@@ -37,6 +37,7 @@ class Q_SLICER_BASE_QTGUI_EXPORT qSlicerExtensionsLocalWidget : public QListWidg
   Q_OBJECT
   Q_PROPERTY(QString searchText READ searchText WRITE setSearchText)
   Q_PROPERTY(bool serverExtensionsListed READ serverExtensionsListed WRITE setServerExtensionsListed)
+  Q_PROPERTY(QString categoryFilter READ categoryFilter WRITE setCategoryFilter)
 public:
   /// Superclass typedef
   typedef QListWidget Superclass;
@@ -59,8 +60,14 @@ public:
   bool serverExtensionsListed() const;
   void setServerExtensionsListed(bool listed);
 
+  /// Of the extensions that the server offers, list those of this category only; all of them if empty.
+  QString categoryFilter() const;
+  void setCategoryFilter(const QString& category);
+
 signals:
   void linkActivated(const QUrl& link);
+  /// The "More..." link of an extension that the server offers has been activated.
+  void extensionDetailsRequested(const QString& extensionName);
 
 public slots:
   void displayExtensionDetails(const QString& extensionName);

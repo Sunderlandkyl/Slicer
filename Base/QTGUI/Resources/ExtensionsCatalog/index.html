@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slicer Extensions</title>
+<!--
+  The extensions an extensions catalog offers (qSlicerExtensionsManagerModel, server API GitHub_v1),
+  shown by qSlicerExtensionsServerWidget in the Install Extensions tab of the extensions manager.
+
+  Nothing is retrieved from here but the images the extensions name: what is offered, and what is
+  installed, is asked of the application, through window.extensions_manager_model (a QWebChannel
+  object: its methods answer through a callback, its signals have connect()).
+
+  The application calls app.search(), app.setExtensionButtonState(), app.createNotice() and sets
+  app.$vuetify.theme.dark, as it does of the web application of the extensions server of Slicer.
+-->
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f6f7f9; --border: #d9dde3; --text: #1f2933; --muted: #5f6b7a;
+    --accent: #1565c0; --accent-text: #ffffff; --ok: #2e7d32; --warn: #b26a00; --error: #c62828; --card: #ffffff;
+  }
+  body.dark {
+    --bg: #2b2b2b; --panel: #333333; --border: #4a4a4a; --text: #e6e6e6; --muted: #a8a8a8;
+    --accent: #64a8f0; --accent-text: #10202f; --ok: #81c784; --warn: #ffb74d; --error: #ef9a9a; --card: #353535;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.45 "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  a { color: var(--accent); }
+  #layout { display: flex; min-height: 100%; }
+  #sidebar { flex: 0 0 210px; background: var(--panel); border-right: 1px solid var(--border); padding: 14px 0; }
+  #sidebar h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 16px 8px; }
+  #categories { list-style: none; margin: 0; padding: 0; }
+  #categories li { padding: 6px 16px; cursor: pointer; display: flex; justify-content: space-between; }
+  #categories li:hover { background: var(--border); }
+  #categories li.selected { background: var(--accent); color: var(--accent-text); }
+  #categories .count { opacity: .75; }
+  #options { margin: 16px; color: var(--muted); }
+  #main { flex: 1 1 auto; padding: 16px 20px; min-width: 0; }
+  #note { display: none; border: 1px solid var(--warn); color: var(--warn); border-radius: 4px; padding: 10px 12px; margin-bottom: 14px; }
+  #summary { color: var(--muted); margin-bottom: 12px; }
+  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; }
+  .card .top { display: flex; gap: 12px; cursor: pointer; }
+  .card img.icon, #detail img.icon { width: 64px; height: 64px; object-fit: contain; flex: 0 0 64px; }
+  .card h3 { margin: 0 0 2px; font-size: 15px; }
+  .card .category { color: var(--muted); font-size: 12px; }
+  .card .description { margin: 10px 0; flex: 1 1 auto; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .badge { font-size: 11px; border: 1px solid var(--warn); color: var(--warn); border-radius: 10px; padding: 0 7px; }
+  .state { font-size: 12px; color: var(--ok); }
+  button { font: inherit; border-radius: 4px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text); padding: 5px 14px; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  progress { width: 110px; }
+  #detail { display: none; }
+  #detail .head { display: flex; gap: 14px; align-items: center; margin: 12px 0; }
+  #detail h1 { margin: 0; font-size: 22px; }
+  #detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 14px 0; }
+  #detail dt { color: var(--muted); }
+  #detail dd { margin: 0; overflow-wrap: anywhere; }
+  #screenshots { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+  #screenshots img { max-width: 100%; max-height: 420px; border: 1px solid var(--border); border-radius: 4px; }
+  #notices { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; max-width: 480px; z-index: 10; }
+  .notice { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 4px; padding: 8px 12px; overflow-wrap: anywhere; }
+  .notice.warning { border-left-color: var(--warn); }
+  .notice.error { border-left-color: var(--error); }
+</style>
+</head>
+<body>
+<div id="layout">
+  <div id="sidebar">
+    <h2>Categories</h2>
+    <ul id="categories"></ul>
+    <label id="options"><input type="checkbox" id="unreviewed"> Show extensions that are not reviewed</label>
+  </div>
+  <div id="main">
+    <div id="note"></div>
+    <div id="list">
+      <div id="summary">Retrieving the list of extensions...</div>
+      <div id="cards"></div>
+    </div>
+    <div id="detail"></div>
+  </div>
+</div>
+<div id="notices"></div>
+<script>
+"use strict";
+var DEFAULT_ICON = "qrc:/Icons/ExtensionDefaultIcon.png";
+var model = null;
+var extensions = [];      // what the server offers: {name, metadata, installed, pending}
+var category = "";        // "" is all of them
+var searchText = "";
+var shown = null;         // the name of the extension whose details are shown
+var progress = {};        // name -> fraction, while its package is downloaded
+
+function ask(method) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function(resolve) { model[method].apply(model, args.concat([resolve])); });
+}
+function element(tag, attributes, children) {
+  var e = document.createElement(tag);
+  Object.keys(attributes || {}).forEach(function(k) {
+    if (k === "text") e.textContent = attributes[k];
+    else if (k.indexOf("on") === 0) e.addEventListener(k.slice(2), attributes[k]);
+    else e.setAttribute(k, attributes[k]);
+  });
+  (children || []).forEach(function(c) { if (c) e.appendChild(c); });
+  return e;
+}
+// What an extension says of itself is text, with <br> for its line breaks: never markup to run.
+function plain(text) { return String(text || "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]*>/g, ""); }
+function categoriesOf(metadata) {
+  return String(metadata.category || "").split(/[;,]/).map(function(c) { return c.trim(); }).filter(Boolean);
+}
+function unreviewed(extension) { return String(extension.metadata.tier) === "0"; }
+function address(text) { return /^https?:\/\//.test(text || "") ? text : ""; }
+
+function load() {
+  return ask("serverExtensions").then(function(names) {
+    return Promise.all(names.map(function(name) {
+      return Promise.all([ask("extensionMetadata", name, 2), ask("isExtensionInstalled", name),
+                          ask("isExtensionScheduledForUninstall", name)]).then(function(r) {
+        return { name: name, metadata: r[0], installed: r[1], pending: r[2] };
+      });
+    }));
+  }).then(function(loaded) {
+    extensions = loaded.sort(function(a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
+    return ask("serverNote");
+  }).then(function(note) {
+    var box = document.getElementById("note");
+    box.textContent = note || "";
+    box.style.display = note ? "block" : "none";
+    render();
+  });
+}
+
+function offered() {
+  var all = document.getElementById("unreviewed").checked;
+  return extensions.filter(function(e) { return all || e.installed || !unreviewed(e); });
+}
+function matching() {
+  var text = searchText.toLowerCase();
+  return offered().filter(function(e) {
+    if (category && categoriesOf(e.metadata).indexOf(category) < 0) return false;
+    return !text || e.name.toLowerCase().indexOf(text) >= 0 || plain(e.metadata.description).toLowerCase().indexOf(text) >= 0
+      || String(e.metadata.category || "").toLowerCase().indexOf(text) >= 0;
+  });
+}
+
+function actions(extension) {
+  var box = element("span");
+  if (progress[extension.name] !== undefined) {
+    box.appendChild(element("progress", { max: "1", value: String(progress[extension.name]) }));
+  } else if (extension.pending) {
+    box.appendChild(element("span", { class: "state", text: "Uninstall pending restart " }));
+    box.appendChild(element("button", { class: "secondary", text: "Cancel", onclick: function(event) {
+      event.stopPropagation(); model.cancelExtensionScheduledForUninstall(extension.name); } }));
+  } else if (extension.installed) {
+    box.appendChild(element("span", { class: "state", text: "Installed " }));
+    box.appendChild(element("button", { class: "secondary", text: "Uninstall", onclick: function(event) {
+      event.stopPropagation(); model.scheduleExtensionForUninstall(extension.name); } }));
+  } else {
+    box.appendChild(element("button", { text: "Install", onclick: function(event) {
+      event.stopPropagation();
+      if (unreviewed(extension) && !confirm(extension.name + " is not in the Slicer extensions index: nobody has reviewed it. "
+          + "An extension can do anything the application can. Install it?")) {
+        return;
+      }
+      progress[extension.name] = 0;
+      render();
+      model.downloadAndInstallExtensionByName(extension.name, true, false);
+    } }));
+  }
+  return box;
+}
+
+function render() {
+  // Categories, with how many extensions each has
+  var counts = {};
+  offered().forEach(function(e) { categoriesOf(e.metadata).forEach(function(c) { counts[c] = (counts[c] || 0) + 1; }); });
+  var list = document.getElementById("categories");
+  list.textContent = "";
+  [""].concat(Object.keys(counts).sort()).forEach(function(c) {
+    list.appendChild(element("li", { class: c === category ? "selected" : "", onclick: function() { category = c; shown = null; render(); } },
+      [element("span", { text: c || "All" }), element("span", { class: "count", text: String(c ? counts[c] : offered().length) })]));
+  });
+
+  var detail = document.getElementById("detail");
+  var listing = document.getElementById("list");
+  var extension = shown && extensions.filter(function(e) { return e.name === shown; })[0];
+  if (extension) {
+    listing.style.display = "none";
+    detail.style.display = "block";
+    renderDetail(detail, extension);
+    return;
+  }
+  detail.style.display = "none";
+  listing.style.display = "block";
+  var found = matching();
+  document.getElementById("summary").textContent = extensions.length === 0 ? "No extension is offered."
+    : found.length + (found.length === 1 ? " extension" : " extensions") + (category ? " in " + category : "")
+      + (searchText ? " matching “" + searchText + "”" : "");
+  var cards = document.getElementById("cards");
+  cards.textContent = "";
+  found.forEach(function(e) {
+    var icon = element("img", { class: "icon", src: address(e.metadata.iconurl) || DEFAULT_ICON, alt: "" });
+    icon.addEventListener("error", function() { if (icon.src !== DEFAULT_ICON) icon.src = DEFAULT_ICON; });
+    cards.appendChild(element("div", { class: "card", "data-extension": e.name }, [
+      element("div", { class: "top", onclick: function() { shown = e.name; render(); window.scrollTo(0, 0); } }, [
+        icon,
+        element("div", {}, [element("h3", { text: e.name }), element("div", { class: "category", text: categoriesOf(e.metadata).join(", ") })]),
+      ]),
+      element("div", { class: "description", text: plain(e.metadata.description) || "No description." }),
+      element("div", { class: "bottom" }, [unreviewed(e) ? element("span", { class: "badge", text: "Not reviewed" }) : element("span"), actions(e)]),
+    ]));
+  });
+}
+
+function renderDetail(detail, e) {
+  var m = e.metadata;
+  detail.textContent = "";
+  var icon = element("img", { class: "icon", src: address(m.iconurl) || DEFAULT_ICON, alt: "" });
+  icon.addEventListener("error", function() { if (icon.src !== DEFAULT_ICON) icon.src = DEFAULT_ICON; });
+  detail.appendChild(element("button", { class: "secondary", text: "← All extensions", onclick: function() { shown = null; render(); } }));
+  detail.appendChild(element("div", { class: "head" }, [icon,
+    element("div", {}, [element("h1", { text: e.name }), element("div", { class: "category", text: categoriesOf(m).join(", ") })])]));
+  var line = element("div", { class: "bottom" }, [unreviewed(e) ? element("span", { class: "badge", text: "Not reviewed" }) : element("span"), actions(e)]);
+  detail.appendChild(line);
+  detail.appendChild(element("p", { style: "white-space: pre-wrap", text: plain(m.description) || "No description." }));
+  var facts = element("dl");
+  function fact(name, value, link) {
+    if (!value) return;
+    facts.appendChild(element("dt", { text: name }));
+    facts.appendChild(element("dd", {}, [link ? element("a", { href: link, text: value }) : document.createTextNode(value)]));
+  }
+  fact("Contributors", plain(m.contributors));
+  fact("Home page", address(m.homepage), address(m.homepage));
+  fact("Source", address(m.scmurl), address(m.scmurl));
+  fact("Revision", String(m.revision || "").slice(0, 10));
+  fact("Updated", String(m.updated || "").slice(0, 10));
+  fact("Requires", m.depends && m.depends !== "NA" ? m.depends : "");
+  fact("Tests", m.tests);
+  detail.appendChild(facts);
+  var screenshots = element("div", { id: "screenshots" });
+  String(m.screenshots || "").split(/\s+/).map(address).filter(Boolean).forEach(function(url) {
+    var image = element("img", { src: url, alt: "" });
+    image.addEventListener("error", function() { image.remove(); });
+    screenshots.appendChild(image);
+  });
+  detail.appendChild(screenshots);
+}
+
+// What the application calls
+var app = {
+  search: function(text) { searchText = String(text || ""); shown = null; render(); },
+  setExtensionButtonState: function(name, state) {
+    extensions.forEach(function(e) {
+      if (e.name === name) { e.installed = true; e.pending = state === "ScheduledForUninstall"; }
+    });
+    delete progress[name];
+    render();
+  },
+  createNotice: function(text, delay, state) {
+    var notice = element("div", { class: "notice " + (state || ""), text: String(text) });
+    document.getElementById("notices").appendChild(notice);
+    if (state === "error" && Object.keys(progress).length) {
+      // A download that ended without its extension being installed: the notice says why.
+      progress = {};
+      render();
+    }
+    setTimeout(function() { notice.remove(); }, Number(delay) || 2500);
+  },
+  $vuetify: { theme: { set dark(value) { document.body.classList.toggle("dark", Boolean(value)); }, get dark() { return document.body.classList.contains("dark"); } } },
+};
+
+function start() {
+  model = window.extensions_manager_model;
+  if (!model) { setTimeout(start, 50); return; }
+  document.getElementById("unreviewed").addEventListener("change", render);
+  model.modelUpdated.connect(load);
+  model.updateExtensionsMetadataFromServerCompleted.connect(load);
+  model.extensionInstalled.connect(function(name) { delete progress[name]; load(); });
+  model.extensionUninstalled.connect(load);
+  model.extensionScheduledForUninstall.connect(load);
+  model.extensionCancelledScheduleForUninstall.connect(load);
+  model.installDownloadProgress.connect(function(name, received, total) {
+    progress[name] = total > 0 ? received / total : 0;
+    render();
+  });
+  // What is listed is what was last retrieved: retrieve it now.
+  load().then(function() { model.updateExtensionsMetadataFromServer(true, false); });
+}
+start();
+</script>
+</body>
+</html>

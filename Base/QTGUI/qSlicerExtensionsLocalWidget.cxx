@@ -33,6 +33,7 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QSignalMapper>
 #include <QStyledItemDelegate>
@@ -106,6 +107,7 @@ public:
 
   QString SearchText;
   bool ServerExtensionsListed{ false };
+  QString CategoryFilter;
 
   qSlicerExtensionsManagerModel* ExtensionsManagerModel;
 };
@@ -657,6 +659,15 @@ QListWidgetItem* qSlicerExtensionsLocalWidgetPrivate::updateExtensionItem(const 
     {
       removeItem = true;
     }
+    if (!removeItem && !this->CategoryFilter.isEmpty())
+    {
+      bool inCategory = false;
+      for (const QString& category : metadataFromServer.value("category").toString().split(QRegularExpression("[;,]"), Qt::SkipEmptyParts))
+      {
+        inCategory = inCategory || category.trimmed() == this->CategoryFilter;
+      }
+      removeItem = !inCategory;
+    }
   }
   else if (!metadata["bookmarked"].toBool() && !metadata["installed"].toBool())
   {
@@ -721,11 +732,19 @@ QListWidgetItem* qSlicerExtensionsLocalWidgetPrivate::updateExtensionItem(const 
   }
   else if (serverAPI == qSlicerExtensionsManagerModel::GitHub_v1)
   {
-    // There is no page of the extension on the server: its own page, opened in the web browser.
-    moreLinkTarget = metadata.value("homepage").toString();
-    if (!moreLinkTarget.startsWith("http://") && !moreLinkTarget.startsWith("https://"))
+    if (this->ServerExtensionsListed)
     {
-      moreLinkTarget.clear();
+      // What the server says of the extension, shown by who lists what the server offers
+      moreLinkTarget = QString("details:%1").arg(extensionName);
+    }
+    else
+    {
+      // There is no page of the extension on the server: its own page, opened in the web browser.
+      moreLinkTarget = metadata.value("homepage").toString();
+      if (!moreLinkTarget.startsWith("http://") && !moreLinkTarget.startsWith("https://"))
+      {
+        moreLinkTarget.clear();
+      }
     }
   }
   else
@@ -1199,7 +1218,11 @@ void qSlicerExtensionsLocalWidget::onModelUpdated()
 void qSlicerExtensionsLocalWidget::onLinkActivated(const QString& link)
 {
   Q_D(qSlicerExtensionsLocalWidget);
-  if (link.startsWith("slicer:"))
+  if (link.startsWith("details:"))
+  {
+    emit this->extensionDetailsRequested(link.mid(8)); // remove leading "details:"
+  }
+  else if (link.startsWith("slicer:"))
   {
     // internal link (extension description page on the frontend server)
     QUrl url(d->ExtensionsManagerModel->frontendServerUrl());
@@ -1290,6 +1313,28 @@ void qSlicerExtensionsLocalWidget::setServerExtensionsListed(bool listed)
     return;
   }
   d->ServerExtensionsListed = listed;
+  if (d->ExtensionsManagerModel)
+  {
+    this->onModelUpdated();
+  }
+}
+
+// --------------------------------------------------------------------------
+QString qSlicerExtensionsLocalWidget::categoryFilter() const
+{
+  Q_D(const qSlicerExtensionsLocalWidget);
+  return d->CategoryFilter;
+}
+
+// --------------------------------------------------------------------------
+void qSlicerExtensionsLocalWidget::setCategoryFilter(const QString& category)
+{
+  Q_D(qSlicerExtensionsLocalWidget);
+  if (d->CategoryFilter == category)
+  {
+    return;
+  }
+  d->CategoryFilter = category;
   if (d->ExtensionsManagerModel)
   {
     this->onModelUpdated();
