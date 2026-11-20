@@ -21,6 +21,7 @@
 #include "vtkSlicerConfigure.h" // For Slicer_BUILD_WEBENGINE_SUPPORT
 
 // Qt includes
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QInputDialog>
@@ -178,8 +179,12 @@ public:
   /// Whether the application itself lists the extensions that the server offers (ExtensionsCatalogWidget),
   /// because the server has no web application to browse them with.
   bool isCatalogListed() const;
+  /// Retrieve what the server offers, unless it has been retrieved in the last minutes: what is listed
+  /// is what was last retrieved, and nothing retrieves it otherwise unless updates are checked for automatically.
+  void refreshCatalog();
   qSlicerExtensionsLocalWidget* ExtensionsCatalogWidget{ nullptr };
   QLabel* ExtensionsCatalogNoteLabel{ nullptr };
+  QDateTime CatalogRefreshTime;
 
   qSlicerExtensionsToolsWidget* ToolsWidget;
   QString LastInstallWidgetSearchText;
@@ -209,6 +214,24 @@ bool qSlicerExtensionsManagerWidgetPrivate::isCatalogListed() const
 {
   Q_Q(const qSlicerExtensionsManagerWidget);
   return q->extensionsManagerModel() && q->extensionsManagerModel()->serverAPI() == qSlicerExtensionsManagerModel::GitHub_v1;
+}
+
+// --------------------------------------------------------------------------
+void qSlicerExtensionsManagerWidgetPrivate::refreshCatalog()
+{
+  Q_Q(qSlicerExtensionsManagerWidget);
+  if (!this->isCatalogListed())
+  {
+    return;
+  }
+  const QDateTime now = QDateTime::currentDateTimeUtc();
+  if (this->CatalogRefreshTime.isValid() && this->CatalogRefreshTime.secsTo(now) < 300)
+  {
+    return;
+  }
+  this->CatalogRefreshTime = now;
+  // In the background: the list is filled when the answer is there (modelUpdated).
+  q->extensionsManagerModel()->updateExtensionsMetadataFromServer(/* force= */ true, /* waitForCompletion= */ false);
 }
 
 // --------------------------------------------------------------------------
@@ -376,6 +399,9 @@ void qSlicerExtensionsManagerWidget::setExtensionsManagerModel(qSlicerExtensions
     connect(model, SIGNAL(extensionBookmarkedChanged(QString, bool)), this, SLOT(onModelUpdated()));
     connect(model, SIGNAL(extensionUpdateAvailable(QString)), this, SLOT(onModelUpdated()));
     connect(model, SIGNAL(autoUpdateSettingsChanged()), this, SLOT(updateAutoUpdateWidgetsFromModel()));
+    // Whether it succeeded or not: there may be something to say of it (serverNote)
+    connect(model, SIGNAL(updateExtensionsMetadataFromServerCompleted(bool)), this, SLOT(onModelUpdated()));
+    d->refreshCatalog();
 
     // Ensure extension metadata is retrieved from the server or cache.
     // This is performed early during application startup, except the very first time after install,
@@ -409,6 +435,7 @@ void qSlicerExtensionsManagerWidget::refreshInstallWidget()
   }
   this->extensionsManagerModel()->updateExtensionsMetadataFromServer();
   this->extensionsManagerModel()->updateModel();
+  d->refreshCatalog();
 
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
   if (!d->isCatalogListed())
@@ -427,7 +454,14 @@ void qSlicerExtensionsManagerWidget::onModelUpdated()
   int managedExtensionsCount = this->extensionsManagerModel()->managedExtensionsCount();
 
   // What there is to say of what the server offers, for example that it is for another revision
-  const QString serverNote = d->isCatalogListed() ? this->extensionsManagerModel()->serverNote() : QString();
+  QString serverNote = d->isCatalogListed() ? this->extensionsManagerModel()->serverNote() : QString();
+  if (serverNote.isEmpty() && d->isCatalogListed() && this->extensionsManagerModel()->serverExtensions().isEmpty())
+  {
+    // An empty list is not left unexplained
+    serverNote = this->extensionsManagerModel()->lastUpdateTimeExtensionsMetadataFromServer().isValid() //
+                   ? tr("The server offers no extension for this version of the application.")
+                   : tr("Retrieving the list of extensions...");
+  }
   d->ExtensionsCatalogNoteLabel->setText(serverNote);
   d->ExtensionsCatalogNoteLabel->setVisible(!serverNote.isEmpty());
 
@@ -540,6 +574,7 @@ void qSlicerExtensionsManagerWidget::onCurrentTabChanged(int index)
   else if (d->tabWidget->currentWidget() == d->InstallExtensionsTab && d->isCatalogListed())
   {
     d->ToolsWidget->SearchBox->setEnabled(true);
+    d->refreshCatalog();
   }
 #ifdef Slicer_BUILD_WEBENGINE_SUPPORT
   else if (d->tabWidget->currentWidget() == d->InstallExtensionsTab)

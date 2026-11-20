@@ -1262,6 +1262,11 @@ void qSlicerExtensionsManagerModelPrivate::onCatalogReplyFinished()
   if (reply->error() != QNetworkReply::NoError)
   {
     this->warning(qSlicerExtensionsManagerModel::tr("Failed to download extension metadata from server") + QString(": %1 (%2)").arg(reply->errorString(), q->serverUrl().toString()));
+    if (this->ExtensionsMetadataFromServer.isEmpty())
+    {
+      // Nothing to list, and this is why
+      this->ServerNote = qSlicerExtensionsManagerModel::tr("The list of extensions could not be retrieved from %1: %2").arg(q->serverUrl().toString(), reply->errorString());
+    }
   }
   else
   {
