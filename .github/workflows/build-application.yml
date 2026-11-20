@@ -452,6 +452,25 @@ jobs:
           fi
           rm -rf "$SLICER_OUTPUT_DIR/devtree"
 
+      # What the build system would build again in the restored tree, and
+      # why, before anything is configured: what is built again that the
+      # change does not call for is a fault of the restoring, and this says
+      # which. With Ninja only.
+      - name: Explain what is built again
+        if: inputs.reuse-build-tree && inputs.publish-release == '' && runner.os != 'Windows'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          [ -f "$SLICER_BUILD_DIR/build.ninja" ] || { echo "No restored build tree."; exit 0; }
+          ninja -C "$SLICER_BUILD_DIR" -n -d explain > "$RUNNER_TEMP/explain.txt" 2>&1 || true
+          echo "Steps that would run: $(grep -c '^\[' "$RUNNER_TEMP/explain.txt")"
+          echo "--- reasons, by kind"
+          grep '^ninja explain:' "$RUNNER_TEMP/explain.txt" \
+            | sed -E 's/^ninja explain: //; s#/[^ ]+#PATH#g; s/[0-9]{6,}/N/g' | sort | uniq -c | sort -rn | head -20
+          echo "--- the first reasons"
+          grep '^ninja explain:' "$RUNNER_TEMP/explain.txt" | head -60
+
       # Signing with a Developer ID, and notarizing, happen only when the
       # secrets exist. Without them the bundle is signed ad-hoc, which runs
       # locally but shows Gatekeeper's warning. See
