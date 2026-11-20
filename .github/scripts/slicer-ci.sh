@@ -596,6 +596,64 @@ cmd_unpack() {
   endlog
 }
 
+# Keep the build tree of the application as it is, objects included, with the
+# sources it was built from, for the next build of the branch to build on:
+# what is published of a build has its objects removed, and cannot be.
+#
+#   devtree-pack <archive>
+cmd_devtree_pack() {
+  local archive="${1:?devtree-pack: missing archive}"
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  local build; build="$(bash_path "$SLICER_BUILD_DIR")"
+  [ -f "$build/CMakeCache.txt" ] || die "devtree-pack: no build tree at $SLICER_BUILD_DIR"
+  # The commit the sources are of: what the next build compares its own with.
+  git -C "$src" rev-parse HEAD > "$build/.slicer-ci-source-commit"
+  local root; root="$(bash_path "$SLICER_ROOT")"
+  local rel_build="${build#"$root"/}" rel_src="${src#"$root"/}"
+  cmd_pack "$archive" --exclude "$rel_src/.git" --exclude "*/.ccache" --exclude "*/.cache" "$rel_build" "$rel_src"
+}
+
+# Put back a build tree kept by devtree-pack, and bring its sources to the
+# commit checked out in <checkout>: only the files that differ between the two
+# commits are written, so that only they are newer than what was built from
+# them, and only what depends on them is built again.
+#
+#   devtree-restore <archive> <checkout>
+#
+# Fails, leaving nothing behind, when the tree cannot be used: the build then
+# starts from nothing, as it does without it.
+cmd_devtree_restore() {
+  local archive="${1:?devtree-restore: missing archive}" checkout="${2:?devtree-restore: missing checkout}"
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  local build; build="$(bash_path "$SLICER_BUILD_DIR")"
+  checkout="$(bash_path "$checkout")"
+  forget() { rm -rf "$src" "$build"; echo "::warning::the kept build tree is not used: $*"; return 1; }
+  rm -rf "$src" "$build"
+  cmd_unpack "$archive" || { forget "it could not be unpacked"; return 1; }
+  local old; old="$(cat "$build/.slicer-ci-source-commit" 2>/dev/null || true)"
+  [ -n "$old" ] || { forget "it does not say what it was built from"; return 1; }
+  local new; new="$(git -C "$checkout" rev-parse HEAD)"
+  git -C "$checkout" cat-file -e "$old^{commit}" 2>/dev/null \
+    || git -C "$checkout" fetch -q origin "$old" 2>/dev/null \
+    || { forget "the commit it was built from ($old) is not in the history of this one"; return 1; }
+  log "Bring the sources from ${old:0:10} to ${new:0:10}"
+  local status path count=0
+  while IFS=$'\t' read -r status path; do
+    [ -n "$path" ] || continue
+    count=$((count + 1))
+    case "$status" in
+      D) rm -f "$src/$path" ;;
+      *) mkdir -p "$(dirname "$src/$path")"; cp -f "$checkout/$path" "$src/$path" ;;
+    esac
+    [ "$count" -gt 40 ] || echo "$status $path"
+  done < <(git -C "$checkout" -c core.quotepath=off diff --no-renames --name-status "$old" "$new")
+  info "$count files differ"
+  # The history, which the revision of the build is counted from.
+  rm -rf "$src/.git"
+  cp -a "$checkout/.git" "$src/.git"
+  endlog
+}
+
 # Split archives larger than the GitHub release asset limit (2 GiB) into parts.
 cmd_split() {
   local archive="${1:?split: missing archive}"
@@ -1434,6 +1492,8 @@ main() {
   case "$cmd" in
     env) cmd_env "$@" ;;
     deps-key) cmd_deps_key "$@" ;;
+    devtree-pack) cmd_devtree_pack "$@" ;;
+    devtree-restore) cmd_devtree_restore "$@" ;;
     free-disk-space) cmd_free_disk_space "$@" ;;
     install-system-packages) cmd_install_system_packages "$@" ;;
     install-software-opengl) cmd_install_software_opengl "$@" ;;

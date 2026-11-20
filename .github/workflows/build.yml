@@ -54,6 +54,10 @@ on:
       forced-revision:
         description: "Revision the build names itself after, to try a change with the extensions of the nightly; ignored by a build that publishes"
         default: ""
+      reuse-build-tree:
+        description: "Build on the tree the last such build of this branch kept, and keep this one's: only what changed is built again. Ignored by a build that publishes"
+        type: boolean
+        default: false
       force:
         description: "Build even if the nightly release already holds this commit"
         type: boolean
@@ -237,6 +241,7 @@ jobs:
       # built against the nightly by their own repositories, which the
       # catalog of the nightly release lists (extension-reconcile.yml).
       forced-revision: ${{ needs.setup.outputs.publish != 'true' && github.event.inputs.forced-revision || '' }}
+      reuse-build-tree: ${{ needs.setup.outputs.publish != 'true' && github.event.inputs.reuse-build-tree == 'true' }}
       extensions-catalog-url: ${{ github.server_url }}/${{ github.repository }}/releases/download/nightly/extensions-catalog.json
       release-notes: |
         Nightly Slicer build trees and packages.
