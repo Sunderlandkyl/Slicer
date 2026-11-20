@@ -51,6 +51,10 @@ on:
         description: "Run as the scheduled nightly does: publish, build nothing when the nightly release already holds this commit, and let failing tests withhold nothing"
         type: boolean
         default: false
+      reuse-build-tree:
+        description: "Build on the tree the last such build of this branch kept, and keep this one's: only what changed is built again. Ignored by a build that publishes"
+        type: boolean
+        default: false
       force:
         description: "Build even if the nightly release already holds this commit"
         type: boolean
@@ -230,6 +234,7 @@ jobs:
       # extensions of a platform do not wait for the slowest platform.
       publish-release: ${{ needs.setup.outputs.publish == 'true' && 'nightly' || '' }}
       publish-dispatch-event: reconcile-extensions
+      reuse-build-tree: ${{ needs.setup.outputs.publish != 'true' && github.event.inputs.reuse-build-tree == 'true' }}
       release-notes: |
         Nightly Slicer build trees and packages.
 

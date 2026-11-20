@@ -144,6 +144,17 @@ on:
           published, for the workflows that follow it
         type: string
         default: ""
+      reuse-build-tree:
+        description: >-
+          Build on a build that exists, so that only what changed since is
+          built again: the build tree the last build of this branch with this
+          input kept, or else the build of the release prerequisites-release,
+          when it was built with the same prerequisites and its objects are
+          published with it. The tree of this build is kept for the next.
+          For trying changes; never for a build that is published, which is
+          built from nothing.
+        type: boolean
+        default: false
       release-notes:
         description: >-
           Text the notes of publish-release end with, after what the release
@@ -401,6 +412,47 @@ jobs:
           "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/$KEY.tar.zst"
           rm -rf "$SLICER_OUTPUT_DIR/restore"
 
+      # The build tree the last build of this branch kept, objects included,
+      # with its sources brought to this commit: after the prerequisites,
+      # whose tree it goes in, and before the build, which then finds the
+      # sources in place and leaves them as they are.
+      - name: Find the kept build tree
+        id: devtree
+        if: inputs.reuse-build-tree && inputs.publish-release == ''
+        uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_OUTPUT_DIR }}/devtree
+          key: devtree-${{ matrix.platform }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            devtree-${{ matrix.platform }}-${{ github.ref_name }}-
+
+      - name: Restore the kept build tree
+        if: inputs.reuse-build-tree && inputs.publish-release == '' && steps.devtree.outputs.cache-matched-key != ''
+        shell: bash
+        id: devtree-restore
+        run: |
+          set -uo pipefail
+          if "$SLICER_CI" devtree-restore "$SLICER_OUTPUT_DIR/devtree/devtree.tar.zst" "$GITHUB_WORKSPACE"; then
+            echo "Building on the tree kept by an earlier build (${{ steps.devtree.outputs.cache-matched-key }})." >> "$GITHUB_STEP_SUMMARY"
+            echo "used=true" >> "$GITHUB_OUTPUT"
+          fi
+          rm -rf "$SLICER_OUTPUT_DIR/devtree"
+
+      # Or else the build of the release, with the objects published with it.
+      - name: Restore the build of the release
+        if: inputs.reuse-build-tree && inputs.publish-release == '' && matrix.cached && steps.devtree-restore.outputs.used != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.prerequisites-release }}
+          KEY: ${{ matrix.key }}
+        run: |
+          set -uo pipefail
+          if "$SLICER_CI" devtree-from-release "$GITHUB_REPOSITORY" "$TAG" "$GITHUB_WORKSPACE" "$KEY"; then
+            echo "Building on the build of the release $TAG." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          rm -rf "$SLICER_OUTPUT_DIR/restore"
+
       # Signing with a Developer ID, and notarizing, happen only when the
       # secrets exist. Without them the bundle is signed ad-hoc, which runs
       # locally but shows Gatekeeper's warning. See
@@ -534,6 +586,25 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+      # Whether the tests passed or not: what was built is what the next build
+      # builds on.
+      - name: Pack the build tree for the next build
+        id: devtree-pack
+        if: always() && inputs.reuse-build-tree && inputs.publish-release == '' && steps.package.outputs.package != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SLICER_OUTPUT_DIR/devtree"
+          "$SLICER_CI" devtree-pack "$SLICER_OUTPUT_DIR/devtree/devtree.tar.zst"
+          ls -lh "$SLICER_OUTPUT_DIR/devtree"
+
+      - name: Keep the build tree for the next build
+        if: always() && steps.devtree-pack.outcome == 'success'
+        uses: actions/cache/save@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_OUTPUT_DIR }}/devtree
+          key: devtree-${{ matrix.platform }}-${{ github.ref_name }}-${{ github.run_id }}
+
       - name: Write manifest
         if: inputs.archive-build-trees
         shell: bash
@@ -547,13 +618,20 @@ jobs:
             "commit=$GITHUB_SHA" \
             "run_id=$GITHUB_RUN_ID" \
             "package=$PACKAGE" \
-            "deps_release_tag=$TAG"
+            "deps_release_tag=$TAG" \
+            "deps_key=${{ matrix.key }}"
 
       - name: Archive the build tree
         if: inputs.archive-build-trees
         shell: bash
         run: |
           set -euo pipefail
+          # The objects of the application, which are removed below, in an
+          # archive of their own: a build that tries a change builds on this
+          # build with them (reuse-build-tree), and nothing else needs them.
+          # Not having them withholds nothing.
+          "$SLICER_CI" pack-objects "$SLICER_OUTPUT_DIR/slicer-objects-${SLICER_PLATFORM}.tar.zst" \
+            || { echo "::warning::the objects of the build could not be packed"; rm -f "$SLICER_OUTPUT_DIR/slicer-objects-${SLICER_PLATFORM}.tar.zst"; }
           # Extensions never rebuild an external project, so the archived tree
           # can be reduced. The prerequisites on the release keep their objects.
           "$SLICER_CI" strip --objects --vcs "$SLICER_SUPERBUILD_DIR"
@@ -609,12 +687,16 @@ jobs:
           out="$SLICER_OUTPUT_DIR"
           # This platform's assets: its archives, and its package, whose name
           # carries the date (yesterday's has another name).
-          stale="^(slicer-source-$p\.tar\.zst|slicer-build-$p\.tar\.zst|deps-$p\.tar\.zst)"
+          stale="^(slicer-source-$p\.tar\.zst|slicer-build-$p\.tar\.zst|slicer-objects-$p\.tar\.zst|deps-$p\.tar\.zst)"
+          # The objects, when they could be packed: of this build or of none.
+          objects=()
+          for f in "$out"/slicer-objects-$p.tar.zst*; do [ ! -f "$f" ] || objects+=("$f"); done
           suffix="$(sed -nE 's/.*(-(linux|macosx|win)-[A-Za-z0-9_]+\..*)$/\1/p' <<< "$PACKAGE")"
           [ -z "$suffix" ] || stale="$stale|$suffix\$"
           bash "$(dirname "$SLICER_CI")/publish-release.sh" "$TAG" "$TITLE" "$stale" \
             "$out/manifest-$p.json" "$out/$PACKAGE" \
-            "$out"/slicer-source-$p.tar.zst* "$out"/slicer-build-$p.tar.zst* "$out"/deps-$p.tar.zst*
+            "$out"/slicer-source-$p.tar.zst* "$out"/slicer-build-$p.tar.zst* "$out"/deps-$p.tar.zst* \
+            ${objects[@]+"${objects[@]}"}
           echo "Published $p to the release $TAG." >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$EVENT" ]; then
             gh api "repos/$GH_REPO/dispatches" -f "event_type=$EVENT" \

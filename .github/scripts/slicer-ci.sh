@@ -581,6 +581,144 @@ cmd_unpack() {
   endlog
 }
 
+# Keep the build tree of the application as it is, objects included, with the
+# sources it was built from, for the next build of the branch to build on:
+# what is published of a build has its objects removed, and cannot be.
+#
+#   devtree-pack <archive>
+cmd_devtree_pack() {
+  local archive="${1:?devtree-pack: missing archive}"
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  local build; build="$(bash_path "$SLICER_BUILD_DIR")"
+  [ -f "$build/CMakeCache.txt" ] || die "devtree-pack: no build tree at $SLICER_BUILD_DIR"
+  # The commit the sources are of: what the next build compares its own with.
+  git -C "$src" rev-parse HEAD > "$build/.slicer-ci-source-commit"
+  local root; root="$(bash_path "$SLICER_ROOT")"
+  local rel_build="${build#"$root"/}" rel_src="${src#"$root"/}"
+  cmd_pack "$archive" --exclude "$rel_src/.git" --exclude "*/.ccache" --exclude "*/.cache" "$rel_build" "$rel_src"
+}
+
+# Put back a build tree kept by devtree-pack, and bring its sources to the
+# commit checked out in <checkout>: only the files that differ between the two
+# commits are written, so that only they are newer than what was built from
+# them, and only what depends on them is built again.
+#
+#   devtree-restore <archive> <checkout>
+#
+# Fails, leaving nothing behind, when the tree cannot be used: the build then
+# starts from nothing, as it does without it.
+cmd_devtree_restore() {
+  local archive="${1:?devtree-restore: missing archive}" checkout="${2:?devtree-restore: missing checkout}"
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  local build; build="$(bash_path "$SLICER_BUILD_DIR")"
+  rm -rf "$src" "$build"
+  cmd_unpack "$archive" || { devtree_forget "it could not be unpacked"; return 1; }
+  local old; old="$(cat "$build/.slicer-ci-source-commit" 2>/dev/null || true)"
+  [ -n "$old" ] || { devtree_forget "it does not say what it was built from"; return 1; }
+  devtree_sources "$old" "$checkout"
+}
+
+# Remove a build tree that cannot be built on, and say why.
+devtree_forget() {
+  rm -rf "$(bash_path "$SLICER_SOURCE_DIR")" "$(bash_path "$SLICER_BUILD_DIR")"
+  echo "::warning::the build tree is not built on: $*"
+  return 1
+}
+
+# Pack the files that are removed from the build tree of the application
+# before it is published (strip --objects), which a build needs to build on
+# that tree, with the commit they were built from.
+#
+#   pack-objects <archive>
+cmd_pack_objects() {
+  local archive="${1:?pack-objects: missing archive}"
+  archive="$(bash_path "$archive")"
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  local build; build="$(bash_path "$SLICER_BUILD_DIR")"
+  local root; root="$(bash_path "$SLICER_ROOT")"
+  [ -f "$build/CMakeCache.txt" ] || die "pack-objects: no build tree at $SLICER_BUILD_DIR"
+  git -C "$src" rev-parse HEAD > "$build/.slicer-ci-source-commit"
+  local rel="${build#"$root"/}"
+  mkdir -p "$(dirname "$archive")"
+  log "Pack the objects of $rel -> $archive"
+  (
+    cd "$root"
+    {
+      echo "$rel/.slicer-ci-source-commit"
+      find "$rel" -type f \( \
+          -name '*.o' -o -name '*.obj' -o -name '*.ilk' -o -name '*.pdb' -o -name '*.idb' \
+          -o -name '*.pch' -o -name '*.gch' -o -name '*.ipch' \
+        \)
+    } | tar -cf - -T - | zstd -T0 -3 -q -o "$archive" --force
+  )
+  ls -lh "$archive"
+  endlog
+}
+
+# Restore the build of the application a release holds, with the objects that
+# were removed from it (pack-objects), and bring its sources to the commit
+# checked out in <checkout>: what a build of another commit builds on.
+#
+#   devtree-from-release <repository> <tag> <checkout> <prerequisites key>
+#
+# The prerequisites are those of this build, restored before, and have to be
+# the ones the release was built with (<prerequisites key>). Fails, leaving
+# nothing behind, when the build of the release cannot be built on.
+cmd_devtree_from_release() {
+  local repo="${1:?devtree-from-release: missing repository}" tag="${2:?devtree-from-release: missing tag}"
+  local checkout="${3:?devtree-from-release: missing checkout}" key="${4:-}"
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  local build; build="$(bash_path "$SLICER_BUILD_DIR")"
+  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
+  rm -rf "$src" "$build"
+  # In a subshell: what cannot be restored ends it, not this build.
+  ( cmd_restore_release "$repo" "$tag" build ) \
+    || { devtree_forget "the build of the release $tag could not be restored"; return 1; }
+  local manifest="$out/restore/manifest-${SLICER_PLATFORM}.json"
+  local built_with; built_with="$(cmd_manifest_get "$manifest" deps_key 2>/dev/null || true)"
+  [ -n "$key" ] && [ "$built_with" = "$key" ] \
+    || { devtree_forget "the release was built with other prerequisites (${built_with:-not recorded}) than this build ($key)"; return 1; }
+  local old; old="$(cmd_manifest_get "$manifest" commit)"
+  local dir="$out/restore-objects"
+  rm -rf "$dir"; mkdir -p "$dir"
+  gh release download "$tag" -R "$repo" -D "$dir" --clobber -p "slicer-objects-${SLICER_PLATFORM}.tar.zst*" 2>/dev/null \
+    || { devtree_forget "the release $tag has no objects for $SLICER_PLATFORM"; return 1; }
+  cmd_unpack "$dir/slicer-objects-${SLICER_PLATFORM}.tar.zst" \
+    || { devtree_forget "the objects of the release could not be unpacked"; return 1; }
+  rm -rf "$dir"
+  [ "$(cat "$build/.slicer-ci-source-commit" 2>/dev/null || true)" = "$old" ] \
+    || { devtree_forget "the objects of the release are of another build than its build tree"; return 1; }
+  devtree_sources "$old" "$checkout"
+}
+
+# Bring the sources of a restored build tree from the commit they are of to
+# the one checked out in <checkout>.
+devtree_sources() {
+  local old="$1" checkout="$2"
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  checkout="$(bash_path "$checkout")"
+  local new; new="$(git -C "$checkout" rev-parse HEAD)"
+  git -C "$checkout" cat-file -e "$old^{commit}" 2>/dev/null \
+    || git -C "$checkout" fetch -q origin "$old" 2>/dev/null \
+    || { devtree_forget "the commit it was built from ($old) is not in the history of this one"; return 1; }
+  log "Bring the sources from ${old:0:10} to ${new:0:10}"
+  local status path count=0
+  while IFS=$'\t' read -r status path; do
+    [ -n "$path" ] || continue
+    count=$((count + 1))
+    case "$status" in
+      D) rm -f "$src/$path" ;;
+      *) mkdir -p "$(dirname "$src/$path")"; cp -f "$checkout/$path" "$src/$path" ;;
+    esac
+    [ "$count" -gt 40 ] || echo "$status $path"
+  done < <(git -C "$checkout" -c core.quotepath=off diff --no-renames --name-status "$old" "$new")
+  info "$count files differ"
+  # The history, which the revision of the build is counted from.
+  rm -rf "$src/.git"
+  cp -a "$checkout/.git" "$src/.git"
+  endlog
+}
+
 # Split archives larger than the GitHub release asset limit (2 GiB) into parts.
 cmd_split() {
   local archive="${1:?split: missing archive}"
@@ -1416,6 +1554,10 @@ main() {
   case "$cmd" in
     env) cmd_env "$@" ;;
     deps-key) cmd_deps_key "$@" ;;
+    devtree-pack) cmd_devtree_pack "$@" ;;
+    devtree-restore) cmd_devtree_restore "$@" ;;
+    devtree-from-release) cmd_devtree_from_release "$@" ;;
+    pack-objects) cmd_pack_objects "$@" ;;
     free-disk-space) cmd_free_disk_space "$@" ;;
     install-system-packages) cmd_install_system_packages "$@" ;;
     install-software-opengl) cmd_install_software_opengl "$@" ;;
