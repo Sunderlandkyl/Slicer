@@ -48,7 +48,7 @@ on:
   workflow_call:
     inputs:
       platforms:
-        description: "Platforms to build on (comma separated: linux,macos,windows,web)"
+        description: "Platforms to build on (comma separated: linux,macos,macos-arm64,windows,web)"
         type: string
         default: "linux"
       source-directory:
@@ -212,6 +212,7 @@ jobs:
             case "$p" in
               linux)   entries="$entries {\"platform\":\"linux\",\"runner\":\"ubuntu-22.04\"}," ;;
               macos)   entries="$entries {\"platform\":\"macos\",\"runner\":\"macos-15-intel\"}," ;;
+              macos-arm64) entries="$entries {\"platform\":\"macos-arm64\",\"runner\":\"macos-15\"}," ;;
               windows) entries="$entries {\"platform\":\"windows\",\"runner\":\"windows-2022\"}," ;;
               web)
                 # Built against the web build tree, which a Slicer build

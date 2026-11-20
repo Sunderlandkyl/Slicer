@@ -109,15 +109,18 @@ The CMake package configuration files exported by a Slicer build tree
 embed absolute paths. A build tree is therefore only usable when restored at the
 path it was built at. The workflow uses a short, fixed root per platform:
 
-macOS is built on the Intel image. Qt 5.15.2 has no arm64 build, and Slicer's
-own arm64 recipe is still a work in progress that turns DICOM, SimpleITK and
-internationalization off. GitHub provides the Intel image until August 2027,
-by which time Slicer's arm64 support should have caught up.
+macOS is two platforms, since nothing built for one architecture is usable by
+the other: `macos` is the Intel build (`macos-15-intel` image, Qt 5.15.2), and
+`macos-arm64` the Apple silicon one (`macos-15` image). Qt provides no arm64
+build of Qt 5, so `macos-arm64` is built with Qt 6, the version of which is the
+`macos-arm64-qt-version` input of `build-application.yml`. The build tree
+records the Qt version it was built with, and an extension built against it
+installs the same one. Both use the same root: they never share a machine.
 
 | Platform | Root | Source tree | Superbuild tree | `Slicer_DIR` |
 |---|---|---|---|---|
 | Linux | `/home/runner/S` | `/home/runner/S/Slicer` | `/home/runner/S/SR` | `/home/runner/S/SR/Slicer-build` |
-| macOS | `/Users/runner/S` | `/Users/runner/S/Slicer` | `/Users/runner/S/SR` | `/Users/runner/S/SR/Slicer-build` |
+| macOS (both) | `/Users/runner/S` | `/Users/runner/S/Slicer` | `/Users/runner/S/SR` | `/Users/runner/S/SR/Slicer-build` |
 | Windows | `C:/S` | `C:/S/Slicer` | `C:/S/SR` | `C:/S/SR/Slicer-build` |
 
 The paths are also short enough to satisfy the Windows path length limit
@@ -239,7 +242,7 @@ Inputs:
 
 | Input | Default | Description |
 |---|---|---|
-| `platforms` | `linux` | Platforms to build on, comma separated: `linux`, `macos`, `windows`, `web` |
+| `platforms` | `linux` | Platforms to build on, comma separated: `linux`, `macos` (Intel), `macos-arm64` (Apple silicon), `windows`, `web` |
 | `source-directory` | `.` | Directory of the extension within the repository |
 | `extension-name` | repository name | CMake project name of the extension |
 | `cmake-options` | | Additional options for the configure step |
@@ -487,7 +490,7 @@ Outputs of the action:
 | `source-dir` | The Slicer source tree the build was produced from |
 | `superbuild-dir` | The superbuild tree |
 | `root` | The fixed root directory |
-| `platform` | `linux`, `macos` or `windows` |
+| `platform` | `linux`, `macos`, `macos-arm64` or `windows` |
 | `launcher` | The Slicer launcher executable in the build tree |
 | `slicer-version`, `slicer-revision` | Version of the restored build |
 | `qt-dir` | The Qt prefix used by the build |
@@ -687,7 +690,7 @@ for the action) to consume a fork's releases:
 
 | Input | Description |
 |---|---|
-| `platforms` | Comma separated subset of `linux,macos,windows` |
+| `platforms` | Comma separated subset of `linux,macos,macos-arm64,windows` |
 | `run-tests` | Run the test suite |
 | `publish` | Publish the result to the `nightly` release |
 | `rebuild-prerequisites` | Ignore the prerequisites cache and rebuild them |

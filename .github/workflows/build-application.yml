@@ -54,8 +54,10 @@ on:
         default: "Application"
       platforms:
         description: >-
-          Platforms to build (comma separated: linux,macos,windows,web). web
-          builds the WebAssembly runtime of SlicerWeb (build-web.yml).
+          Platforms to build (comma separated:
+          linux,macos,macos-arm64,windows,web). macos is the Intel build,
+          macos-arm64 the Apple silicon one. web builds the WebAssembly
+          runtime of SlicerWeb (build-web.yml).
         type: string
         default: "linux,macos,windows"
       slicerweb-repository:
@@ -86,6 +88,12 @@ on:
       qt-version:
         type: string
         default: "5.15.2"
+      macos-arm64-qt-version:
+        description: >-
+          Qt version of the macos-arm64 platform, which cannot use Qt 5: Qt
+          provides no arm64 build of it
+        type: string
+        default: "6.11.2"
       deps-key-version:
         description: "Bump to force a rebuild of the prerequisites of every platform"
         type: string
@@ -160,7 +168,7 @@ on:
         required: false
     outputs:
       matrix:
-        description: "The platforms built, as JSON: {include: [{platform, runner, key, cached}]}"
+        description: "The platforms built, as JSON: {include: [{platform, runner, qt, key, cached}]}"
         value: ${{ jobs.deps-key.outputs.matrix }}
 
 permissions:
@@ -214,6 +222,7 @@ jobs:
           FORCE: ${{ inputs.rebuild-prerequisites }}
           PLATFORMS: ${{ inputs.platforms }}
           QT_VERSION: ${{ inputs.qt-version }}
+          QT_VERSION_MACOS_ARM64: ${{ inputs.macos-arm64-qt-version }}
           TAG: ${{ inputs.prerequisites-release }}
         run: |
           set -euo pipefail
@@ -234,9 +243,11 @@ jobs:
           for platform in ${PLATFORMS//,/ }; do
             # The runner image is part of the key: a new image brings a new
             # compiler.
+            qt="$QT_VERSION"
             case "$platform" in
               linux)   runner="ubuntu-22.04" ;;
               macos)   runner="macos-15-intel" ;;
+              macos-arm64) runner="macos-15"; qt="$QT_VERSION_MACOS_ARM64" ;;
               windows) runner="windows-2022" ;;
               # Built by build-web.yml, which has prerequisites of its own.
               web) web=true; continue ;;
@@ -245,7 +256,7 @@ jobs:
             key="slicer-deps-${platform}-$(
               SLICER_PLATFORM="$platform" \
               SLICER_RUNNER_IMAGE="$runner" \
-              SLICER_QT_VERSION="$QT_VERSION" \
+              SLICER_QT_VERSION="$qt" \
               SLICER_SOURCE_DIR="$GITHUB_WORKSPACE" \
               "$ci" deps-key)"
             cached=false
@@ -253,8 +264,8 @@ jobs:
               cached=true
             fi
             entries="$(echo "$entries" | jq -c \
-              --arg p "$platform" --arg r "$runner" --arg k "$key" --argjson c "$cached" \
-              '. + [{platform: $p, runner: $r, key: $k, cached: $c}]')"
+              --arg p "$platform" --arg r "$runner" --arg q "$qt" --arg k "$key" --argjson c "$cached" \
+              '. + [{platform: $p, runner: $r, qt: $q, key: $k, cached: $c}]')"
             echo "| $platform | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
           done
           desktop="$(echo "$entries" | jq 'length')"
@@ -360,7 +371,7 @@ jobs:
         id: env
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
-          qt-version: ${{ inputs.qt-version }}
+          qt-version: ${{ matrix.qt }}
 
       # Restore and save are separate so the save can run even when the job
       # fails. actions/cache only saves after a successful job, and this job
@@ -396,7 +407,7 @@ jobs:
       # Docs/developer_guide/build_instructions/github_actions.md
       - name: Import the signing certificate
         id: signing
-        if: matrix.platform == 'macos' && env.MACOS_CERTIFICATE != ''
+        if: startsWith(matrix.platform, 'macos') && env.MACOS_CERTIFICATE != ''
         shell: bash
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
@@ -492,7 +503,7 @@ jobs:
       # warning. The submission is rejected outright if anything in the bundle
       # is unsigned or lacks the hardened runtime.
       - name: Notarize and staple
-        if: matrix.platform == 'macos' && steps.signing.outputs.enabled == 'true'
+        if: startsWith(matrix.platform, 'macos') && steps.signing.outputs.enabled == 'true'
         shell: bash
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}

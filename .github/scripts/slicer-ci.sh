@@ -29,7 +29,9 @@ set -euo pipefail
 detect_platform() {
   case "$(uname -s)" in
     Linux*) echo "linux" ;;
-    Darwin*) echo "macos" ;;
+    # Apple silicon is a platform of its own: nothing built for one
+    # architecture is usable by the other.
+    Darwin*) if [ "$(uname -m)" = "arm64" ]; then echo "macos-arm64"; else echo "macos"; fi ;;
     MINGW*|MSYS*|CYGWIN*|Windows*) echo "windows" ;;
     *) echo "unknown" ;;
   esac
@@ -38,7 +40,7 @@ detect_platform() {
 default_root() {
   case "$1" in
     linux) echo "/home/runner/S" ;;
-    macos) echo "/Users/runner/S" ;;
+    macos|macos-arm64) echo "/Users/runner/S" ;;
     windows) echo "${SLICER_WINDOWS_ROOT:-C:/S}" ;;
     *) echo "$HOME/S" ;;
   esac
@@ -55,6 +57,23 @@ SLICER_OUTPUT_DIR="${SLICER_OUTPUT_DIR:-$SLICER_ROOT/out}"
 # CMakeLists.txt from the environment, so it has to be set before the tree is
 # configured for the first time.
 export ExternalData_OBJECT_STORES="${ExternalData_OBJECT_STORES:-$SLICER_ROOT/ExternalData}"
+# On Apple silicon, Homebrew (/opt/homebrew) is among the prefixes CMake
+# searches by default, so a Qt installed there would provide the Qt tools
+# (qmake, moc, ...) in place of those of the Qt being built with. Set in the
+# environment, so that it also applies to every external project (CTK, ...),
+# as the Slicer factory does: https://github.com/Slicer/Slicer/issues/9484
+if [ "$SLICER_PLATFORM" = "macos-arm64" ] && [ -n "${SLICER_QT_DIR:-}" ]; then
+  export CMAKE_PREFIX_PATH="$SLICER_QT_DIR"
+fi
+# The Apple silicon runner has 7 GB of memory for its 3 cores, half of what the
+# Intel one has. The build of an external project runs as many compilers as
+# its build tool sees fit (Ninja: the cores and two more), and five of the
+# largest files of VTK at once do not fit: the build then swaps, and hardly
+# advances. cmake --build, which builds each external project, takes its
+# number of jobs from this.
+if [ "$SLICER_PLATFORM" = "macos-arm64" ]; then
+  export CMAKE_BUILD_PARALLEL_LEVEL="${SLICER_EP_PARALLEL:-2}"
+fi
 nproc_count() {
   if [ -n "${NUMBER_OF_PROCESSORS:-}" ]; then echo "$NUMBER_OF_PROCESSORS"
   elif command -v nproc >/dev/null 2>&1; then nproc
@@ -287,6 +306,12 @@ configure_args() {
              "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${SLICER_MACOS_DEPLOYMENT_TARGET:-14.0}"
              -DCMAKE_OSX_ARCHITECTURES:STRING=x86_64)
       ;;
+    macos-arm64)
+      args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
+             -DCMAKE_C_COMPILER:FILEPATH=/usr/bin/cc -DCMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++
+             "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${SLICER_MACOS_DEPLOYMENT_TARGET:-14.0}"
+             -DCMAKE_OSX_ARCHITECTURES:STRING=arm64)
+      ;;
     *)
       args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
              -DCMAKE_C_COMPILER:FILEPATH=/usr/bin/cc -DCMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++)
@@ -453,7 +478,7 @@ cmd_package() {
 # install names were not rewritten builds, packages and uploads cleanly, and
 # only fails on a user's machine with a dyld "Library not loaded" error.
 cmd_verify_package() {
-  if [ "$SLICER_PLATFORM" != "macos" ]; then
+  if [ "${SLICER_PLATFORM%%-*}" != "macos" ]; then
     info "verify-package: nothing to check on $SLICER_PLATFORM"
     return 0
   fi
@@ -859,7 +884,7 @@ cmd_install_system_packages() {
         ${available[@]+"${available[@]}"}
       endlog
       ;;
-    macos)
+    macos|macos-arm64)
       log "Install system packages"
       brew install ninja zstd >/dev/null || brew upgrade ninja zstd || true
       endlog

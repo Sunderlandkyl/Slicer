@@ -33,7 +33,7 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Platforms to build (comma separated: linux,macos,windows,web)"
+        description: "Platforms to build (comma separated: linux,macos,macos-arm64,windows,web)"
         default: "linux,macos,windows,web"
       run-tests:
         description: "Run the test suite"
@@ -136,7 +136,7 @@ jobs:
           # desktop assets, the notes of the release and the extension builds
           # are left as they are.
           desktop=false; web=false
-          if grep -qE '(^|,) *(linux|macos|windows) *(,|$)' <<< "$PLATFORMS"; then desktop=true; fi
+          if grep -qE '(^|,) *(linux|macos|macos-arm64|windows) *(,|$)' <<< "$PLATFORMS"; then desktop=true; fi
           if grep -qE '(^|,) *web *(,|$)' <<< "$PLATFORMS"; then web=true; fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "desktop=$desktop" >> "$GITHUB_OUTPUT"

@@ -49,7 +49,7 @@ inputs:
 
 outputs:
   platform:
-    description: "linux, macos or windows"
+    description: "linux, macos, macos-arm64 or windows"
     value: ${{ steps.env.outputs.platform }}
   root:
     description: "Fixed root directory"

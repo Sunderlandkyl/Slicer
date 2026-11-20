@@ -59,7 +59,7 @@ outputs:
     description: "The fixed root directory"
     value: ${{ steps.env.outputs.root }}
   platform:
-    description: "linux, macos or windows"
+    description: "linux, macos, macos-arm64 or windows"
     value: ${{ steps.env.outputs.platform }}
   launcher:
     description: "The Slicer launcher executable of the build tree"
