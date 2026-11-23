@@ -207,7 +207,9 @@ jobs:
       # change letting it override the Slicer revision is in SlicerWeb, the
       # fork that has it is the default.
       slicerweb-repository: ${{ vars.SLICERWEB_REPOSITORY || 'Sunderlandkyl/SlicerWeb' }}
-      slicerweb-ref: ${{ vars.SLICERWEB_REF || 'ci/slicer-actions' }}
+      # This preview branch is built with the SlicerWeb branch of the same name
+      # (the views of extensions).
+      slicerweb-ref: preview/lightbox
       web-slicer-from-checkout: true
       ci-repository: ${{ github.repository }}
       ci-ref: ${{ github.sha }}
