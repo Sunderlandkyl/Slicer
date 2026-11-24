@@ -243,7 +243,9 @@ jobs:
 
 A commit to `main` and a manual run build, test and publish the packages (see
 below); a pull request builds and tests, and is never published. Leave
-`publish` and `permissions` out to only build and test.
+`publish` out to only build and test; `permissions` stays, as the workflow
+declares the permission whether it publishes or not, and a run is refused when
+its caller does not grant what it declares.
 
 The extension is built for every platform the Slicer nightly has a build for.
 A manual run can be given the platforms to build, which is how the Slicer
