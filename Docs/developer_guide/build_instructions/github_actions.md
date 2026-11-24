@@ -699,6 +699,16 @@ for the action) to consume a fork's releases:
 Pull requests build and test Linux only. Pushes to the default branch and the
 nightly schedule build all three platforms.
 
+A pull request is not built from nothing: its build starts from the build of
+the nightly, whose objects are published beside it for this
+(`slicer-objects-<platform>.tar.zst`), with the sources brought to the commit
+of the pull request, so that only what the pull request changes, and what
+changed since the nightly, is built again before the tests run. This needs the
+prerequisites of the nightly to be the ones of the pull request: one that
+changes them (`SuperBuild/`) builds them, and Slicer, from nothing. A manual
+run does the same with the `reuse-build-tree` input, and also keeps its build
+tree for the next manual run of the branch.
+
 The scheduled run exists to keep the `nightly` release in step with the default
 branch, so it stops early when no commit has landed since the last one: it
 compares the commit recorded in the published manifest against the head of the

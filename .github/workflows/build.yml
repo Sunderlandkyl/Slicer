@@ -234,7 +234,9 @@ jobs:
       # extensions of a platform do not wait for the slowest platform.
       publish-release: ${{ needs.setup.outputs.publish == 'true' && 'nightly' || '' }}
       publish-dispatch-event: reconcile-extensions
-      reuse-build-tree: ${{ needs.setup.outputs.publish != 'true' && github.event.inputs.reuse-build-tree == 'true' }}
+      # A pull request is built on the build of the nightly: what it changes
+      # is built again and tested, not the whole of Slicer.
+      reuse-build-tree: ${{ needs.setup.outputs.publish != 'true' && (github.event_name == 'pull_request' || github.event.inputs.reuse-build-tree == 'true') }}
       release-notes: |
         Nightly Slicer build trees and packages.
 

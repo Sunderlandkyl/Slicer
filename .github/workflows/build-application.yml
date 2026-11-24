@@ -150,7 +150,10 @@ on:
           built again: the build tree the last build of this branch with this
           input kept, or else the build of the release prerequisites-release,
           when it was built with the same prerequisites and its objects are
-          published with it. The tree of this build is kept for the next.
+          published with it. The tree of this build is kept for the next,
+          except the one of a pull request, which is built on the release
+          each time: the trees of every pull request would not fit in the
+          cache of the repository.
           For trying changes; never for a build that is published, which is
           built from nothing.
         type: boolean
@@ -418,7 +421,7 @@ jobs:
       # sources in place and leaves them as they are.
       - name: Find the kept build tree
         id: devtree
-        if: inputs.reuse-build-tree && inputs.publish-release == ''
+        if: inputs.reuse-build-tree && inputs.publish-release == '' && github.event_name != 'pull_request'
         uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
         with:
           path: ${{ env.SLICER_OUTPUT_DIR }}/devtree
@@ -590,7 +593,7 @@ jobs:
       # builds on.
       - name: Pack the build tree for the next build
         id: devtree-pack
-        if: always() && inputs.reuse-build-tree && inputs.publish-release == '' && steps.package.outputs.package != ''
+        if: always() && inputs.reuse-build-tree && inputs.publish-release == '' && github.event_name != 'pull_request' && steps.package.outputs.package != ''
         shell: bash
         run: |
           set -euo pipefail
