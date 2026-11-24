@@ -2,13 +2,31 @@
 # published by the "Build" workflow.
 #
 # An extension repository calls this workflow instead of carrying the steps
-# itself; it needs no checkout of Slicer and no Slicer build of its own:
+# itself; it needs no checkout of Slicer and no Slicer build of its own. What
+# it carries says when to build and what it lets the build do, and nothing of
+# how, so that it does not have to change when this workflow does:
 #
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
+#     workflow_dispatch:
+#       inputs:
+#         platforms:
+#           description: "Platforms to build (default: all)"
 #   jobs:
 #     build:
+#       permissions:
+#         contents: write
 #       uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
 #       with:
-#         platforms: linux,macos,windows,web
+#         publish: true
+#
+# Without the platforms input, it is built for every platform the Slicer
+# release has a build for, or for the platforms a manual run of the calling
+# workflow is given (its own platforms input, which is how the Slicer
+# repository starts one run per platform). A pull request is built and tested,
+# and never published.
 #
 # The web platform builds the extension for SlicerWeb (Slicer compiled to
 # WebAssembly, https://github.com/lassoan/SlicerWeb) against the web build tree
@@ -48,9 +66,13 @@ on:
   workflow_call:
     inputs:
       platforms:
-        description: "Platforms to build on (comma separated: linux,macos,macos-arm64,windows,web)"
+        description: >-
+          Platforms to build on (comma separated:
+          linux,macos,macos-arm64,windows,web). Default: the platforms input
+          of the manual run of the calling workflow, if it has one, or else
+          every platform the Slicer release has a build for
         type: string
-        default: "linux"
+        default: ""
       source-directory:
         description: "Directory of the extension within the repository"
         type: string
@@ -149,7 +171,8 @@ on:
       publish:
         description: >-
           Publish the packages to the release publish-tag of the calling
-          repository; the calling job must grant `contents: write`
+          repository; the calling job must grant `contents: write`. A pull
+          request is never published
         type: boolean
         default: false
       publish-tag:
@@ -183,7 +206,9 @@ jobs:
         id: matrix
         shell: bash
         env:
-          PLATFORMS: ${{ inputs.platforms }}
+          # The event is the one of the calling workflow: the platforms a
+          # manual run of it is given are the ones to build.
+          PLATFORMS: ${{ inputs.platforms || github.event.inputs.platforms }}
           SLICER_REPOSITORY: ${{ inputs.slicer-repository }}
           RELEASE_TAG: ${{ inputs.release-tag }}
           ARTIFACT_PREFIX: ${{ inputs.artifact-prefix }}
@@ -206,6 +231,17 @@ jobs:
             echo "web=false" >> "$GITHUB_OUTPUT"
             echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          # Every platform the release has a build for, when none is asked
+          # for: what the extension is built for follows what Slicer is.
+          if [ -z "${PLATFORMS//[, ]/}" ]; then
+            PLATFORMS=""
+            for p in linux macos macos-arm64 windows; do
+              if grep -qx "manifest-$p.json" <<< "$assets"; then PLATFORMS="$PLATFORMS,$p"; fi
+            done
+            if grep -qx slicerweb-manifest.json <<< "$assets"; then PLATFORMS="$PLATFORMS,web"; fi
+            PLATFORMS="${PLATFORMS#,}"
+            echo "Platforms of the '$RELEASE_TAG' release of $SLICER_REPOSITORY: ${PLATFORMS:-none}"
           fi
           entries="" web=false
           for p in ${PLATFORMS//,/ }; do
@@ -335,7 +371,7 @@ jobs:
 
       # Before the tests, which may leave files in the tree.
       - name: Archive the build tree
-        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && !inputs.source-ref && inputs.publish-build-tree)
+        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref && inputs.publish-build-tree)
         shell: bash
         env:
           SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
@@ -416,7 +452,7 @@ jobs:
       # nothing, as for Slicer's own nightly; a platform that does not get here
       # keeps the package the release had.
       - name: Publish
-        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && !inputs.source-ref)
+        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -558,7 +594,7 @@ jobs:
           # Where the dependencies come from, as for the desktop platforms.
           SLICER_EXT_REGISTRY: ${{ inputs.build-dependencies && format('https://github.com/{0}/releases/download/{1}/extension-repositories.json', inputs.slicer-repository, inputs.release-tag) || '' }}
           SLICER_COMMIT: ${{ steps.tree.outputs.slicer-commit }}
-          SLICER_EXT_TREE: ${{ inputs.publish && !inputs.source-ref && inputs.publish-build-tree }}
+          SLICER_EXT_TREE: ${{ inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref && inputs.publish-build-tree }}
         run: |
           set -euo pipefail
           src="$GITHUB_WORKSPACE/extension"
@@ -611,7 +647,7 @@ jobs:
 
       # As soon as it is built, without waiting for the desktop platforms.
       - name: Publish
-        if: steps.deps.outputs.ready != 'false' && (inputs.publish && !inputs.source-ref)
+        if: steps.deps.outputs.ready != 'false' && (inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

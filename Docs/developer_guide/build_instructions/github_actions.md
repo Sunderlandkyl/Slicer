@@ -215,19 +215,40 @@ tests.
 Call the `extension-build` workflow. It restores the published build tree,
 configures, builds, tests and packages the extension, loads the result into
 Slicer and uploads the package. The extension repository carries no build steps
-of its own and never checks Slicer out:
+of its own and never checks Slicer out. What it carries says when to build and
+what it lets the build do, and nothing of how, so that it does not have to
+change when the workflow does:
 
 ```yaml
-name: Build extension
+# .github/workflows/slicer-nightly-build.yml
+name: Build against the Slicer nightly
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to build (default: all)"
 
 jobs:
   build:
+    permissions:
+      contents: write
     uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
     with:
-      platforms: linux,macos,windows,web
+      publish: true
 ```
+
+A commit to `main` and a manual run build, test and publish the packages (see
+below); a pull request builds and tests, and is never published. Leave
+`publish` and `permissions` out to only build and test.
+
+The extension is built for every platform the Slicer nightly has a build for.
+A manual run can be given the platforms to build, which is how the Slicer
+repository starts one run per platform; to always build for some platforms
+only, pass them: `platforms: linux,windows`.
 
 `web` builds the extension for [SlicerWeb](https://github.com/lassoan/SlicerWeb),
 Slicer compiled to WebAssembly, against the web build tree the nightly
@@ -242,7 +263,7 @@ Inputs:
 
 | Input | Default | Description |
 |---|---|---|
-| `platforms` | `linux` | Platforms to build on, comma separated: `linux`, `macos` (Intel), `macos-arm64` (Apple silicon), `windows`, `web` |
+| `platforms` | what a manual run is given, or else all the Slicer release has | Platforms to build on, comma separated: `linux`, `macos` (Intel), `macos-arm64` (Apple silicon), `windows`, `web` |
 | `source-directory` | `.` | Directory of the extension within the repository |
 | `extension-name` | repository name | CMake project name of the extension |
 | `cmake-options` | | Additional options for the configure step |
@@ -261,7 +282,7 @@ Inputs:
 | `release-tag` | `nightly` | Release to build against |
 | `qt-version` | from the manifest | Qt version to install |
 | `web-build-subdirectory` | | For `web`, of an extension SlicerWeb's catalog does not describe: `inner-build` with a superbuild, `.` without |
-| `publish` | `false` | Publish the packages to a release of the extension's own repository |
+| `publish` | `false` | Publish the packages to a release of the extension's own repository. A pull request is never published |
 | `publish-tag` | `nightly` | Tag of that release |
 | `publish-build-tree` | `false` | Publish the build tree with the package, for the extensions that depend on this one |
 | `timeout-minutes` | `120` | Timeout of each desktop platform's job |
@@ -271,7 +292,8 @@ Inputs:
 
 The packages can be published to a release of the extension's own repository,
 the way Slicer publishes its nightly. A called workflow cannot grant itself
-more than its caller has, so the calling job passes `contents: write`:
+more than its caller has, so the calling job passes `contents: write`, as in
+the workflow above:
 
 ```yaml
 jobs:
@@ -280,27 +302,13 @@ jobs:
       contents: write
     uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
     with:
-      platforms: linux,macos,windows
-      # A commit to the default branch, and the builds the Slicer repository
-      # starts (see below), publish; a pull request or another branch builds
-      # and tests.
-      publish: >-
-        ${{ github.event_name == 'workflow_dispatch'
-            || (github.event_name == 'push'
-                && github.ref_name == github.event.repository.default_branch) }}
+      publish: true
 ```
 
-with, for the Slicer repository to start one run per platform:
-
-```yaml
-on:
-  workflow_dispatch:
-    inputs:
-      platforms:
-        default: ""
-# ...
-      platforms: ${{ inputs.platforms || 'linux,macos,windows' }}
-```
+Every run publishes then, except the ones of a pull request, so the branches
+whose commits are built are the ones to publish from: `push` is limited to the
+default branch in the workflow above. The manual runs, which the Slicer
+repository starts for a new nightly, one per platform, publish as well.
 
 The packages go to the `nightly` release of the extension's repository, with
 one description per platform, `extension-<platform>.json`, which says what the
