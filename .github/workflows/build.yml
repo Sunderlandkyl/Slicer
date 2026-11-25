@@ -1,0 +1,251 @@
+name: Build
+
+# Builds Slicer on Linux, macOS and Windows, and for the web browser
+# (SlicerWeb), and publishes the result as the nightly release. Each platform
+# publishes what it built as soon as it is built, attests its package, and
+# says so (extension-reconcile.yml listens, and builds the extensions that
+# follow it): nothing is left to do once they are all built.
+#
+# The build itself is done by build-application.yml, which custom applications
+# based on Slicer call as well: the prerequisites (VTK, ITK, CTK, Python,
+# DCMTK, ...) are built in stages only when what describes them changes, and
+# reused untouched by every other run; Slicer is then built in the very same
+# superbuild tree, packaged and tested.
+
+on:
+  push:
+    branches:
+      - "main"
+      - "master"
+      # Branches used to develop the CI itself.
+      - "ci/**"
+  pull_request:
+    branches:
+      - "*"
+  schedule:
+    # Nightly, after the preview branch has been updated. GitHub starts
+    # scheduled runs late, by hours at times, so the nightly is started on time
+    # by the relay of the extension webhook (.github/extension-webhook, a
+    # manual run with the nightly input), and this is what is left when the
+    # relay is not there: a run that finds the nightly already built stops
+    # within a minute.
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to build (comma separated: linux,macos,macos-arm64,windows,web)"
+        default: "linux,macos,macos-arm64,windows,web"
+      run-tests:
+        description: "Run the test suite"
+        type: boolean
+        default: true
+      publish:
+        description: "Publish the build trees to the 'nightly' release"
+        type: boolean
+        default: false
+      rebuild-prerequisites:
+        description: "Force a rebuild of the prerequisites"
+        type: boolean
+        default: false
+      nightly:
+        description: "Run as the scheduled nightly does: publish, build nothing when the nightly release already holds this commit, and let failing tests withhold nothing"
+        type: boolean
+        default: false
+      force:
+        description: "Build even if the nightly release already holds this commit"
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  #-----------------------------------------------------------------------------
+  # Decide what to build.
+  #-----------------------------------------------------------------------------
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      platforms: ${{ steps.matrix.outputs.platforms }}
+      run-tests: ${{ steps.matrix.outputs.run-tests }}
+      publish: ${{ steps.matrix.outputs.publish }}
+      # Whether a desktop platform, and the web runtime, are among the platforms.
+      desktop: ${{ steps.matrix.outputs.desktop }}
+      web: ${{ steps.matrix.outputs.web }}
+      force-deps: ${{ steps.matrix.outputs.force-deps }}
+      skip: ${{ steps.uptodate.outputs.skip }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Decide what to build
+        id: matrix
+        shell: bash
+        env:
+          # web with the desktop platforms, so that every platform of the
+          # nightly comes from the same commit, and extensions are built for
+          # all of them against it.
+          PLATFORMS: ${{ github.event.inputs.platforms || 'linux,macos,macos-arm64,windows,web' }}
+          # A manual run with the nightly input is the scheduled run, started
+          # by something that keeps time.
+          EVENT: ${{ github.event.inputs.nightly == 'true' && 'schedule' || github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          # Platforms built by a push to a branch other than the default one.
+          # Set the SLICER_CI_PLATFORMS repository variable to work on a single
+          # platform while developing the CI itself.
+          SLICER_CI_PLATFORMS: ${{ vars.SLICER_CI_PLATFORMS }}
+          # Publish from a branch other than the default one. Only for bringing
+          # up the CI itself, when the nightly release has to exist before the
+          # workflow has been merged.
+          SLICER_CI_PUBLISH: ${{ vars.SLICER_CI_PUBLISH }}
+        run: |
+          set -euo pipefail
+          on_default_branch=false
+          if [ "$EVENT" = "push" ] && [ "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            on_default_branch=true
+          fi
+          # Only Linux is built on pull requests and on the branches used to
+          # develop the CI itself, to keep the feedback fast and the cost low.
+          # The default branch, the nightly run and manual runs build
+          # everything.
+          if [ "$EVENT" = "pull_request" ]; then
+            PLATFORMS="linux"
+          elif [ "$EVENT" = "push" ] && [ "$on_default_branch" = "false" ]; then
+            PLATFORMS="${SLICER_CI_PLATFORMS:-linux}"
+          fi
+          # The runner of each platform is chosen by build-application.yml.
+          echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
+          echo "Platforms: $PLATFORMS"
+          run_tests="${{ github.event.inputs.run-tests || 'true' }}"
+          echo "run-tests=$run_tests" >> "$GITHUB_OUTPUT"
+          publish="${{ github.event.inputs.publish || 'false' }}"
+          # The nightly release follows the default branch: every build of it,
+          # and the nightly run itself, refresh what extension repositories
+          # build against.
+          # SLICER_CI_PUBLISH applies to pushes only: a manual run publishes
+          # when, and only when, it is asked to.
+          if [ "$EVENT" = "schedule" ] || [ "$on_default_branch" = "true" ] \
+            || { [ "$EVENT" = "push" ] && [ "${SLICER_CI_PUBLISH:-}" = "true" ]; }; then
+            publish="true"
+          fi
+          # A run building the web runtime alone publishes that alone: the
+          # desktop assets, the notes of the release and the extension builds
+          # are left as they are.
+          desktop=false; web=false
+          if grep -qE '(^|,) *(linux|macos|macos-arm64|windows) *(,|$)' <<< "$PLATFORMS"; then desktop=true; fi
+          if grep -qE '(^|,) *web *(,|$)' <<< "$PLATFORMS"; then web=true; fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "desktop=$desktop" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+          echo "force-deps=${{ github.event.inputs.rebuild-prerequisites || 'false' }}" >> "$GITHUB_OUTPUT"
+
+      # The scheduled run exists to keep the nightly release in step with the
+      # default branch. When no commit has landed since the last one, there is
+      # nothing to publish and several hours of runner time to save.
+      - name: Check whether the nightly is up to date
+        id: uptodate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event.inputs.nightly == 'true' && 'schedule' || github.event_name }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+          RELEASE_TAG: nightly
+        run: |
+          set -euo pipefail
+          skip=false
+          if [ "$EVENT" = "schedule" ] && [ "$FORCE" != "true" ]; then
+            dir="$(mktemp -d)"
+            if gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -D "$dir" \
+                 --clobber -p 'manifest-*.json' 2>/dev/null; then
+              built="$(cat "$dir"/manifest-*.json 2>/dev/null \
+                       | sed -n 's/^  "commit": "\(.*\)",$/\1/p' | sort -u)"
+              echo "Commit of the published nightly: ${built:-none}"
+              echo "Commit of the default branch:    $GITHUB_SHA"
+              if [ "$built" = "$GITHUB_SHA" ]; then
+                skip=true
+              fi
+            else
+              echo "No '$RELEASE_TAG' release yet."
+            fi
+            rm -rf "$dir"
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          if [ "$skip" = "true" ]; then
+            echo "::notice::The nightly release already holds $GITHUB_SHA; nothing to build."
+            {
+              echo "### Nothing to build"
+              echo ""
+              echo "The nightly release already holds \`$GITHUB_SHA\`."
+              echo "Run the workflow manually with \`force\` to build it again."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  #-----------------------------------------------------------------------------
+  # Build the prerequisites (or reuse them), then Slicer, package and test it.
+  # The same reusable workflow builds custom applications based on Slicer.
+  #-----------------------------------------------------------------------------
+  build:
+    name: Build
+    needs: setup
+    if: needs.setup.outputs.skip != 'true'
+    uses: ./.github/workflows/build-application.yml
+    permissions:
+      # The prerequisites are stored on the nightly release.
+      contents: write
+      # Each platform attests the package it publishes.
+      id-token: write
+      attestations: write
+    secrets: inherit
+    with:
+      name: Slicer
+      platforms: ${{ needs.setup.outputs.platforms }}
+      # The web runtime is built from this very commit of Slicer. Until the
+      # change letting it override the Slicer revision is in SlicerWeb, the
+      # fork that has it is the default.
+      slicerweb-repository: ${{ vars.SLICERWEB_REPOSITORY || 'Sunderlandkyl/SlicerWeb' }}
+      slicerweb-ref: ${{ vars.SLICERWEB_REF || 'ci/slicer-actions' }}
+      web-slicer-from-checkout: true
+      ci-repository: ${{ github.repository }}
+      ci-ref: ${{ github.sha }}
+      # Override with the SLICER_CI_QT_VERSION repository variable.
+      qt-version: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
+      # Bump to force a rebuild of the prerequisites of every platform.
+      deps-key-version: "1"
+      rebuild-prerequisites: ${{ needs.setup.outputs.force-deps == 'true' }}
+      # The repository has a single release: the prerequisites are kept on
+      # the nightly one.
+      prerequisites-release: nightly
+      prerequisites-release-title: Slicer nightly
+      run-tests: ${{ needs.setup.outputs.run-tests == 'true' }}
+      test-exclude: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
+      # The nightly run publishes packages even when tests fail.
+      fail-on-test-failures: ${{ github.event_name != 'schedule' && github.event.inputs.nightly != 'true' }}
+      archive-build-trees: ${{ needs.setup.outputs.publish == 'true' }}
+      # Each platform publishes what it built to the nightly release as soon
+      # as it is built, and says so (extension-reconcile.yml listens): the
+      # extensions of a platform do not wait for the slowest platform.
+      publish-release: ${{ needs.setup.outputs.publish == 'true' && 'nightly' || '' }}
+      publish-dispatch-event: reconcile-extensions
+      release-notes: |
+        Nightly Slicer build trees and packages.
+
+        Extension repositories can build against this nightly with the
+        `Slicer/Slicer/.github/actions/setup-slicer-build` action.
+        See `Docs/developer_guide/build_instructions/github_actions.md`.
+
+        `slicerweb-wheels.zip` is the WebAssembly runtime of SlicerWeb
+        (https://github.com/lassoan/SlicerWeb), the wheels.zip a SlicerWeb site
+        is built from; `slicerweb-build.tar.zst` is the build tree it comes
+        from, which web extensions are built against, and
+        `slicerweb-manifest.json` what it was built from.
+
+        `extensions-catalog.json` lists the extensions built against these
+        builds, by their own repositories, that are consistent with each other.
+
+        The `slicer-deps-<platform>-<key>` assets are the prebuilt
+        prerequisites that the Build workflow reuses between runs.
+      macos-signing-identity: ${{ vars.MACOS_SIGNING_IDENTITY }}

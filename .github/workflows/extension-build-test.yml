@@ -1,0 +1,57 @@
+# Verifies that a build published by the "Build" workflow can be used by a
+# separate repository to build, test, package and load an extension, by
+# building the extension templates shipped in `Extensions/Testing` through the
+# same reusable workflow an extension repository calls.
+#
+# An extension repository needs only the `uses:` below; see
+# `Docs/developer_guide/build_instructions/github_actions.md`.
+name: Extension build (self-test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to test (comma separated: linux,macos,windows)"
+        default: "linux"
+      release-tag:
+        description: "Release holding the Slicer build to test against"
+        default: "nightly"
+  push:
+    branches:
+      - "ci/**"
+  schedule:
+    # A few hours after the nightly build.
+    - cron: "0 10 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  templates:
+    name: ${{ matrix.extension }}
+    strategy:
+      fail-fast: false
+      matrix:
+        extension:
+          - LoadableExtensionTemplate
+          - ScriptedLoadableExtensionTemplate
+          - CLIExtensionTemplate
+    uses: ./.github/workflows/extension-build.yml
+    # What the jobs of that workflow ask for, which a caller has to grant; it
+    # publishes nothing here, as publish is not asked for.
+    permissions:
+      contents: write
+    with:
+      platforms: ${{ inputs.platforms || 'linux' }}
+      # The branches this workflow is started for (see above), not only the
+      # default one.
+      push-branches: "*"
+      source-directory: Extensions/Testing/${{ matrix.extension }}
+      # The build being tested is this commit's, not the default branch's.
+      slicer-repository: ${{ github.repository }}
+      slicer-ref: ${{ github.sha }}
+      release-tag: ${{ inputs.release-tag || 'nightly' }}
+      artifact-prefix: ${{ matrix.extension }}
+      # The templates have no tests of their own; loading them into Slicer is
+      # what this verifies.
+      run-tests: false

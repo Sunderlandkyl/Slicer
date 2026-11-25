@@ -1,0 +1,321 @@
+name: "Set up a Slicer build"
+description: >-
+  Restore a Slicer build tree published by the Slicer build workflow, so that a
+  Slicer extension can be configured, built and tested against it in GitHub
+  Actions. The `slicer-dir` output is what to pass as `-DSlicer_DIR`.
+
+  Usage from an extension repository:
+
+    - uses: Slicer/Slicer/.github/actions/setup-slicer-build@main
+      id: slicer
+    - run: |
+        cmake -S . -B ../build -G Ninja \
+          -DSlicer_DIR:PATH=<the slicer-dir output> \
+          -DCMAKE_BUILD_TYPE:STRING=Release
+        cmake --build ../build --parallel
+
+  The build tree is restored at the fixed absolute path it was produced at
+  (`/home/runner/S`, `/Users/runner/S` or `C:/S`), because the CMake package
+  configuration files exported by Slicer embed absolute paths. Nothing else on
+  the runner is affected.
+
+inputs:
+  repository:
+    description: "Repository publishing the Slicer builds"
+    default: "Slicer/Slicer"
+  ref:
+    description: "Branch or tag of that repository providing the helper script"
+    default: "main"
+  release-tag:
+    description: "Release to restore"
+    default: "nightly"
+  token:
+    description: "Token used to download the release assets"
+    default: ${{ github.token }}
+  qt-version:
+    description: "Qt version to install (defaults to the one recorded in the manifest)"
+    default: ""
+  cmake-version:
+    description: "CMake version to install"
+    default: "3.31.x"
+  compiler-cache:
+    description: "Enable the ccache compiler cache on Linux and macOS"
+    default: "true"
+  free-disk-space:
+    description: "Remove unneeded pre-installed tooling on Linux runners"
+    default: "false"
+
+outputs:
+  slicer-dir:
+    description: "Value to pass as -DSlicer_DIR (the inner build tree)"
+    value: ${{ steps.env.outputs.slicer-dir }}
+  superbuild-dir:
+    description: "The Slicer superbuild tree"
+    value: ${{ steps.env.outputs.superbuild-dir }}
+  source-dir:
+    description: "The Slicer source tree the build was produced from"
+    value: ${{ steps.env.outputs.source-dir }}
+  root:
+    description: "The fixed root directory"
+    value: ${{ steps.env.outputs.root }}
+  platform:
+    description: "linux, macos, macos-arm64 or windows"
+    value: ${{ steps.env.outputs.platform }}
+  launcher:
+    description: "The Slicer launcher executable of the build tree"
+    value: ${{ steps.check.outputs.launcher }}
+  slicer-version:
+    description: "Version of the restored build"
+    value: ${{ steps.check.outputs.version }}
+  slicer-revision:
+    description: "Revision of the restored build"
+    value: ${{ steps.check.outputs.revision }}
+  slicer-commit:
+    description: "Commit of Slicer the restored build was made from"
+    value: ${{ steps.manifest.outputs.commit }}
+  qt-dir:
+    description: "Qt prefix the build was produced with"
+    value: ${{ steps.qt-dir.outputs.qt-dir }}
+
+runs:
+  using: composite
+  steps:
+    # The helper script is fetched from the Slicer repository rather than taken
+    # from the caller's workspace, so that this action works from any
+    # repository without it having to check Slicer out.
+    #
+    # Downloaded rather than checked out: actions/checkout refuses a path
+    # outside the caller's workspace, and checking out inside it would leave a
+    # directory in the repository being built.
+    - name: Initialize environment
+      id: env
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        dir="${{ runner.temp }}/slicer-ci"
+        mkdir -p "$dir"
+        # slicer-ci.sh, and what goes with it: the resolver of the extensions
+        # an extension depends on, and what publishes its package.
+        for script in slicer-ci.sh slicer-extension-deps.py extension-publish.py; do
+          gh api "repos/${{ inputs.repository }}/contents/.github/scripts/$script?ref=${{ inputs.ref }}" \
+            --jq '.content' | base64 -d > "$dir/$script"
+        done
+        chmod +x "$dir/slicer-ci.sh"
+        echo "SLICER_CI=$dir/slicer-ci.sh" >> "$GITHUB_ENV"
+        "$dir/slicer-ci.sh" env
+
+    - name: Free disk space
+      if: inputs.free-disk-space == 'true'
+      shell: bash
+      run: '"$SLICER_CI" free-disk-space'
+
+    - name: Install system packages
+      shell: bash
+      run: '"$SLICER_CI" install-system-packages'
+
+    # The action looks the version up through the GitHub API, which now and
+    # then answers "Server Error": try a second time before failing the job.
+    - name: Install CMake
+      id: cmake
+      continue-on-error: true
+      uses: jwlawson/actions-setup-cmake@802fa1a2c4e212495c05bf94dba2704a92a472be # v2.0.2
+      with:
+        cmake-version: ${{ inputs.cmake-version }}
+
+    - name: Wait before installing CMake again
+      if: steps.cmake.outcome == 'failure'
+      shell: bash
+      run: sleep 30
+
+    - name: Install CMake (second attempt)
+      if: steps.cmake.outcome == 'failure'
+      uses: jwlawson/actions-setup-cmake@802fa1a2c4e212495c05bf94dba2704a92a472be # v2.0.2
+      with:
+        cmake-version: ${{ inputs.cmake-version }}
+
+    - name: Restore the Slicer build
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: '"$SLICER_CI" restore-release "${{ inputs.repository }}" "${{ inputs.release-tag }}" all'
+
+    - name: Read the manifest
+      id: manifest
+      shell: bash
+      run: |
+        set -euo pipefail
+        manifest="$SLICER_OUTPUT_DIR/restore/manifest-${SLICER_PLATFORM}.json"
+        qt="${{ inputs.qt-version }}"
+        version=""
+        revision=""
+        commit=""
+        if [ -f "$manifest" ]; then
+          cat "$manifest"
+          version="$("$SLICER_CI" manifest-get "$manifest" slicer_version)"
+          revision="$("$SLICER_CI" manifest-get "$manifest" slicer_revision)"
+          commit="$("$SLICER_CI" manifest-get "$manifest" commit || true)"
+          if [ -z "$qt" ]; then
+            qt="$("$SLICER_CI" manifest-get "$manifest" qt_version)"
+          fi
+        fi
+        if [ -z "$qt" ]; then
+          qt="5.15.2"
+        fi
+        {
+          echo "qt-version=$qt"
+          echo "major=${qt%%.*}"
+          echo "version=$version"
+          echo "revision=$revision"
+          echo "commit=$commit"
+        } >> "$GITHUB_OUTPUT"
+        echo "SLICER_QT_VERSION=$qt" >> "$GITHUB_ENV"
+
+    - name: Resolve the Qt installation options
+      id: qt-options
+      shell: bash
+      run: |
+        set -euo pipefail
+        major="${{ steps.manifest.outputs.major }}"
+        if [ "$major" = "6" ]; then
+          modules="qtwebengine qtwebchannel qtpositioning qt5compat qtmultimedia qtscxml qtshadertools qtimageformats"
+          case "$RUNNER_OS" in
+            Windows) arch="win64_msvc2022_64" ;;
+            macOS)   arch="clang_64" ;;
+            *)       arch="linux_gcc_64" ;;
+          esac
+        else
+          modules="qtwebengine"
+          case "$RUNNER_OS" in
+            Windows) arch="win64_msvc2019_64" ;;
+            macOS)   arch="clang_64" ;;
+            *)       arch="gcc_64" ;;
+          esac
+        fi
+        echo "modules=$modules" >> "$GITHUB_OUTPUT"
+        echo "arch=$arch" >> "$GITHUB_OUTPUT"
+
+    # aqtinstall downloads each archive from a mirror picked by download.qt.io
+    # and, on a timeout, tries one random fallback before giving up. Give slow
+    # mirrors more time, retry connection errors, skip a mirror known to fail,
+    # and fall back to a fixed list of reliable ones. The PlusLib builds use
+    # the same configuration.
+    - name: Configure aqtinstall
+      shell: bash
+      run: |
+        cat > "$RUNNER_TEMP/aqt.ini" <<'EOF'
+        [requests]
+        connection_timeout : 10
+        response_timeout : 120
+        max_retries_on_connection_error : 10
+        [mirrors]
+        blacklist :
+            https://mirror.ossplanet.net
+        fallbacks :
+            https://ftp.fau.de/qtproject/
+            https://mirror.netcologne.de/qtproject/
+            https://mirrors.dotsrc.org/qtproject/
+            https://master.qt.io/
+            https://qt.mirror.constant.com/
+            https://mirrors.ukfast.co.uk/sites/qt.io/
+        EOF
+        echo "AQT_CONFIG=$RUNNER_TEMP/aqt.ini" >> "$GITHUB_ENV"
+
+    # The Qt archives come from a pool of third-party mirrors, one of which
+    # occasionally refuses connections. Qt is therefore kept in the GitHub
+    # Actions cache of the repository (private to its workflows, keyed on the
+    # version, architecture and modules), so that the mirrors are only used
+    # the first time; the action saves the cache as soon as Qt is installed,
+    # so a job that later fails its tests still saves it. When a download is
+    # needed and fails, try a second time, when aqtinstall picks a mirror
+    # again, rather than lose a stage to it.
+    - name: Install Qt
+      id: install-qt
+      continue-on-error: true
+      uses: jurplel/install-qt-action@d325aaf2a8baeeda41ad0b5d39f84a6af9bcf005 # v4.3.0
+      with:
+        version: ${{ steps.manifest.outputs.qt-version }}
+        dir: ${{ steps.env.outputs.root }}/Qt
+        target: desktop
+        arch: ${{ steps.qt-options.outputs.arch }}
+        modules: ${{ steps.qt-options.outputs.modules }}
+        cache: true
+        cache-key-prefix: slicer-qt
+        # The action needs a Python to run aqtinstall. Letting it provision one
+        # is required on macOS, whose system Python refuses to install into an
+        # externally managed environment.
+        setup-python: true
+
+    - name: Install Qt (second attempt)
+      if: steps.install-qt.outcome == 'failure'
+      uses: jurplel/install-qt-action@d325aaf2a8baeeda41ad0b5d39f84a6af9bcf005 # v4.3.0
+      with:
+        version: ${{ steps.manifest.outputs.qt-version }}
+        dir: ${{ steps.env.outputs.root }}/Qt
+        target: desktop
+        arch: ${{ steps.qt-options.outputs.arch }}
+        modules: ${{ steps.qt-options.outputs.modules }}
+        cache: true
+        cache-key-prefix: slicer-qt
+        # The action needs a Python to run aqtinstall. Letting it provision one
+        # is required on macOS, whose system Python refuses to install into an
+        # externally managed environment.
+        setup-python: true
+
+    - name: Locate Qt
+      id: qt-dir
+      shell: bash
+      run: |
+        set -euo pipefail
+        qt_dir="${QT_ROOT_DIR:-}"
+        if [ -z "$qt_dir" ]; then
+          qt_dir="$(ls -d "$SLICER_ROOT/Qt/${SLICER_QT_VERSION}"/*/ 2>/dev/null | head -n1 | sed 's:/*$::' || true)"
+        fi
+        qt_dir="${qt_dir//\\//}"
+        major="${{ steps.manifest.outputs.major }}"
+        if [ ! -d "$qt_dir/lib/cmake/Qt${major}" ]; then
+          echo "::error::Qt $major not found under $SLICER_ROOT/Qt"
+          exit 1
+        fi
+        echo "qt-dir=$qt_dir" >> "$GITHUB_OUTPUT"
+        echo "SLICER_QT_DIR=$qt_dir" >> "$GITHUB_ENV"
+
+    # ccache rather than sccache: sccache's GitHub Actions backend writes one
+    # cache entry per compiled object, which leaves tens of thousands of them
+    # in the repository, while this stores the whole cache as a single entry.
+    - name: Set up the compiler cache
+      if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
+      uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+      with:
+        key: slicer-extension-${{ steps.env.outputs.platform }}
+        max-size: 1G
+
+    - name: Enable the compiler cache
+      if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
+      shell: bash
+      run: |
+        {
+          echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+        } >> "$GITHUB_ENV"
+
+    - name: Check the restored build
+      id: check
+      shell: bash
+      run: |
+        set -euo pipefail
+        slicer_dir="${{ steps.env.outputs.slicer-dir }}"
+        if [ ! -f "$slicer_dir/SlicerConfig.cmake" ]; then
+          echo "::error::SlicerConfig.cmake not found in $slicer_dir"
+          exit 1
+        fi
+        launcher="$slicer_dir/Slicer"
+        if [ "$SLICER_PLATFORM" = "windows" ]; then
+          launcher="$slicer_dir/Slicer.exe"
+        fi
+        echo "launcher=$launcher" >> "$GITHUB_OUTPUT"
+        echo "version=${{ steps.manifest.outputs.version }}" >> "$GITHUB_OUTPUT"
+        echo "revision=${{ steps.manifest.outputs.revision }}" >> "$GITHUB_OUTPUT"
+        echo "Slicer_DIR=$slicer_dir" >> "$GITHUB_ENV"
+        echo "Restored Slicer ${{ steps.manifest.outputs.version }} (r${{ steps.manifest.outputs.revision }}) at $slicer_dir"
