@@ -67,13 +67,16 @@ int qMRMLNodeComboBoxTest6(int argc, char* argv[])
     nodeSelector2.setCurrentNode(modelNode.GetPointer());
     nodeSelector2.show();
   */
-  if (argc < 2 || QString(argv[1]) != "-I")
-  {
-    QTimer::singleShot(200, &app, SLOT(quit()));
-  }
   app.processEvents();
   modelNode->SetAttribute("foo", "0");
   modelNode->Modified();
   qDebug() << "modified";
+  // Start the timer only now: had it expired during processEvents() above, as
+  // it can on a slow machine, quit() would have run with no event loop to exit
+  // and exec() would never return.
+  if (argc < 2 || QString(argv[1]) != "-I")
+  {
+    QTimer::singleShot(200, &app, SLOT(quit()));
+  }
   return app.exec();
 }
