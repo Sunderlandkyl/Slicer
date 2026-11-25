@@ -117,7 +117,7 @@ jobs:
         run: bash "$SLICERWEB_CI" image
       - name: Build VTK, ITK, teem, LibArchive, JsonCpp, SlicerExecutionModel
         run: bash "$SLICERWEB_CI" run 00-sources 10-vtk-compiletools 20-vtk 30-itk 40-deps 45-sem
-      - name: Archive
+      - name: Archive the prerequisites
         run: bash "$SLICERWEB_CI" pack "$SLICERWEB_ROOT/out/deps-web.tar.zst" ./src/Slicer
       - name: Publish the prerequisites
         shell: bash
@@ -228,7 +228,7 @@ jobs:
           bash "$SLICERWEB_CI" run ${slicer[@]+"${slicer[@]}"} 00-sources 50-slicer
       - name: Package the wheels
         run: bash "$SLICERWEB_CI" run 60-wheels
-      - name: Smoke test
+      - name: Run the smoke test
         run: bash "$SLICERWEB_CI" run 70-smoke
       - name: Archive the runtime
         env:

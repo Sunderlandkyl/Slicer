@@ -17,7 +17,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Initialize environment
+    - name: Initialize the environment
       id: env
       shell: bash
       run: |
@@ -26,7 +26,7 @@ runs:
         echo "SLICER_QT_VERSION=${{ inputs.qt-version }}" >> "$GITHUB_ENV"
         "${{ github.action_path }}/../../scripts/slicer-ci.sh" env
 
-    - name: Install system packages
+    - name: Install the system packages
       shell: bash
       run: '"$SLICER_CI" install-system-packages'
 
@@ -50,7 +50,7 @@ runs:
       with:
         cmake-version: ${{ inputs.cmake-version }}
 
-    - name: Resolve Qt install options
+    - name: Resolve the Qt installation options
       id: qt-options
       shell: bash
       run: |

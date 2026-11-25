@@ -166,7 +166,7 @@ jobs:
           ref: ${{ inputs.slicerweb-ref }}
           path: slicerweb
 
-      - name: Compute keys
+      - name: Compute the keys
         id: key
         shell: bash
         env:
@@ -274,7 +274,7 @@ jobs:
 
       - *checkout-ci
 
-      - name: Set up environment
+      - name: Set up the environment
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt }}
@@ -368,7 +368,7 @@ jobs:
       - *checkout-sources
       - *checkout-ci
 
-      - name: Set up environment
+      - name: Set up the environment
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt }}
@@ -508,7 +508,7 @@ jobs:
           # What Gatekeeper itself will decide.
           spctl --assess --type open --context context:primary-signature -vv "$dmg"
 
-      - name: Upload package
+      - name: Upload the package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package-${{ matrix.platform }}
@@ -517,7 +517,7 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-      - name: Write manifest
+      - name: Write the manifest
         if: inputs.archive-build-trees
         shell: bash
         env:
@@ -623,7 +623,7 @@ jobs:
           fi
           exit 1
 
-      - name: Upload logs
+      - name: Upload the logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

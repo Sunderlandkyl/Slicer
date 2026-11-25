@@ -72,7 +72,7 @@ runs:
     # out: actions/checkout refuses a path outside the caller's workspace, and
     # checking out inside it would leave a directory in the repository being
     # built.
-    - name: Initialize environment
+    - name: Initialize the environment
       id: env
       shell: bash
       env:
@@ -96,7 +96,7 @@ runs:
       shell: bash
       run: '"$SLICER_CI" free-disk-space'
 
-    - name: Install system packages
+    - name: Install the system packages
       shell: bash
       run: '"$SLICER_CI" install-system-packages'
 

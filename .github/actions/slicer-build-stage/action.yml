@@ -18,7 +18,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Copy source tree to the build root
+    - name: Copy the source tree to the build root
       shell: bash
       run: |
         set -euo pipefail
@@ -69,12 +69,12 @@ runs:
         # shellcheck disable=SC2086 - the targets are deliberately word split
         "$SLICER_CI" build $TARGETS
 
-    - name: Report
+    - name: Report the build
       if: always()
       shell: bash
       run: '"$SLICER_CI" report'
 
-    - name: Archive
+    - name: Archive the build tree
       if: inputs.archive-name != ''
       shell: bash
       env:
