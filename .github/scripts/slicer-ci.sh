@@ -149,7 +149,65 @@ run_headless() {
   esac
 }
 
-run_ctest() { run_headless ctest "$@"; }
+# Run ctest in <dir> with the junit report in <output>/<junit>; the remaining
+# arguments are passed on.
+#   run_tests <title> <dir> <junit> [<ctest argument>...]
+run_tests() {
+  local title="$1" dir="$2" junit="$3"; shift 3
+  mkdir -p "$(bash_path "$SLICER_OUTPUT_DIR")"
+  local args=(
+    --test-dir "$dir"
+    --parallel "${SLICER_CTEST_PARALLEL:-$SLICER_PARALLEL}"
+    --timeout "${SLICER_CTEST_TIMEOUT:-900}"
+    --output-on-failure
+    --output-junit "$SLICER_OUTPUT_DIR/$junit"
+    "$@"
+  )
+  if [ "$SLICER_PLATFORM" = "windows" ]; then
+    args+=(--build-config "$SLICER_BUILD_TYPE")
+  fi
+  if [ -n "${SLICER_CTEST_EXCLUDE:-}" ]; then
+    args+=(--exclude-regex "$SLICER_CTEST_EXCLUDE")
+  fi
+  local rc=0
+  log "$title"
+  run_headless ctest "${args[@]}" || rc=$?
+  endlog
+  return $rc
+}
+
+# Configure with cmake, inside a log group; on failure, close the group, show
+# the CMake logs of <dir> and stop with <message>.
+#   cmake_configure <dir> <message> <cmake argument>...
+cmake_configure() {
+  local dir="$1" message="$2"; shift 2
+  info "cmake $*"
+  local rc=0
+  if [ "$SLICER_PLATFORM" = "windows" ]; then
+    # Git Bash rewrites any argument that looks like an absolute POSIX path,
+    # which turns a compiler option such as /MP into C:/Program Files/Git/MP.
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "$@" || rc=$?
+  else
+    cmake "$@" || rc=$?
+  fi
+  [ $rc -eq 0 ] || { endlog; dump_cmake_logs "$dir"; die "$message"; }
+}
+
+# /MP is requested through the options the build system provides rather than
+# through the CL environment variable, which breaks the compiler identification
+# of the Visual Studio generator.
+MSVC_PARALLEL_ARGS=(
+  -DCMAKE_CXX_MP_FLAG:BOOL=ON
+  -DADDITIONAL_C_FLAGS:STRING=/MP
+  -DADDITIONAL_CXX_FLAGS:STRING=/MP
+)
+
+# Print, one per line, the arguments that enable SLICER_COMPILER_LAUNCHER.
+compiler_launcher_args() {
+  [ -n "${SLICER_COMPILER_LAUNCHER:-}" ] || return 0
+  printf '%s\n' "-DCMAKE_C_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER" \
+    "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER"
+}
 
 cmd_env() {
   # Print the variables used by the other commands, and export them to
@@ -260,13 +318,7 @@ configure_args() {
   )
   case "$SLICER_PLATFORM" in
     windows)
-      # /MP is requested through the options the build system provides rather
-      # than through the CL environment variable, which breaks the compiler
-      # identification of the Visual Studio generator.
-      args+=(-G "Visual Studio 17 2022" -A x64
-             -DCMAKE_CXX_MP_FLAG:BOOL=ON
-             -DADDITIONAL_C_FLAGS:STRING=/MP
-             -DADDITIONAL_CXX_FLAGS:STRING=/MP)
+      args+=(-G "Visual Studio 17 2022" -A x64 "${MSVC_PARALLEL_ARGS[@]}")
       ;;
     macos)
       args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
@@ -297,30 +349,15 @@ configure_args() {
 cmd_configure() {
   mkdir -p "$(bash_path "$SLICER_SUPERBUILD_DIR")"
   : "${SLICER_QT_DIR:?SLICER_QT_DIR must be set to the Qt prefix (e.g. .../Qt/5.15.2/gcc_64)}"
-  local args=()
-  while IFS= read -r line; do args+=("$line"); done < <(configure_args)
   # A compiler launcher (ccache, sccache) is deliberately not part of
   # `configure_args`: it does not change what is built, so enabling or
   # disabling it must not invalidate prebuilt prerequisites.
-  if [ -n "${SLICER_COMPILER_LAUNCHER:-}" ]; then
-    args+=("-DCMAKE_C_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER"
-           "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER")
-  fi
+  local args=()
+  while IFS= read -r line; do args+=("$line"); done < <(configure_args)
+  while IFS= read -r line; do args+=("$line"); done < <(compiler_launcher_args)
   log "Configure superbuild"
-  info "cmake ${args[*]}"
-  local rc=0
-  if [ "$SLICER_PLATFORM" = "windows" ]; then
-    # Git Bash rewrites any argument that looks like an absolute POSIX path,
-    # which turns a compiler option such as /MP into C:/Program Files/Git/MP.
-    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "${args[@]}" || rc=$?
-  else
-    cmake "${args[@]}" || rc=$?
-  fi
+  cmake_configure "$SLICER_SUPERBUILD_DIR" "configure failed" "${args[@]}"
   endlog
-  if [ $rc -ne 0 ]; then
-    dump_cmake_logs "$SLICER_SUPERBUILD_DIR"
-    die "configure failed"
-  fi
 }
 
 # Build targets of the superbuild tree. Those that are not part of the current
@@ -405,16 +442,8 @@ cmd_build() {
   fi
 }
 
-# Print the list of external projects of the configured superbuild tree.
-cmd_dependencies() {
-  local f="$(bash_path "$SLICER_SUPERBUILD_DIR")/SlicerDependencies.txt"
-  [ -f "$f" ] || die "dependencies: $f not found (configure first)"
-  cat "$f"
-}
-
 # Build the package (installer) of the inner build. Prints the package path.
 cmd_package() {
-  local build; build="$(bash_path "$SLICER_BUILD_DIR")"
   local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
   mkdir -p "$out"
   log "Package"
@@ -428,11 +457,8 @@ cmd_package() {
   [ -n "$pkg" ] || die "package: could not find generated package in $logfile"
   info "package: $pkg"
   cp "$(bash_path "$pkg")" "$out/"
-  local name; name="$(basename "$pkg")"
-  echo "$name" > "$out/PACKAGE_FILE.txt"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
-    echo "package=$name" >> "$GITHUB_OUTPUT"
-    echo "revision=$(slicer_config_value Slicer_REVISION)" >> "$GITHUB_OUTPUT"
+    echo "package=$(basename "$pkg")" >> "$GITHUB_OUTPUT"
   fi
 }
 
@@ -453,39 +479,22 @@ cmd_verify_package() {
   fi
 }
 
-# Remove what is not needed to use a build tree: object files (--objects) and
-# the git metadata of the external project sources (--vcs).
-#   strip [--objects] [--vcs] [<dir>]
+# Remove what is not needed to use a build tree: object files and the git
+# metadata of the external project sources.
+#   strip <dir>
 # Only for a tree that will never be built again: a stripped tree recompiles
 # every external project from scratch, and without the git metadata the
 # external projects that CTK builds itself fail to update.
 cmd_strip() {
-  local objects=false vcs=false dir=""
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --objects) objects=true; shift ;;
-      --vcs) vcs=true; shift ;;
-      *) dir="$1"; shift ;;
-    esac
-  done
-  [ -n "$dir" ] || dir="$SLICER_SUPERBUILD_DIR"
-  dir="$(bash_path "$dir")"
+  local dir; dir="$(bash_path "${1:?strip: missing directory}")"
   [ -d "$dir" ] || die "strip: $dir does not exist"
-  if [ "$objects" = "false" ] && [ "$vcs" = "false" ]; then
-    info "strip: nothing to do"
-    return 0
-  fi
   log "Strip $dir"
   local before; before="$(du -sh "$dir" 2>/dev/null | cut -f1 || true)"
-  if [ "$objects" = "true" ]; then
-    find "$dir" -type f \( \
-        -name '*.o' -o -name '*.obj' -o -name '*.ilk' -o -name '*.pdb' -o -name '*.idb' \
-        -o -name '*.pch' -o -name '*.gch' -o -name '*.ipch' \
-      \) -delete
-  fi
-  if [ "$vcs" = "true" ]; then
-    find "$dir" -type d -name '.git' -prune -exec rm -rf {} + 2>/dev/null || true
-  fi
+  find "$dir" -type f \( \
+      -name '*.o' -o -name '*.obj' -o -name '*.ilk' -o -name '*.pdb' -o -name '*.idb' \
+      -o -name '*.pch' -o -name '*.gch' -o -name '*.ipch' \
+    \) -delete
+  find "$dir" -type d -name '.git' -prune -exec rm -rf {} + 2>/dev/null || true
   local after; after="$(du -sh "$dir" 2>/dev/null | cut -f1 || true)"
   info "strip: $before -> $after"
   endlog
@@ -619,31 +628,20 @@ restore_check() {
   done
 }
 
-# Restore under the build root a release published by the Slicer build workflow.
-#   restore-release <repository> <tag> [build|deps|all]
-# `build` is the source tree and the inner build tree, `deps` the external
-# projects. The manifest is left in <output>/restore for the caller.
+# Restore under the build root a release published by the Slicer build
+# workflow: the external projects, the source tree and the inner build tree.
+#   restore-release <repository> <tag>
+# The manifest is left in <output>/restore for the caller.
 cmd_restore_release() {
   local repo="${1:?restore-release: missing repository}"
   local tag="${2:?restore-release: missing tag}"
-  local what="${3:-all}"
   local dest; dest="$(bash_path "$SLICER_OUTPUT_DIR")/restore"
   mkdir -p "$dest"
 
-  local archives=()
-  case "$what" in
-    build) archives=("slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}") ;;
-    deps)  archives=("deps-${SLICER_PLATFORM}") ;;
-    all)   archives=("deps-${SLICER_PLATFORM}" "slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}") ;;
-  esac
-  local patterns=("-p" "manifest-${SLICER_PLATFORM}.json")
-  case "$what" in
-    build) patterns+=(-p "slicer-source-${SLICER_PLATFORM}.tar.zst*" -p "slicer-build-${SLICER_PLATFORM}.tar.zst*") ;;
-    deps)  patterns+=(-p "deps-${SLICER_PLATFORM}.tar.zst*") ;;
-    all)   patterns+=(-p "slicer-source-${SLICER_PLATFORM}.tar.zst*" -p "slicer-build-${SLICER_PLATFORM}.tar.zst*"
-                      -p "deps-${SLICER_PLATFORM}.tar.zst*") ;;
-    *) die "restore-release: unknown selection '$what'" ;;
-  esac
+  # The external projects first: the inner build tree refers to them.
+  local archives=("deps-${SLICER_PLATFORM}" "slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}")
+  local patterns=(-p "manifest-${SLICER_PLATFORM}.json") a
+  for a in "${archives[@]}"; do patterns+=(-p "$a.tar.zst*"); done
 
   # A platform publishes while others build against it (publish-release.sh
   # removes the manifest first and uploads it last), so what is downloaded can
@@ -676,16 +674,13 @@ cmd_restore_release() {
     die "the build was produced at '$root' but this runner uses '$SLICER_ROOT'"
   fi
 
-  # The external projects first: the inner build tree refers to them.
-  local a
-  for a in "deps-${SLICER_PLATFORM}" "slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}"; do
-    case " ${archives[*]} " in *" $a "*) ;; *) continue ;; esac
+  for a in "${archives[@]}"; do
     if [ -f "$dest/$a.tar.zst" ] || ls "$dest/$a.tar.zst".part-* >/dev/null 2>&1; then
       cmd_unpack "$dest/$a.tar.zst"
       rm -f "$dest/$a.tar.zst" "$dest/$a.tar.zst".part-* 2>/dev/null || true
     else
       # Never skipped: what would be configured against is not all there.
-      die "restore-release: $a.tar.zst was asked for and is not in the release"
+      die "restore-release: $a.tar.zst is not in the release"
     fi
   done
   cmd_report
@@ -695,35 +690,12 @@ cmd_restore_release() {
 cmd_test() {
   local build; build="$(bash_path "$SLICER_BUILD_DIR")"
   local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
-  mkdir -p "$out"
-  local args=(
-    --test-dir "$SLICER_BUILD_DIR"
-    --parallel "${SLICER_CTEST_PARALLEL:-$SLICER_PARALLEL}"
-    --timeout "${SLICER_CTEST_TIMEOUT:-900}"
-    --output-on-failure
-    --no-tests=error
-    --output-junit "$SLICER_OUTPUT_DIR/test-results.xml"
-  )
+  local rc=0
   # Run a failed test once more before reporting it: a few GUI tests now and
   # then fail on the shared runners (a settings file being read while another
-  # test writes it, the virtual display). Empty to disable.
-  local repeat="${SLICER_CTEST_REPEAT-until-pass:2}"
-  if [ -n "$repeat" ]; then
-    args+=(--repeat "$repeat")
-  fi
-  if [ "$SLICER_PLATFORM" = "windows" ]; then
-    args+=(--build-config "$SLICER_BUILD_TYPE")
-  fi
-  if [ -n "${SLICER_CTEST_EXCLUDE:-}" ]; then
-    args+=(--exclude-regex "$SLICER_CTEST_EXCLUDE")
-  fi
-  if [ -n "${SLICER_CTEST_INCLUDE:-}" ]; then
-    args+=(--tests-regex "$SLICER_CTEST_INCLUDE")
-  fi
-  local rc=0
-  log "Run tests"
-  run_ctest "${args[@]}" || rc=$?
-  endlog
+  # test writes it, the virtual display).
+  run_tests "Run tests" "$SLICER_BUILD_DIR" test-results.xml \
+    --no-tests=error --repeat until-pass:2 || rc=$?
   cp -f "$build/Testing/Temporary/LastTest.log" "$out/" 2>/dev/null || true
   cp -f "$build/Testing/Temporary/LastTestsFailed.log" "$out/" 2>/dev/null || true
   if [ -f "$out/LastTestsFailed.log" ]; then
@@ -792,9 +764,9 @@ cmd_free_disk_space() {
 
 # Install the system packages required to build and test Slicer.
 cmd_install_system_packages() {
+  log "Install system packages"
   case "$SLICER_PLATFORM" in
     linux)
-      log "Install system packages"
       sudo apt-get update -qq
       # Packages required to build Slicer.
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
@@ -822,19 +794,15 @@ cmd_install_system_packages() {
       info "installing: ${available[*]}"
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
         ${available[@]+"${available[@]}"}
-      endlog
       ;;
     macos|macos-arm64)
-      log "Install system packages"
       brew install ninja zstd >/dev/null || brew upgrade ninja zstd || true
-      endlog
       ;;
     windows)
-      log "Install system packages"
       choco install -y --no-progress zstandard >/dev/null
-      endlog
       ;;
   esac
+  endlog
 }
 
 # The OpenGL that Windows provides without a GPU is too old for VTK to create a
@@ -895,13 +863,10 @@ ext_build_dir() {
 # An extension that uses a superbuild builds itself in `inner-build`, which is
 # where its targets, its tests and its package are; one that does not builds
 # everything in the top level tree.
+has_inner_build() { [ -f "$(bash_path "$1")/inner-build/CMakeCache.txt" ]; }
 ext_inner_dir() {
   local b; b="$(ext_build_dir)"
-  if [ -f "$(bash_path "$b")/inner-build/CMakeCache.txt" ]; then
-    echo "$b/inner-build"
-  else
-    echo "$b"
-  fi
+  if has_inner_build "$b"; then echo "$b/inner-build"; else echo "$b"; fi
 }
 
 # A value recorded in the SlicerConfig.cmake of the restored build tree.
@@ -932,10 +897,7 @@ extension_configure_args() {
     windows)
       # /MP, as for Slicer itself: without it each project of the extension
       # compiles its files one after the other.
-      args+=(-G "Visual Studio 17 2022" -A x64
-             -DCMAKE_CXX_MP_FLAG:BOOL=ON
-             -DADDITIONAL_C_FLAGS:STRING=/MP
-             -DADDITIONAL_CXX_FLAGS:STRING=/MP)
+      args+=(-G "Visual Studio 17 2022" -A x64 "${MSVC_PARALLEL_ARGS[@]}")
       # Rather than the git recorded in SlicerConfig.cmake, which may not
       # exist on this runner (see native_git).
       local git; git="$(native_git)"
@@ -949,10 +911,7 @@ extension_configure_args() {
       args+=(-G "${SLICER_EXT_GENERATOR:-Ninja}" "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE")
       ;;
   esac
-  if [ -n "${SLICER_COMPILER_LAUNCHER:-}" ]; then
-    args+=("-DCMAKE_C_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER"
-           "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER")
-  fi
+  while IFS= read -r line; do args+=("$line"); done < <(compiler_launcher_args)
   # The extensions it depends on, built by extension-dependencies: <Name>_DIR
   # of each, as the Slicer extension build hands them on.
   local deps; deps="$(bash_path "$(ext_deps_dir)")/cmake-args.txt"
@@ -974,31 +933,28 @@ ext_deps_dir() { echo "${SLICER_EXT_DEPS_DIR:-$SLICER_ROOT/ext-deps}"; }
 # them. One that a repository of the registry (SLICER_EXT_REGISTRY) publishes
 # is restored from the build tree published for this platform and this Slicer
 # commit (SLICER_COMMIT), so that the extension is linked against what its
-# users install; any other is built from the ExtensionsIndex
-# (SLICER_EXT_INDEX_URL). Leaves <output>/extension-built-with.json.
+# users install; any other is built from the ExtensionsIndex. Leaves
+# <output>/extension-built-with.json.
 cmd_extension_dependencies() {
   # A dependency that is being published again describes, for a moment, a
   # build tree that is not the one there: everything is then resolved and
-  # downloaded again, a few times. An attempt asks for another by leaving the
-  # reason in a file.
-  local again; again="$(bash_path "$SLICER_OUTPUT_DIR")/extension-dependencies-again"
-  mkdir -p "$(dirname "$again")"
-  local tries
+  # downloaded again, a few times. An attempt asks for another by setting
+  # `again` to the reason.
+  local again tries
   for tries in 1 2 3 4; do
-    rm -f "$again"
-    extension_dependencies_once "$again"
-    [ -f "$again" ] || return 0
+    again=""
+    extension_dependencies_once
+    [ -n "$again" ] || return 0
     [ "$tries" -lt 4 ] || break
-    info "$(cat "$again"): is it being published? Trying again in $((tries * 60)) s"
+    info "$again: is it being published? Trying again in $((tries * 60)) s"
     sleep $((tries * 60))
   done
-  die "$(cat "$again")"
+  die "$again"
 }
 
-# One attempt of extension-dependencies; leaves the reason in the file given
-# when it has to be made again.
+# One attempt of extension-dependencies; sets `again`, a variable of its
+# caller, to the reason when it has to be made again.
 extension_dependencies_once() {
-  local again="$1"
   ext_parallel_compile
   local src; src="$(ext_checkout_dir)"
   local root; root="$(ext_deps_dir)"
@@ -1013,7 +969,6 @@ extension_dependencies_once() {
   local rc=0
   "$py" "$here/slicer-extension-deps.py" --source "$src" --platform "$SLICER_PLATFORM" \
       --slicer-commit "$SLICER_COMMIT" --registry "${SLICER_EXT_REGISTRY:-}" \
-      --index "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" \
       --out "$root/plan.json" || rc=$?
   if [ "$rc" -eq 3 ] && [ "${SLICER_EXT_SKIP_UNREADY:-false}" = "true" ]; then
     # What it depends on is not built for this Slicer yet: not a fault of this
@@ -1055,7 +1010,7 @@ PY
         if [ -n "$sum" ] && [ "$got" != "$sum" ]; then
           endlog
           # What it describes and what is there are of two builds.
-          echo "$file of $name is not the file its description records (sha256 $got, expected $sum)" > "$again"
+          again="$file of $name is not the file its description records (sha256 $got, expected $sum)"
           return 0
         fi
       done
@@ -1080,18 +1035,11 @@ PY
         SLICER_EXT_NAME="" SLICER_EXT_SOURCE_DIR="$path" SLICER_EXT_BUILD_DIR="$build" \
           SLICER_EXT_CMAKE_OPTIONS="" extension_configure_args)
       args+=(-DBUILD_TESTING:BOOL=OFF)
-      info "cmake ${args[*]}"
-      local rc=0
-      if [ "$SLICER_PLATFORM" = "windows" ]; then
-        MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "${args[@]}" || rc=$?
-      else
-        cmake "${args[@]}" || rc=$?
-      fi
-      [ $rc -eq 0 ] || { endlog; dump_cmake_logs "$build"; die "configuring the dependency $name failed"; }
+      cmake_configure "$build" "configuring the dependency $name failed" "${args[@]}"
       cmake_build "$build"
       # Where the extension itself is: inner-build for one with a superbuild.
       dir="$build"
-      [ -f "$(bash_path "$build")/inner-build/CMakeCache.txt" ] && dir="$build/inner-build"
+      has_inner_build "$build" && dir="$build/inner-build"
     fi
     echo "-D${name}_DIR:PATH=$dir" >> "$broot/cmake-args.txt"
     echo "$dir" >> "$broot/module-paths.txt"
@@ -1116,7 +1064,7 @@ cmd_extension_tree() {
   local size; size="$(wc -c < "$out/$file" | tr -d ' ')"
   [ "$size" -lt 2000000000 ] || die "extension-tree: $file is $size bytes, more than a release asset holds"
   local sub="."
-  [ -f "$(bash_path "$SLICER_ROOT")/E/$name/inner-build/CMakeCache.txt" ] && sub="inner-build"
+  has_inner_build "$SLICER_ROOT/E/$name" && sub="inner-build"
   local dir="E/$name"; [ "$sub" = "." ] || dir="$dir/$sub"
   printf '{"files": ["%s"], "config_dir": "%s", "subdirectory": "%s"}\n' "$file" "$dir" "$sub" \
     > "$out/extension-tree.json"
@@ -1149,15 +1097,8 @@ cmd_extension_configure() {
   local args=()
   while IFS= read -r line; do args+=("$line"); done < <(extension_configure_args)
   log "Configure extension"
-  info "cmake ${args[*]}"
-  local rc=0
-  if [ "$SLICER_PLATFORM" = "windows" ]; then
-    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "${args[@]}" || rc=$?
-  else
-    cmake "${args[@]}" || rc=$?
-  fi
+  cmake_configure "$(ext_build_dir)" "extension configure failed" "${args[@]}"
   endlog
-  [ $rc -eq 0 ] || { dump_cmake_logs "$(ext_build_dir)"; die "extension configure failed"; }
 }
 
 cmd_extension_build() {
@@ -1168,29 +1109,8 @@ cmd_extension_build() {
 }
 
 cmd_extension_test() {
-  local inner; inner="$(ext_inner_dir)"
-  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
-  mkdir -p "$out"
-  local args=(
-    --test-dir "$inner"
-    --parallel "${SLICER_CTEST_PARALLEL:-$SLICER_PARALLEL}"
-    --timeout "${SLICER_CTEST_TIMEOUT:-900}"
-    --output-on-failure
-    # An extension is not required to have tests.
-    --no-tests=ignore
-    --output-junit "$SLICER_OUTPUT_DIR/extension-test-results.xml"
-  )
-  if [ "$SLICER_PLATFORM" = "windows" ]; then
-    args+=(--build-config "$SLICER_BUILD_TYPE")
-  fi
-  if [ -n "${SLICER_CTEST_EXCLUDE:-}" ]; then
-    args+=(--exclude-regex "$SLICER_CTEST_EXCLUDE")
-  fi
-  local rc=0
-  log "Test extension"
-  run_ctest "${args[@]}" || rc=$?
-  endlog
-  return $rc
+  # An extension is not required to have tests.
+  run_tests "Test extension" "$(ext_inner_dir)" extension-test-results.xml --no-tests=ignore
 }
 
 cmd_extension_package() {
@@ -1205,18 +1125,12 @@ cmd_extension_package() {
   packages="$(grep -oE 'CPack: - package: (.*) generated\.' "$logfile" \
     | sed -E 's/CPack: - package: (.*) generated\./\1/')"
   [ -n "$packages" ] || die "extension-package: no package was generated, see $logfile"
-  local names=""
   local pkg
   while IFS= read -r pkg; do
     [ -n "$pkg" ] || continue
     info "package: $pkg"
     cp "$(bash_path "$pkg")" "$out/"
-    names="$names$(basename "$pkg") "
   done <<< "$packages"
-  printf '%s' "${names% }" > "$out/EXTENSION_PACKAGES.txt"
-  if [ -n "${GITHUB_OUTPUT:-}" ]; then
-    echo "packages=${names% }" >> "$GITHUB_OUTPUT"
-  fi
   # What the extension says of itself (its .s4ext), for the lists that offer
   # it before it is installed. Not having it withholds nothing.
   local py; py="$(command -v python3 || command -v python || true)"
@@ -1234,10 +1148,7 @@ cmd_extension_load() {
   local launcher="$SLICER_BUILD_DIR/Slicer"
   [ "$SLICER_PLATFORM" = "windows" ] && launcher="$SLICER_BUILD_DIR/Slicer.exe"
   local inner; inner="$(ext_inner_dir)"
-  local code="import slicer, sys"
-  code="$code; n = len(slicer.app.moduleManager().modulesNames())"
-  code="$code; print('modules loaded:', n)"
-  code="$code; sys.exit(slicer.util.EXIT_SUCCESS if n else slicer.util.EXIT_FAILURE)"
+  local code="import slicer, sys; n = len(slicer.app.moduleManager().modulesNames()); print('modules loaded:', n); sys.exit(slicer.util.EXIT_SUCCESS if n else slicer.util.EXIT_FAILURE)"
   local args=(
     "$(bash_path "$launcher")"
     --no-splash --no-main-window --ignore-slicerrc
@@ -1296,7 +1207,7 @@ Usage: $0 <command> [args]
 
 Commands:
   env deps-key free-disk-space install-system-packages install-software-opengl
-  configure build dependencies package verify-package strip test
+  configure build package verify-package strip test
   pack unpack split restore-release manifest manifest-files manifest-get
   extension-dependencies extension-tree extension-configure extension-build
   extension-test extension-package extension-load report stage-summary
@@ -1307,38 +1218,10 @@ EOF
 
 main() {
   local cmd="${1:-}"; shift || true
-  case "$cmd" in
-    env) cmd_env "$@" ;;
-    deps-key) cmd_deps_key "$@" ;;
-    free-disk-space) cmd_free_disk_space "$@" ;;
-    install-system-packages) cmd_install_system_packages "$@" ;;
-    install-software-opengl) cmd_install_software_opengl "$@" ;;
-    configure) cmd_configure "$@" ;;
-    build) cmd_build "$@" ;;
-    dependencies) cmd_dependencies "$@" ;;
-    package) cmd_package "$@" ;;
-    verify-package) cmd_verify_package "$@" ;;
-    strip) cmd_strip "$@" ;;
-    pack) cmd_pack "$@" ;;
-    unpack) cmd_unpack "$@" ;;
-    split) cmd_split "$@" ;;
-    restore-release) cmd_restore_release "$@" ;;
-    test) cmd_test "$@" ;;
-    extension-dependencies) cmd_extension_dependencies "$@" ;;
-    extension-tree) cmd_extension_tree "$@" ;;
-    extension-configure) cmd_extension_configure "$@" ;;
-    extension-build) cmd_extension_build "$@" ;;
-    extension-test) cmd_extension_test "$@" ;;
-    extension-package) cmd_extension_package "$@" ;;
-    extension-load) cmd_extension_load "$@" ;;
-    manifest) cmd_manifest "$@" ;;
-    manifest-files) cmd_manifest_files "$@" ;;
-    manifest-get) cmd_manifest_get "$@" ;;
-    report) cmd_report "$@" ;;
-    stage-summary) cmd_stage_summary "$@" ;;
-    ""|-h|--help|help) usage ;;
-    *) die "unknown command: $cmd" ;;
-  esac
+  case "$cmd" in ""|-h|--help|help) usage; return ;; esac
+  local fn="cmd_${cmd//-/_}"
+  declare -F "$fn" >/dev/null || die "unknown command: $cmd"
+  "$fn" "$@"
 }
 
 main "$@"

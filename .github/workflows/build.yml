@@ -61,9 +61,6 @@ jobs:
       platforms: ${{ steps.matrix.outputs.platforms }}
       run-tests: ${{ steps.matrix.outputs.run-tests }}
       publish: ${{ steps.matrix.outputs.publish }}
-      # Whether a desktop platform, and the web runtime, are among the platforms.
-      desktop: ${{ steps.matrix.outputs.desktop }}
-      web: ${{ steps.matrix.outputs.web }}
       force-deps: ${{ steps.matrix.outputs.force-deps }}
       skip: ${{ steps.uptodate.outputs.skip }}
     steps:
@@ -113,15 +110,7 @@ jobs:
             || { [ "$EVENT" = "push" ] && [ "${SLICER_CI_PUBLISH:-}" = "true" ]; }; then
             publish="true"
           fi
-          # A run building the web runtime alone publishes that alone: the
-          # desktop assets, the notes of the release and the extension builds
-          # are left as they are.
-          desktop=false; web=false
-          if grep -qE '(^|,) *(linux|macos|macos-arm64|windows) *(,|$)' <<< "$PLATFORMS"; then desktop=true; fi
-          if grep -qE '(^|,) *web *(,|$)' <<< "$PLATFORMS"; then web=true; fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
-          echo "desktop=$desktop" >> "$GITHUB_OUTPUT"
-          echo "web=$web" >> "$GITHUB_OUTPUT"
           echo "force-deps=${{ github.event.inputs.rebuild-prerequisites || 'false' }}" >> "$GITHUB_OUTPUT"
 
       # When no commit has landed since the last nightly, the scheduled run has
@@ -188,7 +177,6 @@ jobs:
       ci-repository: ${{ github.repository }}
       ci-ref: ${{ github.sha }}
       qt-version: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
-      deps-key-version: "1"
       rebuild-prerequisites: ${{ needs.setup.outputs.force-deps == 'true' }}
       # The repository has a single release: the prerequisites are kept on
       # the nightly one.

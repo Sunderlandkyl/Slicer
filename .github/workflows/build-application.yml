@@ -125,7 +125,6 @@ permissions:
 
 env:
   SLICER_DEPS_KEY_VERSION: ${{ inputs.deps-key-version }}
-  SLICER_CI_QT_VERSION: ${{ inputs.qt-version }}
   SLICER_EXTRA_CMAKE_OPTIONS: ${{ inputs.extra-cmake-options }}
 
 jobs:
@@ -146,7 +145,8 @@ jobs:
       - name: Check out the sources
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Check out the Slicer CI scripts
+      - &checkout-ci
+        name: Check out the Slicer CI scripts
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.ci-repository }}
@@ -234,7 +234,6 @@ jobs:
       matrix: ${{ needs.deps-key.outputs.matrix-todo }}
       ci-repository: ${{ inputs.ci-repository }}
       ci-ref: ${{ inputs.ci-ref }}
-      qt-version: ${{ inputs.qt-version }}
       extra-cmake-options: ${{ inputs.extra-cmake-options }}
       prerequisites-release: ${{ inputs.prerequisites-release }}
       prerequisites-release-title: ${{ inputs.prerequisites-release-title }}
@@ -254,18 +253,8 @@ jobs:
           TODO: ${{ needs.deps-key.outputs.todo-count }}
           RESULT: ${{ needs.prerequisites.result }}
         run: |
-          set -euo pipefail
-          todo="$TODO"
-          echo "Platforms needing a build of the prerequisites: $todo"
-          echo "Result of the prerequisites build: $RESULT"
-          if [ "$todo" -eq 0 ]; then
-            echo "All prerequisites were already available."
-            exit 0
-          fi
-          if [ "$RESULT" != "success" ]; then
-            echo "::error::Building the prerequisites did not succeed ($RESULT)."
-            exit 1
-          fi
+          echo "Platforms needing a build of the prerequisites: $TODO; result of the build: $RESULT"
+          [ "$TODO" = "0" ] || [ "$RESULT" = "success" ] || { echo "::error::Building the prerequisites did not succeed ($RESULT)."; exit 1; }
 
   application:
     name: ${{ inputs.name }} (${{ matrix.platform }})
@@ -290,16 +279,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check out the Slicer CI scripts
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.ci-repository }}
-          ref: ${{ inputs.ci-ref }}
-          path: .slicer-ci
-          sparse-checkout: .github
+      - *checkout-ci
 
       - name: Set up environment
-        id: env
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt }}
@@ -482,7 +464,7 @@ jobs:
           set -euo pipefail
           # Extensions never rebuild an external project, so the archived tree
           # can be reduced. The prerequisites on the release keep their objects.
-          "$SLICER_CI" strip --objects --vcs "$SLICER_SUPERBUILD_DIR"
+          "$SLICER_CI" strip "$SLICER_SUPERBUILD_DIR"
           # Three archives, so that consumers fetch only what they need: the
           # source tree (SlicerConfig.cmake points into it), the inner build
           # tree, and the rest of the superbuild tree (the prerequisites).

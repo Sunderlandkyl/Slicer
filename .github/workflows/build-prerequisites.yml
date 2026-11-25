@@ -22,10 +22,6 @@ on:
         description: "Commit, branch or tag of ci-repository"
         type: string
         required: true
-      qt-version:
-        description: "Qt version of the platforms whose matrix entry names none (qt)"
-        type: string
-        required: true
       extra-cmake-options:
         description: "Space separated -D options added to the superbuild configuration"
         type: string
@@ -52,25 +48,28 @@ jobs:
     timeout-minutes: 350
     env:
       SLICER_STAGE_NAME: "Deps 1/5: what VTK and ITK need"
-    strategy:
+    strategy: &strategy
       fail-fast: false
       matrix: ${{ fromJSON(inputs.matrix) }}
     steps:
-      - name: Check out the sources
+      - &checkout-sources
+        name: Check out the sources
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
-      - name: Check out the Slicer CI scripts
+      - &checkout-ci
+        name: Check out the Slicer CI scripts
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.ci-repository }}
           ref: ${{ inputs.ci-ref }}
           path: .slicer-ci
           sparse-checkout: .github
-      - name: Set up environment
+      - &setup-environment
+        name: Set up environment
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
-          qt-version: ${{ matrix.qt || inputs.qt-version }}
+          qt-version: ${{ matrix.qt }}
           # The prerequisites are built once: caching their objects would only
           # displace the entries that speed up the build of the application.
           compiler-cache: "false"
@@ -82,8 +81,6 @@ jobs:
           # A project that merely uses VTK or ITK belongs in the last stage:
           # naming it here would build the whole of VTK in this stage.
           target: "python DCMTK tbb"
-          archive-paths: "SR Slicer"
-          archive-name: deps-stage
           upload-artifact: deps-stage1-${{ matrix.platform }}
 
   deps-2:
@@ -93,34 +90,16 @@ jobs:
     timeout-minutes: 350
     env:
       SLICER_STAGE_NAME: "Deps 2/5: VTK"
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(inputs.matrix) }}
+    strategy: *strategy
     steps:
-      - name: Check out the sources
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-      - name: Check out the Slicer CI scripts
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.ci-repository }}
-          ref: ${{ inputs.ci-ref }}
-          path: .slicer-ci
-          sparse-checkout: .github
-      - name: Set up environment
-        uses: ./.slicer-ci/.github/actions/slicer-env
-        with:
-          qt-version: ${{ matrix.qt || inputs.qt-version }}
-          compiler-cache: "false"
+      - *checkout-sources
+      - *checkout-ci
+      - *setup-environment
       - name: Build VTK
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
           target: "VTK"
           restore-artifact: deps-stage1-${{ matrix.platform }}
-          restore-archive: deps-stage
-          archive-paths: "SR Slicer"
-          archive-name: deps-stage
           upload-artifact: deps-stage2-${{ matrix.platform }}
 
   deps-3:
@@ -130,34 +109,16 @@ jobs:
     timeout-minutes: 350
     env:
       SLICER_STAGE_NAME: "Deps 3/5: ITK"
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(inputs.matrix) }}
+    strategy: *strategy
     steps:
-      - name: Check out the sources
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-      - name: Check out the Slicer CI scripts
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.ci-repository }}
-          ref: ${{ inputs.ci-ref }}
-          path: .slicer-ci
-          sparse-checkout: .github
-      - name: Set up environment
-        uses: ./.slicer-ci/.github/actions/slicer-env
-        with:
-          qt-version: ${{ matrix.qt || inputs.qt-version }}
-          compiler-cache: "false"
+      - *checkout-sources
+      - *checkout-ci
+      - *setup-environment
       - name: Build ITK
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
           target: "ITK"
           restore-artifact: deps-stage2-${{ matrix.platform }}
-          restore-archive: deps-stage
-          archive-paths: "SR Slicer"
-          archive-name: deps-stage
           upload-artifact: deps-stage3-${{ matrix.platform }}
 
   deps-4:
@@ -167,34 +128,16 @@ jobs:
     timeout-minutes: 350
     env:
       SLICER_STAGE_NAME: "Deps 4/5: CTK"
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(inputs.matrix) }}
+    strategy: *strategy
     steps:
-      - name: Check out the sources
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-      - name: Check out the Slicer CI scripts
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.ci-repository }}
-          ref: ${{ inputs.ci-ref }}
-          path: .slicer-ci
-          sparse-checkout: .github
-      - name: Set up environment
-        uses: ./.slicer-ci/.github/actions/slicer-env
-        with:
-          qt-version: ${{ matrix.qt || inputs.qt-version }}
-          compiler-cache: "false"
+      - *checkout-sources
+      - *checkout-ci
+      - *setup-environment
       - name: Build CTK
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
           target: "CTK"
           restore-artifact: deps-stage3-${{ matrix.platform }}
-          restore-archive: deps-stage
-          archive-paths: "SR Slicer"
-          archive-name: deps-stage
           upload-artifact: deps-stage4-${{ matrix.platform }}
 
   deps-5:
@@ -206,26 +149,11 @@ jobs:
       contents: write
     env:
       SLICER_STAGE_NAME: "Deps 5/5: everything else"
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(inputs.matrix) }}
+    strategy: *strategy
     steps:
-      - name: Check out the sources
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-      - name: Check out the Slicer CI scripts
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.ci-repository }}
-          ref: ${{ inputs.ci-ref }}
-          path: .slicer-ci
-          sparse-checkout: .github
-      - name: Set up environment
-        uses: ./.slicer-ci/.github/actions/slicer-env
-        with:
-          qt-version: ${{ matrix.qt || inputs.qt-version }}
-          compiler-cache: "false"
+      - *checkout-sources
+      - *checkout-ci
+      - *setup-environment
       - name: Build rest
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
@@ -233,7 +161,6 @@ jobs:
           # to the superbuild lands here unless VTK or ITK needs it.
           target: "Slicer-dependencies"
           restore-artifact: deps-stage4-${{ matrix.platform }}
-          restore-archive: deps-stage
           archive-paths: "SR"
           archive-name: deps-${{ matrix.platform }}
           upload-artifact: deps-${{ matrix.platform }}

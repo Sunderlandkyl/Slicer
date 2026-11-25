@@ -90,13 +90,15 @@ jobs:
       key: ${{ steps.key.outputs.key }}
       cached: ${{ steps.key.outputs.cached }}
     steps:
-      - name: Check out SlicerWeb
+      - &checkout-slicerweb
+        name: Check out SlicerWeb
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.slicerweb-repository }}
           ref: ${{ inputs.slicerweb-ref }}
           path: slicerweb
-      - name: Check out the Slicer CI scripts
+      - &checkout-ci
+        name: Check out the Slicer CI scripts
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.ci-repository }}
@@ -134,22 +136,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
-      - name: Check out SlicerWeb
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.slicerweb-repository }}
-          ref: ${{ inputs.slicerweb-ref }}
-          path: slicerweb
-      - name: Check out the Slicer CI scripts
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.ci-repository }}
-          ref: ${{ inputs.ci-ref }}
-          path: .slicer-ci
-          sparse-checkout: .github
-      - name: Free disk space
+      - *checkout-slicerweb
+      - *checkout-ci
+      - &free-disk-space
+        name: Free disk space
         run: bash "$SLICER_CI" free-disk-space
-      - name: Build the toolchain image
+      - &toolchain-image
+        name: Build the toolchain image
         run: bash "$SLICERWEB_CI" image
       - name: Build VTK
         run: bash "$SLICERWEB_CI" run 00-sources 10-vtk-compiletools 20-vtk
@@ -180,23 +173,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out SlicerWeb
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.slicerweb-repository }}
-          ref: ${{ inputs.slicerweb-ref }}
-          path: slicerweb
-      - name: Check out the Slicer CI scripts
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.ci-repository }}
-          ref: ${{ inputs.ci-ref }}
-          path: .slicer-ci
-          sparse-checkout: .github
-      - name: Free disk space
-        run: bash "$SLICER_CI" free-disk-space
-      - name: Build the toolchain image
-        run: bash "$SLICERWEB_CI" image
+      - *checkout-slicerweb
+      - *checkout-ci
+      - *free-disk-space
+      - *toolchain-image
       - name: Download the previous stage
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -295,23 +275,10 @@ jobs:
           path: slicer
           # Slicer's revision number counts the commits.
           fetch-depth: 0
-      - name: Check out SlicerWeb
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.slicerweb-repository }}
-          ref: ${{ inputs.slicerweb-ref }}
-          path: slicerweb
-      - name: Check out the Slicer CI scripts
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          repository: ${{ inputs.ci-repository }}
-          ref: ${{ inputs.ci-ref }}
-          path: .slicer-ci
-          sparse-checkout: .github
-      - name: Free disk space
-        run: bash "$SLICER_CI" free-disk-space
-      - name: Build the toolchain image
-        run: bash "$SLICERWEB_CI" image
+      - *checkout-slicerweb
+      - *checkout-ci
+      - *free-disk-space
+      - *toolchain-image
       - name: Download the prerequisites
         env:
           GH_TOKEN: ${{ github.token }}

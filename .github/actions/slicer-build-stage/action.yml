@@ -1,8 +1,8 @@
 name: "Slicer build stage"
 description: >-
   Build one target of the Slicer superbuild tree in the fixed build root,
-  optionally restoring the tree produced by a previous stage first, then strip
-  and archive the result. Requires the 'slicer-env' action to have been run.
+  optionally restoring the tree produced by a previous stage first, then
+  archive the result. Requires the 'slicer-env' action to have been run.
 
 inputs:
   target:
@@ -13,30 +13,19 @@ inputs:
     default: ""
   restore-archive:
     description: "Name of the archive inside the restored artifact (without extension)"
-    default: "stage"
-  strip:
-    description: >-
-      Options of the helper script's 'strip' command, e.g. "--objects --vcs".
-      Empty keeps the tree buildable: a stripped tree recompiles everything.
-    default: ""
+    default: "deps-stage"
   archive-name:
     description: "Name of the archive to create (without extension); empty to skip"
-    default: "stage"
+    default: "deps-stage"
   archive-paths:
     description: >-
       Space separated paths (relative to the root) to archive. Include "Slicer"
       to carry the source tree over to the next stage: a new checkout would
       make CMake re-run the steps of every external project.
-    default: "SR"
-  archive-excludes:
-    description: "Space separated tar exclude patterns"
-    default: ""
+    default: "SR Slicer"
   upload-artifact:
     description: "Name of the workflow artifact to upload the archive to; empty to skip"
     default: ""
-  retention-days:
-    description: "Retention of the uploaded artifact"
-    default: "2"
 
 runs:
   using: composite
@@ -112,29 +101,15 @@ runs:
       shell: bash
       run: '"$SLICER_CI" report'
 
-    - name: Strip
-      if: inputs.strip != ''
-      shell: bash
-      env:
-        OPTIONS: ${{ inputs.strip }}
-      run: |
-        set -euo pipefail
-        # shellcheck disable=SC2086 - the options are deliberately word split
-        "$SLICER_CI" strip $OPTIONS "$SLICER_SUPERBUILD_DIR"
-
     - name: Archive
       if: inputs.archive-name != ''
       shell: bash
       env:
-        EXCLUDES: ${{ inputs.archive-excludes }}
         PATHS: ${{ inputs.archive-paths }}
       run: |
         set -euo pipefail
-        excludes=()
-        for p in $EXCLUDES; do excludes+=(--exclude "$p"); done
         # shellcheck disable=SC2086 - the paths are deliberately word split
-        "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/${{ inputs.archive-name }}.tar.zst" \
-          ${excludes[@]+"${excludes[@]}"} $PATHS
+        "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/${{ inputs.archive-name }}.tar.zst" $PATHS
 
     - name: Upload ${{ inputs.upload-artifact }}
       if: inputs.upload-artifact != '' && inputs.archive-name != ''
@@ -142,6 +117,6 @@ runs:
       with:
         name: ${{ inputs.upload-artifact }}
         path: ${{ env.SLICER_OUTPUT_DIR }}/${{ inputs.archive-name }}.tar.zst
-        retention-days: ${{ inputs.retention-days }}
+        retention-days: 2
         compression-level: 0
         if-no-files-found: error

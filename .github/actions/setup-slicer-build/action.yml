@@ -82,8 +82,8 @@ runs:
         dir="${{ runner.temp }}/slicer-ci"
         mkdir -p "$dir"
         # slicer-ci.sh, and what goes with it: the resolver of the extensions
-        # an extension depends on, and what publishes its package.
-        for script in slicer-ci.sh slicer-extension-deps.py extension-publish.py; do
+        # an extension depends on, and what describes and publishes its package.
+        for script in slicer-ci.sh slicer-extension-deps.py extension-description.py extension-publish.py; do
           gh api "repos/${{ inputs.repository }}/contents/.github/scripts/$script?ref=${{ inputs.ref }}" \
             --jq '.content' | base64 -d > "$dir/$script"
         done
@@ -124,7 +124,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
-      run: '"$SLICER_CI" restore-release "${{ inputs.repository }}" "${{ inputs.release-tag }}" all'
+      run: '"$SLICER_CI" restore-release "${{ inputs.repository }}" "${{ inputs.release-tag }}"'
 
     - name: Read the manifest
       id: manifest

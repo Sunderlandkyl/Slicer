@@ -19,7 +19,6 @@ SLICERWEB_ROOT="${SLICERWEB_ROOT:-/home/runner/SW}"
 # The SlicerWeb checkout.
 SLICERWEB_DIR="${SLICERWEB_DIR:-$GITHUB_WORKSPACE/slicerweb}"
 SLICERWEB_IMAGE="${SLICERWEB_IMAGE:-slicerweb-toolchain:ci}"
-SLICERWEB_OUTPUT_DIR="${SLICERWEB_OUTPUT_DIR:-$SLICERWEB_ROOT/out}"
 
 log() { echo "::group::$*"; }
 endlog() { echo "::endgroup::"; }
@@ -151,7 +150,6 @@ PY
   local rc=0
   python3 "$here/slicer-extension-deps.py" --source "$src" --platform web \
       --slicer-commit "$SLICER_COMMIT" --registry "${SLICER_EXT_REGISTRY:-}" \
-      --index "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" \
       --depends "$(cat "$work/depends.txt")" --out "$work/plan.json" || rc=$?
   if [ "$rc" -eq 3 ] && [ "${SLICER_EXT_SKIP_UNREADY:-false}" = "true" ]; then
     # As on the desktop platforms: nothing to build against yet, which is not
@@ -299,16 +297,10 @@ EOF
 
 main() {
   local cmd="${1:-}"; shift || true
-  case "$cmd" in
-    deps-key) cmd_deps_key "$@" ;;
-    image) cmd_image "$@" ;;
-    run) cmd_run "$@" ;;
-    extension) cmd_extension "$@" ;;
-    pack) cmd_pack "$@" ;;
-    unpack) cmd_unpack "$@" ;;
-    ""|-h|--help|help) usage ;;
-    *) usage; die "unknown command: $cmd" ;;
-  esac
+  case "$cmd" in ""|-h|--help|help) usage; return ;; esac
+  local fn="cmd_${cmd//-/_}"
+  declare -F "$fn" >/dev/null || { usage; die "unknown command: $cmd"; }
+  "$fn" "$@"
 }
 
 main "$@"

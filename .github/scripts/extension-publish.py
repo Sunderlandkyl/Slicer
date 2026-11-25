@@ -76,12 +76,9 @@ for description in descriptions:
         "date": date,
         "slicer_commit": package["slicer_commit"],
     }
-    if package.get("slicer_revision"):
-        entry["slicer_revision"] = package["slicer_revision"]
-    if package.get("tests"):
-        entry["tests"] = package["tests"]
-    if package.get("metadata"):
-        entry["metadata"] = package["metadata"]
+    for key in ("slicer_revision", "tests", "metadata"):
+        if package.get(key):
+            entry[key] = package[key]
     if len(files) > 1:
         entry["icon"] = files[1]
     entry["depends"] = package.get("depends") or []
