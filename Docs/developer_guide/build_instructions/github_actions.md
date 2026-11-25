@@ -393,7 +393,7 @@ pass as `Slicer_DIR`:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up the Slicer build
+      - name: Set up Slicer build
         id: slicer
         uses: Slicer/Slicer/.github/actions/setup-slicer-build@main
 
