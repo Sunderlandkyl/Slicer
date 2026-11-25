@@ -1,0 +1,91 @@
+# Starts the builds of the extensions, in their own repositories and in
+# dependency order, through the Slicer nightly GitHub App (SLICER_NIGHTLY_APP_ID,
+# SLICER_NIGHTLY_APP_PRIVATE_KEY), and publishes extensions-catalog.json to the
+# nightly release. It works out what to do from what is published and remembers
+# nothing, so starting it is always safe. It is started by the Build workflow
+# when a platform has published (reconcile-extensions), by the relay of the
+# app's webhook (.github/extension-webhook), by hand, and by a schedule, which
+# is a backstop only: GitHub starts scheduled runs late or not at all.
+#
+# See .github/scripts/extension-reconcile.py and
+# Docs/developer_guide/build_instructions/github_actions.md
+name: Reconcile extensions
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "What started it (the relay says which build); shown in the summary of the run"
+        type: string
+        default: ""
+      step:
+        description: "A single look: start what can be started and stop, without waiting for the builds"
+        type: boolean
+        default: false
+      retry:
+        description: "Start again the builds that failed for the same Slicer, commit and dependencies"
+        type: boolean
+        default: false
+      refs:
+        description: 'Branches to build instead of the default ones, as JSON: {"owner/repository": "branch"}'
+        type: string
+        default: ""
+      start-sites:
+        description: "Start the sites that carry the web packages, when the catalog changed"
+        type: boolean
+        default: true
+  repository_dispatch:
+    types: [reconcile-extensions]
+  schedule:
+    - cron: "40 */6 * * *"
+
+permissions:
+  contents: read
+
+# One at a time. A run started while one is going waits for it, and looks at
+# what that one left; of several waiting, GitHub keeps the last.
+concurrency:
+  group: extension-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile
+    if: vars.SLICER_NIGHTLY_APP_ID != ''
+    runs-on: ubuntu-latest
+    # The script stops before this, and starts another run to carry on.
+    timeout-minutes: 350
+    permissions:
+      # The registry and the catalog go to the nightly release.
+      contents: write
+      # To start another run of this workflow.
+      actions: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Reconcile
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_ID: ${{ vars.SLICER_NIGHTLY_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.SLICER_NIGHTLY_APP_PRIVATE_KEY }}
+          RELEASE_TAG: nightly
+          NIGHTLY_WORKFLOW: slicer-nightly-build.yml
+          NIGHTLY_WEB_WORKFLOW: slicer-nightly-web.yml
+          RETRY: ${{ inputs.retry || false }}
+          REASON: ${{ inputs.reason || (github.event_name == 'repository_dispatch' && 'a platform of Slicer was published') || github.event_name }}
+          # One run stays for a whole burst of builds, not one per build that ends.
+          WAIT: ${{ !inputs.step }}
+          REFS: ${{ inputs.refs || vars.SLICER_EXTENSION_REFS || '' }}
+          # {"fork": "repository"}: forks that have the tier of what they copy.
+          TRUSTED_FORKS: ${{ vars.SLICER_EXTENSION_TRUSTED_FORKS || '' }}
+          EXTENSIONS_INDEX: ${{ vars.SLICER_EXTENSIONS_INDEX || '' }}
+          START_SITES: ${{ github.event_name != 'workflow_dispatch' || inputs.start-sites }}
+          # Well before the six hours a job may last: the run then starts its
+          # successor, which takes up the builds that are still going.
+          DEADLINE_MINUTES: "240"
+          SELF_WORKFLOW: extension-reconcile.yml
+          SELF_REF: ${{ github.ref_name }}
+        run: python3 .github/scripts/extension-reconcile.py

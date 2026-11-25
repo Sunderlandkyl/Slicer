@@ -1,0 +1,302 @@
+name: Build a Slicer application
+
+# Builds Slicer, or a custom application built on Slicer, on Linux, macOS and
+# Windows: the prerequisites (reused when they have not changed), then the
+# application itself, which is packaged and optionally tested. Called by
+# Slicer's Build workflow and by the repositories of custom applications.
+# See Docs/developer_guide/build_instructions/github_actions.md
+#
+# The run produces these artifacts, for the caller to publish as it sees fit:
+#   package-<platform>        the installer
+#   test-results-<platform>   the JUnit report and the CTest logs
+#   logs-<platform>           the packaging log
+#   build-<platform>          the build trees and their manifest (archive-build-trees)
+#   package-web, build-web, logs-web
+#                             the web runtime and its build tree, when web is
+#                             among the platforms (build-web.yml)
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: "Name shown for the job that builds the application"
+        type: string
+        default: "Application"
+      platforms:
+        description: "Platforms to build, comma separated: linux, macos (Intel), macos-arm64 (Apple silicon), windows, web (the SlicerWeb runtime)"
+        type: string
+        default: "linux,macos,windows"
+      slicerweb-repository:
+        description: "SlicerWeb repository the web platform is built with"
+        type: string
+        default: "lassoan/SlicerWeb"
+      slicerweb-ref:
+        description: "Commit, branch or tag of slicerweb-repository"
+        type: string
+        default: "main"
+      web-slicer-from-checkout:
+        description: "Build the web runtime from the Slicer commit of the calling repository rather than the one SlicerWeb pins"
+        type: boolean
+        default: false
+      ci-repository:
+        description: "Repository the Slicer CI actions and scripts are checked out from"
+        type: string
+        default: "Slicer/Slicer"
+      ci-ref:
+        description: "Commit, branch or tag of ci-repository; use the ref of the `uses:` line"
+        type: string
+        default: "main"
+      qt-version:
+        type: string
+        default: "5.15.2"
+      macos-arm64-qt-version:
+        description: "Qt version of the macos-arm64 platform (Qt provides no arm64 build of Qt 5)"
+        type: string
+        default: "6.11.2"
+      deps-key-version:
+        description: "Bump to force a rebuild of the prerequisites of every platform"
+        type: string
+        default: "1"
+      rebuild-prerequisites:
+        description: "Rebuild the prerequisites even if they are available"
+        type: boolean
+        default: false
+      extra-cmake-options:
+        description: "Space separated -D options added to the superbuild configuration; part of the prerequisites key"
+        type: string
+        default: ""
+      prerequisites-release:
+        description: "Release of the calling repository that holds the prerequisites"
+        type: string
+        default: "prerequisites"
+      prerequisites-release-title:
+        description: "Title given to that release if it has to be created"
+        type: string
+        default: "CI prerequisites"
+      run-tests:
+        type: boolean
+        default: true
+      test-exclude:
+        description: "Regular expression of the tests not to run"
+        type: string
+        default: ""
+      fail-on-test-failures:
+        description: "Fail the run when a test fails or the macOS bundle is not self-contained"
+        type: boolean
+        default: true
+      archive-build-trees:
+        description: "Archive the build trees and their manifest, for building extensions against them"
+        type: boolean
+        default: false
+      publish-release:
+        description: "Release each platform publishes what it built to, as soon as it is built; needs archive-build-trees. Empty: nothing is published"
+        type: string
+        default: ""
+      publish-dispatch-event:
+        description: "Type of the repository_dispatch event sent when a platform has published"
+        type: string
+        default: ""
+      release-notes:
+        description: "Text the notes of publish-release end with. Empty: the notes are left as they are"
+        type: string
+        default: ""
+      macos-signing-identity:
+        description: "Developer ID the macOS bundle is signed with, when the signing secrets are given"
+        type: string
+        default: ""
+    secrets:
+      MACOS_CERTIFICATE:
+        required: false
+      MACOS_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_API_KEY:
+        required: false
+      APPLE_API_KEY_ID:
+        required: false
+      APPLE_API_ISSUER_ID:
+        required: false
+    outputs:
+      matrix:
+        description: "The platforms built, as JSON: {include: [{platform, runner, qt, key, cached}]}"
+        value: ${{ jobs.Prerequisites-key.outputs.matrix }}
+
+permissions:
+  contents: read
+
+env:
+  SLICER_DEPS_KEY_VERSION: ${{ inputs.deps-key-version }}
+  SLICER_EXTRA_CMAKE_OPTIONS: ${{ inputs.extra-cmake-options }}
+
+# The ids of the jobs are written as their names are: the graph of a run shows a
+# job under its id until its name is known, and a job with a matrix always.
+jobs:
+  Prerequisites-key:
+    name: Prerequisites key
+    runs-on: ubuntu-latest
+    outputs:
+      # Every entry, with its prerequisites key and whether it is already built.
+      matrix: ${{ steps.key.outputs.matrix }}
+      desktop-count: ${{ steps.key.outputs.desktop-count }}
+      # Whether web is among the platforms, and the same for its prerequisites,
+      # which are described by SlicerWeb.
+      web: ${{ steps.key.outputs.web }}
+      web-key: ${{ steps.key.outputs.web-key }}
+      web-cached: ${{ steps.key.outputs.web-cached }}
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Check out Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+
+      - name: Check out SlicerWeb
+        if: contains(inputs.platforms, 'web')
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.slicerweb-repository }}
+          ref: ${{ inputs.slicerweb-ref }}
+          path: slicerweb
+
+      - name: Compute keys
+        id: key
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.rebuild-prerequisites }}
+          PLATFORMS: ${{ inputs.platforms }}
+          QT_VERSION: ${{ inputs.qt-version }}
+          QT_VERSION_MACOS_ARM64: ${{ inputs.macos-arm64-qt-version }}
+          TAG: ${{ inputs.prerequisites-release }}
+        run: |
+          set -euo pipefail
+          ci=.slicer-ci/.github/scripts/slicer-ci.sh
+          chmod +x "$ci"
+          # The prerequisites are kept as assets of a release. A set counts as
+          # built once its .parts list, uploaded last, is present.
+          assets="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
+                      --jq '.assets[].name' 2>/dev/null || true)"
+          entries="[]"
+          web=false
+          {
+            echo "### Prerequisites"
+            echo ""
+            echo "| Platform | Key | Already built |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for platform in ${PLATFORMS//,/ }; do
+            # The runner image is part of the key: a new image brings a new
+            # compiler.
+            qt="$QT_VERSION"
+            case "$platform" in
+              linux)   runner="ubuntu-22.04" ;;
+              macos)   runner="macos-15-intel" ;;
+              macos-arm64) runner="macos-15"; qt="$QT_VERSION_MACOS_ARM64" ;;
+              windows) runner="windows-2022" ;;
+              # Built by build-web.yml, which has prerequisites of its own.
+              web) web=true; continue ;;
+              *) echo "::warning::unknown platform '$platform'"; continue ;;
+            esac
+            key="slicer-deps-${platform}-$(
+              SLICER_PLATFORM="$platform" \
+              SLICER_RUNNER_IMAGE="$runner" \
+              SLICER_QT_VERSION="$qt" \
+              SLICER_SOURCE_DIR="$GITHUB_WORKSPACE" \
+              "$ci" deps-key)"
+            cached=false
+            if [ "$FORCE" != "true" ] && grep -qxF "$key.parts" <<< "$assets"; then
+              cached=true
+            fi
+            entries="$(echo "$entries" | jq -c \
+              --arg p "$platform" --arg r "$runner" --arg q "$qt" --arg k "$key" --argjson c "$cached" \
+              '. + [{platform: $p, runner: $r, qt: $q, key: $k, cached: $c}]')"
+            echo "| $platform | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          desktop="$(echo "$entries" | jq 'length')"
+          [ "$desktop" -gt 0 ] || [ "$web" = "true" ] || { echo "::error::no known platform in '$PLATFORMS'"; exit 1; }
+          echo "desktop-count=$desktop" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+          if [ "$web" = "true" ]; then
+            key="slicer-deps-web-$(bash "$(dirname "$ci")/slicerweb-ci.sh" deps-key)"
+            cached=false
+            if [ "$FORCE" != "true" ] && grep -qxF "$key.parts" <<< "$assets"; then
+              cached=true
+            fi
+            echo "web-key=$key" >> "$GITHUB_OUTPUT"
+            echo "web-cached=$cached" >> "$GITHUB_OUTPUT"
+            echo "| web (SlicerWeb \`$(git -C slicerweb rev-parse --short HEAD)\`) | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "matrix=$(echo "$entries" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
+          echo "$entries" | jq .
+
+  # Each desktop platform is a chain of its own: its prerequisites, when they
+  # are not available yet, then the application. A job cannot wait for one job
+  # of a matrix, only for all of them, so the two jobs are in a workflow called
+  # for each platform, and no platform waits for another.
+  Desktop:
+    name: ${{ matrix.platform }}
+    needs: Prerequisites-key
+    if: needs.Prerequisites-key.outputs.desktop-count != '0'
+    uses: ./.github/workflows/build-desktop.yml
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.Prerequisites-key.outputs.matrix) }}
+    secrets:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+    with:
+      name: ${{ inputs.name }}
+      platform: ${{ matrix.platform }}
+      runner: ${{ matrix.runner }}
+      qt-version: ${{ matrix.qt }}
+      prerequisites-key: ${{ matrix.key }}
+      prerequisites-cached: ${{ matrix.cached }}
+      ci-repository: ${{ inputs.ci-repository }}
+      ci-ref: ${{ inputs.ci-ref }}
+      extra-cmake-options: ${{ inputs.extra-cmake-options }}
+      prerequisites-release: ${{ inputs.prerequisites-release }}
+      prerequisites-release-title: ${{ inputs.prerequisites-release-title }}
+      run-tests: ${{ inputs.run-tests }}
+      test-exclude: ${{ inputs.test-exclude }}
+      fail-on-test-failures: ${{ inputs.fail-on-test-failures }}
+      archive-build-trees: ${{ inputs.archive-build-trees }}
+      publish-release: ${{ inputs.publish-release }}
+      publish-dispatch-event: ${{ inputs.publish-dispatch-event }}
+      release-notes: ${{ inputs.release-notes }}
+      macos-signing-identity: ${{ inputs.macos-signing-identity }}
+
+  Web:
+    name: Web
+    needs: Prerequisites-key
+    if: needs.Prerequisites-key.outputs.web == 'true'
+    uses: ./.github/workflows/build-web.yml
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    with:
+      name: ${{ inputs.name }}
+      slicerweb-repository: ${{ inputs.slicerweb-repository }}
+      slicerweb-ref: ${{ inputs.slicerweb-ref }}
+      slicer-from-checkout: ${{ inputs.web-slicer-from-checkout }}
+      archive-build-tree: ${{ inputs.archive-build-trees }}
+      publish-release: ${{ inputs.publish-release }}
+      publish-dispatch-event: ${{ inputs.publish-dispatch-event }}
+      release-notes: ${{ inputs.release-notes }}
+      ci-repository: ${{ inputs.ci-repository }}
+      ci-ref: ${{ inputs.ci-ref }}
+      prerequisites-key: ${{ needs.Prerequisites-key.outputs.web-key }}
+      prerequisites-cached: ${{ needs.Prerequisites-key.outputs.web-cached == 'true' }}
+      prerequisites-release: ${{ inputs.prerequisites-release }}
+      prerequisites-release-title: ${{ inputs.prerequisites-release-title }}

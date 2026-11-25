@@ -7,5 +7,6 @@ overview.md
 windows.md
 macos.md
 linux.md
+github_actions.md
 common_errors.md
 ```
