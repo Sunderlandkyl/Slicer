@@ -84,7 +84,7 @@ env:
   SLICER_CI: ${{ github.workspace }}/.slicer-ci/.github/scripts/slicer-ci.sh
 
 jobs:
-  prerequisites:
+  Prerequisites:
     name: Prerequisites
     if: ${{ !inputs.prerequisites-cached }}
     runs-on: ubuntu-latest
@@ -179,13 +179,13 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  runtime:
+  Runtime:
     name: ${{ inputs.name }} (web)
-    needs: prerequisites
+    needs: Prerequisites
     # The prerequisites jobs are skipped when the prerequisites already exist,
     # and GitHub carries that skip down the graph: the condition says when the
     # build goes on, which is when they existed or have been built.
-    if: ${{ !cancelled() && (inputs.prerequisites-cached || needs.prerequisites.result == 'success') }}
+    if: ${{ !cancelled() && (inputs.prerequisites-cached || needs.Prerequisites.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:

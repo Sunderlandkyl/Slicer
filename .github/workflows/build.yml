@@ -54,7 +54,7 @@ permissions:
   contents: read
 
 jobs:
-  setup:
+  Setup:
     name: Setup
     runs-on: ubuntu-latest
     outputs:
@@ -153,10 +153,10 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  build:
+  Build:
     name: Build
-    needs: setup
-    if: needs.setup.outputs.skip != 'true'
+    needs: Setup
+    if: needs.Setup.outputs.skip != 'true'
     uses: ./.github/workflows/build-application.yml
     permissions:
       # The prerequisites are stored on the nightly release.
@@ -167,7 +167,7 @@ jobs:
     secrets: inherit
     with:
       name: Slicer
-      platforms: ${{ needs.setup.outputs.platforms }}
+      platforms: ${{ needs.Setup.outputs.platforms }}
       # The web runtime is built from this very commit of Slicer. Until the
       # change letting it override the Slicer revision is in SlicerWeb, the
       # fork that has it is the default.
@@ -177,17 +177,17 @@ jobs:
       ci-repository: ${{ github.repository }}
       ci-ref: ${{ github.sha }}
       qt-version: ${{ vars.SLICER_CI_QT_VERSION || '5.15.2' }}
-      rebuild-prerequisites: ${{ needs.setup.outputs.force-deps == 'true' }}
+      rebuild-prerequisites: ${{ needs.Setup.outputs.force-deps == 'true' }}
       # The repository has a single release: the prerequisites are kept on
       # the nightly one.
       prerequisites-release: nightly
       prerequisites-release-title: Slicer nightly
-      run-tests: ${{ needs.setup.outputs.run-tests == 'true' }}
+      run-tests: ${{ needs.Setup.outputs.run-tests == 'true' }}
       test-exclude: ${{ vars.SLICER_CI_TEST_EXCLUDE }}
       # The nightly run publishes packages even when tests fail.
       fail-on-test-failures: ${{ github.event_name != 'schedule' && github.event.inputs.nightly != 'true' }}
-      archive-build-trees: ${{ needs.setup.outputs.publish == 'true' }}
-      publish-release: ${{ needs.setup.outputs.publish == 'true' && 'nightly' || '' }}
+      archive-build-trees: ${{ needs.Setup.outputs.publish == 'true' }}
+      publish-release: ${{ needs.Setup.outputs.publish == 'true' && 'nightly' || '' }}
       # extension-reconcile.yml listens to it.
       publish-dispatch-event: reconcile-extensions
       release-notes: |

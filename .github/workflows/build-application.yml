@@ -118,7 +118,7 @@ on:
     outputs:
       matrix:
         description: "The platforms built, as JSON: {include: [{platform, runner, qt, key, cached}]}"
-        value: ${{ jobs.deps-key.outputs.matrix }}
+        value: ${{ jobs.Prerequisites-key.outputs.matrix }}
 
 permissions:
   contents: read
@@ -127,8 +127,10 @@ env:
   SLICER_DEPS_KEY_VERSION: ${{ inputs.deps-key-version }}
   SLICER_EXTRA_CMAKE_OPTIONS: ${{ inputs.extra-cmake-options }}
 
+# The ids of the jobs are written as their names are: the graph of a run shows a
+# job under its id until its name is known, and a job with a matrix always.
 jobs:
-  deps-key:
+  Prerequisites-key:
     name: Prerequisites key
     runs-on: ubuntu-latest
     outputs:
@@ -250,18 +252,17 @@ jobs:
   # the prerequisites release under their key, where the build of the
   # application, of this run and of every later one with the same key, finds
   # them.
-  # The id of a job with a matrix is what the graph of a run shows for it.
   Prerequisites:
     name: Prerequisites (${{ matrix.platform }})
-    needs: deps-key
-    if: needs.deps-key.outputs.todo-count != '0'
+    needs: Prerequisites-key
+    if: needs.Prerequisites-key.outputs.todo-count != '0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     permissions:
       contents: write
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
+      matrix: ${{ fromJSON(needs.Prerequisites-key.outputs.matrix-todo) }}
     steps:
       - name: Note start time
         shell: bash
@@ -347,14 +348,14 @@ jobs:
 
   Application:
     name: ${{ inputs.name }} (${{ matrix.platform }})
-    needs: [deps-key, Prerequisites]
+    needs: [Prerequisites-key, Prerequisites]
     # The prerequisites are skipped when they are already available, and
     # GitHub carries that skip down the graph: the condition says when the
     # build goes on, which is when they were available or have been built.
     if: >-
-      ${{ !cancelled() && needs.deps-key.result == 'success'
-          && needs.deps-key.outputs.desktop-count != '0'
-          && (needs.deps-key.outputs.todo-count == '0' || needs.Prerequisites.result == 'success') }}
+      ${{ !cancelled() && needs.Prerequisites-key.result == 'success'
+          && needs.Prerequisites-key.outputs.desktop-count != '0'
+          && (needs.Prerequisites-key.outputs.todo-count == '0' || needs.Prerequisites.result == 'success') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     permissions:
@@ -364,7 +365,7 @@ jobs:
       attestations: write
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.Prerequisites-key.outputs.matrix) }}
     steps:
       - *checkout-sources
       - *checkout-ci
@@ -633,10 +634,10 @@ jobs:
           retention-days: 5
           if-no-files-found: ignore
 
-  web:
+  Web:
     name: Web
-    needs: deps-key
-    if: needs.deps-key.outputs.web == 'true'
+    needs: Prerequisites-key
+    if: needs.Prerequisites-key.outputs.web == 'true'
     uses: ./.github/workflows/build-web.yml
     permissions:
       contents: write
@@ -653,7 +654,7 @@ jobs:
       release-notes: ${{ inputs.release-notes }}
       ci-repository: ${{ inputs.ci-repository }}
       ci-ref: ${{ inputs.ci-ref }}
-      prerequisites-key: ${{ needs.deps-key.outputs.web-key }}
-      prerequisites-cached: ${{ needs.deps-key.outputs.web-cached == 'true' }}
+      prerequisites-key: ${{ needs.Prerequisites-key.outputs.web-key }}
+      prerequisites-cached: ${{ needs.Prerequisites-key.outputs.web-cached == 'true' }}
       prerequisites-release: ${{ inputs.prerequisites-release }}
       prerequisites-release-title: ${{ inputs.prerequisites-release-title }}
