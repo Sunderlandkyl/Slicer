@@ -36,8 +36,9 @@
 #      Python wheels). A stale rpath is harmless on its own -- dyld skips paths
 #      that do not exist -- so this is a hygiene signal, not a loadability error;
 #      genuinely unsatisfied dependencies are caught by check 2 instead.
-#   4. Dependencies on known optional database backends under /usr/local or
-#      /opt (the ODBC / PostgreSQL / MySQL / Mimer Qt SQL drivers), and
+#   4. Dependencies on known optional database backends under /usr/local,
+#      /opt or Postgres.app (the ODBC / PostgreSQL / MySQL / Mimer Qt SQL
+#      drivers), and
 #      unresolved weak dependencies. These are not bundled by design and only
 #      disable the corresponding optional plugin. Any other dependency under
 #      /usr/local or /opt is treated as check 2 (FATAL).
@@ -250,10 +251,12 @@ function(_bv_resolve dep loader_dir rpaths out_status)
     if(dep MATCHES "^(/usr/lib/|/System/)")
       set(${out_status} "SYSTEM" PARENT_SCOPE)
       return()
-    elseif(dep MATCHES "^(/usr/local/|/opt/)")
+    elseif(dep MATCHES "^(/usr/local/|/opt/|/Applications/Postgres[.]app/)")
       # Only known optional runtime backends (Qt SQL/ODBC drivers) are
       # external-by-design; anything else under /usr/local or /opt would make
       # the bundle depend on the packaging machine and is a hard error.
+      # Postgres.app is where the Qt 5 binary distribution's PostgreSQL driver
+      # expects libpq.
       if(dep MATCHES "(libiodbc|libodbc|libpq|libmimerapi|libmysqlclient|libmariadb)[^/]*$")
         set(${out_status} "EXTERNAL" PARENT_SCOPE)
         return()
@@ -359,6 +362,23 @@ foreach(_f IN LISTS _maybe_exes)
   endif()
 endforeach()
 
+# Each file is verified once, where it really is: dyld expands @loader_path
+# from the real location of a binary, not from a symbolic link to it. The
+# frameworks of Qt 6 find one another through a "@loader_path/../../.."
+# run-path, which leads to Contents/Frameworks from Versions/A only, not from
+# the links <Name>.framework/<Name> and Versions/Current/<Name>.
+set(_real_macho_files "")
+foreach(_f IN LISTS macho_files)
+  get_filename_component(_real "${_f}" REALPATH)
+  string(FIND "${_real}" "${app_real}/" _idx)
+  if(_idx EQUAL 0)
+    list(APPEND _real_macho_files "${_real}")
+  else()
+    # A link out of the bundle: reported for what it refers to, as before.
+    list(APPEND _real_macho_files "${_f}")
+  endif()
+endforeach()
+set(macho_files "${_real_macho_files}")
 if(macho_files)
   list(REMOVE_DUPLICATES macho_files)
 endif()
