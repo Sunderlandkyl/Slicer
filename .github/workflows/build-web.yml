@@ -60,10 +60,12 @@ on:
       ci-ref:
         type: string
         default: "main"
-      deps-key-version:
+      prerequisites-key:
+        description: "Key of the prerequisites, which the caller computes (slicerweb-ci.sh deps-key)"
         type: string
-        default: "1"
-      rebuild-prerequisites:
+        required: true
+      prerequisites-cached:
+        description: "Whether the prerequisites release holds them already"
         type: boolean
         default: false
       prerequisites-release:
@@ -77,18 +79,16 @@ permissions:
   contents: read
 
 env:
-  SLICER_DEPS_KEY_VERSION: ${{ inputs.deps-key-version }}
   SLICERWEB_ROOT: /home/runner/SW
   SLICERWEB_CI: ${{ github.workspace }}/.slicer-ci/.github/scripts/slicerweb-ci.sh
   SLICER_CI: ${{ github.workspace }}/.slicer-ci/.github/scripts/slicer-ci.sh
 
 jobs:
-  key:
-    name: Key
+  deps-1:
+    name: "Stage 1/2: VTK"
+    if: ${{ !inputs.prerequisites-cached }}
     runs-on: ubuntu-latest
-    outputs:
-      key: ${{ steps.key.outputs.key }}
-      cached: ${{ steps.key.outputs.cached }}
+    timeout-minutes: 350
     steps:
       - &checkout-slicerweb
         name: Check out SlicerWeb
@@ -105,39 +105,6 @@ jobs:
           ref: ${{ inputs.ci-ref }}
           path: .slicer-ci
           sparse-checkout: .github
-      - name: Compute the key
-        id: key
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          FORCE: ${{ inputs.rebuild-prerequisites }}
-          TAG: ${{ inputs.prerequisites-release }}
-        run: |
-          set -euo pipefail
-          key="slicer-deps-web-$(bash "$SLICERWEB_CI" deps-key)"
-          assets="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
-                      --jq '.assets[].name' 2>/dev/null || true)"
-          cached=false
-          if [ "$FORCE" != "true" ] && grep -qxF "$key.parts" <<< "$assets"; then
-            cached=true
-          fi
-          echo "key=$key" >> "$GITHUB_OUTPUT"
-          echo "cached=$cached" >> "$GITHUB_OUTPUT"
-          {
-            echo "### Web prerequisites"
-            echo ""
-            echo "SlicerWeb \`$(git -C slicerweb rev-parse --short HEAD)\` of ${{ inputs.slicerweb-repository }}: key \`$key\`, already built: $cached"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  deps-1:
-    name: "Stage 1/2: VTK"
-    needs: key
-    if: needs.key.outputs.cached != 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 350
-    steps:
-      - *checkout-slicerweb
-      - *checkout-ci
       - &free-disk-space
         name: Free disk space
         run: bash "$SLICER_CI" free-disk-space
@@ -167,7 +134,7 @@ jobs:
 
   deps-2:
     name: "Stage 2/2: ITK and the rest"
-    needs: [key, deps-1]
+    needs: deps-1
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
@@ -195,7 +162,7 @@ jobs:
           # The workspace is no checkout (each repository is in a folder of
           # it), so gh cannot tell the repository by itself.
           GH_REPO: ${{ github.repository }}
-          KEY: ${{ needs.key.outputs.key }}
+          KEY: ${{ inputs.prerequisites-key }}
           TAG: ${{ inputs.prerequisites-release }}
           TITLE: ${{ inputs.prerequisites-release-title }}
         run: |
@@ -241,13 +208,11 @@ jobs:
 
   runtime:
     name: ${{ inputs.name }} (web)
-    needs: [key, deps-2]
+    needs: deps-2
     # The prerequisites jobs are skipped when the prerequisites already exist,
     # and GitHub carries that skip down the graph: the condition says when the
     # build goes on, which is when they existed or have been built.
-    if: >-
-      ${{ !cancelled() && needs.key.result == 'success'
-          && (needs.key.outputs.cached == 'true' || needs.deps-2.result == 'success') }}
+    if: ${{ !cancelled() && (inputs.prerequisites-cached || needs.deps-2.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
@@ -270,7 +235,7 @@ jobs:
       - name: Download the prerequisites
         env:
           GH_TOKEN: ${{ github.token }}
-          KEY: ${{ needs.key.outputs.key }}
+          KEY: ${{ inputs.prerequisites-key }}
           TAG: ${{ inputs.prerequisites-release }}
         run: |
           set -euo pipefail
@@ -342,7 +307,7 @@ jobs:
         env:
           FROM_CHECKOUT: ${{ inputs.slicer-from-checkout }}
           SLICERWEB_REPOSITORY: ${{ inputs.slicerweb-repository }}
-          KEY: ${{ needs.key.outputs.key }}
+          KEY: ${{ inputs.prerequisites-key }}
         run: |
           set -euo pipefail
           tree="$SLICERWEB_ROOT/out/tree"

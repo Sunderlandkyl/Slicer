@@ -140,7 +140,11 @@ jobs:
       matrix-todo: ${{ steps.key.outputs.matrix-todo }}
       todo-count: ${{ steps.key.outputs.todo-count }}
       desktop-count: ${{ steps.key.outputs.desktop-count }}
+      # Whether web is among the platforms, and the same for its prerequisites,
+      # which are described by SlicerWeb.
       web: ${{ steps.key.outputs.web }}
+      web-key: ${{ steps.key.outputs.web-key }}
+      web-cached: ${{ steps.key.outputs.web-cached }}
     steps:
       - name: Check out the sources
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -153,6 +157,14 @@ jobs:
           ref: ${{ inputs.ci-ref }}
           path: .slicer-ci
           sparse-checkout: .github
+
+      - name: Check out SlicerWeb
+        if: contains(inputs.platforms, 'web')
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.slicerweb-repository }}
+          ref: ${{ inputs.slicerweb-ref }}
+          path: slicerweb
 
       - name: Compute keys
         id: key
@@ -212,6 +224,16 @@ jobs:
           [ "$desktop" -gt 0 ] || [ "$web" = "true" ] || { echo "::error::no known platform in '$PLATFORMS'"; exit 1; }
           echo "desktop-count=$desktop" >> "$GITHUB_OUTPUT"
           echo "web=$web" >> "$GITHUB_OUTPUT"
+          if [ "$web" = "true" ]; then
+            key="slicer-deps-web-$(bash "$(dirname "$ci")/slicerweb-ci.sh" deps-key)"
+            cached=false
+            if [ "$FORCE" != "true" ] && grep -qxF "$key.parts" <<< "$assets"; then
+              cached=true
+            fi
+            echo "web-key=$key" >> "$GITHUB_OUTPUT"
+            echo "web-cached=$cached" >> "$GITHUB_OUTPUT"
+            echo "| web (SlicerWeb \`$(git -C slicerweb rev-parse --short HEAD)\`) | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
+          fi
           todo="$(echo "$entries" | jq -c 'map(select(.cached | not))')"
           count="$(echo "$todo" | jq 'length')"
           if [ "$count" -eq 0 ]; then
@@ -562,7 +584,7 @@ jobs:
       release-notes: ${{ inputs.release-notes }}
       ci-repository: ${{ inputs.ci-repository }}
       ci-ref: ${{ inputs.ci-ref }}
-      deps-key-version: ${{ inputs.deps-key-version }}
-      rebuild-prerequisites: ${{ inputs.rebuild-prerequisites }}
+      prerequisites-key: ${{ needs.deps-key.outputs.web-key }}
+      prerequisites-cached: ${{ needs.deps-key.outputs.web-cached == 'true' }}
       prerequisites-release: ${{ inputs.prerequisites-release }}
       prerequisites-release-title: ${{ inputs.prerequisites-release-title }}
