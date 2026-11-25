@@ -43,6 +43,9 @@ jobs:
       contents: write
     with:
       platforms: ${{ inputs.platforms || 'linux' }}
+      # The branches this workflow is started for (see above), not only the
+      # default one.
+      push-branches: "*"
       source-directory: Extensions/Testing/${{ matrix.extension }}
       # The build being tested is this commit's, not the default branch's.
       slicer-repository: ${{ github.repository }}

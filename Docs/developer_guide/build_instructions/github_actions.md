@@ -225,7 +225,6 @@ name: Build against the Slicer nightly
 
 on:
   push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -241,8 +240,10 @@ jobs:
       publish: true
 ```
 
-A commit to `main` and a manual run build, test and publish the packages (see
-below); a pull request builds and tests, and is never published. Leave
+A commit to the default branch and a manual run build, test and publish the
+packages (see below); a pull request builds and tests, and is never published.
+A push to another branch builds nothing, its pull request does: the run it
+starts ends at once. `push-branches` names other branches to build. Leave
 `publish` out to only build and test; `permissions` stays, as the workflow
 declares the permission whether it publishes or not, and a run is refused when
 its caller does not grant what it declares.
@@ -266,6 +267,7 @@ Inputs:
 | Input | Default | Description |
 |---|---|---|
 | `platforms` | what a manual run is given, or else all the Slicer release has | Platforms to build on, comma separated: `linux`, `macos` (Intel), `macos-arm64` (Apple silicon), `windows`, `web` |
+| `push-branches` | the default branch | Branches whose commits are built when pushed, comma separated; `*` for every branch |
 | `source-directory` | `.` | Directory of the extension within the repository |
 | `extension-name` | repository name | CMake project name of the extension |
 | `cmake-options` | | Additional options for the configure step |
@@ -307,10 +309,9 @@ jobs:
       publish: true
 ```
 
-Every run publishes then, except the ones of a pull request, so the branches
-whose commits are built are the ones to publish from: `push` is limited to the
-default branch in the workflow above. The manual runs, which the Slicer
-repository starts for a new nightly, one per platform, publish as well.
+Every run that builds publishes then, except the ones of a pull request: the
+commits to the default branch, and the manual runs, which the Slicer
+repository starts for a new nightly, one per platform.
 
 The packages go to the `nightly` release of the extension's repository, with
 one description per platform, `extension-<platform>.json`, which says what the

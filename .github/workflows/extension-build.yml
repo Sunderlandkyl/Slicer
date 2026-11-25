@@ -8,7 +8,6 @@
 #
 #   on:
 #     push:
-#       branches: [main]
 #     pull_request:
 #     workflow_dispatch:
 #       inputs:
@@ -26,7 +25,8 @@
 # release has a build for, or for the platforms a manual run of the calling
 # workflow is given (its own platforms input, which is how the Slicer
 # repository starts one run per platform). A pull request is built and tested,
-# and never published.
+# and never published. Of the commits pushed, the ones to the default branch
+# are built (push-branches): the others are built by their pull request.
 #
 # The web platform builds the extension for SlicerWeb (Slicer compiled to
 # WebAssembly, https://github.com/lassoan/SlicerWeb) against the web build tree
@@ -71,6 +71,14 @@ on:
           linux,macos,macos-arm64,windows,web). Default: the platforms input
           of the manual run of the calling workflow, if it has one, or else
           every platform the Slicer release has a build for
+        type: string
+        default: ""
+      push-branches:
+        description: >-
+          Branches whose commits are built when they are pushed (comma
+          separated, "*" for every branch). Default: the default branch of the
+          repository, so that the calling workflow does not have to name it.
+          A push to another branch, or of a tag, builds nothing
         type: string
         default: ""
       source-directory:
@@ -213,6 +221,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release-tag }}
           ARTIFACT_PREFIX: ${{ inputs.artifact-prefix }}
           EXTENSION_NAME: ${{ inputs.extension-name }}
+          PUSH_BRANCHES: ${{ inputs.push-branches || github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -222,6 +231,28 @@ jobs:
           name="$EXTENSION_NAME"
           [ -n "$name" ] || name="${GITHUB_REPOSITORY##*/}"
           echo "extension-name=$name" >> "$GITHUB_OUTPUT"
+          nothing() {
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "web=false" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          # Of the commits pushed, the ones to these branches are built: the
+          # calling workflow is started by every push, as it cannot name the
+          # default branch of its repository without being written for it.
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            built=false
+            if [ "$GITHUB_REF_TYPE" = "branch" ]; then
+              IFS=', ' read -ra branches <<< "$PUSH_BRANCHES"
+              for b in ${branches[@]+"${branches[@]}"}; do
+                if [ "$b" = "*" ] || [ "$b" = "$GITHUB_REF_NAME" ]; then built=true; fi
+              done
+            fi
+            if [ "$built" = "false" ]; then
+              echo "::notice::A push to $GITHUB_REF_NAME is not built (built: $PUSH_BRANCHES)."
+              nothing
+            fi
+          fi
           # There is nothing to build against until a Slicer build has been
           # published, which is not a failure: an extension repository enabling
           # this before the first nightly exists should not go red.
