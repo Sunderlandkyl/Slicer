@@ -1,0 +1,359 @@
+name: Build Slicer for the web
+
+# Builds Slicer for the web browser with SlicerWeb
+# (https://github.com/lassoan/SlicerWeb): Slicer's libraries and modules
+# compiled to WebAssembly and packaged as Pyodide wheels. Called by
+# build-application.yml when "web" is among the platforms.
+#
+# SlicerWeb's own stages are run in its toolchain container
+# (.github/scripts/slicerweb-ci.sh). As for the desktop platforms, the
+# prerequisites (VTK, ITK and the small libraries Slicer needs) are stored on
+# the prerequisites release under a key computed from what describes them in
+# SlicerWeb, and restored by every later run whose key is unchanged.
+# See Docs/developer_guide/build_instructions/github_actions.md
+#
+# The run produces these artifacts:
+#   package-web   slicerweb-wheels.zip, the wheels.zip that SlicerWeb's
+#                 publish_runtime.py uploads
+#   build-web     slicerweb-build.tar.zst (split in parts above 2 GB), /build of
+#                 SlicerWeb's container, and slicerweb-manifest.json, what it
+#                 was built from (archive-build-tree)
+#   logs-web      the logs of the stages
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: "Name shown for the job that builds the runtime"
+        type: string
+        default: "Application"
+      slicerweb-repository:
+        type: string
+        default: "lassoan/SlicerWeb"
+      slicerweb-ref:
+        description: "Commit, branch or tag of slicerweb-repository"
+        type: string
+        default: "main"
+      slicer-from-checkout:
+        description: "Build the Slicer commit of the calling repository rather than the one SlicerWeb pins"
+        type: boolean
+        default: false
+      archive-build-tree:
+        description: "Archive the build tree and its manifest (build-web), for building extensions against it"
+        type: boolean
+        default: false
+      publish-release:
+        description: "Release the runtime, its build tree and its manifest are published to, as soon as built; needs archive-build-tree"
+        type: string
+        default: ""
+      publish-dispatch-event:
+        description: "Type of the repository_dispatch event sent when they are published"
+        type: string
+        default: ""
+      release-notes:
+        description: "Text the notes of publish-release end with. Empty: the notes are left as they are"
+        type: string
+        default: ""
+      ci-repository:
+        type: string
+        default: "Slicer/Slicer"
+      ci-ref:
+        type: string
+        default: "main"
+      prerequisites-key:
+        description: "Key of the prerequisites, which the caller computes (slicerweb-ci.sh deps-key)"
+        type: string
+        required: true
+      prerequisites-cached:
+        description: "Whether the prerequisites release holds them already"
+        type: boolean
+        default: false
+      prerequisites-release:
+        type: string
+        default: "prerequisites"
+      prerequisites-release-title:
+        type: string
+        default: "CI prerequisites"
+
+permissions:
+  contents: read
+
+env:
+  SLICERWEB_ROOT: /home/runner/SW
+  SLICERWEB_CI: ${{ github.workspace }}/.slicer-ci/.github/scripts/slicerweb-ci.sh
+  SLICER_CI: ${{ github.workspace }}/.slicer-ci/.github/scripts/slicer-ci.sh
+
+jobs:
+  Prerequisites:
+    name: Prerequisites
+    if: ${{ !inputs.prerequisites-cached }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: write
+    steps:
+      - name: Note start time
+        run: echo "SLICER_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      - &checkout-slicerweb
+        name: Check out SlicerWeb
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.slicerweb-repository }}
+          ref: ${{ inputs.slicerweb-ref }}
+          path: slicerweb
+      - &checkout-ci
+        name: Check out Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+      - &free-disk-space
+        name: Free disk space
+        run: bash "$SLICER_CI" free-disk-space
+      - &toolchain-image
+        name: Build toolchain image
+        run: bash "$SLICERWEB_CI" image
+      - name: Build VTK, ITK, teem, LibArchive, JsonCpp, SlicerExecutionModel
+        run: bash "$SLICERWEB_CI" run 00-sources 10-vtk-compiletools 20-vtk 30-itk 40-deps 45-sem
+      - name: Archive prerequisites
+        run: bash "$SLICERWEB_CI" pack "$SLICERWEB_ROOT/out/deps-web.tar.zst" ./src/Slicer
+      - name: Publish prerequisites
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The workspace is no checkout (each repository is in a folder of
+          # it), so gh cannot tell the repository by itself.
+          GH_REPO: ${{ github.repository }}
+          KEY: ${{ inputs.prerequisites-key }}
+          TAG: ${{ inputs.prerequisites-release }}
+          TITLE: ${{ inputs.prerequisites-release-title }}
+        run: |
+          set -euo pipefail
+          # The layout of the desktop prerequisites: parts named after the key,
+          # then the list of parts, which marks the set as complete.
+          gh release create "$TAG" --title "$TITLE" --prerelease --latest=false \
+            --notes "Prebuilt prerequisites reused by the build workflow. The slicer-deps-* assets are regenerated on demand." \
+            2>/dev/null || true
+          out="$SLICERWEB_ROOT/out"
+          bash "$SLICER_CI" split "$out/deps-web.tar.zst"
+          upload="$out/prerequisites"
+          rm -rf "$upload"; mkdir -p "$upload"
+          for f in "$out"/deps-web.tar.zst*; do
+            mv "$f" "$upload/$KEY${f##*/deps-web}"
+          done
+          gh release upload "$TAG" "$upload"/* --clobber
+          parts="$(cd "$upload" && ls)"
+          echo "$parts" > "$upload/$KEY.parts"
+          gh release upload "$TAG" "$upload/$KEY.parts" --clobber
+          rm -rf "$upload"
+
+          # Keep the three most recent sets.
+          names="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
+                     --jq '.assets[] | "\(.createdAt) \(.name)"')"
+          { grep -E " slicer-deps-web-[0-9a-f]+\.parts$" <<< "$names" || true; } \
+            | sort -r | tail -n +4 | while read -r _ list; do
+                old="${list%.parts}"
+                echo "Removing the superseded prerequisites $old"
+                gh release delete-asset "$TAG" "$list" -R "$GITHUB_REPOSITORY" --yes || true
+                awk '{print $2}' <<< "$names" | { grep -F "$old.tar.zst" || true; } | while read -r asset; do
+                  gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes || true
+                done
+              done
+      # A job is stopped after 6 hours, with nothing kept: said well before
+      # the prerequisites take that long to build.
+      - name: Check build time
+        run: |
+          minutes=$(( ($(date +%s) - SLICER_JOB_STARTED) / 60 ))
+          echo "The job has run for $minutes minutes."
+          if [ "$minutes" -gt 270 ]; then
+            echo "::warning::The web prerequisites took $minutes minutes to build, of the 360 a job may take."
+          fi
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: deps-logs-web
+          path: ${{ env.SLICERWEB_ROOT }}/dist/logs
+          retention-days: 7
+          if-no-files-found: ignore
+
+  Runtime:
+    name: ${{ inputs.name }} (web)
+    needs: Prerequisites
+    # The prerequisites jobs are skipped when the prerequisites already exist,
+    # and GitHub carries that skip down the graph: the condition says when the
+    # build goes on, which is when they existed or have been built.
+    if: ${{ !cancelled() && (inputs.prerequisites-cached || needs.Prerequisites.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      # To publish to the release (publish-release) and attest the runtime.
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out sources
+        if: inputs.slicer-from-checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          path: slicer
+          # Slicer's revision number counts the commits.
+          fetch-depth: 0
+      - *checkout-slicerweb
+      - *checkout-ci
+      - *free-disk-space
+      - *toolchain-image
+      - name: Download prerequisites
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ inputs.prerequisites-key }}
+          TAG: ${{ inputs.prerequisites-release }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SLICERWEB_ROOT/restore"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D "$SLICERWEB_ROOT/restore" --clobber \
+            -p "$KEY.tar.zst*"
+          bash "$SLICERWEB_CI" unpack "$SLICERWEB_ROOT/restore/$KEY.tar.zst"
+      - name: Build Slicer
+        env:
+          FROM_CHECKOUT: ${{ inputs.slicer-from-checkout }}
+        run: |
+          set -euo pipefail
+          slicer=()
+          if [ "$FROM_CHECKOUT" = "true" ]; then slicer=(--slicer "$GITHUB_WORKSPACE/slicer"); fi
+          # 00-sources again: it fetches Slicer, and finds the other sources up
+          # to date.
+          bash "$SLICERWEB_CI" run ${slicer[@]+"${slicer[@]}"} 00-sources 50-slicer
+      - name: Package wheels
+        run: bash "$SLICERWEB_CI" run 60-wheels
+      - name: Smoke test
+        run: bash "$SLICERWEB_CI" run 70-smoke
+      - name: Archive runtime
+        env:
+          FROM_CHECKOUT: ${{ inputs.slicer-from-checkout }}
+          SLICERWEB_REPOSITORY: ${{ inputs.slicerweb-repository }}
+        run: |
+          set -euo pipefail
+          out="$SLICERWEB_ROOT/out/package"
+          mkdir -p "$out"
+          wheels="$SLICERWEB_ROOT/dist/wheels"
+          # What SlicerWeb's build.py writes next to the wheels: when the
+          # runtime was built, and from which commits. A site has to be built
+          # from the same SlicerWeb commit as its runtime.
+          slicer="null"
+          if [ "$FROM_CHECKOUT" = "true" ]; then
+            slicer="$(jq -n --arg r "$GITHUB_REPOSITORY" --arg c "$(git -C slicer rev-parse HEAD)" \
+                        '{repository: $r, commit: $c}')"
+          fi
+          jq -n --arg date "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" \
+                --arg repo "$SLICERWEB_REPOSITORY" \
+                --arg commit "$(git -C slicerweb rev-parse HEAD)" \
+                --argjson slicer "$slicer" \
+                '{date: $date, slicerweb: {repository: $repo, commit: $commit, modified: false}}
+                 + (if $slicer then {slicer: $slicer} else {} end)' \
+            | sudo tee "$wheels/build-info.json"
+          # The layout of SlicerWeb's publish_runtime.py: wheels.zip holds the
+          # contents of the wheels folder.
+          (cd "$wheels" && zip -q -r "$out/slicerweb-wheels.zip" .)
+          ls -lh "$out"
+          {
+            echo "### Web runtime"
+            echo ""
+            echo '```'
+            ls -l "$SLICERWEB_ROOT/dist/wheels"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload runtime
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: package-web
+          path: ${{ env.SLICERWEB_ROOT }}/out/package/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+      # Extension repositories build against it: the extension wheels have to
+      # match the libraries of the runtime.
+      - name: Archive build tree
+        if: inputs.archive-build-tree
+        env:
+          FROM_CHECKOUT: ${{ inputs.slicer-from-checkout }}
+          SLICERWEB_REPOSITORY: ${{ inputs.slicerweb-repository }}
+          KEY: ${{ inputs.prerequisites-key }}
+        run: |
+          set -euo pipefail
+          tree="$SLICERWEB_ROOT/out/tree"
+          mkdir -p "$tree"
+          # The whole of /build but the object files: the sources (Slicer's
+          # CMake macros are in its source tree), the install trees and the
+          # build trees the SDK points to (Slicer, teem, SlicerExecutionModel).
+          bash "$SLICERWEB_CI" pack "$tree/slicerweb-build.tar.zst"
+          bash "$SLICER_CI" split "$tree/slicerweb-build.tar.zst"
+          # Not named manifest-<platform>.json as for the desktop trees: the
+          # check of whether the nightly is up to date reads those, and would be
+          # misled by a run of the web runtime alone.
+          slicer=""
+          if [ "$FROM_CHECKOUT" = "true" ]; then slicer="$(git -C slicer rev-parse HEAD)"; fi
+          # The files it is published with, each with its sha256: a build
+          # against them checks that what it downloaded is this very set.
+          files="$(cd "$tree" && for a in slicerweb-build.tar.zst*; do
+                     jq -n --arg n "$a" --arg s "$(sha256sum < "$a" | cut -d' ' -f1)" '{($n): $s}'
+                   done | jq -s add)"
+          jq -n --arg commit "$slicer" --argjson files "$files" \
+                --arg slicerweb_repository "$SLICERWEB_REPOSITORY" \
+                --arg slicerweb_commit "$(git -C slicerweb rev-parse HEAD)" \
+                --arg run_id "$GITHUB_RUN_ID" \
+                --arg deps_key "$KEY" \
+                --arg date "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" \
+                '{platform: "web", commit: $commit, slicerweb_repository: $slicerweb_repository,
+                  slicerweb_commit: $slicerweb_commit, run_id: $run_id, deps_key: $deps_key,
+                  date: $date, root: "/build", files: $files}' > "$tree/slicerweb-manifest.json"
+          cat "$tree/slicerweb-manifest.json"
+          ls -lh "$tree"
+      - name: Upload build tree
+        if: inputs.archive-build-tree
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-web
+          path: |
+            ${{ env.SLICERWEB_ROOT }}/out/tree/slicerweb-manifest.json
+            ${{ env.SLICERWEB_ROOT }}/out/tree/slicerweb-build.tar.zst*
+          retention-days: 5
+          compression-level: 0
+          if-no-files-found: error
+      - name: Publish
+        if: inputs.archive-build-tree && inputs.publish-release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.publish-release }}
+          TITLE: ${{ inputs.prerequisites-release-title }}
+          EVENT: ${{ inputs.publish-dispatch-event }}
+          RELEASE_NOTES: ${{ inputs.release-notes }}
+        run: |
+          set -euo pipefail
+          tree="$SLICERWEB_ROOT/out/tree"
+          bash "$(dirname "$SLICER_CI")/publish-release.sh" "$TAG" "$TITLE" '^slicerweb-' \
+            "$tree/slicerweb-manifest.json" "$SLICERWEB_ROOT/out/package/slicerweb-wheels.zip" \
+            "$tree"/slicerweb-build.tar.zst*
+          echo "Published the web runtime to the release $TAG." >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EVENT" ]; then
+            gh api "repos/$GH_REPO/dispatches" -f "event_type=$EVENT" \
+              || echo "::warning::Could not send the $EVENT event"
+          fi
+      - name: Attest runtime
+        if: inputs.archive-build-tree && inputs.publish-release != ''
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.SLICERWEB_ROOT }}/out/package/*
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-web
+          path: ${{ env.SLICERWEB_ROOT }}/dist/logs
+          retention-days: 7
+          if-no-files-found: ignore
+
