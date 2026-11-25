@@ -1,3 +1,4 @@
+# Checkpoint test: this line changes the key of the stage of this project.
 
 set(proj CTK)
 
