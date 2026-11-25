@@ -117,7 +117,7 @@ def repository_of(url):
     return f"{match.group(1)}/{match.group(2)}".lower() if match else ""
 
 
-def tier_of(name, repository, described):
+def tier_of(repository, described):
     """(tier, the repository it is reviewed as) of an extension, from its description in the ExtensionsIndex.
 
     The tier is that of the repository, not of the name: a repository that
@@ -136,12 +136,6 @@ def tier_of(name, repository, described):
         tier = 1
     # What is in the index is of tier 1 at least.
     return max(tier, 1), ("" if reviewed == built else reviewed)
-
-
-def public_json(url):
-    """A public JSON document; None when there is none."""
-    status, document = request(url)
-    return document if status == 200 else None
 
 
 def release_json(repository, *patterns):
@@ -288,7 +282,7 @@ class Extension:
         """Its tier. When the ExtensionsIndex cannot be read, the tier it had, in the catalog of the pass before."""
         status, described = request(f"{EXTENSIONS_INDEX}/{self.name}.json")
         if status == 200 and isinstance(described, dict):
-            self.tier, self.reviewed_as = tier_of(self.name, self.repository, described)
+            self.tier, self.reviewed_as = tier_of(self.repository, described)
         elif status == 404:
             self.tier, self.reviewed_as = 0, ""
         else:
@@ -422,15 +416,21 @@ def runs_in_progress(extension, token):
             if r["status"] != "completed" and r["event"] in ("workflow_dispatch", "push")]
 
 
-def run_platforms(extension, run_id, token):
-    """The platforms a run builds, from the names of its jobs; None while they are not known."""
+def platform_jobs(extension, run_id, token):
+    """[(platform, conclusion)] of the jobs of a run that build a platform, which their names say."""
     status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{run_id}/jobs?per_page=100", token)
-    platforms = set()
+    found = []
     for job in (body or {}).get("jobs", []) if status == 200 else []:
         match = re.search(r"(?:^|/ )(linux|macos|macos-arm64|windows|web)$", job.get("name") or "")
-        if match and job.get("conclusion") != "skipped":
-            platforms.add(match.group(1))
-    return platforms or None
+        if match:
+            found.append((match.group(1), job.get("conclusion")))
+    return found
+
+
+def run_platforms(extension, run_id, token):
+    """The platforms a run builds; None while they are not known."""
+    return {platform for platform, conclusion in platform_jobs(extension, run_id, token)
+            if conclusion != "skipped"} or None
 
 
 def push_failures(extension, token):
@@ -440,13 +440,8 @@ def push_failures(extension, token):
     runs = [r for r in (body or {}).get("workflow_runs", []) if r.get("conclusion") == "failure"] if status == 200 else []
     if not runs:
         return {}
-    status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{runs[0]['id']}/jobs?per_page=100", token)
-    failed = {}
-    for job in (body or {}).get("jobs", []) if status == 200 else []:
-        match = re.search(r"(?:^|/ )(linux|macos|macos-arm64|windows|web)$", job.get("name") or "")
-        if match and job.get("conclusion") == "failure":
-            failed[match.group(1)] = runs[0]["html_url"]
-    return failed
+    return {platform: runs[0]["html_url"] for platform, conclusion in platform_jobs(extension, runs[0]["id"], token)
+            if conclusion == "failure"}
 
 
 def dispatch(extension, app, platforms, claimed):
@@ -482,10 +477,6 @@ def dispatch(extension, app, platforms, claimed):
                 return run["id"], run["html_url"]
     log(f"::warning::{extension.repository}: started {WORKFLOW}, but its run did not appear")
     return None
-
-
-def gh(*args, check=True):
-    return subprocess.run(["gh", *args], check=check, capture_output=True, text=True)
 
 
 def catalog_of(state):
@@ -545,21 +536,15 @@ def upload(name, document):
     path = os.path.join(tempfile.mkdtemp(), name)
     with open(path, "w", encoding="utf8") as f:
         json.dump(document, f, indent=1)
-    gh("release", "upload", TAG, path, "--clobber", "-R", SLICER)
+    subprocess.run(["gh", "release", "upload", TAG, path, "--clobber", "-R", SLICER],
+                   check=True, capture_output=True, text=True)
     log(f"{name}: published")
-
-
-def summary(text):
-    if env("GITHUB_STEP_SUMMARY"):
-        with open(env("GITHUB_STEP_SUMMARY"), "a", encoding="utf8") as f:
-            f.write(text + "\n")
 
 
 def main():
     if not env("APP_PRIVATE_KEY"):
         log("::warning::SLICER_NIGHTLY_APP_PRIVATE_KEY is not set; nothing to reconcile.")
         return
-    base = f"https://github.com/{SLICER}/releases/download/{TAG}"
     app = App(env("APP_ID"), env("APP_PRIVATE_KEY"))
 
     # The catalog of the pass before: what it offered, and what it started.
@@ -659,13 +644,18 @@ def main():
         """Whether a build not started here is building that platform of the extension."""
         return any(platforms is None or platform in platforms
                    for platforms in foreign.get(extension.repository, {}).values())
-    for extension in extensions:
-        going = [r for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in running]
+
+    def look_for_foreign(extension, message):
+        """Take note of the builds of the extension that are going and are not known yet."""
+        known = set(running) | set(foreign.get(extension.repository, {}))
+        going = [r for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in known]
         if going:
-            foreign[extension.repository] = {r["id"]: run_platforms(extension, r["id"], app.token(extension.repository))
-                                             for r in going}
-            log(f"{extension.name}: waiting for the builds already running ({', '.join(r['html_url'] for r in going)})")
+            foreign.setdefault(extension.repository, {}).update(
+                {r["id"]: run_platforms(extension, r["id"], app.token(extension.repository)) for r in going})
+            log(f"{extension.name}: {message} ({', '.join(r['html_url'] for r in going)})")
             did["left"].append(extension.name + " (" + ", ".join(f"[run]({r['html_url']})" for r in going) + ")")
+    for extension in extensions:
+        look_for_foreign(extension, "waiting for the builds already running")
 
     web_of = lambda c: json.dumps((c or {}).get("platforms", {}).get("web"), sort_keys=True)
     sites_seen = web_of(published) if env("FORCE_SITES") != "true" else ""
@@ -681,6 +671,16 @@ def main():
             log(f"{repository}: {'started' if status in (200, 204) else f'could not start (HTTP {status})'} {WEB_WORKFLOW} on {branch}")
             if status in (200, 204):
                 did["site"].append(repository)
+
+    def publish_catalog():
+        """Publish the catalog of the state when it differs from the one published; (catalog, whether it did)."""
+        nonlocal published
+        catalog = catalog_of(state)
+        differs = not same(catalog, published)
+        if differs:
+            upload("extensions-catalog.json", catalog)
+            published = catalog
+        return catalog, differs
 
     started, again, checked_targets = 0, False, time.time()
     unstarted = {}  # (repository, platform): how many times its build could not be started
@@ -733,13 +733,7 @@ def main():
                 if extension.head != head:
                     log(f"{extension.name}: new commit {extension.head[:10]} on {extension.ref}")
                     changed = True
-                known = set(running) | set(foreign.get(extension.repository, {}))
-                going = [r for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in known]
-                if going:
-                    foreign.setdefault(extension.repository, {}).update(
-                        {r["id"]: run_platforms(extension, r["id"], app.token(extension.repository)) for r in going})
-                    log(f"{extension.name}: a build not started here is running ({', '.join(r['html_url'] for r in going)})")
-                    did["left"].append(extension.name + " (" + ", ".join(f"[run]({r['html_url']})" for r in going) + ")")
+                look_for_foreign(extension, "a build not started here is running")
             latest = targets_now()
             if latest and latest != targets:
                 log("Slicer: " + ", ".join(f"{p} {c[:10]}" for p, c in latest.items()))
@@ -800,11 +794,7 @@ def main():
             time.sleep(1)
         if changed:
             # What is consistent now is offered now: a platform does not wait for the others.
-            catalog = catalog_of(state)
-            if not same(catalog, published):
-                upload("extensions-catalog.json", catalog)
-                published = catalog
-            start_sites(catalog)
+            start_sites(publish_catalog()[0])
         if not running and not todo and not any(foreign.values()):
             break
         if not WAIT and not retry_soon:
@@ -822,10 +812,8 @@ def main():
         for platform in platforms:
             extension.attempts[platform]["key"] = ""
     state = State(targets, extensions)
-    catalog = catalog_of(state)
-    if not same(catalog, published):
-        upload("extensions-catalog.json", catalog)
-    else:
+    catalog, uploaded = publish_catalog()
+    if not uploaded:
         log("extensions-catalog.json: unchanged")
     if not again:
         start_sites(catalog)
@@ -857,7 +845,9 @@ def main():
                 cell += f" ([{'build' if not reason else attempt.get('conclusion')}]({attempt['run']}))"
             cells.append(cell)
         lines.append(f"| {extension.name}{' (' + extension.note + ')' if extension.note else ''} | " + " | ".join(cells) + " |")
-    summary("\n".join(lines))
+    if env("GITHUB_STEP_SUMMARY"):
+        with open(env("GITHUB_STEP_SUMMARY"), "a", encoding="utf8") as f:
+            f.write("\n".join(lines) + "\n")
     print("\n".join(lines))
 
     if again:

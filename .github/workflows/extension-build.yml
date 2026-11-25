@@ -47,28 +47,12 @@ on:
         description: 'CMake generator on Linux and macOS (default: Ninja); "Unix Makefiles" for an extension that does not build with Ninja'
         type: string
         default: ""
-      build-dependencies:
-        description: "Provide the extensions it depends on (EXTENSION_DEPENDS): the build tree each published for the same Slicer commit; one that no registered repository builds is built from the Slicer ExtensionsIndex"
-        type: boolean
-        default: true
       publish-build-tree:
         description: "Publish the build tree of each platform with its package, for the extensions that depend on this one; needs publish"
         type: boolean
         default: false
       run-tests:
         description: "Run the extension's tests"
-        type: boolean
-        default: true
-      package:
-        description: "Build the extension's package"
-        type: boolean
-        default: true
-      load-in-slicer:
-        description: "Load the built extension into Slicer"
-        type: boolean
-        default: true
-      upload-package:
-        description: "Upload the package as a workflow artifact"
         type: boolean
         default: true
       artifact-prefix:
@@ -91,12 +75,8 @@ on:
         description: "Release holding the Slicer build to build against"
         type: string
         default: "nightly"
-      qt-version:
-        description: "Qt version to install (default: the one the build was made with)"
-        type: string
-        default: ""
       web-build-subdirectory:
-        description: 'For the web platform, of an extension the catalog of SlicerWeb does not describe: "inner-build" for an extension with a superbuild, "." without'
+        description: 'For the web platform, where the extension itself is built: "inner-build" with a superbuild, "." without. Default: what the catalog of SlicerWeb says, or "."'
         type: string
         default: ""
       publish:
@@ -107,14 +87,6 @@ on:
         description: "Tag of the release the packages are published to"
         type: string
         default: "nightly"
-      timeout-minutes:
-        description: "Timeout of each desktop platform's job"
-        type: number
-        default: 120
-      web-timeout-minutes:
-        description: "Timeout of the web platform's job"
-        type: number
-        default: 240
 
 permissions:
   contents: read
@@ -176,10 +148,7 @@ jobs:
           # this before the first nightly exists should not go red.
           if ! assets="$(gh release view "$RELEASE_TAG" -R "$SLICER_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null)"; then
             echo "::notice::No '$RELEASE_TAG' release in $SLICER_REPOSITORY; nothing to build against."
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "web=false" >> "$GITHUB_OUTPUT"
-            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
-            exit 0
+            nothing
           fi
           # None asked for: every platform the release has a build for.
           if [ -z "${PLATFORMS//[, ]/}" ]; then
@@ -227,7 +196,7 @@ jobs:
     needs: setup
     if: needs.setup.outputs.found == 'true'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ inputs.timeout-minutes }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
@@ -270,18 +239,16 @@ jobs:
           repository: ${{ inputs.slicer-repository }}
           ref: ${{ inputs.slicer-ref }}
           release-tag: ${{ inputs.release-tag }}
-          qt-version: ${{ inputs.qt-version }}
 
       # The runners have no GPU, and the OpenGL that Windows provides without
       # one is too old for VTK to create a render window.
       - name: Install software OpenGL
-        if: matrix.platform == 'windows' && (inputs.run-tests || inputs.load-in-slicer)
+        if: matrix.platform == 'windows'
         shell: bash
         run: '"$SLICER_CI" install-software-opengl'
 
       - name: Restore the dependencies
         id: deps
-        if: inputs.build-dependencies
         shell: bash
         env:
           # A commit or a pull request is not at fault when what it depends on
@@ -289,7 +256,6 @@ jobs:
           # notice, and built when the dependency is there. A build the
           # reconciliation started is only started when it is, and fails.
           SLICER_EXT_SKIP_UNREADY: ${{ github.event_name != 'workflow_dispatch' }}
-          SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
           SLICER_EXT_CMAKE_OPTIONS: ${{ inputs.cmake-options }}
           SLICER_COMMIT: ${{ steps.slicer.outputs.slicer-commit }}
           SLICER_EXT_REGISTRY: https://github.com/${{ inputs.slicer-repository }}/releases/download/${{ inputs.release-tag }}/extension-repositories.json
@@ -299,7 +265,6 @@ jobs:
         if: steps.deps.outputs.ready != 'false'
         shell: bash
         env:
-          SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
           SLICER_EXT_CMAKE_OPTIONS: ${{ inputs.cmake-options }}
         run: '"$SLICER_CI" extension-configure'
 
@@ -310,16 +275,14 @@ jobs:
 
       - name: Package
         id: package
-        if: steps.deps.outputs.ready != 'false' && (inputs.package)
+        if: steps.deps.outputs.ready != 'false'
         shell: bash
         run: '"$SLICER_CI" extension-package'
 
       # Before the tests, which may leave files in the tree.
       - name: Archive the build tree
-        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref && inputs.publish-build-tree)
+        if: steps.deps.outputs.ready != 'false' && (inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref && inputs.publish-build-tree)
         shell: bash
-        env:
-          SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
         run: '"$SLICER_CI" extension-tree'
 
       - name: Test
@@ -327,17 +290,15 @@ jobs:
         if: steps.deps.outputs.ready != 'false' && (inputs.run-tests)
         continue-on-error: true
         shell: bash
-        env:
-          SLICER_EXT_SOURCE_DIR: ${{ github.workspace }}/${{ inputs.source-directory }}
         run: '"$SLICER_CI" extension-test'
 
       - name: Load in Slicer
-        if: steps.deps.outputs.ready != 'false' && (inputs.load-in-slicer)
+        if: steps.deps.outputs.ready != 'false'
         shell: bash
         run: '"$SLICER_CI" extension-load'
 
       - name: Describe the package
-        if: steps.deps.outputs.ready != 'false' && (inputs.package)
+        if: steps.deps.outputs.ready != 'false'
         shell: bash
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -369,7 +330,7 @@ jobs:
           cat "slicer-package-$PLATFORM.json"
 
       - name: Upload the package
-        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.upload-package)
+        if: steps.deps.outputs.ready != 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ needs.setup.outputs.artifact-prefix }}-${{ matrix.platform }}
@@ -386,14 +347,13 @@ jobs:
       # Each platform publishes as soon as it is built, so that what depends on
       # it there does not wait for the slowest. Failing tests withhold nothing.
       - name: Publish
-        if: steps.deps.outputs.ready != 'false' && (inputs.package && inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref)
+        if: steps.deps.outputs.ready != 'false' && (inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.publish-tag }}
           NAME: ${{ needs.setup.outputs.extension-name }}
-          REF: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           py="$(command -v python3 || command -v python)"
@@ -423,7 +383,7 @@ jobs:
     needs: setup
     if: needs.setup.outputs.web == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.web-timeout-minutes }}
+    timeout-minutes: 240
     permissions:
       contents: write
     env:
@@ -519,7 +479,7 @@ jobs:
           NAME: ${{ needs.setup.outputs.extension-name }}
           SOURCE_DIRECTORY: ${{ inputs.source-directory }}
           SUBDIRECTORY: ${{ inputs.web-build-subdirectory }}
-          SLICER_EXT_REGISTRY: ${{ inputs.build-dependencies && format('https://github.com/{0}/releases/download/{1}/extension-repositories.json', inputs.slicer-repository, inputs.release-tag) || '' }}
+          SLICER_EXT_REGISTRY: https://github.com/${{ inputs.slicer-repository }}/releases/download/${{ inputs.release-tag }}/extension-repositories.json
           SLICER_COMMIT: ${{ steps.tree.outputs.slicer-commit }}
           SLICER_EXT_TREE: ${{ inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref && inputs.publish-build-tree }}
         run: |
@@ -563,7 +523,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the package
-        if: steps.deps.outputs.ready != 'false' && (inputs.upload-package)
+        if: steps.deps.outputs.ready != 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ needs.setup.outputs.artifact-prefix }}-web
@@ -580,7 +540,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.publish-tag }}
           NAME: ${{ needs.setup.outputs.extension-name }}
-          REF: ${{ github.ref_name }}
         run: python3 "$(dirname "$SLICERWEB_CI")/extension-publish.py" "$SLICERWEB_ROOT/out/package"
 
       - name: Upload the logs

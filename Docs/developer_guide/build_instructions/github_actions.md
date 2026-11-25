@@ -263,23 +263,16 @@ Inputs:
 | `source-ref` | | Branch, tag or commit of the extension to build instead of the one the workflow runs for, to try a branch that does not have the workflow. Not published |
 | `source-repository` | this one | Repository of `source-ref`, e.g. the one this is a fork of |
 | `generator` | Ninja | CMake generator on Linux and macOS. `Unix Makefiles` is what the Slicer extension build uses, for an extension that does not build with Ninja |
-| `build-dependencies` | `true` | Provide the extensions it depends on (`EXTENSION_DEPENDS`), see below |
 | `run-tests` | `true` | Run the extension's tests |
-| `package` | `true` | Build the extension's package |
-| `load-in-slicer` | `true` | Load the built extension into Slicer |
-| `upload-package` | `true` | Upload the package as a workflow artifact |
 | `artifact-prefix` | repository name | Name of the package artifact, without the platform |
 | `submodules` | `false` | Passed to the checkout action |
 | `slicer-repository` | `Slicer/Slicer` | Repository publishing the build |
 | `slicer-ref` | `main` | Ref of Slicer providing the actions and the helper script; pin it to whatever the workflow is pinned to |
 | `release-tag` | `nightly` | Release to build against |
-| `qt-version` | from the manifest | Qt version to install |
-| `web-build-subdirectory` | | For `web`, of an extension SlicerWeb's catalog does not describe: `inner-build` with a superbuild, `.` without |
+| `web-build-subdirectory` | what SlicerWeb's catalog says, or `.` | For `web`, where the extension itself is built: `inner-build` with a superbuild, `.` without. A value given here is used instead of the catalog's |
 | `publish` | `false` | Publish the packages to a release of the extension's own repository. A pull request is never published |
 | `publish-tag` | `nightly` | Tag of that release |
 | `publish-build-tree` | `false` | Publish the build tree with the package, for the extensions that depend on this one |
-| `timeout-minutes` | `120` | Timeout of each desktop platform's job |
-| `web-timeout-minutes` | `240` | Timeout of the web platform's job |
 
 ### Publishing the packages
 
@@ -586,6 +579,7 @@ for the action) to consume a fork's releases:
 | `publish` | Publish the result to the `nightly` release |
 | `rebuild-prerequisites` | Ignore the prerequisites cache and rebuild them |
 | `nightly` | Run as the scheduled nightly does: publish, build nothing when the nightly release already holds the commit, and let failing tests withhold nothing |
+| `force` | With `nightly`, build even if the nightly release already holds the commit |
 
 Pull requests build and test Linux only. Pushes to the default branch, the
 nightly schedule and manual runs build every platform.
