@@ -84,12 +84,16 @@ env:
   SLICER_CI: ${{ github.workspace }}/.slicer-ci/.github/scripts/slicer-ci.sh
 
 jobs:
-  deps-1:
-    name: "Stage 1/2: VTK"
+  prerequisites:
+    name: Prerequisites
     if: ${{ !inputs.prerequisites-cached }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    permissions:
+      contents: write
     steps:
+      - name: Note when the job started
+        run: echo "SLICER_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - &checkout-slicerweb
         name: Check out SlicerWeb
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -111,48 +115,8 @@ jobs:
       - &toolchain-image
         name: Build the toolchain image
         run: bash "$SLICERWEB_CI" image
-      - name: Build VTK
-        run: bash "$SLICERWEB_CI" run 00-sources 10-vtk-compiletools 20-vtk
-      - name: Archive
-        run: bash "$SLICERWEB_CI" pack "$SLICERWEB_ROOT/out/stage.tar.zst" ./src/Slicer
-      - name: Upload
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: deps-stage1-web
-          path: ${{ env.SLICERWEB_ROOT }}/out/stage.tar.zst
-          retention-days: 2
-          compression-level: 0
-          if-no-files-found: error
-      - name: Upload the logs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: deps-logs-web-1
-          path: ${{ env.SLICERWEB_ROOT }}/dist/logs
-          retention-days: 7
-          if-no-files-found: ignore
-
-  deps-2:
-    name: "Stage 2/2: ITK and the rest"
-    needs: deps-1
-    runs-on: ubuntu-latest
-    timeout-minutes: 350
-    permissions:
-      contents: write
-    steps:
-      - *checkout-slicerweb
-      - *checkout-ci
-      - *free-disk-space
-      - *toolchain-image
-      - name: Download the previous stage
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: deps-stage1-web
-          path: ${{ env.SLICERWEB_ROOT }}/restore
-      - name: Restore the previous stage
-        run: bash "$SLICERWEB_CI" unpack "$SLICERWEB_ROOT/restore/stage.tar.zst"
-      - name: Build ITK, teem, LibArchive, JsonCpp, SlicerExecutionModel
-        run: bash "$SLICERWEB_CI" run 30-itk 40-deps 45-sem
+      - name: Build VTK, ITK, teem, LibArchive, JsonCpp, SlicerExecutionModel
+        run: bash "$SLICERWEB_CI" run 00-sources 10-vtk-compiletools 20-vtk 30-itk 40-deps 45-sem
       - name: Archive
         run: bash "$SLICERWEB_CI" pack "$SLICERWEB_ROOT/out/deps-web.tar.zst" ./src/Slicer
       - name: Publish the prerequisites
@@ -197,22 +161,31 @@ jobs:
                   gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes || true
                 done
               done
+      # A job is stopped after 6 hours, with nothing kept: said well before
+      # the prerequisites take that long to build.
+      - name: Check the time the build took
+        run: |
+          minutes=$(( ($(date +%s) - SLICER_JOB_STARTED) / 60 ))
+          echo "The job has run for $minutes minutes."
+          if [ "$minutes" -gt 270 ]; then
+            echo "::warning::The web prerequisites took $minutes minutes to build, of the 360 a job may take."
+          fi
       - name: Upload the logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: deps-logs-web-2
+          name: deps-logs-web
           path: ${{ env.SLICERWEB_ROOT }}/dist/logs
           retention-days: 7
           if-no-files-found: ignore
 
   runtime:
     name: ${{ inputs.name }} (web)
-    needs: deps-2
+    needs: prerequisites
     # The prerequisites jobs are skipped when the prerequisites already exist,
     # and GitHub carries that skip down the graph: the condition says when the
     # build goes on, which is when they existed or have been built.
-    if: ${{ !cancelled() && (inputs.prerequisites-cached || needs.deps-2.result == 'success') }}
+    if: ${{ !cancelled() && (inputs.prerequisites-cached || needs.prerequisites.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
