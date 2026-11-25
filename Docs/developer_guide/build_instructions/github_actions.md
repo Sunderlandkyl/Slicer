@@ -30,11 +30,24 @@ The prerequisites of a platform are built by one job, which takes from an hour
 and a half (Linux) to three and a half (Windows, macOS on Intel). A
 GitHub-hosted job is stopped after 6 hours with nothing kept, so that job
 warns when it has run for more than four and a half: the build then has to be
-split, or made to start from the prerequisites of an earlier build. A run that
-reuses the prerequisites shows the job as skipped.
+split further. A run that reuses the prerequisites shows the job as skipped.
+
+That job builds the prerequisites of Slicer in five stages: what VTK and ITK
+need (Python, DCMTK, TBB), VTK, ITK, CTK, then everything else. Each stage but
+the last has a key of its own, made of the key of the stage before it and of
+the files of `SuperBuild/` that describe its projects, and stores the tree it
+leaves on the release (`slicer-stage<n>-<platform>-<key>.tar.zst`, the two
+most recent of each). The job starts from the tree of the last stage whose key
+has not changed: a change to CTK builds CTK and what follows it on the VTK and
+ITK of an earlier build, a change to a Python package builds the last stage
+only, and a change to the toolchain or to the configure options builds
+everything. What is built again is built on a tree that never held it.
 
 Adding or removing an external project does not require touching the
-workflow: `Slicer-dependencies` covers them all.
+workflow: `Slicer-dependencies` covers them all, and the stage of a project
+follows from what depends on it. The job fails if a stage builds a project
+that the key of a later stage covers; the stages are listed in
+`SLICER_STAGE_TARGETS` of `slicer-ci.sh`.
 
 The finished prerequisites are published as assets of the `nightly`
 pre-release, named after the key, for example

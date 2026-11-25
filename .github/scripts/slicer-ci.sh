@@ -282,22 +282,145 @@ _deps_key_slicer() {
       # External project descriptions
       find SuperBuild -type f | LC_ALL=C sort | while read -r f; do echo "== $f"; cat "$f"; done
       echo "== SuperBuild.cmake"; cat SuperBuild.cmake
-      for f in CMake/ExternalProject*.cmake; do echo "== $f"; cat "$f"; done
-      # Options and version requirements defined in the top-level CMakeLists.txt
-      echo "== CMakeLists.txt (subset)"
-      grep -E 'option\(|Slicer_REQUIRED_|_VERSION|CMAKE_CXX_STANDARD|Slicer_VTK_|Slicer_ITK_|Slicer_USE_|Slicer_BUILD_' CMakeLists.txt || true
-      # The arguments the superbuild is configured with, rather than this
-      # script: other edits to it do not invalidate hours of build, nor does
-      # an option added for another platform.
-      echo "== configure arguments"
-      SLICER_QT_DIR="" configure_args
-      # Toolchain
-      echo "platform=$SLICER_PLATFORM"
-      echo "runner=${SLICER_RUNNER_IMAGE:-}"
-      echo "qt=${SLICER_QT_VERSION:-}"
-      echo "key-version=${SLICER_DEPS_KEY_VERSION:-1}"
+      _deps_key_toolchain
     } | tr -d '\r' | sha256 | cut -c1-16
   )
+}
+
+# What every external project of Slicer is built with.
+_deps_key_toolchain() {
+  for f in CMake/ExternalProject*.cmake; do echo "== $f"; cat "$f"; done
+  # Options and version requirements defined in the top-level CMakeLists.txt
+  echo "== CMakeLists.txt (subset)"
+  grep -E 'option\(|Slicer_REQUIRED_|_VERSION|CMAKE_CXX_STANDARD|Slicer_VTK_|Slicer_ITK_|Slicer_USE_|Slicer_BUILD_' CMakeLists.txt || true
+  # The arguments the superbuild is configured with, rather than this script:
+  # other edits to it do not invalidate hours of build, nor does an option
+  # added for another platform.
+  echo "== configure arguments"
+  SLICER_QT_DIR="" configure_args
+  echo "platform=$SLICER_PLATFORM"
+  echo "runner=${SLICER_RUNNER_IMAGE:-}"
+  echo "qt=${SLICER_QT_VERSION:-}"
+  echo "key-version=${SLICER_DEPS_KEY_VERSION:-1}"
+}
+
+# The prerequisites of Slicer are built in stages: these targets in turn,
+# then everything else. The tree each stage leaves is kept on the
+# prerequisites release under the key of the stage, and a build starts from
+# the tree of the last stage whose key has not changed: a change to an
+# external project builds its stage and those after it, on a tree that never
+# held them.
+SLICER_STAGE_TARGETS=("python DCMTK tbb" "VTK" "ITK" "CTK")
+
+# Print the stages, one per line: the key, then the external projects the
+# stage builds (see deps-stage-keys.py). Nothing for a custom application,
+# whose prerequisites are built in one piece.
+cmd_deps_stages() {
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  [ -f "$src/SuperBuild.cmake" ] || return 0
+  local script; script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deps-stage-keys.py"
+  (cd "$src" && _deps_key_toolchain | python3 "$script" . "${SLICER_STAGE_TARGETS[@]}")
+}
+
+# Print the number of the stage (of SLICER_STAGES) that builds an external
+# project: nothing if no stage is known to.
+stage_of() {
+  local name="$1" stage
+  while :; do
+    stage="$(awk -v p="$name" '{ for (i = 2; i <= NF; i++) if ($i == p) print NR }' <<< "$SLICER_STAGES")"
+    [ -z "$stage" ] || { echo "$stage"; return 0; }
+    # python-source is of python
+    [ "$name" != "${name%-*}" ] || return 0
+    name="${name%-*}"
+  done
+}
+
+# Restore the tree of the last stage whose key the release has, if any.
+cmd_restore_stage() {
+  local tag="$SLICER_PREREQUISITES_RELEASE" assets key name="" n=0 from=0
+  assets="$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+  while read -r key _; do
+    n=$((n + 1))
+    if grep -qxF "slicer-stage$n-$SLICER_PLATFORM-$key.parts" <<< "$assets"; then
+      from=$n name="slicer-stage$n-$SLICER_PLATFORM-$key"
+    fi
+  done <<< "${SLICER_STAGES:-}"
+  if [ "$from" -eq 0 ]; then
+    info "the release has no stage to start from"
+    return 0
+  fi
+  info "starting from stage $from ($name)"
+  local dir; dir="$(bash_path "$SLICER_OUTPUT_DIR")/restore"
+  rm -rf "$dir"; mkdir -p "$dir"
+  gh release download "$tag" -R "$GITHUB_REPOSITORY" -D "$dir" --clobber -p "$name.tar.zst*"
+  cmd_unpack "$dir/$name.tar.zst"
+  rm -rf "$dir"
+  echo "SLICER_STAGE_FROM=$from" >> "$GITHUB_ENV"
+}
+
+# Build the stages after the one restored, keeping the tree each leaves.
+build_stages() {
+  local key n=0 project stage archive
+  archive="$(bash_path "$SLICER_OUTPUT_DIR")/stage.tar.zst"
+  while read -r -u 3 key _; do
+    n=$((n + 1))
+    [ "$key" != "-" ] || break
+    [ "$n" -gt "${SLICER_STAGE_FROM:-0}" ] || continue
+    # shellcheck disable=SC2086 - the targets are deliberately word split
+    cmd_build ${SLICER_STAGE_TARGETS[n-1]}
+    # A project built by an earlier stage than the one whose key covers it
+    # would not be built again when it changes. Those of the superbuilds of
+    # the projects themselves (CTK-build/...) are not Slicer's.
+    while read -r project; do
+      stage="$(stage_of "$project")"
+      [ -n "$stage" ] && [ "$stage" -le "$n" ] \
+        || die "stage $n built $project, of stage ${stage:-none}: see SLICER_STAGE_TARGETS"
+    done < <(find "$(bash_path "$SLICER_SUPERBUILD_DIR")" -type f -name "*-done" -not -path "*-build/*" \
+               | sed -e 's:.*/::' -e 's:-done$::' | LC_ALL=C sort -u)
+    info "stage $n: every project built is of a stage up to it"
+    cmd_pack "$archive" SR
+    cmd_publish_prerequisites "slicer-stage$n-$SLICER_PLATFORM-$key" "$archive" 2
+  done 3<<< "$SLICER_STAGES"
+}
+
+# Store a set of prerequisites, or the tree of a stage, on the prerequisites
+# release under its key, and remove the sets of the same kind and platform
+# but the most recent: they are of external projects nothing builds any more.
+#   publish-prerequisites <key> <archive> <number of sets to keep>
+cmd_publish_prerequisites() {
+  local key="${1:?publish-prerequisites: missing key}" archive="${2:?publish-prerequisites: missing archive}"
+  local keep="${3:-3}" tag="$SLICER_PREREQUISITES_RELEASE"
+  archive="$(bash_path "$archive")"
+  # The release is created on the first run; for Slicer it is the nightly
+  # release, whose notes publish-release.sh writes.
+  gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "${SLICER_PREREQUISITES_TITLE:-CI prerequisites}" \
+    --prerelease --latest=false \
+    --notes "Prebuilt prerequisites reused by the build workflow. The slicer-deps-* and slicer-stage* assets are regenerated on demand." \
+    2>/dev/null || true
+  local upload; upload="$(bash_path "$SLICER_OUTPUT_DIR")/prerequisites"
+  rm -rf "$upload"; mkdir -p "$upload"
+  mv "$archive" "$upload/$key.tar.zst"
+  cmd_split "$upload/$key.tar.zst"
+  gh release upload "$tag" -R "$GITHUB_REPOSITORY" "$upload"/* --clobber
+  # The list of parts goes last: its presence marks the set as complete.
+  (cd "$upload" && ls) > "$upload/$key.parts"
+  gh release upload "$tag" -R "$GITHUB_REPOSITORY" "$upload/$key.parts" --clobber
+  rm -rf "$upload"
+
+  # A set's list is removed first, so that a half-removed set never counts as
+  # built.
+  local names list old asset
+  names="$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json assets \
+             --jq '.assets[] | "\(.createdAt) \(.name)"')"
+  { grep -E " ${key%-*}-[0-9a-f]+\.parts$" <<< "$names" || true; } \
+    | sort -r | tail -n +$((keep + 1)) | while read -r _ list; do
+        old="${list%.parts}"
+        echo "Removing the superseded $old"
+        gh release delete-asset "$tag" "$list" -R "$GITHUB_REPOSITORY" --yes || true
+        awk '{print $2}' <<< "$names" | { grep -F "$old.tar.zst" || true; } | while read -r asset; do
+          gh release delete-asset "$tag" "$asset" -R "$GITHUB_REPOSITORY" --yes || true
+        done
+      done
 }
 
 # Print, one per line, the arguments the superbuild tree is configured with.
@@ -364,6 +487,9 @@ cmd_configure() {
 cmd_build() {
   [ $# -gt 0 ] || die "build: missing target"
   local targets=("$@")
+  if [ "$*" = "Slicer-dependencies" ] && [ -n "${SLICER_STAGES:-}" ]; then
+    build_stages
+  fi
   # The stamp files say which external projects completed, more reliably than
   # the build output, which carries ANSI escapes and carriage returns.
   _completed_projects() {
@@ -1153,7 +1279,7 @@ usage() {
 Usage: $0 <command> [args]
 
 Commands:
-  env deps-key free-disk-space install-system-packages install-software-opengl
+  env deps-key deps-stages restore-stage publish-prerequisites free-disk-space install-system-packages install-software-opengl
   configure build package verify-package strip test
   pack unpack split restore-release manifest manifest-files manifest-get
   extension-dependencies extension-tree extension-configure extension-build
