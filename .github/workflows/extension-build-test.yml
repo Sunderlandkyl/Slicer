@@ -1,0 +1,53 @@
+# Builds the extension templates of Extensions/Testing against the published
+# Slicer build, through the workflow an extension repository calls.
+# See Docs/developer_guide/build_instructions/github_actions.md
+name: Extension build (self-test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to test (comma separated: linux,macos,macos-arm64,windows,web)"
+        default: "linux"
+      release-tag:
+        description: "Release holding the Slicer build to test against"
+        default: "nightly"
+  push:
+    branches:
+      - "ci/**"
+  schedule:
+    # A few hours after the nightly build.
+    - cron: "0 10 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  templates:
+    name: ${{ matrix.extension }}
+    strategy:
+      fail-fast: false
+      matrix:
+        extension:
+          - LoadableExtensionTemplate
+          - ScriptedLoadableExtensionTemplate
+          - CLIExtensionTemplate
+    uses: ./.github/workflows/extension-build.yml
+    # The called workflow declares it, so a caller has to grant it; nothing is
+    # published here.
+    permissions:
+      contents: write
+    with:
+      platforms: ${{ inputs.platforms || 'linux' }}
+      # This workflow runs on the ci/** branches, not the default one only.
+      push-branches: "*"
+      source-directory: Extensions/Testing/${{ matrix.extension }}
+      # The build being tested is this commit's, not the default branch's.
+      slicer-repository: ${{ github.repository }}
+      slicer-ref: ${{ github.sha }}
+      release-tag: ${{ inputs.release-tag || 'nightly' }}
+      artifact-prefix: ${{ matrix.extension }}
+      # The test extensions are not for anyone to install.
+      publish: false
+      # The templates have no tests; loading them into Slicer is the check.
+      run-tests: false

@@ -1,0 +1,85 @@
+name: "Slicer build stage"
+description: >-
+  Build a target of the Slicer superbuild tree in the fixed build root, on the
+  prerequisites that are there if any, and optionally archive the result.
+  Requires the 'slicer-env' action to have been run.
+
+inputs:
+  target:
+    description: "Superbuild target to build: Slicer-dependencies (the prerequisites) or Slicer"
+    required: true
+  archive-name:
+    description: "Name of the archive to create in the output directory (without extension); empty to skip"
+    default: ""
+  archive-paths:
+    description: "Space separated paths (relative to the root) to archive"
+    default: "SR"
+
+runs:
+  using: composite
+  steps:
+    - name: Copy source tree to build root
+      shell: bash
+      run: |
+        set -euo pipefail
+        src="$SLICER_SOURCE_DIR"
+        if [ -d "$src/.git" ]; then
+          echo "Source tree already present at $src"
+        else
+          rm -rf "$src"
+          mkdir -p "$src"
+          # Copy rather than clone: the working tree, the checked out commit and
+          # the full history (needed to compute Slicer_REVISION) are preserved
+          # regardless of whether HEAD is detached.
+          echo "Copying $GITHUB_WORKSPACE -> $src"
+          cp -a "$GITHUB_WORKSPACE/." "$src/"
+
+          # The compiler cache action keeps its cache in the workspace: it
+          # must not be archived and published with the source tree.
+          rm -rf "$src/.ccache" "$src/.cache"
+          rm -f "$src"/*.log
+          # The checkout of the CI scripts used by build-application.yml is
+          # not part of the sources.
+          rm -rf "$src/.slicer-ci"
+
+          # Give every source file a timestamp older than any stamp in a
+          # restored superbuild tree: the time of the checkout would make CMake
+          # re-run the configure and build steps of every external project.
+          # Nothing is missed: whatever changes an external project changes
+          # the prerequisites key, and rebuilds them from scratch.
+          echo "Normalizing the timestamps of the source tree"
+          find "$src" -path "$src/.git" -prune -o -print0 \
+            | xargs -0 touch -h -t 200001010000 2>/dev/null \
+            || find "$src" -path "$src/.git" -prune -o -print0 \
+            | xargs -0 touch -t 200001010000 2>/dev/null || true
+        fi
+        git -C "$src" log -1 --oneline || true
+        git -C "$src" status --short | head -n 5 || true
+
+    - name: Configure
+      shell: bash
+      run: '"$SLICER_CI" configure'
+
+    - name: Build ${{ inputs.target }}
+      shell: bash
+      env:
+        TARGETS: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC2086 - the targets are deliberately word split
+        "$SLICER_CI" build $TARGETS
+
+    - name: Report
+      if: always()
+      shell: bash
+      run: '"$SLICER_CI" report'
+
+    - name: Archive build tree
+      if: inputs.archive-name != ''
+      shell: bash
+      env:
+        PATHS: ${{ inputs.archive-paths }}
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC2086 - the paths are deliberately word split
+        "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/${{ inputs.archive-name }}.tar.zst" $PATHS
