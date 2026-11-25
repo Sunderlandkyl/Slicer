@@ -72,7 +72,7 @@ runs:
     # out: actions/checkout refuses a path outside the caller's workspace, and
     # checking out inside it would leave a directory in the repository being
     # built.
-    - name: Initialize the environment
+    - name: Initialize environment
       id: env
       shell: bash
       env:
@@ -96,7 +96,7 @@ runs:
       shell: bash
       run: '"$SLICER_CI" free-disk-space'
 
-    - name: Install the system packages
+    - name: Install system packages
       shell: bash
       run: '"$SLICER_CI" install-system-packages'
 
@@ -120,13 +120,13 @@ runs:
       with:
         cmake-version: ${{ inputs.cmake-version }}
 
-    - name: Restore the Slicer build
+    - name: Restore Slicer build
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
       run: '"$SLICER_CI" restore-release "${{ inputs.repository }}" "${{ inputs.release-tag }}"'
 
-    - name: Read the manifest
+    - name: Read manifest
       id: manifest
       shell: bash
       run: |
@@ -157,7 +157,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
         echo "SLICER_QT_VERSION=$qt" >> "$GITHUB_ENV"
 
-    - name: Resolve the Qt installation options
+    - name: Resolve Qt install options
       id: qt-options
       shell: bash
       run: |
@@ -260,14 +260,14 @@ runs:
 
     # ccache rather than sccache, whose GitHub Actions backend leaves one cache
     # entry per compiled object in the repository.
-    - name: Set up the compiler cache
+    - name: Set up compiler cache
       if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
       with:
         key: slicer-extension-${{ steps.env.outputs.platform }}
         max-size: 1G
 
-    - name: Enable the compiler cache
+    - name: Enable compiler cache
       if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       shell: bash
       run: |
@@ -276,7 +276,7 @@ runs:
           echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
         } >> "$GITHUB_ENV"
 
-    - name: Check the restored build
+    - name: Check restored build
       id: check
       shell: bash
       run: |

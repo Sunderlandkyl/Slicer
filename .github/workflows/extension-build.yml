@@ -102,7 +102,7 @@ jobs:
       artifact-prefix: ${{ steps.matrix.outputs.artifact-prefix }}
       extension-name: ${{ steps.matrix.outputs.extension-name }}
     steps:
-      - name: Choose the platforms
+      - name: Choose platforms
         id: matrix
         shell: bash
         env:
@@ -224,7 +224,7 @@ jobs:
       # the run: github.job_workflow_ref and github.job_workflow_sha, which
       # state it, are empty in a called workflow. It is `slicer-ref`, so a
       # caller pinning this workflow to a tag should pin that to the same tag.
-      - name: Check out the Slicer actions
+      - name: Check out Slicer actions
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.slicer-repository }}
@@ -232,7 +232,7 @@ jobs:
           path: .slicer-actions
           sparse-checkout: .github
 
-      - name: Set up the Slicer build
+      - name: Set up Slicer build
         id: slicer
         uses: ./.slicer-actions/.github/actions/setup-slicer-build
         with:
@@ -247,7 +247,7 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" install-software-opengl'
 
-      - name: Restore the dependencies
+      - name: Restore dependencies
         id: deps
         shell: bash
         env:
@@ -280,7 +280,7 @@ jobs:
         run: '"$SLICER_CI" extension-package'
 
       # Before the tests, which may leave files in the tree.
-      - name: Archive the build tree
+      - name: Archive build tree
         if: steps.deps.outputs.ready != 'false' && (inputs.publish && github.event_name != 'pull_request' && !inputs.source-ref && inputs.publish-build-tree)
         shell: bash
         run: '"$SLICER_CI" extension-tree'
@@ -297,7 +297,7 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" extension-load'
 
-      - name: Describe the package
+      - name: Describe package
         if: steps.deps.outputs.ready != 'false'
         shell: bash
         env:
@@ -329,7 +329,7 @@ jobs:
             > "slicer-package-$PLATFORM.json"
           cat "slicer-package-$PLATFORM.json"
 
-      - name: Upload the package
+      - name: Upload package
         if: steps.deps.outputs.ready != 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -359,7 +359,7 @@ jobs:
           py="$(command -v python3 || command -v python)"
           "$py" "$(dirname "$SLICER_CI")/extension-publish.py" "$SLICER_OUTPUT_DIR"
 
-      - name: Upload the test results
+      - name: Upload test results
         if: steps.deps.outputs.ready != 'false' && (always() && inputs.run-tests)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -399,7 +399,7 @@ jobs:
           path: extension
           submodules: ${{ inputs.submodules }}
 
-      - name: Check out the Slicer actions
+      - name: Check out Slicer actions
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.slicer-repository }}
@@ -407,7 +407,7 @@ jobs:
           path: .slicer-actions
           sparse-checkout: .github
 
-      - name: Download the web build tree
+      - name: Download web build tree
         id: tree
         shell: bash
         env:
@@ -463,11 +463,11 @@ jobs:
         shell: bash
         run: bash "$SLICER_CI" free-disk-space
 
-      - name: Build the toolchain image
+      - name: Build toolchain image
         shell: bash
         run: bash "$SLICERWEB_CI" image
 
-      - name: Restore the web build tree
+      - name: Restore web build tree
         shell: bash
         run: bash "$SLICERWEB_CI" unpack "$SLICERWEB_ROOT/restore/slicerweb-build.tar.zst"
 
@@ -491,7 +491,7 @@ jobs:
           fi
           bash "$SLICERWEB_CI" extension "$src" "$NAME" "$SLICERWEB_ROOT/out/package" "$SUBDIRECTORY"
 
-      - name: Describe the package
+      - name: Describe package
         if: steps.deps.outputs.ready != 'false'
         shell: bash
         env:
@@ -522,7 +522,7 @@ jobs:
             echo "Built against Slicer \`$SLICER_COMMIT\`: \`$(jq -r .wheel <<< "$entry")\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload the package
+      - name: Upload package
         if: steps.deps.outputs.ready != 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -542,7 +542,7 @@ jobs:
           NAME: ${{ needs.setup.outputs.extension-name }}
         run: python3 "$(dirname "$SLICERWEB_CI")/extension-publish.py" "$SLICERWEB_ROOT/out/package"
 
-      - name: Upload the logs
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

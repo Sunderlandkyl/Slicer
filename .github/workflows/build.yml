@@ -115,7 +115,7 @@ jobs:
 
       # When no commit has landed since the last nightly, the scheduled run has
       # nothing to publish and several hours of runner time to save.
-      - name: Check whether the nightly is up to date
+      - name: Check whether nightly is up to date
         id: uptodate
         shell: bash
         env:

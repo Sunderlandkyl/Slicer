@@ -146,11 +146,11 @@ jobs:
       web-key: ${{ steps.key.outputs.web-key }}
       web-cached: ${{ steps.key.outputs.web-cached }}
     steps:
-      - name: Check out the sources
+      - name: Check out sources
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - &checkout-ci
-        name: Check out the Slicer CI scripts
+        name: Check out Slicer CI scripts
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.ci-repository }}
@@ -166,7 +166,7 @@ jobs:
           ref: ${{ inputs.slicerweb-ref }}
           path: slicerweb
 
-      - name: Compute the keys
+      - name: Compute keys
         id: key
         shell: bash
         env:
@@ -262,19 +262,19 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
     steps:
-      - name: Note when the job started
+      - name: Note start time
         shell: bash
         run: echo "SLICER_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
 
       - &checkout-sources
-        name: Check out the sources
+        name: Check out sources
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
 
       - *checkout-ci
 
-      - name: Set up the environment
+      - name: Set up environment
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt }}
@@ -282,13 +282,13 @@ jobs:
           # displace the entries that speed up the build of the application.
           compiler-cache: "false"
 
-      - name: Build the prerequisites
+      - name: Build prerequisites
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
           target: Slicer-dependencies
           archive-name: deps-${{ matrix.platform }}
 
-      - name: Publish the prerequisites
+      - name: Publish prerequisites
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -335,7 +335,7 @@ jobs:
 
       # A job is stopped after 6 hours, with nothing kept: said well before
       # the prerequisites take that long to build.
-      - name: Check the time the build took
+      - name: Check build time
         shell: bash
         run: |
           minutes=$(( ($(date +%s) - SLICER_JOB_STARTED) / 60 ))
@@ -368,14 +368,14 @@ jobs:
       - *checkout-sources
       - *checkout-ci
 
-      - name: Set up the environment
+      - name: Set up environment
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt }}
 
       # Restore and save are separate steps: actions/cache only saves after a
       # successful job, and this job fails whenever a test fails.
-      - name: Restore the test data
+      - name: Restore test data
         id: testdata
         if: inputs.run-tests
         uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
@@ -384,7 +384,7 @@ jobs:
           key: slicer-testdata-${{ matrix.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
           restore-keys: slicer-testdata-${{ matrix.platform }}-
 
-      - name: Download the prerequisites
+      - name: Download prerequisites
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -400,7 +400,7 @@ jobs:
 
       # Signing with a Developer ID, and notarizing, happen only when the
       # secrets exist. Without them the bundle is signed ad-hoc.
-      - name: Import the signing certificate
+      - name: Import signing certificate
         id: signing
         if: startsWith(matrix.platform, 'macos') && env.MACOS_CERTIFICATE != ''
         shell: bash
@@ -430,7 +430,7 @@ jobs:
         with:
           target: Slicer
 
-      - name: Save the test data
+      - name: Save test data
         if: always() && inputs.run-tests && steps.testdata.outputs.cache-hit != 'true'
         uses: actions/cache/save@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
         with:
@@ -442,7 +442,7 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" install-software-opengl'
 
-      - name: Run the tests
+      - name: Run tests
         id: tests
         if: inputs.run-tests
         continue-on-error: true
@@ -451,7 +451,7 @@ jobs:
           SLICER_CTEST_EXCLUDE: ${{ inputs.test-exclude }}
         run: '"$SLICER_CI" test'
 
-      - name: Summarize the tests
+      - name: Summarize tests
         if: always() && inputs.run-tests
         shell: bash
         run: |
@@ -459,7 +459,7 @@ jobs:
           python3 "$GITHUB_WORKSPACE/.slicer-ci/.github/scripts/test-summary.py" \
             "$SLICER_OUTPUT_DIR/test-results.xml" "(${{ matrix.platform }})" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload the test results
+      - name: Upload test results
         if: always() && inputs.run-tests
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -477,7 +477,7 @@ jobs:
 
       # A bundle whose install names were not rewritten builds and packages
       # cleanly, and only fails on a user's machine. Check before publishing.
-      - name: Verify the package
+      - name: Verify package
         id: verify
         continue-on-error: true
         shell: bash
@@ -508,7 +508,7 @@ jobs:
           # What Gatekeeper itself will decide.
           spctl --assess --type open --context context:primary-signature -vv "$dmg"
 
-      - name: Upload the package
+      - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package-${{ matrix.platform }}
@@ -517,7 +517,7 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-      - name: Write the manifest
+      - name: Write manifest
         if: inputs.archive-build-trees
         shell: bash
         env:
@@ -532,7 +532,7 @@ jobs:
             "package=$PACKAGE" \
             "deps_release_tag=$TAG"
 
-      - name: Archive the build tree
+      - name: Archive build tree
         if: inputs.archive-build-trees
         shell: bash
         run: |
@@ -556,7 +556,7 @@ jobs:
             "$SLICER_OUTPUT_DIR"/slicer-build-${SLICER_PLATFORM}.tar.zst* \
             "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst*
 
-      - name: Upload the build tree
+      - name: Upload build tree
         if: inputs.archive-build-trees
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -604,14 +604,14 @@ jobs:
 
       # Provenance of the package, verifiable with "gh attestation verify".
       # A failure to attest withholds nothing.
-      - name: Attest the package
+      - name: Attest package
         if: inputs.archive-build-trees && inputs.publish-release != ''
         continue-on-error: true
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ env.SLICER_OUTPUT_DIR }}/${{ steps.package.outputs.package }}
 
-      - name: Fail on test failures or an unusable package
+      - name: Fail on test failures or unusable package
         if: (steps.tests.outcome == 'failure' || steps.verify.outcome == 'failure') && inputs.fail-on-test-failures
         shell: bash
         run: |
@@ -623,7 +623,7 @@ jobs:
           fi
           exit 1
 
-      - name: Upload the logs
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

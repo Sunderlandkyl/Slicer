@@ -17,7 +17,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Initialize the environment
+    - name: Initialize environment
       id: env
       shell: bash
       run: |
@@ -26,7 +26,7 @@ runs:
         echo "SLICER_QT_VERSION=${{ inputs.qt-version }}" >> "$GITHUB_ENV"
         "${{ github.action_path }}/../../scripts/slicer-ci.sh" env
 
-    - name: Install the system packages
+    - name: Install system packages
       shell: bash
       run: '"$SLICER_CI" install-system-packages'
 
@@ -50,7 +50,7 @@ runs:
       with:
         cmake-version: ${{ inputs.cmake-version }}
 
-    - name: Resolve the Qt installation options
+    - name: Resolve Qt install options
       id: qt-options
       shell: bash
       run: |
@@ -156,14 +156,14 @@ runs:
 
     # ccache rather than sccache, whose GitHub Actions backend leaves one cache
     # entry per compiled object in the repository.
-    - name: Set up the compiler cache
+    - name: Set up compiler cache
       if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
       with:
         key: slicer-${{ steps.env.outputs.platform }}
         max-size: 2G
 
-    - name: Enable the compiler cache
+    - name: Enable compiler cache
       if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       shell: bash
       run: echo "SLICER_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"

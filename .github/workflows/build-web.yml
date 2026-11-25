@@ -92,7 +92,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Note when the job started
+      - name: Note start time
         run: echo "SLICER_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - &checkout-slicerweb
         name: Check out SlicerWeb
@@ -102,7 +102,7 @@ jobs:
           ref: ${{ inputs.slicerweb-ref }}
           path: slicerweb
       - &checkout-ci
-        name: Check out the Slicer CI scripts
+        name: Check out Slicer CI scripts
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.ci-repository }}
@@ -113,13 +113,13 @@ jobs:
         name: Free disk space
         run: bash "$SLICER_CI" free-disk-space
       - &toolchain-image
-        name: Build the toolchain image
+        name: Build toolchain image
         run: bash "$SLICERWEB_CI" image
       - name: Build VTK, ITK, teem, LibArchive, JsonCpp, SlicerExecutionModel
         run: bash "$SLICERWEB_CI" run 00-sources 10-vtk-compiletools 20-vtk 30-itk 40-deps 45-sem
-      - name: Archive the prerequisites
+      - name: Archive prerequisites
         run: bash "$SLICERWEB_CI" pack "$SLICERWEB_ROOT/out/deps-web.tar.zst" ./src/Slicer
-      - name: Publish the prerequisites
+      - name: Publish prerequisites
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -163,14 +163,14 @@ jobs:
               done
       # A job is stopped after 6 hours, with nothing kept: said well before
       # the prerequisites take that long to build.
-      - name: Check the time the build took
+      - name: Check build time
         run: |
           minutes=$(( ($(date +%s) - SLICER_JOB_STARTED) / 60 ))
           echo "The job has run for $minutes minutes."
           if [ "$minutes" -gt 270 ]; then
             echo "::warning::The web prerequisites took $minutes minutes to build, of the 360 a job may take."
           fi
-      - name: Upload the logs
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -194,7 +194,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - name: Check out the sources
+      - name: Check out sources
         if: inputs.slicer-from-checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -205,7 +205,7 @@ jobs:
       - *checkout-ci
       - *free-disk-space
       - *toolchain-image
-      - name: Download the prerequisites
+      - name: Download prerequisites
         env:
           GH_TOKEN: ${{ github.token }}
           KEY: ${{ inputs.prerequisites-key }}
@@ -226,11 +226,11 @@ jobs:
           # 00-sources again: it fetches Slicer, and finds the other sources up
           # to date.
           bash "$SLICERWEB_CI" run ${slicer[@]+"${slicer[@]}"} 00-sources 50-slicer
-      - name: Package the wheels
+      - name: Package wheels
         run: bash "$SLICERWEB_CI" run 60-wheels
-      - name: Run the smoke test
+      - name: Smoke test
         run: bash "$SLICERWEB_CI" run 70-smoke
-      - name: Archive the runtime
+      - name: Archive runtime
         env:
           FROM_CHECKOUT: ${{ inputs.slicer-from-checkout }}
           SLICERWEB_REPOSITORY: ${{ inputs.slicerweb-repository }}
@@ -265,7 +265,7 @@ jobs:
             ls -l "$SLICERWEB_ROOT/dist/wheels"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload the runtime
+      - name: Upload runtime
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package-web
@@ -275,7 +275,7 @@ jobs:
           if-no-files-found: error
       # Extension repositories build against it: the extension wheels have to
       # match the libraries of the runtime.
-      - name: Archive the build tree
+      - name: Archive build tree
         if: inputs.archive-build-tree
         env:
           FROM_CHECKOUT: ${{ inputs.slicer-from-checkout }}
@@ -311,7 +311,7 @@ jobs:
                   date: $date, root: "/build", files: $files}' > "$tree/slicerweb-manifest.json"
           cat "$tree/slicerweb-manifest.json"
           ls -lh "$tree"
-      - name: Upload the build tree
+      - name: Upload build tree
         if: inputs.archive-build-tree
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -342,13 +342,13 @@ jobs:
             gh api "repos/$GH_REPO/dispatches" -f "event_type=$EVENT" \
               || echo "::warning::Could not send the $EVENT event"
           fi
-      - name: Attest the runtime
+      - name: Attest runtime
         if: inputs.archive-build-tree && inputs.publish-release != ''
         continue-on-error: true
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ env.SLICERWEB_ROOT }}/out/package/*
-      - name: Upload the logs
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
