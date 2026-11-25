@@ -136,7 +136,7 @@ jobs:
       matrix: ${{ steps.key.outputs.matrix }}
       # The entries still to build, and their count. GitHub rejects a matrix
       # with an empty "include", so with nothing to build this is the full
-      # matrix, and the stages are skipped on the count.
+      # matrix, and the job is skipped on the count.
       matrix-todo: ${{ steps.key.outputs.matrix-todo }}
       todo-count: ${{ steps.key.outputs.todo-count }}
       desktop-count: ${{ steps.key.outputs.desktop-count }}
@@ -245,20 +245,104 @@ jobs:
           echo "Platforms whose prerequisites have to be built: $count"
           echo "$entries" | jq .
 
+  # The external projects of the superbuild (VTK, ITK, CTK, Python, DCMTK, ...),
+  # for the platforms that do not have them yet: built in one job and stored on
+  # the prerequisites release under their key, where the build of the
+  # application, of this run and of every later one with the same key, finds
+  # them.
   prerequisites:
-    name: Prerequisites
+    name: Prerequisites (${{ matrix.platform }})
     needs: deps-key
     if: needs.deps-key.outputs.todo-count != '0'
-    uses: ./.github/workflows/build-prerequisites.yml
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
     permissions:
       contents: write
-    with:
-      matrix: ${{ needs.deps-key.outputs.matrix-todo }}
-      ci-repository: ${{ inputs.ci-repository }}
-      ci-ref: ${{ inputs.ci-ref }}
-      extra-cmake-options: ${{ inputs.extra-cmake-options }}
-      prerequisites-release: ${{ inputs.prerequisites-release }}
-      prerequisites-release-title: ${{ inputs.prerequisites-release-title }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix-todo) }}
+    steps:
+      - name: Note when the job started
+        shell: bash
+        run: echo "SLICER_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
+      - &checkout-sources
+        name: Check out the sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - *checkout-ci
+
+      - name: Set up environment
+        uses: ./.slicer-ci/.github/actions/slicer-env
+        with:
+          qt-version: ${{ matrix.qt }}
+          # The prerequisites are built once: caching their objects would only
+          # displace the entries that speed up the build of the application.
+          compiler-cache: "false"
+
+      - name: Build the prerequisites
+        uses: ./.slicer-ci/.github/actions/slicer-build-stage
+        with:
+          target: Slicer-dependencies
+          archive-name: deps-${{ matrix.platform }}
+
+      - name: Publish the prerequisites
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ matrix.key }}
+          TAG: ${{ inputs.prerequisites-release }}
+          TITLE: ${{ inputs.prerequisites-release-title }}
+        run: |
+          set -euo pipefail
+          # The prerequisites are assets of a single pre-release, named after
+          # their key. The release is created here on the first run; for Slicer
+          # it is the nightly release, whose notes publish-release.sh writes.
+          gh release create "$TAG" --title "$TITLE" --prerelease --latest=false \
+            --notes "Prebuilt prerequisites reused by the build workflow. The slicer-deps-* assets are regenerated on demand." \
+            2>/dev/null || true
+
+          "$SLICER_CI" split "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst"
+          upload="$SLICER_OUTPUT_DIR/prerequisites"
+          rm -rf "$upload"; mkdir -p "$upload"
+          for f in "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst*; do
+            mv "$f" "$upload/$KEY${f##*/deps-${SLICER_PLATFORM}}"
+          done
+          gh release upload "$TAG" "$upload"/* --clobber
+          # The list of parts goes last: its presence marks the set as complete.
+          parts="$(cd "$upload" && ls)"
+          echo "$parts" > "$upload/$KEY.parts"
+          gh release upload "$TAG" "$upload/$KEY.parts" --clobber
+          rm -rf "$upload"
+
+          # Keep the three most recent sets of prerequisites of this platform;
+          # older ones correspond to external projects nothing builds any more.
+          # A set's list goes first, so that a half-removed set never counts as
+          # built.
+          names="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
+                     --jq '.assets[] | "\(.createdAt) \(.name)"')"
+          { grep -E " slicer-deps-${SLICER_PLATFORM}-[0-9a-f]+\.parts$" <<< "$names" || true; } \
+            | sort -r | tail -n +4 | while read -r _ list; do
+                old="${list%.parts}"
+                echo "Removing the superseded prerequisites $old"
+                gh release delete-asset "$TAG" "$list" -R "$GITHUB_REPOSITORY" --yes || true
+                awk '{print $2}' <<< "$names" | { grep -F "$old.tar.zst" || true; } | while read -r asset; do
+                  gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes || true
+                done
+              done
+
+      # A job is stopped after 6 hours, with nothing kept: said well before
+      # the prerequisites take that long to build.
+      - name: Check the time the build took
+        shell: bash
+        run: |
+          minutes=$(( ($(date +%s) - SLICER_JOB_STARTED) / 60 ))
+          echo "The job has run for $minutes minutes."
+          if [ "$minutes" -gt 270 ]; then
+            echo "::warning::The prerequisites of $SLICER_PLATFORM took $minutes minutes to build, of the 360 a job may take."
+          fi
 
   application:
     name: ${{ inputs.name }} (${{ matrix.platform }})
@@ -281,11 +365,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
     steps:
-      - name: Check out the sources
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          fetch-depth: 0
-
+      - *checkout-sources
       - *checkout-ci
 
       - name: Set up environment
@@ -305,7 +385,6 @@ jobs:
           restore-keys: slicer-testdata-${{ matrix.platform }}-
 
       - name: Download the prerequisites
-        if: matrix.cached
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -350,17 +429,6 @@ jobs:
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
           target: Slicer
-          # `a && b || c` returns c whenever b is falsy, so the empty string
-          # has to be the last operand.
-          restore-artifact: ${{ !matrix.cached && format('deps-{0}', matrix.platform) || '' }}
-          restore-archive: deps-${{ matrix.platform }}
-          # Archived after the tests and the packaging instead.
-          archive-name: ""
-
-      - name: Summarize the prerequisites
-        if: always()
-        shell: bash
-        run: '"$SLICER_CI" stage-summary'
 
       - name: Save the test data
         if: always() && inputs.run-tests && steps.testdata.outputs.cache-hit != 'true'

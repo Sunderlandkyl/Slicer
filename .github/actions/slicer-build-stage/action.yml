@@ -1,31 +1,19 @@
 name: "Slicer build stage"
 description: >-
-  Build one target of the Slicer superbuild tree in the fixed build root,
-  optionally restoring the tree produced by a previous stage first, then
-  archive the result. Requires the 'slicer-env' action to have been run.
+  Build a target of the Slicer superbuild tree in the fixed build root, on the
+  prerequisites that are there if any, and optionally archive the result.
+  Requires the 'slicer-env' action to have been run.
 
 inputs:
   target:
-    description: "Space separated superbuild targets to build (VTK, ITK, Slicer-dependencies, Slicer, ...); those not in the current configuration are skipped"
+    description: "Superbuild target to build: Slicer-dependencies (the prerequisites) or Slicer"
     required: true
-  restore-artifact:
-    description: "Workflow artifact (containing <archive-name>.tar.zst) to restore before building"
-    default: ""
-  restore-archive:
-    description: "Name of the archive inside the restored artifact (without extension)"
-    default: "deps-stage"
   archive-name:
-    description: "Name of the archive to create (without extension); empty to skip"
-    default: "deps-stage"
-  archive-paths:
-    description: >-
-      Space separated paths (relative to the root) to archive. Include "Slicer"
-      to carry the source tree over to the next stage: a new checkout would
-      make CMake re-run the steps of every external project.
-    default: "SR Slicer"
-  upload-artifact:
-    description: "Name of the workflow artifact to upload the archive to; empty to skip"
+    description: "Name of the archive to create in the output directory (without extension); empty to skip"
     default: ""
+  archive-paths:
+    description: "Space separated paths (relative to the root) to archive"
+    default: "SR"
 
 runs:
   using: composite
@@ -68,21 +56,6 @@ runs:
         git -C "$src" log -1 --oneline || true
         git -C "$src" status --short | head -n 5 || true
 
-    - name: Download previous stage
-      if: inputs.restore-artifact != ''
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-      with:
-        name: ${{ inputs.restore-artifact }}
-        path: ${{ env.SLICER_OUTPUT_DIR }}/restore
-
-    - name: Restore previous stage
-      if: inputs.restore-artifact != ''
-      shell: bash
-      run: |
-        set -euo pipefail
-        "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/${{ inputs.restore-archive }}.tar.zst"
-        rm -rf "$SLICER_OUTPUT_DIR/restore"
-
     - name: Configure
       shell: bash
       run: '"$SLICER_CI" configure'
@@ -110,13 +83,3 @@ runs:
         set -euo pipefail
         # shellcheck disable=SC2086 - the paths are deliberately word split
         "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/${{ inputs.archive-name }}.tar.zst" $PATHS
-
-    - name: Upload ${{ inputs.upload-artifact }}
-      if: inputs.upload-artifact != '' && inputs.archive-name != ''
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-      with:
-        name: ${{ inputs.upload-artifact }}
-        path: ${{ env.SLICER_OUTPUT_DIR }}/${{ inputs.archive-name }}.tar.zst
-        retention-days: 2
-        compression-level: 0
-        if-no-files-found: error

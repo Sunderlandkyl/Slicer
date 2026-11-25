@@ -167,7 +167,7 @@ jobs:
           TITLE: ${{ inputs.prerequisites-release-title }}
         run: |
           set -euo pipefail
-          # The layout of build-prerequisites.yml: parts named after the key,
+          # The layout of the desktop prerequisites: parts named after the key,
           # then the list of parts, which marks the set as complete.
           gh release create "$TAG" --title "$TITLE" --prerelease --latest=false \
             --notes "Prebuilt prerequisites reused by the build workflow. The slicer-deps-* assets are regenerated on demand." \

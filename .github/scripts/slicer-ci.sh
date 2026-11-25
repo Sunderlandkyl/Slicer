@@ -360,28 +360,10 @@ cmd_configure() {
   endlog
 }
 
-# Build targets of the superbuild tree. Those that are not part of the current
-# configuration are skipped, so a stage may name optional external projects
-# (such as `tbb`).
+# Build targets of the superbuild tree.
 cmd_build() {
   [ $# -gt 0 ] || die "build: missing target"
-  local available="$(bash_path "$SLICER_SUPERBUILD_DIR")/SlicerDependencies.txt"
-  local targets=()
-  local t
-  for t in "$@"; do
-    # Aggregate and inner targets are always defined by SuperBuild.cmake.
-    if [ "$t" = "Slicer" ] || [ "$t" = "Slicer-dependencies" ] || [ ! -f "$available" ]; then
-      targets+=("$t")
-    elif grep -qx "$t" "$available"; then
-      targets+=("$t")
-    else
-      info "skipping '$t' (not part of this configuration)"
-    fi
-  done
-  if [ ${#targets[@]} -eq 0 ]; then
-    info "nothing to build"
-    return 0
-  fi
+  local targets=("$@")
   # The stamp files say which external projects completed, more reliably than
   # the build output, which carries ANSI escapes and carriage returns.
   _completed_projects() {
@@ -410,13 +392,9 @@ cmd_build() {
     printf '%s\n' "$built" | sed 's/^/  /'
   fi
 
-  # Reported as soon as the stage finishes: a cold build takes hours, and the
-  # run page should say what has been done so far.
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     {
-      echo "### ${SLICER_STAGE_NAME:-Build} (${SLICER_PLATFORM})"
-      echo ""
-      echo "Asked for: ${targets[*]}"
+      echo "### ${targets[*]} (${SLICER_PLATFORM})"
       echo ""
       if [ "$count" -gt 0 ]; then
         echo "Completed $count external projects:"
@@ -428,14 +406,6 @@ cmd_build() {
       echo ""
     } >> "$GITHUB_STEP_SUMMARY"
   fi
-
-  # Also kept in the tree, and carried by each stage's archive, so the job that
-  # builds Slicer can show every stage even when none ran in this run.
-  local record; record="$(bash_path "$SLICER_SUPERBUILD_DIR")/.ci-stages.tsv"
-  {
-    printf '%s\t%s\t%s\n' \
-      "${SLICER_STAGE_NAME:-Build}" "${targets[*]}" "$(printf '%s' "$built" | tr '\n' ' ')"
-  } >> "$record"
 
   if [ "${SLICER_COMPILER_LAUNCHER:-}" = "ccache" ] && command -v ccache >/dev/null 2>&1; then
     ccache --show-stats || true
@@ -1167,29 +1137,6 @@ cmd_extension_load() {
   [ $rc -eq 0 ] || die "the extension could not be loaded (exit $rc)"
 }
 
-# Write one summary for this platform covering every stage that has run, from
-# the record each stage leaves in the superbuild tree.
-cmd_stage_summary() {
-  local record; record="$(bash_path "$SLICER_SUPERBUILD_DIR")/.ci-stages.tsv"
-  [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
-  [ -f "$record" ] || return 0
-  {
-    echo "## Prerequisites (${SLICER_PLATFORM})"
-    echo ""
-    echo "| Stage | Asked for | Completed |"
-    echo "|---|---|---|"
-    while IFS=$'\t' read -r stage asked done_; do
-      [ -n "$stage" ] || continue
-      if [ -z "$done_" ]; then
-        done_="nothing new"
-      fi
-      echo "| ${stage} | ${asked} | ${done_} |"
-    done < "$record"
-    echo ""
-  } >> "$GITHUB_STEP_SUMMARY"
-  cat "$record"
-}
-
 # Print a disk usage report of the root directory.
 cmd_report() {
   local root; root="$(bash_path "$SLICER_ROOT")"
@@ -1210,7 +1157,7 @@ Commands:
   configure build package verify-package strip test
   pack unpack split restore-release manifest manifest-files manifest-get
   extension-dependencies extension-tree extension-configure extension-build
-  extension-test extension-package extension-load report stage-summary
+  extension-test extension-package extension-load report
 
 See the comment above each cmd_ function of this script.
 EOF

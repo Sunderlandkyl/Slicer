@@ -8,71 +8,41 @@ a custom application based on Slicer can build its installers the same way.
 
 ## How the build is organized
 
-The work is shared between four workflow files:
+The work is shared between three workflow files:
 
 | File | Role |
 |---|---|
 | `build.yml` | Slicer's `Build` workflow: decides what to build and publishes the nightly release. Each platform published is reported with a `reconcile-extensions` event, on which `extension-reconcile.yml` starts the extension builds |
-| `build-application.yml` | Reusable: computes the prerequisites key, builds Slicer (or a custom application) and packages and tests it |
-| `build-prerequisites.yml` | Reusable, called by the previous one only when a platform lacks its prerequisites: the five stages described below |
+| `build-application.yml` | Reusable: computes the prerequisites key, builds the prerequisites of the platforms that lack them, then builds Slicer (or a custom application) and packages and tests it |
 | `build-web.yml` | Reusable, called by `build-application.yml` when `web` is among the platforms: builds the WebAssembly runtime of [SlicerWeb](https://github.com/lassoan/SlicerWeb) in its toolchain container, split the same way into stored prerequisites and Slicer |
 
-Since the stages are a workflow of their own, a run that reuses the
-prerequisites shows a single skipped `Prerequisites` job.
-
 A full Slicer Superbuild takes several hours and produces a build tree of
-15 GB or more, which does not fit in a single GitHub-hosted runner job (limited
-to 6 hours). The workflow therefore splits the work in two phases while keeping
-the Superbuild structure intact:
+15 GB or more. Most of it is the external projects (VTK, ITK, CTK, Python,
+DCMTK, ...), which change rarely, so the work is split in two phases while
+keeping the Superbuild structure intact:
 
 | Phase | Target built | When it runs |
 |---|---|---|
 | Prerequisites | `Slicer-dependencies` | Only when the description of an external project changes |
 | Slicer | `Slicer` | On every run |
 
-A single job cannot build every external project within the 6 hour limit, so
-the first phase is itself chained across five jobs, each building a group of
-external projects in the tree produced by the previous one:
+The prerequisites of a platform are built by one job, which takes from an hour
+and a half (Linux) to three and a half (Windows, macOS on Intel). A
+GitHub-hosted job is stopped after 6 hours with nothing kept, so that job
+warns when it has run for more than four and a half: the build then has to be
+split, or made to start from the prerequisites of an earlier build. A run that
+reuses the prerequisites shows the job as skipped.
 
-| Stage | Builds |
-|---|---|
-| 1 | What VTK and ITK need: `python` (with zlib, bzip2, LZMA, LibFFI, sqlite, OpenSSL), `DCMTK` (with OpenJPEG), `tbb` |
-| 2 | `VTK` |
-| 3 | `ITK` |
-| 4 | `CTK` (with PythonQt and QtTesting) |
-| 5 | Everything else, through `Slicer-dependencies` |
-
-The split follows the critical path: stage 1 is the prerequisites of VTK and
-ITK, stages 2 to 4 are the chain itself, and stage 5 is whatever is left.
-
-```
-zlib -> OpenSSL -> python -> VTK -> ITK -> CTK
-                     DCMTK ---^-------^------^
-```
-
-`ITK` depends on `VTK` because Slicer enables `ITKVtkGlue`, so nothing on that
-chain can overlap.
-
-The rule matters when adding an external project. A project that VTK or ITK
-needs belongs in stage 1; a project that merely *uses* them belongs in stage 5
-and needs no change at all, since `Slicer-dependencies` covers everything.
-Naming a consumer in an early stage pulls its dependencies in with it, so each
-stage reports the projects it actually built, in its log and in the run
-summary.
-
-A stage names the targets it wants; those that are not part of the current
-configuration are skipped, using the list of external projects that
-`SuperBuild.cmake` writes to `SlicerDependencies.txt` in the build tree. Adding
-or removing an external project therefore does not require touching the
-workflow, only rebalancing the stages if one of them becomes too long.
+Adding or removing an external project does not require touching the
+workflow: `Slicer-dependencies` covers them all.
 
 The finished prerequisites are published as assets of the `nightly`
 pre-release, named after the key, for example
 `slicer-deps-linux-1a2b3c4d5e6f7890.tar.zst` (split into `.part-NN` files above
 the 2 GiB asset limit). A `<key>.parts` list, uploaded last, marks a set as
 complete. Every later run, on any branch, restores those assets instead of
-rebuilding: the five stages are skipped entirely and the job that builds Slicer
-downloads them directly. The key is computed from the content of `SuperBuild/`,
+rebuilding: the job that builds Slicer downloads them, whether they were
+there already or have just been built. The key is computed from the content of `SuperBuild/`,
 `SuperBuild.cmake`, `CMake/ExternalProject*.cmake`, the build options in
 `CMakeLists.txt` and the toolchain: changing the tag of an external project
 rebuilds the prerequisites, a new run alone never does.
@@ -187,8 +157,8 @@ options and its Slicer revision differ. That file pins the Slicer revision, so
 pin it by commit: a branch name is not followed, and moving the branch does not
 rebuild the prerequisites (bump `deps-key-version` to force it).
 
-The stages need a Slicer revision whose `SuperBuild.cmake` defines the
-`Slicer-dependencies` target and writes `SlicerDependencies.txt`.
+The prerequisites need a Slicer revision whose `SuperBuild.cmake` defines the
+`Slicer-dependencies` target.
 
 `ci-ref` has to be given because the actions and scripts the workflow runs are
 checked out separately: the local actions of a called workflow resolve against
