@@ -1,79 +1,34 @@
-// Starts the next step of extension-reconcile.yml when something an extension
-// is built from, or a build of one, has changed.
+// The relay of the webhook of the Slicer nightly GitHub App: a Cloudflare
+// Worker (wrangler.toml, which holds its configuration) that uses nothing but
+// fetch and WebCrypto. See
+// Docs/developer_guide/build_instructions/github_actions.md
 //
-// Two GitHub Apps, with nothing in common but this relay:
-//
-//   - The Slicer nightly app is installed in every extension repository that
-//     follows the nightly. Its webhook points here. This relay holds its
-//     webhook secret, to know that an event is from GitHub, and nothing else
-//     of it: its private key, which starts builds in the extension
-//     repositories, stays a secret of the Slicer repository's workflows.
-//   - The relay app is installed in the Slicer repository alone, with the
-//     Actions permission, and has no webhook. This relay holds its private
-//     key, and uses it for one thing: starting extension-reconcile.yml. What
-//     a leak of this key can do is start workflows of the Slicer repository
-//     that can be started by hand, with the inputs they define.
-//
-// An event starts the reconciliation when:
-//
+// It starts extension-reconcile.yml when what the reconciliation looks at may
+// have changed:
 //   - a platform of an extension has been built (workflow_job, completed, on
-//     the branch the extension is built from): the job publishes what it
-//     built itself, so what depends on the extension can be built for that
-//     platform, without waiting for the other platforms;
-//   - a build of an extension has ended (workflow_run, completed, of
-//     slicer-nightly-build.yml), whether a commit to the extension or the
-//     reconciliation started it, published or failed.
-//   A commit to an extension is not an event to act on: the extension builds
-//   and publishes it itself, and the two above follow.
+//     the branch the extension is built from);
+//   - a build of an extension has ended without success (workflow_run,
+//     completed, of slicer-nightly-build.yml);
 //   - the nightly app is installed in more repositories.
+// Many events are one reason to look: a run is started only when none is
+// running or waiting to start, as a run that is going sees the rest itself.
 //
-// Nothing is decided here beyond "something may have changed": the
-// reconciliation works out what to build from what is published. Many events
-// are one reason to look: a run is started only when none is running or
-// waiting to start. One that is running stays for as long as builds are
-// going, sees the end of each itself, and looks for commits to the
-// extensions and the builds they start; it needs no telling. What an event
-// arriving in its last seconds is about is followed by other events once it
-// has ended (a commit is followed by the end of its build), or is caught by
-// the backstop schedule. So a burst of builds is one run.
+// It starts it as a second app, the relay app, installed in the Slicer
+// repository alone with the Actions permission. So it holds the webhook secret
+// of the nightly app (WEBHOOK_SECRET), to know that an event is from GitHub,
+// and the private key of the relay app (RELAY_APP_PRIVATE_KEY, in PKCS#8),
+// which can only start workflows of the Slicer repository. The private key of
+// the nightly app, which starts builds in every extension repository, stays a
+// secret of the Slicer repository's workflows.
 //
 // It also hands the web packages of the extensions to the pages that install
-// them (GET /gh/<owner>/<repository>/<tag>/<file>.whl): a page cannot download
-// a file of a GitHub release, which answers without the header that lets
-// another site read it, so a site that offers extensions would have to carry
-// a copy of each. Only the wheels of the release RELEASE_TAG of the
-// repositories that build extensions (extension-repositories.json of the
-// Slicer release) are handed out, so that this is not a relay for anything
-// else. What a wheel contains is not looked at here: the page checks it
-// against the hash the extensions catalog gives. This part needs none of the
-// secrets.
+// them (GET /gh/<owner>/<repository>/<tag>/<file>.whl), as a page cannot read
+// a file of a GitHub release. Only the wheels of the release RELEASE_TAG of
+// the repositories listed in extension-repositories.json are handed out, and
+// the page checks them against the hash the extensions catalog gives.
 //
-// And it starts the nightly build of Slicer on time (the cron trigger of
-// wrangler.toml): GitHub starts the scheduled runs of a workflow late, by hours
-// at times. It starts NIGHTLY_WORKFLOW with the nightly input, as the relay
-// app, which makes the run behave as the scheduled one; the schedule of the
-// workflow stays, for when this is not there, and finds nothing left to do.
-//
-// A Cloudflare Worker (wrangler.toml); it uses nothing but fetch and WebCrypto,
-// so it runs on any similar runtime. Configuration:
-//   secrets  WEBHOOK_SECRET         the webhook secret of the Slicer nightly app
-//            RELAY_APP_PRIVATE_KEY  the private key of the relay app, in PKCS#8:
-//                                   openssl pkcs8 -topk8 -nocrypt -in relay.pem
-//   vars     RELAY_APP_ID           the ID of the relay app
-//            SLICER_REPOSITORY      e.g. Slicer/Slicer, where the relay app is
-//                                   installed
-//            SLICER_REF             branch of extension-reconcile.yml, e.g. main
-//            REFS                   optional, JSON {"owner/repository": "branch"}:
-//                                   the branches built instead of the default
-//                                   one, as SLICER_EXTENSION_REFS of the Slicer
-//                                   repository
-//            NIGHTLY_WORKFLOW       optional, e.g. build.yml: the workflow the
-//                                   cron trigger starts, on SLICER_REF; none
-//                                   when empty
-//            RELEASE_TAG            optional (nightly): the release of the Slicer
-//                                   repository that lists the extension
-//                                   repositories, and of each of those, whose
-//                                   wheels are handed out
+// And it starts the nightly build of Slicer on time (the cron trigger starts
+// NIGHTLY_WORKFLOW with its nightly input): GitHub starts scheduled runs late.
 
 const API = "https://api.github.com";
 const WORKFLOW = "extension-reconcile.yml";
@@ -111,7 +66,6 @@ export default {
     } catch {
       return new Response("not JSON\n", { status: 400 });
     }
-    // Said plainly, rather than as whatever fails first for lack of it.
     const missing = ["RELAY_APP_ID", "RELAY_APP_PRIVATE_KEY", "SLICER_REPOSITORY", "SLICER_REF"].filter((k) => !env[k]);
     if (missing.length) {
       return new Response(`not configured: ${missing.join(", ")} missing\n`, { status: 500 });
@@ -128,8 +82,7 @@ export default {
       return new Response(`${reason}: ${error}\n`, { status: 500 });
     }
     console.log(`${reason}: ${status}`);
-    // Not 2xx when the start failed, so that GitHub lists the delivery as
-    // failed, from where it can be delivered again.
+    // Not 2xx when the start failed: GitHub then lists the delivery as failed.
     if (status === 208) {
       return new Response(`${reason}: a run is going already\n`, { status: 200 });
     }
@@ -147,8 +100,7 @@ export default {
     if (missing.length) {
       throw new Error(`not configured: ${missing.join(", ")} missing`);
     }
-    // Not held back by a run that is going: the workflow lets one build of a
-    // branch run at a time, and a nightly that finds nothing new stops.
+    // Not held back by a run that is going: a nightly with nothing new stops.
     const status = await start(env, env.NIGHTLY_WORKFLOW, { nightly: "true" }, false);
     console.log(`nightly ${env.NIGHTLY_WORKFLOW} on ${env.SLICER_REF}: HTTP ${status}`);
     if (status !== 204 && status !== 200) {
@@ -224,7 +176,9 @@ async function extensionRepositories(slicer, release) {
   return registry.repositories;
 }
 
-// The branch an extension repository is built from.
+// The branch an extension repository is built from: the one REFS names for it
+// ({"owner/repository": "branch"}, as SLICER_EXTENSION_REFS of the Slicer
+// repository), or its default branch.
 function branchOf(repository, env) {
   let refs = {};
   try {
@@ -235,9 +189,8 @@ function branchOf(repository, env) {
   return refs[repository.full_name] || repository.default_branch;
 }
 
-// Why the reconciliation should run; null when the event changes nothing it
-// looks at. Kept short, and of letters GitHub chose: it becomes the name of
-// the run.
+// Why the reconciliation should run, which becomes the name of the run; null
+// when the event changes nothing it looks at.
 function reasonOf(event, payload, env) {
   const repository = payload.repository || {};
   if (repository.full_name && repository.full_name === env.SLICER_REPOSITORY) {
@@ -245,8 +198,6 @@ function reasonOf(event, payload, env) {
   }
   if (event === "workflow_job") {
     const job = payload.workflow_job || {};
-    // A platform's job of the branch the extension is built from, which has
-    // published what it built (or failed to): "build / linux", "build / web".
     if (payload.action !== "completed" || job.head_branch !== branchOf(repository, env)
         || !PLATFORM_JOB.test(String(job.name)) || !["success", "failure"].includes(job.conclusion)) {
       return null;
@@ -255,15 +206,13 @@ function reasonOf(event, payload, env) {
   }
   if (event === "workflow_run") {
     const run = payload.workflow_run || {};
-    // Only the builds that publish: of the branch, pushed or started by the
-    // reconciliation. Not those of pull requests or other branches.
+    // Only the builds that publish: not those of pull requests or other branches.
     if (payload.action !== "completed" || !String(run.path).endsWith("/" + BUILD_WORKFLOW)
         || run.head_branch !== branchOf(repository, env) || !["push", "workflow_dispatch"].includes(run.event)) {
       return null;
     }
-    // A build that succeeded has been told of already, platform by platform,
-    // by its jobs: its end adds nothing, and would start the same step twice.
-    // One that did not may have ended without any platform's job saying so.
+    // The jobs of a build that succeeded have told of it already; one that
+    // did not may have ended without any platform's job saying so.
     if (run.conclusion === "success") {
       return null;
     }

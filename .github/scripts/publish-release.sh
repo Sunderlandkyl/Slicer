@@ -1,27 +1,21 @@
 #!/usr/bin/env bash
 #
-# Publish what one platform built to a release, as soon as it is built, without
-# waiting for the other platforms and without touching what is theirs.
+# Publish what one platform built to a release, without waiting for the other
+# platforms and without touching what is theirs.
 #
 #   publish-release.sh <tag> <title> <stale regex> <manifest> <file>...
 #
-# <manifest> says what the files were built from: it is what the builds that
-# follow (the extensions) read to know which commit they build against. It is
-# removed first and uploaded last, so that it never describes files that are
-# not all there: while the files are being replaced there is no manifest, and
-# a build that starts then finds nothing to build against rather than a mix.
+# <manifest> is what the builds that follow (the extensions) read to know which
+# commit they build against. It is removed first and uploaded last, so that it
+# never describes files that are not all there.
 #
-# <stale regex> matches the names of the assets that are this platform's: the
-# ones among them that this run did not upload (yesterday's package, whose name
-# carries the date; the parts of an archive that is no longer split) are
-# removed.
+# <stale regex> matches the asset names of this platform: those this run did
+# not upload (a package whose name carries an earlier date, the parts of an
+# archive that is no longer split) are removed.
 #
-# RELEASE_NOTES, when set, is the text the notes of the release end with. They
-# are then written again here, each time: what the release holds of each
-# platform (its manifests), followed by that text. They are worked out from
-# the release rather than edited, so platforms publishing at the same time
-# cannot damage them: at worst a line is of the previous build until the next
-# platform publishes.
+# RELEASE_NOTES, when set, is the text the release notes end with. The notes
+# are written again each time from the manifests of the release rather than
+# edited, so platforms publishing at the same time cannot damage them.
 #
 # Uses gh and jq, with GH_TOKEN and GH_REPO.
 set -euo pipefail

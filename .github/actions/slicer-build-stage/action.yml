@@ -6,10 +6,7 @@ description: >-
 
 inputs:
   target:
-    description: >-
-      Space separated list of superbuild targets to build (VTK, ITK,
-      Slicer-dependencies, Slicer, ...). Targets that are not part of the
-      current configuration are skipped.
+    description: "Space separated superbuild targets to build (VTK, ITK, Slicer-dependencies, Slicer, ...); those not in the current configuration are skipped"
     required: true
   restore-artifact:
     description: "Workflow artifact (containing <archive-name>.tar.zst) to restore before building"
@@ -19,9 +16,8 @@ inputs:
     default: "stage"
   strip:
     description: >-
-      Options passed to the 'strip' command of the helper script, for example
-      "--objects --vcs". Empty, the default, keeps the tree buildable: a
-      stripped tree recompiles everything the next time it is built.
+      Options of the helper script's 'strip' command, e.g. "--objects --vcs".
+      Empty keeps the tree buildable: a stripped tree recompiles everything.
     default: ""
   archive-name:
     description: "Name of the archive to create (without extension); empty to skip"
@@ -29,9 +25,8 @@ inputs:
   archive-paths:
     description: >-
       Space separated paths (relative to the root) to archive. Include "Slicer"
-      to carry the source tree over to the next stage: checking it out again
-      gives every file a newer timestamp, which makes CMake re-run the steps of
-      every external project.
+      to carry the source tree over to the next stage: a new checkout would
+      make CMake re-run the steps of every external project.
     default: "SR"
   archive-excludes:
     description: "Space separated tar exclude patterns"
@@ -62,9 +57,8 @@ runs:
           echo "Copying $GITHUB_WORKSPACE -> $src"
           cp -a "$GITHUB_WORKSPACE/." "$src/"
 
-          # The compiler cache action keeps its cache in the workspace, so a
-          # plain copy drags a few hundred megabytes of it into the source
-          # tree, where it is then archived and published.
+          # The compiler cache action keeps its cache in the workspace: it
+          # must not be archived and published with the source tree.
           rm -rf "$src/.ccache" "$src/.cache"
           rm -f "$src"/*.log
           # The checkout of the CI scripts used by build-application.yml is
@@ -72,16 +66,10 @@ runs:
           rm -rf "$src/.slicer-ci"
 
           # Give every source file a timestamp older than any stamp in a
-          # superbuild tree restored from the prerequisites. Checking the
-          # sources out gives them the time of the checkout, which makes CMake
-          # re-run the configure and build step of every external project,
-          # because the command generating their description files depends on a
-          # script in the source tree.
-          #
-          # Suppressing that is not a shortcut: within one prerequisites key
-          # the external projects cannot depend on Slicer's sources. Anything
-          # that would change them, an External_<project>.cmake file or a
-          # configure option, changes the key and rebuilds them from scratch.
+          # restored superbuild tree: the time of the checkout would make CMake
+          # re-run the configure and build steps of every external project.
+          # Nothing is missed: whatever changes an external project changes
+          # the prerequisites key, and rebuilds them from scratch.
           echo "Normalizing the timestamps of the source tree"
           find "$src" -path "$src/.git" -prune -o -print0 \
             | xargs -0 touch -h -t 200001010000 2>/dev/null \

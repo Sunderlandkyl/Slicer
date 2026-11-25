@@ -22,15 +22,11 @@ inputs:
     description: "Maximum size of the compiler cache"
     default: "2G"
   free-disk-space:
-    description: >-
-      Remove unneeded pre-installed tooling on Linux runners. Off by default:
-      a GitHub-hosted runner has around 85 GB free, which is enough for a
-      Slicer build tree.
+    description: "Remove unneeded pre-installed tooling on Linux runners (the 85 GB or so they have free is enough for a Slicer build tree)"
     default: "false"
   install-qt:
     description: "Install Qt"
     default: "true"
-  # ---- Restore options -------------------------------------------------------
   repository:
     description: "Repository hosting the Slicer releases (owner/name)"
     default: ${{ github.repository }}
@@ -116,8 +112,6 @@ runs:
       with:
         cmake-version: ${{ inputs.cmake-version }}
 
-    # ---- Restore: download manifests/archives -------------------------------
-
     - name: Download the build tree (release)
       if: inputs.build-source == 'release'
       shell: bash
@@ -159,8 +153,6 @@ runs:
         echo "qt-version=$qt" >> "$GITHUB_OUTPUT"
         echo "SLICER_QT_VERSION=$qt" >> "$GITHUB_ENV"
 
-    # ---- Toolchain -------------------------------------------------------------
-
     - name: Resolve Qt install options
       id: qt-options
       shell: bash
@@ -174,8 +166,7 @@ runs:
             # Qt 6: Core5Compat, StateMachine, WebEngine and Multimedia are add-ons.
             modules="qtwebengine qtwebchannel qtpositioning qt5compat qtmultimedia qtscxml qtshadertools qtimageformats"
           else
-            # Qt 5: WebEngine is the only add-on Slicer needs; the other
-            # required modules are part of the base installation.
+            # Qt 5: WebEngine is the only add-on Slicer needs.
             modules="qtwebengine"
           fi
         fi
@@ -199,8 +190,7 @@ runs:
     # aqtinstall downloads each archive from a mirror picked by download.qt.io
     # and, on a timeout, tries one random fallback before giving up. Give slow
     # mirrors more time, retry connection errors, skip a mirror known to fail,
-    # and fall back to a fixed list of reliable ones. The PlusLib builds use
-    # the same configuration.
+    # and fall back to a fixed list of reliable ones.
     - name: Configure aqtinstall
       if: inputs.install-qt == 'true'
       shell: bash
@@ -223,14 +213,10 @@ runs:
         EOF
         echo "AQT_CONFIG=$RUNNER_TEMP/aqt.ini" >> "$GITHUB_ENV"
 
-    # The Qt archives come from a pool of third-party mirrors, one of which
-    # occasionally refuses connections. Qt is therefore kept in the GitHub
-    # Actions cache of the repository (private to its workflows, keyed on the
-    # version, architecture and modules), so that the mirrors are only used
-    # the first time; the action saves the cache as soon as Qt is installed,
-    # so a job that later fails its tests still saves it. When a download is
-    # needed and fails, try a second time, when aqtinstall picks a mirror
-    # again, rather than lose a stage to it.
+    # The Qt mirrors occasionally refuse connections, so Qt is kept in the
+    # GitHub Actions cache; the action saves it as soon as Qt is installed, so
+    # a job that fails later still saves it. When a download is needed and
+    # fails, a second attempt lets aqtinstall pick a mirror again.
     - name: Install Qt
       if: inputs.install-qt == 'true'
       id: install-qt
@@ -260,9 +246,6 @@ runs:
         modules: ${{ steps.qt-options.outputs.modules }}
         cache: true
         cache-key-prefix: slicer-qt
-        # The action needs a Python to run aqtinstall. Letting it provision one
-        # is required on macOS, whose system Python refuses to install into an
-        # externally managed environment.
         setup-python: true
 
     - name: Locate Qt
@@ -278,15 +261,13 @@ runs:
         if [ "${{ inputs.install-qt }}" = "true" ] && [ ! -d "$qt_dir/lib/cmake/Qt${major}" ]; then
           echo "::error::Qt not found under $SLICER_ROOT/Qt (QT_ROOT_DIR='$QT_ROOT_DIR')"; exit 1
         fi
-        # Normalize to forward slashes for CMake
         qt_dir="${qt_dir//\\//}"
         echo "qt-dir=$qt_dir" >> "$GITHUB_OUTPUT"
         echo "SLICER_QT_DIR=$qt_dir" >> "$GITHUB_ENV"
         echo "Qt: $qt_dir"
 
-    # ccache rather than sccache: sccache's GitHub Actions backend writes one
-    # cache entry per compiled object, which leaves tens of thousands of them
-    # in the repository, while this stores the whole cache as a single entry.
+    # ccache rather than sccache, whose GitHub Actions backend leaves one cache
+    # entry per compiled object in the repository.
     - name: Set up the compiler cache
       if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
@@ -298,8 +279,6 @@ runs:
       if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       shell: bash
       run: echo "SLICER_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
-
-    # ---- Restore: extract -------------------------------------------------------
 
     - name: Unpack the downloaded artifact
       if: inputs.build-source == 'artifact'

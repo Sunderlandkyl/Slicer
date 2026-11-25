@@ -1,51 +1,23 @@
 #!/usr/bin/env python3
 """Bring the extensions up to date with the Slicer nightly, in dependency order.
 
-Run by extension-reconcile.yml. It keeps no memory of events: each pass works
-out what to do from what is published, so that running it late, twice, or after
-a failure converges on the same state.
+Run by extension-reconcile.yml; what it does is described in
+Docs/developer_guide/build_instructions/github_actions.md. It keeps no memory
+of events: each pass works out what to do from what is published, so that
+running it late, twice, or after a failure converges on the same state. For
+each platform of the nightly release, it starts the build of every extension
+that is not current (built against that Slicer commit, from the head of its
+branch, against the packages its dependencies publish now) once the extensions
+it depends on are, and publishes extensions-catalog.json when that changes.
 
-  1. The target: the Slicer commit of each platform of the nightly release.
-  2. The extension repositories: those the Slicer nightly GitHub App is
-     installed in that have NIGHTLY_WORKFLOW; what each published for each
-     platform (extension-<platform>.json of its nightly release), the head of
-     the branch it is built from, and what it depends on (EXTENSION_DEPENDS).
-  3. An extension is current on a platform when its package is built against
-     the target Slicer commit, from that head, and against the very packages
-     the extensions it depends on publish now (built_with), themselves current.
-  4. Each platform is a chain of its own. The build of an extension for a
-     platform is started (its workflow, with the platform as `platforms`
-     input) as soon as it is not current there and the extensions it depends
-     on have been dealt with there, whatever the other platforms are doing;
-     when it finishes, what it published is read, and what depended on it is
-     started. A build is started once for the same Slicer, head and
-     dependencies: one that fails is not started again until one of them
-     changes, and what depends on it is not built against anything else.
-  5. The catalog (extensions-catalog.json of the Slicer nightly release): per
-     platform, the extensions that are current, with their package and its
-     hash; the others, with the reason. One file, replaced at once, each time a
-     build changes what is current: what an Extensions Manager reads is always
-     a consistent set.
-  A pass stays for as long as builds are going (WAIT=true, the default):
-     it looks at them every half minute, starts what depended on them, and
-     ends when nothing is running and nothing is left to start. One pass thus
-     covers a whole chain, however many builds end in it. The relay of the
-     app's webhook (.github/extension-webhook) wakes a pass when a commit to
-     an extension, or a build, changes something while none is waiting; while
-     one is going it keeps itself informed, of the commits and of the builds
-     the extensions start themselves. Near the time limit of a job it starts
-     its successor, which takes up the builds still going. With WAIT=false a
-     run is a single look: it starts what can be started and stops.
-  6. The sites that carry the web packages (NIGHTLY_WEB_WORKFLOW) are started
-     each time the web part of the catalog changed: an extension is on a site
-     as soon as it is built, without waiting for the ones that depend on it.
-
-Environment: GH_TOKEN (of the workflow: the release of this repository, and
-starting itself), APP_ID and APP_PRIVATE_KEY (the app: starting the builds),
-GITHUB_REPOSITORY, RELEASE_TAG, NIGHTLY_WORKFLOW, NIGHTLY_WEB_WORKFLOW,
-REFS (JSON {repository: branch}, to build from another branch than the default
-one), RETRY (true: start again what failed for the same inputs), START_SITES,
-FORCE_SITES, DEADLINE_MINUTES, SELF_WORKFLOW and SELF_REF.
+Environment: GH_TOKEN and GITHUB_REPOSITORY (the release of this repository,
+and starting itself), APP_ID and APP_PRIVATE_KEY (the app: starting the
+builds), RELEASE_TAG, NIGHTLY_WORKFLOW, NIGHTLY_WEB_WORKFLOW, REFS (JSON
+{repository: branch}, to build from another branch than the default one),
+TRUSTED_FORKS, EXTENSIONS_INDEX, RETRY (true: start again what failed for the
+same inputs), WAIT (true: stay for as long as builds are going), LOOK_SECONDS,
+DEADLINE_MINUTES, SELF_WORKFLOW and SELF_REF (the run that carries on),
+START_SITES, FORCE_SITES and REASON (what started the run, for its summary).
 """
 import base64
 import datetime
@@ -74,10 +46,8 @@ TAG = env("RELEASE_TAG", "nightly")
 WORKFLOW = env("NIGHTLY_WORKFLOW", "slicer-nightly-build.yml")
 WEB_WORKFLOW = env("NIGHTLY_WEB_WORKFLOW", "slicer-nightly-web.yml")
 RETRY = env("RETRY") == "true"
-# true: wait for the builds, and start what depended on them, in one pass.
-# false: one step, which starts what can be started and stops; the end of each
-# build starts the next step (the relay of the app's webhook,
-# .github/extension-webhook), which has to be there.
+# false: one step, which starts what can be started and stops; the relay of the
+# app's webhook (.github/extension-webhook) then has to start the next one.
 WAIT = env("WAIT") == "true"
 DEADLINE = STARTED + 60 * float(env("DEADLINE_MINUTES", "300"))
 NOT_PUBLISHED = "not published for this platform"
@@ -88,14 +58,10 @@ LOOK_SECONDS = float(env("LOOK_SECONDS", "90"))
 # commit and dependencies, when it fails.
 MAX_TRIES = 2
 REFS = json.loads(env("REFS") or "{}")
-# Where the reviewed extensions are described: the Slicer ExtensionsIndex, one
-# <Name>.json each, which names the repository of the extension (scm_url) and
-# its tier (1 to 5). An extension that is not there, or that another
-# repository builds than the one named there, is of tier 0: not reviewed.
+# One <Name>.json per reviewed extension, naming its repository (scm_url) and
+# its tier (1 to 5). Any other extension is of tier 0: not reviewed.
 EXTENSIONS_INDEX = env("EXTENSIONS_INDEX") or "https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main"
-# {"fork": "repository"}: a fork that stands for the repository it is a fork
-# of, for its tier. For the forks an organization builds its extensions from;
-# nothing else makes a fork as trusted as what it copies.
+# {"fork": "repository"}: a fork that has the tier of the repository it copies.
 TRUSTED_FORKS = {k.lower(): v for k, v in json.loads(env("TRUSTED_FORKS") or "{}").items()}
 
 
@@ -181,11 +147,8 @@ def public_json(url):
 def release_json(repository, *patterns):
     """The JSON files of the release TAG of a repository that match the patterns: {name: document}.
 
-    Read through the API (gh), which serves the asset that is there now. The
-    public download address of an asset can go on serving, for a while, the
-    file it held before it was replaced; a step that read the catalog of the
-    step before that way took a build that step had started for one it knew
-    nothing of."""
+    Read through the API (gh): the public download address of an asset can go
+    on serving, for a while, the file it held before it was replaced."""
     folder = tempfile.mkdtemp()
     arguments = ["release", "download", TAG, "-R", repository, "-D", folder, "--clobber"]
     for pattern in patterns:
@@ -197,9 +160,8 @@ def release_json(repository, *patterns):
             break
         time.sleep(5 * (attempt + 1))
     else:
-        # Not "there is no such file": it could not be read. Nothing is
-        # decided, and nothing published, on what was not read: the pass
-        # stops, and the next one starts from what is published.
+        # It could not be read, which is not "there is none": the pass stops
+        # rather than decide on what it did not read.
         raise RuntimeError(f"could not read {', '.join(patterns)} of {repository}: {result.stderr.strip()[:300]}")
     for name in os.listdir(folder):
         try:
@@ -209,8 +171,6 @@ def release_json(repository, *patterns):
             pass
     return found
 
-
-# ------------------------------------------------------------------- the app
 
 class App:
     """The Slicer nightly GitHub App: the repositories it is installed in, and their tokens."""
@@ -286,8 +246,6 @@ class App:
                 page += 1
         return found
 
-
-# -------------------------------------------------------------- an extension
 
 class Extension:
     def __init__(self, repository, ref):
@@ -434,10 +392,8 @@ class State:
         if attempt.get("conclusion") == "running":
             return False
         # A build that succeeded and left it as it was (the extension does not
-        # build that platform) says all there is to say. One that failed is
-        # tried once more: runners, downloads and tests fail for no reason of
-        # the extension's often enough, and nothing else would try again
-        # before Slicer, the extension or what it depends on changes.
+        # build that platform) is settled. One that failed is tried once more:
+        # runners, downloads and tests fail for reasons that are not its own.
         return attempt.get("conclusion") == "success" or attempt.get("tries", 1) >= MAX_TRIES
 
     def attempt(self, extension, platform):
@@ -452,8 +408,6 @@ class State:
         return (not extension.note and not self.settled(extension, platform)
                 and all(not self.reason(d, platform) for d in self.registered(extension)))
 
-
-# --------------------------------------------------------------------- runs
 
 def runs_in_progress(extension, token):
     """The builds of the branch that have not ended, whatever their state: queued, waiting for
@@ -530,8 +484,6 @@ def dispatch(extension, app, platforms, claimed):
     return None
 
 
-# ------------------------------------------------------------------ catalog
-
 def gh(*args, check=True):
     return subprocess.run(["gh", *args], check=check, capture_output=True, text=True)
 
@@ -558,8 +510,7 @@ def catalog_of(state):
             }
             if package.get("icon"):
                 entry["icon"] = f"{base}/{package['icon']}"
-            # For Slicer's Extensions Manager: the Slicer revision the package
-            # names itself after, and what the extension says of itself.
+            # For Slicer's Extensions Manager.
             if package.get("slicer_revision"):
                 entry["slicer_revision"] = package["slicer_revision"]
             if package.get("date"):
@@ -638,7 +589,6 @@ def main():
         return
     log("Slicer: " + ", ".join(f"{p} {c[:10]}" for p, c in targets.items()))
 
-    # The repositories: extensions, and sites.
     extensions, sites = [], []
     for repository, branch in sorted(app.repositories().items()):
         token = app.token(repository)
@@ -673,14 +623,12 @@ def main():
     state = State(targets, extensions)
     # What an earlier pass started, for the same inputs, is not started again.
     running = {}    # run id: (extension, platforms, url)
-    # What this pass did, for its summary: what the name of a run cannot say.
+    # What this pass did, for its summary.
     did = {"started": [], "finished": [], "left": [], "site": []}
     for extension in extensions:
         for platform, attempt in ((earlier.get(extension.name) or {}).get("attempts") or {}).items():
             if not RETRY and platform in targets and attempt.get("key") == state.key(extension, platform):
-                # What an earlier step started and left running is taken up
-                # as if this one had started it: the platforms it builds, and
-                # those only, wait for it, as does what depends on them there.
+                # What an earlier step left running is taken up as if started here.
                 if attempt.get("conclusion") == "not started":
                     continue  # never started: started again
                 if attempt.get("conclusion") == "running":
@@ -693,9 +641,8 @@ def main():
                     # that publishes was told from one that does not.
                     attempt = dict(attempt, conclusion="success")
                 extension.attempts[platform] = attempt
-    # A commit to an extension is built by the extension itself. When that
-    # build failed for a platform, it is the first try of that platform: one
-    # more follows, not two.
+    # The build of a commit, which the extension starts itself, is the first
+    # try of a platform it failed for: one more follows, not two.
     for extension in extensions:
         waiting = [p for p in targets if state.reason(extension, p) and p not in extension.attempts]
         if waiting and extension.head:
@@ -703,12 +650,9 @@ def main():
                 if platform in waiting:
                     extension.attempts[platform] = dict(state.attempt(extension, platform), conclusion="failure", run=run)
                     log(f"{extension.name} ({platform}): the build of its commit failed ({run}); one more try")
-    # Builds that are going otherwise (of a commit to the extension, which it
-    # builds and publishes itself; started by hand; or by a pass that was
-    # cancelled) are left to finish: nothing is started meanwhile for the
-    # platforms they build, which their jobs say. The other platforms of the
-    # extension are not held back, and what depends on it is started platform
-    # by platform, as each is published.
+    # Builds not started here (of a commit to the extension, by hand, or by a
+    # pass that was cancelled) are left to finish: nothing is started meanwhile
+    # for the platforms they build, which their jobs say.
     foreign = {}    # repository: {run id: the platforms it builds, None while not known}
 
     def held(extension, platform):
@@ -740,22 +684,17 @@ def main():
 
     started, again, checked_targets = 0, False, time.time()
     unstarted = {}  # (repository, platform): how many times its build could not be started
-    # What is published may already differ from the catalog (a commit, a build
-    # that ended since the last pass): the catalog is made at once, not only
-    # when a build of this pass ends.
+    # What is published may already differ from the catalog: it is made at once.
     first = True
     while True:
         changed, first = first, False
-        # The builds that finished: what they published is read again.
         for run_id, (extension, platforms, url) in list(running.items()):
             status, body = request(f"{API}/repos/{extension.repository}/actions/runs/{run_id}", app.token(extension.repository))
             if status == 200 and body["status"] == "completed":
                 extension.read_published(platforms)
                 for platform in platforms:
-                    # What counts is whether the platform was built and
-                    # published, from this commit and against this Slicer. A
-                    # run that did that and then failed for its tests is not a
-                    # build that failed: the tests are said with the package.
+                    # A run that published the platform and then failed for
+                    # its tests is not a build that failed.
                     package = extension.package(platform) or {}
                     built = (package.get("slicer_commit") == targets.get(platform)
                              and (not extension.head or package.get("revision") == extension.head))
@@ -771,8 +710,7 @@ def main():
                 changed = True
         for extension in extensions:
             if foreign.get(extension.repository):
-                # Such a build publishes its platforms one by one: what it has
-                # published so far is read, for what depends on it there.
+                # Such a build publishes its platforms one by one.
                 before = json.dumps(extension.packages, sort_keys=True)
                 extension.read_published(targets)
                 changed = changed or json.dumps(extension.packages, sort_keys=True) != before
@@ -785,12 +723,8 @@ def main():
                     del foreign[extension.repository][run_id]
                     extension.read_published(targets)
                     changed = True
-        # A nightly published meanwhile, or one more platform of it, changes
-        # the target; a commit to an extension changes what it is built from,
-        # and so what depends on it. A build already going for the old commit
-        # finishes, and is built again after; what depends on it waits.
-        # A pass stays for as long as builds are going, and nothing wakes
-        # another one meanwhile: it keeps itself informed of what would have.
+        # Nothing wakes another pass while this one is going: it looks itself
+        # for commits to the extensions, the builds they start, and a new Slicer.
         if time.time() - checked_targets > LOOK_SECONDS:
             checked_targets = time.time()
             for extension in extensions:
@@ -799,8 +733,6 @@ def main():
                 if extension.head != head:
                     log(f"{extension.name}: new commit {extension.head[:10]} on {extension.ref}")
                     changed = True
-                # The build of that commit, which the extension starts itself,
-                # or one started by hand: left to finish, and read as it goes.
                 known = set(running) | set(foreign.get(extension.repository, {}))
                 going = [r for r in runs_in_progress(extension, app.token(extension.repository)) if r["id"] not in known]
                 if going:
@@ -851,9 +783,8 @@ def main():
                     extension.attempts[platform].update(run=run[1], conclusion="running")
                     unstarted.pop((extension.repository, platform), None)
             else:
-                # Not started, so not dealt with: nothing will ever say that
-                # it ended. It is tried again, a few times in this pass, and
-                # by the next pass, whatever starts it.
+                # Not started, so nothing will say that it ended: it is tried
+                # again, a few times in this pass, and by the next pass.
                 for platform in platforms:
                     # As it was before this start, which did not happen.
                     before = dict(extension.attempts.pop(platform, None) or {})
@@ -873,14 +804,12 @@ def main():
             if not same(catalog, published):
                 upload("extensions-catalog.json", catalog)
                 published = catalog
-            # The sites show each web package as soon as it is offered.
             start_sites(catalog)
         if not running and not todo and not any(foreign.values()):
             break
         if not WAIT and not retry_soon:
-            # What was started tells, when it ends, that there is a next step.
-            # A build that could not be started tells nothing: the step stays
-            # to try it again, a few times.
+            # A build that could not be started will not end, and so will not
+            # start the next step: this one stays to try it again.
             break
         if time.time() > DEADLINE + 600:
             again = True
@@ -932,7 +861,6 @@ def main():
     print("\n".join(lines))
 
     if again:
-        # Near the time limit of a job: another run carries on from what is published.
         log("Out of time: starting another run to carry on.")
         status, body = request(f"{API}/repos/{SLICER}/actions/workflows/{env('SELF_WORKFLOW')}/dispatches",
                                env("GH_TOKEN"), "POST", {"ref": env("SELF_REF")})

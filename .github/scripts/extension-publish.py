@@ -3,18 +3,14 @@
 
   extension-publish.py <folder>
 
-<folder> holds slicer-package-<platform>.json, which describes the package,
-and the files it names (the package, the icon, the build tree). They go to the
-release TAG of the repository (GH_REPO), with extension-<platform>.json, which
-says what the package was built from and against.
+<folder> holds slicer-package-<platform>.json and the files it names (the
+package, the icon, the build tree). They go to the release TAG of GH_REPO,
+with extension-<platform>.json, which says what the package was built from and
+against. Each platform job publishes as soon as it has built; one description
+per platform, so that the jobs do not overwrite each other.
 
-It is run by the job that built the platform, as soon as it is built: a
-platform does not wait for the others, and the builds that depend on it are
-started as soon as it is there. One description per platform, so that the
-jobs do not overwrite each other.
-
-Environment: GH_TOKEN, GH_REPO, TAG, NAME (the extension), REF (the branch),
-GITHUB_REPOSITORY, GITHUB_SHA.
+Environment: GH_TOKEN, GH_REPO, TAG, NAME (the extension), GITHUB_REPOSITORY,
+GITHUB_SHA, GITHUB_STEP_SUMMARY.
 """
 import datetime, glob, hashlib, json, os, subprocess, sys, tempfile, time
 
@@ -29,8 +25,7 @@ def newer_is_published(old):
     """Whether the package a platform has is of a commit after this one.
 
     Not whether the branch has moved on since this build started: what it built
-    is still newer than a package of an earlier commit, or than none, and is
-    published; the build of the head replaces it in turn."""
+    is still published, and the build of the head replaces it in turn."""
     revision = (old or {}).get("revision")
     if not revision or revision == commit:
         return False
@@ -63,8 +58,8 @@ if gh("release", "view", tag, check=False).returncode != 0:
         if gh("release", "view", tag, check=False).returncode == 0:
             break
         time.sleep(5)
-# What the release holds: the description of each platform. Only
-# those of the platforms this run built are written.
+# The description of each platform the release holds. Only those of the
+# platforms this run built are written.
 release = tempfile.mkdtemp()
 gh("release", "download", tag, "-p", "extension-*.json", "-D", release, "--clobber", check=False)
 
@@ -103,10 +98,8 @@ for description in descriptions:
               f"({str(old.get('revision'))[:10]}, this is {commit[:10]}); not published")
         continue
     done.append(platform)
-    # The package the platform had. Built against another Slicer, it
-    # is kept as the previous one, for the Slicer builds that are
-    # still offered it, in place of the one before it; without its
-    # build tree, which nothing is built against any more.
+    # A package built against another Slicer is kept as the previous one, for
+    # the Slicer builds still offered it, without its build tree.
     if old and old.get("slicer_commit") != entry["slicer_commit"]:
         superseded = files_of(previous) | set((old.get("build_tree") or {}).get("files", []))
         previous = {k: v for k, v in old.items() if k != "build_tree"}
@@ -131,8 +124,7 @@ for description in descriptions:
         print(f"Removing the superseded asset {stale}")
         gh("release", "delete-asset", tag, stale, "--yes", check=False)
 
-# The description of all the platforms in one file, of before there
-# was one per platform.
+# The single file that described all the platforms, no longer written.
 gh("release", "delete-asset", tag, "extension.json", "--yes", check=False)
 
 # The notes say what each package was built against.

@@ -1,23 +1,10 @@
 name: "Set up a Slicer build"
 description: >-
-  Restore a Slicer build tree published by the Slicer build workflow, so that a
-  Slicer extension can be configured, built and tested against it in GitHub
-  Actions. The `slicer-dir` output is what to pass as `-DSlicer_DIR`.
-
-  Usage from an extension repository:
-
-    - uses: Slicer/Slicer/.github/actions/setup-slicer-build@main
-      id: slicer
-    - run: |
-        cmake -S . -B ../build -G Ninja \
-          -DSlicer_DIR:PATH=<the slicer-dir output> \
-          -DCMAKE_BUILD_TYPE:STRING=Release
-        cmake --build ../build --parallel
-
-  The build tree is restored at the fixed absolute path it was produced at
-  (`/home/runner/S`, `/Users/runner/S` or `C:/S`), because the CMake package
-  configuration files exported by Slicer embed absolute paths. Nothing else on
-  the runner is affected.
+  Restore a Slicer build tree published by the Slicer build workflow, at the
+  fixed path it was built at, and install the matching Qt and CMake, so that a
+  Slicer extension can be built and tested against it. The `slicer-dir` output
+  is what to pass as `-DSlicer_DIR`. See
+  Docs/developer_guide/build_instructions/github_actions.md
 
 inputs:
   repository:
@@ -80,13 +67,11 @@ outputs:
 runs:
   using: composite
   steps:
-    # The helper script is fetched from the Slicer repository rather than taken
-    # from the caller's workspace, so that this action works from any
-    # repository without it having to check Slicer out.
-    #
-    # Downloaded rather than checked out: actions/checkout refuses a path
-    # outside the caller's workspace, and checking out inside it would leave a
-    # directory in the repository being built.
+    # The helper script is fetched from the Slicer repository, so that the
+    # caller does not have to check Slicer out. Downloaded rather than checked
+    # out: actions/checkout refuses a path outside the caller's workspace, and
+    # checking out inside it would leave a directory in the repository being
+    # built.
     - name: Initialize environment
       id: env
       shell: bash
@@ -199,8 +184,7 @@ runs:
     # aqtinstall downloads each archive from a mirror picked by download.qt.io
     # and, on a timeout, tries one random fallback before giving up. Give slow
     # mirrors more time, retry connection errors, skip a mirror known to fail,
-    # and fall back to a fixed list of reliable ones. The PlusLib builds use
-    # the same configuration.
+    # and fall back to a fixed list of reliable ones.
     - name: Configure aqtinstall
       shell: bash
       run: |
@@ -222,14 +206,10 @@ runs:
         EOF
         echo "AQT_CONFIG=$RUNNER_TEMP/aqt.ini" >> "$GITHUB_ENV"
 
-    # The Qt archives come from a pool of third-party mirrors, one of which
-    # occasionally refuses connections. Qt is therefore kept in the GitHub
-    # Actions cache of the repository (private to its workflows, keyed on the
-    # version, architecture and modules), so that the mirrors are only used
-    # the first time; the action saves the cache as soon as Qt is installed,
-    # so a job that later fails its tests still saves it. When a download is
-    # needed and fails, try a second time, when aqtinstall picks a mirror
-    # again, rather than lose a stage to it.
+    # The Qt mirrors occasionally refuse connections, so Qt is kept in the
+    # GitHub Actions cache; the action saves it as soon as Qt is installed, so
+    # a job that fails later still saves it. When a download is needed and
+    # fails, a second attempt lets aqtinstall pick a mirror again.
     - name: Install Qt
       id: install-qt
       continue-on-error: true
@@ -258,9 +238,6 @@ runs:
         modules: ${{ steps.qt-options.outputs.modules }}
         cache: true
         cache-key-prefix: slicer-qt
-        # The action needs a Python to run aqtinstall. Letting it provision one
-        # is required on macOS, whose system Python refuses to install into an
-        # externally managed environment.
         setup-python: true
 
     - name: Locate Qt
@@ -281,9 +258,8 @@ runs:
         echo "qt-dir=$qt_dir" >> "$GITHUB_OUTPUT"
         echo "SLICER_QT_DIR=$qt_dir" >> "$GITHUB_ENV"
 
-    # ccache rather than sccache: sccache's GitHub Actions backend writes one
-    # cache entry per compiled object, which leaves tens of thousands of them
-    # in the repository, while this stores the whole cache as a single entry.
+    # ccache rather than sccache, whose GitHub Actions backend leaves one cache
+    # entry per compiled object in the repository.
     - name: Set up the compiler cache
       if: inputs.compiler-cache == 'true' && runner.os != 'Windows'
       uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24

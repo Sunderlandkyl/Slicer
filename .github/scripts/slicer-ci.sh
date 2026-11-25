@@ -1,30 +1,20 @@
 #!/usr/bin/env bash
 #
-# Helper script used by the GitHub Actions workflows building Slicer.
+# Helper script of the GitHub Actions workflows that build Slicer and its
+# extensions. Runs unchanged on Linux, macOS and Windows (Git Bash).
 #
-# All paths are kept *fixed* per platform (see `default_root`) because the
-# CMake configuration files exported by a Slicer build tree (SlicerConfig.cmake,
-# SlicerTargets.cmake, VTKConfig.cmake, ...) embed absolute paths. Restoring a
-# build tree at the same location on another machine keeps it usable, both for
-# the later stages of the Slicer build and for building extensions against it.
+# Paths are fixed per platform (see `default_root`): the CMake files a Slicer
+# build tree exports (SlicerConfig.cmake, ...) embed absolute paths, so a tree
+# restored at the same location on another machine stays usable.
 #
-# Layout under the root directory:
-#
-#   <root>/Slicer        Slicer source tree
-#   <root>/SR            Slicer superbuild tree (SR = "Slicer Release")
-#   <root>/SR/Slicer-build   Inner build tree (value of Slicer_DIR for extensions)
-#   <root>/Qt            Qt installation
-#
-# The script is written so that it runs unchanged on Linux, macOS and Windows
-# (Git Bash).
+#   <root>/Slicer            Slicer source tree
+#   <root>/SR                Slicer superbuild tree
+#   <root>/SR/Slicer-build   Inner build tree (Slicer_DIR for extensions)
+#   <root>/Qt                Qt installation
 #
 # Usage: slicer-ci.sh <command> [args...]
 #
 set -euo pipefail
-
-#------------------------------------------------------------------------------
-# Platform / paths
-#------------------------------------------------------------------------------
 
 detect_platform() {
   case "$(uname -s)" in
@@ -53,24 +43,19 @@ SLICER_SUPERBUILD_DIR="${SLICER_SUPERBUILD_DIR:-$SLICER_ROOT/SR}"
 SLICER_BUILD_DIR="${SLICER_BUILD_DIR:-$SLICER_SUPERBUILD_DIR/Slicer-build}"
 SLICER_BUILD_TYPE="${SLICER_BUILD_TYPE:-Release}"
 SLICER_OUTPUT_DIR="${SLICER_OUTPUT_DIR:-$SLICER_ROOT/out}"
-# Where ExternalData keeps the test data it downloads. Read by the top-level
-# CMakeLists.txt from the environment, so it has to be set before the tree is
-# configured for the first time.
+# Where ExternalData keeps the test data it downloads. The top-level
+# CMakeLists.txt reads it from the environment at the first configure.
 export ExternalData_OBJECT_STORES="${ExternalData_OBJECT_STORES:-$SLICER_ROOT/ExternalData}"
-# On Apple silicon, Homebrew (/opt/homebrew) is among the prefixes CMake
-# searches by default, so a Qt installed there would provide the Qt tools
-# (qmake, moc, ...) in place of those of the Qt being built with. Set in the
-# environment, so that it also applies to every external project (CTK, ...),
-# as the Slicer factory does: https://github.com/Slicer/Slicer/issues/9484
+# On Apple silicon CMake searches Homebrew (/opt/homebrew) by default, so a Qt
+# installed there would provide the Qt tools (qmake, moc, ...). Set in the
+# environment so that it also applies to every external project, as the Slicer
+# factory does: https://github.com/Slicer/Slicer/issues/9484
 if [ "$SLICER_PLATFORM" = "macos-arm64" ] && [ -n "${SLICER_QT_DIR:-}" ]; then
   export CMAKE_PREFIX_PATH="$SLICER_QT_DIR"
 fi
-# The Apple silicon runner has 7 GB of memory for its 3 cores, half of what the
-# Intel one has. The build of an external project runs as many compilers as
-# its build tool sees fit (Ninja: the cores and two more), and five of the
-# largest files of VTK at once do not fit: the build then swaps, and hardly
-# advances. cmake --build, which builds each external project, takes its
-# number of jobs from this.
+# The Apple silicon runner has 7 GB of memory for 3 cores: Ninja compiling five
+# of the largest files of VTK at once makes it swap. cmake --build, which
+# builds each external project, takes its number of jobs from this.
 if [ "$SLICER_PLATFORM" = "macos-arm64" ]; then
   export CMAKE_BUILD_PARALLEL_LEVEL="${SLICER_EP_PARALLEL:-2}"
 fi
@@ -103,15 +88,10 @@ bash_path() {
   fi
 }
 
-# The git a native Windows program can run, as a Windows path.
-#
-# Inside Git Bash, `git` is Git's internal build, whose location changes
-# between Git releases (mingw64/bin, then ucrt64/bin). CMake records the git it
-# finds, and SlicerConfig.cmake hands that path on to every extension, so an
-# extension built on a newer runner image than Slicer gets a git that does not
-# exist: ExternalProject then refuses GIT_SUBMODULES with "git version 1.6.5 or
-# later required ... GIT_VERSION_STRING=''". The launcher in Git's cmd
-# directory stays where it is.
+# The git a native Windows program can run, as a Windows path. Inside Git Bash
+# `git` is Git's internal build, whose location changes between Git releases.
+# SlicerConfig.cmake hands the recorded path to every extension, which fails on
+# a newer runner image. The launcher in Git's cmd directory stays where it is.
 native_git() {
   local candidate
   candidate="$(cygpath -m "${PROGRAMFILES:-C:\\Program Files}" 2>/dev/null)/Git/cmd/git.exe"
@@ -123,7 +103,7 @@ native_git() {
     | head -n 1 | sed 's#\\#/#g'
 }
 
-# Run cmake --build on the superbuild tree with the right config/parallelism.
+# cmake --build <dir> with the configuration and the number of jobs.
 cmake_build() {
   local dir="$1"; shift
   local args=(--build "$dir" --parallel "$SLICER_PARALLEL")
@@ -171,13 +151,9 @@ run_headless() {
 
 run_ctest() { run_headless ctest "$@"; }
 
-#------------------------------------------------------------------------------
-# Commands
-#------------------------------------------------------------------------------
-
 cmd_env() {
-  # Print (and export to $GITHUB_ENV when available) the variables used by the
-  # other commands, so that workflow steps can use them directly.
+  # Print the variables used by the other commands, and export them to
+  # $GITHUB_ENV for the workflow steps.
   local vars=(SLICER_PLATFORM SLICER_ROOT SLICER_SOURCE_DIR SLICER_SUPERBUILD_DIR SLICER_BUILD_DIR SLICER_BUILD_TYPE SLICER_OUTPUT_DIR ExternalData_OBJECT_STORES)
   for v in "${vars[@]}"; do
     echo "$v=${!v}"
@@ -199,13 +175,10 @@ cmd_env() {
     "$(bash_path "$ExternalData_OBJECT_STORES")"
 }
 
-# Compute a key identifying the set of prerequisites. Any change to the files
-# describing the external projects (or to the toolchain) yields a new key and
-# therefore a fresh build of the prerequisites.
-#
-# The source tree is either Slicer itself or a custom application built on
-# Slicer (a top-level project that fetches the Slicer sources and adds them with
-# add_subdirectory, as in the SlicerCustomAppTemplate).
+# Print the key identifying the set of prerequisites: a change to the files
+# describing the external projects, or to the toolchain, yields a new key and a
+# fresh build of the prerequisites. The source tree is Slicer itself or a
+# custom application built on it (as in the SlicerCustomAppTemplate).
 cmd_deps_key() {
   local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
   if [ -f "$src/SuperBuild.cmake" ]; then
@@ -217,12 +190,10 @@ cmd_deps_key() {
   fi
 }
 
-# Key of a custom application. Its external projects are those of the Slicer
-# revision it fetches, plus any it adds in SuperBuild/, configured by the
-# options of its top-level CMakeLists.txt. That file pins the Slicer revision,
-# so it is hashed whole: changing the pin, or any option, rebuilds the
-# prerequisites. A revision pinned by branch name rather than by commit is not
-# followed; bump the key version to rebuild after the branch moves.
+# Key of a custom application: its top-level CMakeLists.txt, which pins the
+# Slicer revision and sets the options, hashed whole, and its SuperBuild/. A
+# revision pinned by branch name is not followed: bump the key version to
+# rebuild after the branch moves.
 _deps_key_application() {
   local src="$1"
   (
@@ -257,10 +228,9 @@ _deps_key_slicer() {
       # Options and version requirements defined in the top-level CMakeLists.txt
       echo "== CMakeLists.txt (subset)"
       grep -E 'option\(|Slicer_REQUIRED_|_VERSION|CMAKE_CXX_STANDARD|Slicer_VTK_|Slicer_ITK_|Slicer_USE_|Slicer_BUILD_' CMakeLists.txt || true
-      # The arguments the superbuild is configured with. Only these matter:
-      # editing anything else in this script does not invalidate hours of
-      # build, and an option added for one platform does not invalidate the
-      # prerequisites of the others.
+      # The arguments the superbuild is configured with, rather than this
+      # script: other edits to it do not invalidate hours of build, nor does
+      # an option added for another platform.
       echo "== configure arguments"
       SLICER_QT_DIR="" configure_args
       # Toolchain
@@ -273,9 +243,7 @@ _deps_key_slicer() {
 }
 
 # Print, one per line, the arguments the superbuild tree is configured with.
-#
-# This is also what identifies the prerequisites: two trees configured with the
-# same arguments contain the same external projects, built the same way.
+# They are part of the prerequisites key.
 configure_args() {
   local qt_dir="${SLICER_QT_DIR:-@QT_DIR@}"
   local qt_major="${SLICER_QT_VERSION%%.*}"
@@ -355,11 +323,9 @@ cmd_configure() {
   fi
 }
 
-# Build one or more targets of the superbuild tree.
-#
-# Targets that are not part of the current configuration are silently skipped,
-# so a stage may name optional external projects (for example `tbb`, only built
-# for some VTK SMP backends) without having to know whether they are enabled.
+# Build targets of the superbuild tree. Those that are not part of the current
+# configuration are skipped, so a stage may name optional external projects
+# (such as `tbb`).
 cmd_build() {
   [ $# -gt 0 ] || die "build: missing target"
   local available="$(bash_path "$SLICER_SUPERBUILD_DIR")/SlicerDependencies.txt"
@@ -379,9 +345,8 @@ cmd_build() {
     info "nothing to build"
     return 0
   fi
-  # What an external project build completed is recorded by its stamp files,
-  # a cleaner source than the build output, which carries ANSI escapes and
-  # carriage returns.
+  # The stamp files say which external projects completed, more reliably than
+  # the build output, which carries ANSI escapes and carriage returns.
   _completed_projects() {
     find "$(bash_path "$SLICER_SUPERBUILD_DIR")" -type f -name "*-done" 2>/dev/null \
       | while read -r f; do b="${f##*/}"; echo "${b%-done}"; done \
@@ -391,8 +356,8 @@ cmd_build() {
   before="$(_completed_projects)"
 
   log "Build ${targets[*]}"
-  # Build the targets one by one: with the Visual Studio generator a single
-  # invocation cannot take several targets, and a failure is easier to locate.
+  # One by one: the Visual Studio generator takes a single target per
+  # invocation, and a failure is easier to locate.
   local t
   for t in "${targets[@]}"; do
     echo "[slicer-ci] --- $t ---"
@@ -408,9 +373,8 @@ cmd_build() {
     printf '%s\n' "$built" | sed 's/^/  /'
   fi
 
-  # Report as soon as the stage finishes rather than saving it for the end:
-  # a cold build takes hours, and the run page should say what has been done
-  # so far.
+  # Reported as soon as the stage finishes: a cold build takes hours, and the
+  # run page should say what has been done so far.
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     {
       echo "### ${SLICER_STAGE_NAME:-Build} (${SLICER_PLATFORM})"
@@ -428,9 +392,8 @@ cmd_build() {
     } >> "$GITHUB_STEP_SUMMARY"
   fi
 
-  # Also kept in the tree, so the job that builds Slicer can show the whole
-  # picture on a run where the prerequisites came from a release and no stage
-  # ran. Each stage's archive carries the record to the next.
+  # Also kept in the tree, and carried by each stage's archive, so the job that
+  # builds Slicer can show every stage even when none ran in this run.
   local record; record="$(bash_path "$SLICER_SUPERBUILD_DIR")/.ci-stages.tsv"
   {
     printf '%s\t%s\t%s\n' \
@@ -456,8 +419,8 @@ cmd_package() {
   mkdir -p "$out"
   log "Package"
   local logfile="$out/package.log"
-  # The package target is provided by the inner build tree. Run it through
-  # cmake --build so the multi-config generator picks the right configuration.
+  # Through cmake --build, so that a multi-config generator picks the right
+  # configuration.
   cmake_build "$SLICER_BUILD_DIR" --target package 2>&1 | tee "$logfile"
   endlog
   local pkg
@@ -473,10 +436,9 @@ cmd_package() {
   fi
 }
 
-# Check that the package produced on macOS is self-contained, using the
-# 'packageverify' target the build system provides. Without it a bundle whose
-# install names were not rewritten builds, packages and uploads cleanly, and
-# only fails on a user's machine with a dyld "Library not loaded" error.
+# Check that the macOS package is self-contained, with the 'packageverify'
+# target. A bundle whose install names were not rewritten otherwise only fails
+# on a user's machine, with a dyld "Library not loaded" error.
 cmd_verify_package() {
   if [ "${SLICER_PLATFORM%%-*}" != "macos" ]; then
     info "verify-package: nothing to check on $SLICER_PLATFORM"
@@ -491,18 +453,12 @@ cmd_verify_package() {
   fi
 }
 
-# Remove what is not needed to *use* a build tree: object files and the git
-# metadata of the external project sources.
-#
+# Remove what is not needed to use a build tree: object files (--objects) and
+# the git metadata of the external project sources (--vcs).
 #   strip [--objects] [--vcs] [<dir>]
-#
-# This must only be done to a tree that will never be built again. Rebuilding a
-# stripped tree recompiles every external project from scratch, because the
-# steps of an external project are re-run whenever a script it depends on in
-# the Slicer source tree is newer than its stamp, which is the case as soon as
-# the source tree is checked out again. Removing the git metadata additionally
-# breaks the external projects that CTK builds itself, whose update step is not
-# under the control of this build.
+# Only for a tree that will never be built again: a stripped tree recompiles
+# every external project from scratch, and without the git metadata the
+# external projects that CTK builds itself fail to update.
 cmd_strip() {
   local objects=false vcs=false dir=""
   while [ $# -gt 0 ]; do
@@ -537,10 +493,9 @@ cmd_strip() {
 
 # Create a zstd-compressed tar archive of paths relative to SLICER_ROOT.
 #   pack <archive> [--exclude PATTERN]... <relative path>...
-#
-# Exclude patterns are matched against the whole stored path by both GNU tar
-# and the bsdtar of macOS, so they have to be written accordingly: "*/.git"
-# rather than ".git", and "SR/Slicer-build*" rather than "SR/Slicer-build".
+# GNU tar and the bsdtar of macOS match exclude patterns against the whole
+# stored path: "*/.git" rather than ".git", and "SR/Slicer-build*" rather than
+# "SR/Slicer-build".
 cmd_pack() {
   local archive="${1:?pack: missing archive}"; shift
   local excludes=()
@@ -555,8 +510,7 @@ cmd_pack() {
   local root; root="$(bash_path "$SLICER_ROOT")"
   mkdir -p "$(dirname "$(bash_path "$archive")")"
   log "Pack ${paths[*]} -> $archive"
-  # Note: mtimes are preserved by tar, which is required for the superbuild
-  # stamps to remain valid after restore.
+  # tar preserves mtimes, which keeps the superbuild stamps valid after restore.
   # ${a[@]+"${a[@]}"} rather than "${a[@]}": expanding an empty array under
   # `set -u` is an error in the bash 3.2 that macOS ships.
   tar -C "$root" ${excludes[@]+"${excludes[@]}"} -cf - "${paths[@]}"     | zstd -T0 -3 -q -o "$(bash_path "$archive")" --force
@@ -595,14 +549,9 @@ cmd_split() {
   fi
 }
 
-# Record in a manifest the files published with it, each with its sha256:
-# what makes the manifest the record of a set of files that belong together,
-# which restore-release checks what it downloads against.
-#
+# Record in a manifest the sha256 of each file published with it, which
+# restore-release checks what it downloads against.
 #   manifest-files <manifest> <file>...
-#
-# One "sha256:<name>" entry per file, so that the manifest stays a flat list
-# of values (manifest-get).
 cmd_manifest_files() {
   local file="${1:?manifest-files: missing manifest}"; shift
   file="$(bash_path "$file")"
@@ -628,9 +577,8 @@ cmd_manifest_files() {
 }
 
 # Whether the archives downloaded into <dir> are the ones <manifest> records:
-# prints what is wrong, nothing when all is as recorded. The manifest of a
-# build made before the files were recorded says nothing, and nothing is
-# checked.
+# prints what is wrong, nothing when all is as recorded. A manifest that
+# records no files is not checked.
 restore_check() {
   local manifest="$1" dir="$2"; shift 2
   local recorded; recorded="$(sed -nE 's/^  "sha256:([^"]+)": "([0-9a-f]+)",?$/\1 \2/p' "$manifest")"
@@ -671,14 +619,10 @@ restore_check() {
   done
 }
 
-# Download the assets of a release published by the Slicer build workflow and
-# restore them under the build root.
-#
+# Restore under the build root a release published by the Slicer build workflow.
 #   restore-release <repository> <tag> [build|deps|all]
-#
-# `build` restores the source tree and the inner build tree, `deps` the
-# external projects, `all` both. The manifest is left in <output>/restore so
-# that the caller can read the recorded versions.
+# `build` is the source tree and the inner build tree, `deps` the external
+# projects. The manifest is left in <output>/restore for the caller.
 cmd_restore_release() {
   local repo="${1:?restore-release: missing repository}"
   local tag="${2:?restore-release: missing tag}"
@@ -686,7 +630,6 @@ cmd_restore_release() {
   local dest; dest="$(bash_path "$SLICER_OUTPUT_DIR")/restore"
   mkdir -p "$dest"
 
-  # The archives asked for.
   local archives=()
   case "$what" in
     build) archives=("slicer-source-${SLICER_PLATFORM}" "slicer-build-${SLICER_PLATFORM}") ;;
@@ -702,12 +645,10 @@ cmd_restore_release() {
     *) die "restore-release: unknown selection '$what'" ;;
   esac
 
-  # The manifest is the record of a set of files that belong together: it
-  # names each archive, and each part of one, with its sha256. A platform
-  # publishes while others build against it (publish-release.sh: the manifest
-  # is removed first and uploaded last), so what is downloaded can be a mix of
-  # two builds, or lack the manifest. That is seen here, waited out, and
-  # downloaded again, rather than built against under the wrong commit.
+  # A platform publishes while others build against it (publish-release.sh
+  # removes the manifest first and uploads it last), so what is downloaded can
+  # be a mix of two builds, or lack the manifest. That is seen from the sha256
+  # the manifest records, waited out, and downloaded again.
   local manifest="$dest/manifest-${SLICER_PLATFORM}.json"
   local attempt problem
   for attempt in 1 2 3 4 5; do
@@ -859,10 +800,9 @@ cmd_install_system_packages() {
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
         build-essential ninja-build patch zstd xvfb \
         libxt-dev libglu1-mesa-dev libgl1-mesa-dri
-      # Packages required at run time by Qt and QtWebEngine. The exact set of
-      # package names varies between Ubuntu releases (libasound2 became
-      # libasound2t64, libgl1-mesa-glx was dropped, ...), so keep only the ones
-      # this release actually provides.
+      # Packages required at run time by Qt and QtWebEngine. Their names vary
+      # between Ubuntu releases (libasound2 became libasound2t64,
+      # libgl1-mesa-glx was dropped), so only those this release provides.
       local runtime_pkgs=(
         mesa-utils libgl1-mesa-glx libgl1 libegl1 libopengl0
         libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
@@ -897,11 +837,10 @@ cmd_install_system_packages() {
   esac
 }
 
-# The hosted runners have no GPU. On Linux, Mesa renders in software under xvfb.
 # The OpenGL that Windows provides without a GPU is too old for VTK to create a
-# render window, so Mesa is installed in its place. The version is pinned, and
-# its archive checked, so the renderer the tests run against does not change
-# underneath them.
+# render window, so Mesa is installed in its place (on Linux, Mesa already
+# renders in software under xvfb). The version is pinned, and its archive
+# checked, so the renderer the tests run against does not change.
 MESA_WINDOWS_VERSION="26.1.7"
 MESA_WINDOWS_SHA256="c6e90c3117233b66f7816df05026a5fb0f88eaf7829bd07a1724b981487ec0bb"
 
@@ -928,26 +867,16 @@ cmd_install_software_opengl() {
   endlog
 }
 
-# --- Extensions -------------------------------------------------------------
+# Extensions. An extension builds against the Slicer build tree restored from a
+# release (SLICER_BUILD_DIR). It is taken from SLICER_EXT_SOURCE_DIR (default:
+# the checkout) and built in SLICER_EXT_BUILD_DIR (default: <root>/ext-build,
+# kept short because of the Windows path limit).
 #
-# An extension repository builds against a Slicer build tree restored from a
-# release rather than one it built itself, so these commands stand in for the
-# configure, build, test, package and load steps it would otherwise carry in
-# its own workflow. They read the restored tree from SLICER_BUILD_DIR and take
-# the extension from SLICER_EXT_SOURCE_DIR (default: the checkout), building it
-# in SLICER_EXT_BUILD_DIR (default: <root>/ext-build, kept short because the
-# Windows path limit is reached quickly).
+# With SLICER_EXT_NAME (the CMake project name) it is built in <root>/E/<Name>
+# from a copy of its checkout in <root>/ES/<Name>: <Name>Config.cmake records
+# absolute paths, so only a tree at fixed paths can be published
+# (extension-tree) and restored by its dependents (extension-dependencies).
 
-#
-# With SLICER_EXT_NAME (the CMake project name), the extension is built at
-# fixed paths, from a copy of its checkout: <root>/E/<Name>, from
-# <root>/ES/<Name>. CMake records absolute paths in the files a build tree is
-# found by (<Name>Config.cmake, the targets file), of the build tree and of the
-# source tree alike, so that only at paths that are the same in every job can
-# the tree be published (extension-tree) and restored by the extensions that
-# depend on it (extension-dependencies), the way the tree of Slicer itself is.
-
-# The checkout of the extension.
 ext_checkout_dir() { echo "${SLICER_EXT_SOURCE_DIR:-${GITHUB_WORKSPACE:-$PWD}}"; }
 # Whether the extension is built at the fixed paths: named, and a whole
 # repository (a subdirectory of one has no revision of its own to copy).
@@ -1001,9 +930,8 @@ extension_configure_args() {
   [ -n "$compiler" ] && args+=("-DCMAKE_CXX_COMPILER:FILEPATH=$compiler")
   case "$SLICER_PLATFORM" in
     windows)
-      # /MP, as for Slicer itself: an extension works out its own compiler
-      # flags (UseSlicer.cmake), and without it each of its projects compiles
-      # its files one after the other, on one core of the runner's four.
+      # /MP, as for Slicer itself: without it each project of the extension
+      # compiles its files one after the other.
       args+=(-G "Visual Studio 17 2022" -A x64
              -DCMAKE_CXX_MP_FLAG:BOOL=ON
              -DADDITIONAL_C_FLAGS:STRING=/MP
@@ -1041,27 +969,18 @@ extension_configure_args() {
 
 ext_deps_dir() { echo "${SLICER_EXT_DEPS_DIR:-$SLICER_ROOT/ext-deps}"; }
 
-# Provide the extensions the extension depends on (EXTENSION_DEPENDS of its
-# CMakeLists.txt, and theirs in turn), dependencies first, as
-# slicer-extension-deps.py resolves them:
-#   - one that a repository of the registry publishes (SLICER_EXT_REGISTRY,
-#     the extension-repositories.json of the Slicer release) is not built: the
-#     build tree that repository published for this platform, against this
-#     Slicer commit (SLICER_COMMIT), is restored, at the paths it was built at.
-#     What the extension is linked against is then what its users install.
-#     Without such a tree this fails;
-#   - one that nothing publishes is built from source, from the Slicer
-#     ExtensionsIndex (SLICER_EXT_INDEX_URL), against the same Slicer build
-#     tree, as the Slicer extension build does.
-# extension-configure then hands -D<Name>_DIR of each to the extension, and
-# extension-load loads their modules with it. What it was built with is left in
-# <output>/extension-built-with.json, to be published with the package.
+# Provide the extensions the extension depends on (EXTENSION_DEPENDS, and
+# theirs in turn), dependencies first, as slicer-extension-deps.py resolves
+# them. One that a repository of the registry (SLICER_EXT_REGISTRY) publishes
+# is restored from the build tree published for this platform and this Slicer
+# commit (SLICER_COMMIT), so that the extension is linked against what its
+# users install; any other is built from the ExtensionsIndex
+# (SLICER_EXT_INDEX_URL). Leaves <output>/extension-built-with.json.
 cmd_extension_dependencies() {
   # A dependency that is being published again describes, for a moment, a
   # build tree that is not the one there: everything is then resolved and
-  # downloaded again, a few times. A loop around one attempt, which says that
-  # it has to be made again by leaving a file: it starts by clearing what the
-  # one before it left, which it could not do from inside it.
+  # downloaded again, a few times. An attempt asks for another by leaving the
+  # reason in a file.
   local again; again="$(bash_path "$SLICER_OUTPUT_DIR")/extension-dependencies-again"
   mkdir -p "$(dirname "$again")"
   local tries
@@ -1097,9 +1016,8 @@ extension_dependencies_once() {
       --index "${SLICER_EXT_INDEX_URL:-https://raw.githubusercontent.com/Slicer/ExtensionsIndex/main}" \
       --out "$root/plan.json" || rc=$?
   if [ "$rc" -eq 3 ] && [ "${SLICER_EXT_SKIP_UNREADY:-false}" = "true" ]; then
-    # What it depends on is not built for this Slicer yet (a nightly is being
-    # followed, or that build failed): nothing to build against, which is not
-    # a fault of this commit. The reconciliation builds it when it is there.
+    # What it depends on is not built for this Slicer yet: not a fault of this
+    # commit. The reconciliation builds it when it is there.
     endlog
     echo "::notice::$SLICER_PLATFORM skipped: an extension it depends on is not built for this Slicer yet (see above). It is built when that one is."
     [ -z "${GITHUB_OUTPUT:-}" ] || echo "ready=false" >> "$GITHUB_OUTPUT"
@@ -1372,42 +1290,18 @@ cmd_report() {
   du -sh "$root"/SR/* 2>/dev/null | sort -h | tail -n 20 || true
 }
 
-#------------------------------------------------------------------------------
 usage() {
   cat <<EOF
 Usage: $0 <command> [args]
 
 Commands:
-  env                          Print/export the SLICER_* variables (and create the root dir)
-  deps-key                     Print the key identifying the prerequisites
-  free-disk-space              Remove unneeded tooling from Linux runners
-  install-system-packages      Install platform packages
-  install-software-opengl      Install a software OpenGL for headless tests
-  configure                    Configure the superbuild tree
-  build <target>...            Build superbuild targets (unknown ones are skipped)
-  dependencies                 List the external projects of the configured tree
-  package                      Build the package of the inner build
-  verify-package               Check that a macOS bundle is self-contained
-  strip [--objects] [--vcs] [dir]
-                               Remove what is not needed to use a build tree
-                               (only for a tree that will not be built again)
-  pack <archive> [--exclude P]... <relpath>...
-  unpack <archive>
-  split <archive>
-  restore-release <repo> <tag> [build|deps|all]
-                               Restore a published build under the build root
-  test                         Run ctest on the inner build
-  extension-dependencies       Restore, or build, the extensions the extension depends on
-  extension-tree               Archive the build tree of the extension
-  extension-configure          Configure an extension against the restored Slicer
-  extension-build              Build the configured extension
-  extension-test               Run the tests of the extension
-  extension-package            Build the package of the extension
-  extension-load               Load the built extension into Slicer
-  manifest <file> [k=v...]     Write a build manifest
-  manifest-get <file> <key>    Read a manifest value
-  report                       Disk usage report
-  stage-summary                Summarize every prerequisite stage of this platform
+  env deps-key free-disk-space install-system-packages install-software-opengl
+  configure build dependencies package verify-package strip test
+  pack unpack split restore-release manifest manifest-files manifest-get
+  extension-dependencies extension-tree extension-configure extension-build
+  extension-test extension-package extension-load report stage-summary
+
+See the comment above each cmd_ function of this script.
 EOF
 }
 

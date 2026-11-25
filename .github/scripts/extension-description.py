@@ -3,11 +3,8 @@
 
 Usage: extension-description.py <build folder> <output file>
 
-The build of an extension writes <Name>.s4ext, lines of "key value", from the
-EXTENSION_* variables of its CMakeLists.txt; the package carries it, and Slicer
-reads it when the package is installed. What is shown of an extension before
-it is installed (the extensions catalog of the Slicer release) comes from
-here. Nothing is written when there is no such file.
+Reads the <Name>.s4ext the build wrote (lines of "key value"), for the
+extensions catalog of the Slicer release. Writes nothing without such a file.
 """
 import glob
 import json

@@ -2,32 +2,23 @@ name: Build Slicer for the web
 
 # Builds Slicer for the web browser with SlicerWeb
 # (https://github.com/lassoan/SlicerWeb): Slicer's libraries and modules
-# compiled to WebAssembly and packaged as Pyodide wheels, the runtime a
-# SlicerWeb site is made of. build-application.yml calls it when "web" is among
-# the platforms.
+# compiled to WebAssembly and packaged as Pyodide wheels. Called by
+# build-application.yml when "web" is among the platforms.
 #
-# The build follows SlicerWeb's own stages, run in its toolchain container
-# (.github/scripts/slicerweb-ci.sh), split the same way as the desktop builds:
-#
-#   1. The prerequisites, VTK, ITK and the small libraries Slicer needs, built
-#      for WebAssembly in two jobs, and stored on the prerequisites release
-#      under a key computed from what describes them in SlicerWeb. Every later
-#      run whose key is unchanged restores them instead.
-#   2. Slicer itself, its wheels, and SlicerWeb's smoke test of them.
-#
-# As for the desktop platforms, the extensions are not built here: each
-# extension repository builds its own, against the build tree published with
-# the nightly (build-web below).
+# SlicerWeb's own stages are run in its toolchain container
+# (.github/scripts/slicerweb-ci.sh). As for the desktop platforms, the
+# prerequisites (VTK, ITK and the small libraries Slicer needs) are stored on
+# the prerequisites release under a key computed from what describes them in
+# SlicerWeb, and restored by every later run whose key is unchanged.
+# See Docs/developer_guide/build_instructions/github_actions.md
 #
 # The run produces these artifacts:
-#   package-web             slicerweb-wheels.zip, the wheels.zip that SlicerWeb's
-#                           publish_runtime.py uploads and its Publish app
-#                           workflow reads: the "installer" of the web platform
-#   build-web               slicerweb-build.tar.zst (split in parts above 2 GB),
-#                           the build tree - /build of SlicerWeb's container -
-#                           and slicerweb-manifest.json, what it was built from
-#                           (archive-build-tree)
-#   logs-web                the logs of the stages
+#   package-web   slicerweb-wheels.zip, the wheels.zip that SlicerWeb's
+#                 publish_runtime.py uploads
+#   build-web     slicerweb-build.tar.zst (split in parts above 2 GB), /build of
+#                 SlicerWeb's container, and slicerweb-manifest.json, what it
+#                 was built from (archive-build-tree)
+#   logs-web      the logs of the stages
 
 on:
   workflow_call:
@@ -44,9 +35,7 @@ on:
         type: string
         default: "main"
       slicer-from-checkout:
-        description: >-
-          Build the Slicer commit of the calling repository (Slicer's own
-          builds) rather than the one SlicerWeb pins.
+        description: "Build the Slicer commit of the calling repository rather than the one SlicerWeb pins"
         type: boolean
         default: false
       archive-build-tree:
@@ -62,10 +51,7 @@ on:
         type: string
         default: ""
       release-notes:
-        description: >-
-          Text the notes of publish-release end with, after what the release
-          holds of each platform; each platform writes them as it publishes.
-          Empty: the notes are left as they are.
+        description: "Text the notes of publish-release end with. Empty: the notes are left as they are"
         type: string
         default: ""
       ci-repository:
@@ -234,9 +220,8 @@ jobs:
           TITLE: ${{ inputs.prerequisites-release-title }}
         run: |
           set -euo pipefail
-          # The same layout as the prerequisites of the desktop platforms
-          # (build-prerequisites.yml): parts named after the key, then the list
-          # of parts, which marks the set as complete.
+          # The layout of build-prerequisites.yml: parts named after the key,
+          # then the list of parts, which marks the set as complete.
           gh release create "$TAG" --title "$TITLE" --prerelease --latest=false \
             --notes "Prebuilt prerequisites reused by the build workflow. The slicer-deps-* assets are regenerated on demand." \
             2>/dev/null || true
@@ -298,8 +283,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
-      # The runtime is published by the job that built it (publish-release),
-      # which attests it.
+      # To publish to the release (publish-release) and attest the runtime.
       contents: write
       id-token: write
       attestations: write
@@ -362,10 +346,9 @@ jobs:
           out="$SLICERWEB_ROOT/out/package"
           mkdir -p "$out"
           wheels="$SLICERWEB_ROOT/dist/wheels"
-          # What SlicerWeb's build.py writes next to the wheels, which the
-          # application shows at the end of its menu: when the runtime was
-          # built, and from which commits. A site has to be built from the
-          # same SlicerWeb commit as its runtime.
+          # What SlicerWeb's build.py writes next to the wheels: when the
+          # runtime was built, and from which commits. A site has to be built
+          # from the same SlicerWeb commit as its runtime.
           slicer="null"
           if [ "$FROM_CHECKOUT" = "true" ]; then
             slicer="$(jq -n --arg r "$GITHUB_REPOSITORY" --arg c "$(git -C slicer rev-parse HEAD)" \
@@ -397,9 +380,8 @@ jobs:
           retention-days: 7
           compression-level: 0
           if-no-files-found: error
-      # The build tree, as the desktop platforms archive theirs: extension
-      # repositories build against it (Slicer_DIR is its build tree of Slicer,
-      # and the extension wheels have to match the libraries of the runtime).
+      # Extension repositories build against it: the extension wheels have to
+      # match the libraries of the runtime.
       - name: Archive the build tree
         if: inputs.archive-build-tree
         env:
@@ -415,10 +397,9 @@ jobs:
           # build trees the SDK points to (Slicer, teem, SlicerExecutionModel).
           bash "$SLICERWEB_CI" pack "$tree/slicerweb-build.tar.zst"
           bash "$SLICER_CI" split "$tree/slicerweb-build.tar.zst"
-          # What it was built from, as manifest-<platform>.json says for the
-          # desktop trees (named otherwise, so that the check of whether the
-          # nightly is up to date, which reads those, is not misled by a run of
-          # the web runtime alone).
+          # Not named manifest-<platform>.json as for the desktop trees: the
+          # check of whether the nightly is up to date reads those, and would be
+          # misled by a run of the web runtime alone.
           slicer=""
           if [ "$FROM_CHECKOUT" = "true" ]; then slicer="$(git -C slicer rev-parse HEAD)"; fi
           # The files it is published with, each with its sha256: a build
@@ -448,7 +429,6 @@ jobs:
           retention-days: 5
           compression-level: 0
           if-no-files-found: error
-      # As soon as it is built, without waiting for the desktop platforms.
       - name: Publish
         if: inputs.archive-build-tree && inputs.publish-release != ''
         env:
@@ -469,7 +449,6 @@ jobs:
             gh api "repos/$GH_REPO/dispatches" -f "event_type=$EVENT" \
               || echo "::warning::Could not send the $EVENT event"
           fi
-      # As the desktop platforms attest their package.
       - name: Attest the runtime
         if: inputs.archive-build-tree && inputs.publish-release != ''
         continue-on-error: true

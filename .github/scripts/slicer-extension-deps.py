@@ -5,17 +5,11 @@
       --slicer-commit <commit> --registry <url> [--index <url>]
       [--depends "<Name> ..."] --out <plan.json>
 
-An extension is treated the way an extension treats Slicer: what it depends on
-is not built again, its published build tree is restored. Each dependency
-(EXTENSION_DEPENDS of the CMakeLists.txt, or --depends, and theirs in turn) is
-looked up in the registry (extension-repositories.json of the Slicer release):
-
-  - registered: the repository publishes it. The build tree it published for
-    this platform, built against this very Slicer commit, is used, so that the
-    binaries the extension is linked against are the ones its users install.
-    There is no fallback: without such a tree this fails, and says why.
-  - not registered: built from source, from the Slicer ExtensionsIndex, as
-    before. Nothing publishes it, so there is nothing to be inconsistent with.
+Each dependency (EXTENSION_DEPENDS of the CMakeLists.txt, or --depends, and
+theirs in turn) is looked up in the registry (extension-repositories.json of
+the Slicer release). A registered one must have published a build tree for
+this platform and this Slicer commit (kind "tree"); there is no fallback. Any
+other is built from the Slicer ExtensionsIndex (kind "source").
 
 The plan lists the dependencies, dependencies first:
 

@@ -2,39 +2,9 @@ name: Build a Slicer application
 
 # Builds Slicer, or a custom application built on Slicer, on Linux, macOS and
 # Windows: the prerequisites (reused when they have not changed), then the
-# application itself, which is packaged and optionally tested.
-#
-# Slicer's own Build workflow calls it, and so can the repository of a custom
-# application, the top-level project of which fetches the Slicer sources and
-# adds them with add_subdirectory (as in the SlicerCustomAppTemplate):
-#
-#   jobs:
-#     build:
-#       uses: Slicer/Slicer/.github/workflows/build-application.yml@main
-#       permissions:
-#         contents: write
-#         # To attest the packages it publishes (publish-release).
-#         id-token: write
-#         attestations: write
-#       with:
-#         name: MyApp
-#         ci-ref: main          # the same ref as on the `uses:` line
-#         run-tests: false
-#
-# The work is split in two phases so that it fits within the GitHub-hosted
-# runner limits (6 h per job) and so that the expensive part is done only when
-# it actually changes:
-#
-#   1. The prerequisites: the external projects of the superbuild (VTK, ITK,
-#      CTK, Python, DCMTK, ...), built in stages by build-prerequisites.yml and
-#      stored on a release of the calling repository, keyed on what describes
-#      them. Every later run whose key is unchanged restores them instead.
-#   2. The application: the very same superbuild tree, in which the external
-#      projects are already up to date, builds the inner project, then packages
-#      and tests it.
-#
-# Each repository builds its own prerequisites: an application never uses those
-# of Slicer, since its options and its Slicer revision differ.
+# application itself, which is packaged and optionally tested. Called by
+# Slicer's Build workflow and by the repositories of custom applications.
+# See Docs/developer_guide/build_instructions/github_actions.md
 #
 # The run produces these artifacts, for the caller to publish as it sees fit:
 #   package-<platform>        the installer
@@ -53,11 +23,7 @@ on:
         type: string
         default: "Application"
       platforms:
-        description: >-
-          Platforms to build (comma separated:
-          linux,macos,macos-arm64,windows,web). macos is the Intel build,
-          macos-arm64 the Apple silicon one. web builds the WebAssembly
-          runtime of SlicerWeb (build-web.yml).
+        description: "Platforms to build, comma separated: linux, macos (Intel), macos-arm64 (Apple silicon), windows, web (the SlicerWeb runtime)"
         type: string
         default: "linux,macos,windows"
       slicerweb-repository:
@@ -69,16 +35,11 @@ on:
         type: string
         default: "main"
       web-slicer-from-checkout:
-        description: >-
-          Build the web runtime from the Slicer commit of the calling
-          repository rather than the one SlicerWeb pins (Slicer's own builds).
+        description: "Build the web runtime from the Slicer commit of the calling repository rather than the one SlicerWeb pins"
         type: boolean
         default: false
       ci-repository:
-        description: >-
-          Repository providing the Slicer CI actions and scripts. Local actions
-          of a called workflow resolve against the caller's checkout, so they
-          are checked out from here.
+        description: "Repository the Slicer CI actions and scripts are checked out from"
         type: string
         default: "Slicer/Slicer"
       ci-ref:
@@ -89,9 +50,7 @@ on:
         type: string
         default: "5.15.2"
       macos-arm64-qt-version:
-        description: >-
-          Qt version of the macos-arm64 platform, which cannot use Qt 5: Qt
-          provides no arm64 build of it
+        description: "Qt version of the macos-arm64 platform (Qt provides no arm64 build of Qt 5)"
         type: string
         default: "6.11.2"
       deps-key-version:
@@ -103,9 +62,7 @@ on:
         type: boolean
         default: false
       extra-cmake-options:
-        description: >-
-          Space separated -D options added to the superbuild configuration.
-          They are part of the prerequisites key.
+        description: "Space separated -D options added to the superbuild configuration; part of the prerequisites key"
         type: string
         default: ""
       prerequisites-release:
@@ -132,23 +89,15 @@ on:
         type: boolean
         default: false
       publish-release:
-        description: >-
-          Release each platform publishes what it built to (package, build
-          trees, manifest), as soon as it is built and without waiting for the
-          others; needs archive-build-trees. Empty: nothing is published.
+        description: "Release each platform publishes what it built to, as soon as it is built; needs archive-build-trees. Empty: nothing is published"
         type: string
         default: ""
       publish-dispatch-event:
-        description: >-
-          Type of the repository_dispatch event sent when a platform has
-          published, for the workflows that follow it
+        description: "Type of the repository_dispatch event sent when a platform has published"
         type: string
         default: ""
       release-notes:
-        description: >-
-          Text the notes of publish-release end with, after what the release
-          holds of each platform; each platform writes them as it publishes.
-          Empty: the notes are left as they are.
+        description: "Text the notes of publish-release end with. Empty: the notes are left as they are"
         type: string
         default: ""
       macos-signing-identity:
@@ -180,26 +129,17 @@ env:
   SLICER_EXTRA_CMAKE_OPTIONS: ${{ inputs.extra-cmake-options }}
 
 jobs:
-  #-----------------------------------------------------------------------------
-  # Compute the key of the prerequisites of every platform, from the files
-  # describing the external projects and the options they are configured with,
-  # and find which platforms already have them.
-  #-----------------------------------------------------------------------------
   deps-key:
     name: Prerequisites key
     runs-on: ubuntu-latest
     outputs:
-      # The matrix, with the prerequisites key and whether it has already been
-      # built added to every entry.
+      # Every entry, with its prerequisites key and whether it is already built.
       matrix: ${{ steps.key.outputs.matrix }}
-      # The subset of the entries whose prerequisites still have to be built,
-      # and how many there are. The stages are gated on the count: a matrix
-      # whose only vector is an empty "include" is rejected by GitHub, so the
-      # output falls back to the full matrix and the stages are skipped by
-      # their condition instead.
+      # The entries still to build, and their count. GitHub rejects a matrix
+      # with an empty "include", so with nothing to build this is the full
+      # matrix, and the stages are skipped on the count.
       matrix-todo: ${{ steps.key.outputs.matrix-todo }}
       todo-count: ${{ steps.key.outputs.todo-count }}
-      # The number of desktop platforms, and whether web is among the platforms.
       desktop-count: ${{ steps.key.outputs.desktop-count }}
       web: ${{ steps.key.outputs.web }}
     steps:
@@ -275,8 +215,6 @@ jobs:
           todo="$(echo "$entries" | jq -c 'map(select(.cached | not))')"
           count="$(echo "$todo" | jq 'length')"
           if [ "$count" -eq 0 ]; then
-            # Never emit an empty "include": the stages are skipped by their
-            # condition, and this value is then never used.
             todo="$entries"
           fi
           echo "matrix=$(echo "$entries" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
@@ -285,8 +223,6 @@ jobs:
           echo "Platforms whose prerequisites have to be built: $count"
           echo "$entries" | jq .
 
-  # A single job, and a single skipped one when every platform already has its
-  # prerequisites, rather than one per stage and platform.
   prerequisites:
     name: Prerequisites
     needs: deps-key
@@ -303,10 +239,9 @@ jobs:
       prerequisites-release: ${{ inputs.prerequisites-release }}
       prerequisites-release-title: ${{ inputs.prerequisites-release-title }}
 
-  # Single place stating whether the prerequisites of every platform are
-  # available: either they were already built, or the stages produced them.
-  # The stages are skipped both when there is nothing to build and when an
-  # earlier stage failed, so their result alone cannot be relied upon.
+  # States whether the prerequisites of every platform are available. The
+  # stages are skipped both when there is nothing to build and when an earlier
+  # stage failed, so their result alone cannot be relied upon.
   deps:
     name: Prerequisites ready
     needs: [deps-key, prerequisites]
@@ -332,9 +267,6 @@ jobs:
             exit 1
           fi
 
-  #-----------------------------------------------------------------------------
-  # Build the application itself, package it and run the tests.
-  #-----------------------------------------------------------------------------
   application:
     name: ${{ inputs.name }} (${{ matrix.platform }})
     needs: [deps-key, deps]
@@ -345,8 +277,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     permissions:
-      # A platform publishes what it built itself (publish-release), and
-      # attests its package.
+      # To publish to the release (publish-release) and attest the package.
       contents: write
       id-token: write
       attestations: write
@@ -373,10 +304,8 @@ jobs:
         with:
           qt-version: ${{ matrix.qt }}
 
-      # Restore and save are separate so the save can run even when the job
-      # fails. actions/cache only saves after a successful job, and this job
-      # fails whenever a test fails, so the test data was never cached and
-      # every run downloaded the whole set again.
+      # Restore and save are separate steps: actions/cache only saves after a
+      # successful job, and this job fails whenever a test fails.
       - name: Restore the test data
         id: testdata
         if: inputs.run-tests
@@ -402,9 +331,7 @@ jobs:
           rm -rf "$SLICER_OUTPUT_DIR/restore"
 
       # Signing with a Developer ID, and notarizing, happen only when the
-      # secrets exist. Without them the bundle is signed ad-hoc, which runs
-      # locally but shows Gatekeeper's warning. See
-      # Docs/developer_guide/build_instructions/github_actions.md
+      # secrets exist. Without them the bundle is signed ad-hoc.
       - name: Import the signing certificate
         id: signing
         if: startsWith(matrix.platform, 'macos') && env.MACOS_CERTIFICATE != ''
@@ -499,9 +426,8 @@ jobs:
         shell: bash
         run: '"$SLICER_CI" verify-package'
 
-      # Apple must notarize the package before macOS will open it without a
-      # warning. The submission is rejected outright if anything in the bundle
-      # is unsigned or lacks the hardened runtime.
+      # The submission is rejected if anything in the bundle is unsigned or
+      # lacks the hardened runtime.
       - name: Notarize and staple
         if: startsWith(matrix.platform, 'macos') && steps.signing.outputs.enabled == 'true'
         shell: bash
@@ -557,10 +483,9 @@ jobs:
           # Extensions never rebuild an external project, so the archived tree
           # can be reduced. The prerequisites on the release keep their objects.
           "$SLICER_CI" strip --objects --vcs "$SLICER_SUPERBUILD_DIR"
-          # Split in three archives so that consumers can fetch only what they need:
-          #  - the source tree (SlicerConfig.cmake points into it)
-          #  - the superbuild tree without the inner build (the prerequisites)
-          #  - the inner build tree
+          # Three archives, so that consumers fetch only what they need: the
+          # source tree (SlicerConfig.cmake points into it), the inner build
+          # tree, and the rest of the superbuild tree (the prerequisites).
           "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-source-${SLICER_PLATFORM}.tar.zst" \
             --exclude "*/.git" --exclude "*/.ccache" --exclude "*/.cache" Slicer
           "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-build-${SLICER_PLATFORM}.tar.zst" SR/Slicer-build
@@ -588,10 +513,9 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-      # Each platform publishes as soon as it is built: a job that came after
-      # all of them would make the fastest wait for the slowest, and with it
-      # every build that follows this one. Before the step that fails the job
-      # on test failures, which withhold nothing.
+      # Each platform publishes as soon as it is built, without waiting for the
+      # others, and before the step that fails the job on test failures, which
+      # withhold nothing.
       - name: Publish
         if: inputs.archive-build-trees && inputs.publish-release != ''
         shell: bash
@@ -621,10 +545,7 @@ jobs:
               || echo "::warning::Could not send the $EVENT event"
           fi
 
-      # Provenance for the package, verifiable with "gh attestation verify",
-      # by the job that built it and as soon as it is published. This is a
-      # statement about how the package was built; it is unrelated to code
-      # signing and does not affect whether an operating system will run it.
+      # Provenance of the package, verifiable with "gh attestation verify".
       # A failure to attest withholds nothing.
       - name: Attest the package
         if: inputs.archive-build-trees && inputs.publish-release != ''
@@ -654,9 +575,6 @@ jobs:
           retention-days: 5
           if-no-files-found: ignore
 
-  #-----------------------------------------------------------------------------
-  # The web runtime, when web is among the platforms.
-  #-----------------------------------------------------------------------------
   web:
     name: Web
     needs: deps-key

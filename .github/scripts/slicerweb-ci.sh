@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
 #
-# Helper script used by build-web.yml to build Slicer for the web browser with
-# SlicerWeb (https://github.com/lassoan/SlicerWeb): Slicer's libraries and
-# modules compiled to WebAssembly, packaged as Pyodide wheels.
-#
-# SlicerWeb builds in its own container (Emscripten and the Pyodide cross-build
-# environment), in stages (scripts/stages/NN-name.sh of SlicerWeb) that keep
-# everything they build in /build. Here /build is a folder of the runner, so
-# that it can be archived after one stage and restored before the next, the way
-# slicer-ci.sh carries the superbuild tree of the desktop builds.
+# Helper script of build-web.yml: builds Slicer for the web browser with
+# SlicerWeb (https://github.com/lassoan/SlicerWeb), in SlicerWeb's container
+# and in its stages (scripts/stages/NN-name.sh of SlicerWeb). /build of the
+# container is a folder of the runner, so that it can be archived after one
+# stage and restored before the next.
 #
 # Layout under the root directory (SLICERWEB_ROOT, /home/runner/SW):
-#
 #   <root>/build    /build of the container: sources, build and install trees
 #   <root>/dist     /dist of the container: the wheels, the logs
 #   <root>/out      archives
@@ -33,8 +28,7 @@ die() { echo "::error::$*" >&2; exit 1; }
 
 # Key of the prerequisites: everything that describes the stages before
 # Slicer's own (00-sources to 45-sem). The revision of Slicer is left out: no
-# prerequisite is built from it, and the application stage builds whichever
-# revision it is given.
+# prerequisite is built from it.
 cmd_deps_key() {
   ( cd "$SLICERWEB_DIR"
     { echo "== slicerweb prerequisites"
@@ -57,14 +51,11 @@ cmd_image() {
 }
 
 # Run stages of SlicerWeb in its container.
-#
 #   run [--slicer <checkout>] [--extension <checkout> --descriptions <dir>]
 #       <stage> [<stage> ...]
-#
-# --slicer builds the commit checked out in <checkout> instead of the Slicer
-# revision SlicerWeb pins. --extension mounts the checkout of an extension at
-# /ext, and --descriptions the folder of extension description files that
-# 80-extensions builds (see the extension command).
+# --slicer builds the commit checked out there instead of the revision
+# SlicerWeb pins. --extension mounts an extension checkout at /ext, and
+# --descriptions the description files that 80-extensions builds.
 cmd_run() {
   local slicer="" extension="" descriptions=""
   while [ $# -gt 0 ]; do
@@ -104,30 +95,19 @@ cmd_run() {
   docker run "${args[@]}" "$SLICERWEB_IMAGE" bash /work/scripts/build.sh "$@"
 }
 
-# Build an extension from its checkout against the restored build folder, as
-# the extension repository's own build does on the desktop platforms, with
+# Build an extension from its checkout against the restored build folder, with
 # SlicerWeb's 80-extensions stage, and gather its wheel.
-#
 #   extension <checkout> <name> <output> [<build subdirectory>]
-#
-# <name> is the CMake project name of the extension. Its description is the
-# one of SlicerWeb's catalog (extensions/<name>.json: build subdirectory,
-# dependencies, slicerweb options) when there is one, pointed at the checkout;
-# otherwise one is made, with <build subdirectory> ("inner-build" for an
-# extension with a superbuild, "." without).
-#
+# <name> is the CMake project name. Its description is the one of SlicerWeb's
+# catalog (extensions/<name>.json) when there is one; otherwise one is made,
+# with <build subdirectory> ("inner-build" with a superbuild, "." without).
 # The extensions it depends on are provided as on the desktop platforms
-# (slicer-extension-deps.py): one that a repository of the registry publishes
-# (SLICER_EXT_REGISTRY) is not built, the build tree it published for the web,
-# against this Slicer commit (SLICER_COMMIT), is restored into the build
-# folder; one that nothing publishes is built from source. Only the extension's
-# own wheel is gathered: theirs are published by their own repositories.
-#
-# <output> receives the wheel, the icon if any, extension-web.json (the entry
-# of the extension index SlicerWeb's Extensions Manager reads) and
-# extension-built-with.json. With SLICER_EXT_TREE=true it also receives the
-# build tree of the extension, for the extensions that depend on it
-# (<name>-build-web.tar.zst, and extension-tree.json).
+# (slicer-extension-deps.py): restored from a published build tree, or built
+# from source. Only the extension's own wheel is gathered.
+# <output> receives the wheel, the icon, extension-web.json (the entry of
+# SlicerWeb's extension index) and extension-built-with.json; with
+# SLICER_EXT_TREE=true also the build tree of the extension
+# (<name>-build-web.tar.zst and extension-tree.json).
 cmd_extension() {
   local src="${1:?extension: missing checkout}" name="${2:?extension: missing name}"
   local output="${3:?extension: missing output}" sub="${4:-}"
@@ -138,8 +118,8 @@ cmd_extension() {
   local rev; rev="$(git -C "$src" rev-parse HEAD)"
   [ -n "${SLICER_COMMIT:-}" ] || die "extension: SLICER_COMMIT (the commit of the restored Slicer) is not set"
 
-  # Its own description, and what that says it depends on (the catalog's list
-  # may be shorter than EXTENSION_DEPENDS: what it needs in the browser).
+  # Its own description, and its dependencies: the catalog's list may be
+  # shorter than EXTENSION_DEPENDS (what it needs in the browser).
   python3 - "$SLICERWEB_DIR/extensions" "$descriptions" "$name" "$rev" "$sub" "$src" "$work/depends.txt" <<'PY'
 import json, os, re, sys
 catalog, out, name, rev, sub, src, depends_file = sys.argv[1:8]
@@ -182,9 +162,8 @@ PY
   fi
   [ "$rc" -eq 0 ] || die "extension: could not resolve the dependencies"
 
-  # The description of each dependency (what SlicerWeb's catalog says of it:
-  # build subdirectory, browser-specific options), which is how 80-extensions
-  # finds its build tree and hands it on; and what there is to restore.
+  # The description of each dependency, by which 80-extensions finds its build
+  # tree, and the list of what there is to restore.
   python3 - "$SLICERWEB_DIR/extensions" "$descriptions" "$work/plan.json" "$output/extension-built-with.json" \
       > "$work/plan.txt" <<'PY'
 import json, os, sys
@@ -312,14 +291,9 @@ usage() {
   cat <<EOF
 Usage: $0 <command> [args...]
 
-Commands:
-  deps-key                     Print the key of the prerequisites
-  image                        Build the toolchain image
-  run [--slicer <dir>] <stage>...  Run SlicerWeb build stages
-  extension <checkout> <name> <output> [<build subdirectory>]
-                               Build an extension and gather its wheel
-  pack <archive> [<exclude>...]    Archive the build folder
-  unpack <archive>             Restore the build folder
+Commands: deps-key image run extension pack unpack
+
+See the comment above each cmd_ function of this script.
 EOF
 }
 

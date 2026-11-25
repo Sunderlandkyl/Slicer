@@ -1,19 +1,11 @@
 name: Build the prerequisites
 
 # Builds the external projects of a Slicer superbuild (VTK, ITK, CTK, Python,
-# DCMTK, ...) for the platforms whose prerequisites are not available yet, and
-# stores them as assets of a release of the calling repository, named after
-# their key.
-#
-# Called by build-application.yml only when there is something to build, so
-# that a run reusing the prerequisites shows a single skipped job rather than
-# one per stage and platform.
-#
-# A full build of the external projects does not fit in the 6 h limit of a
-# GitHub-hosted job, so it is split in stages chained through artifacts. Each
-# stage builds a group of external projects in the superbuild tree produced by
-# the previous one. The groups follow the critical path: VTK, then ITK, which
-# needs VTK because Slicer enables ITKVtkGlue, then CTK, which needs both.
+# DCMTK, ...) for the platforms whose prerequisites are not available yet, in
+# five stages chained through artifacts, and stores them as assets of a release
+# of the calling repository, named after their key. Called by
+# build-application.yml only when there is something to build.
+# See Docs/developer_guide/build_instructions/github_actions.md
 
 on:
   workflow_call:
@@ -79,21 +71,16 @@ jobs:
         uses: ./.slicer-ci/.github/actions/slicer-env
         with:
           qt-version: ${{ matrix.qt || inputs.qt-version }}
-          # The prerequisites are built once and then stored on a release, so
-          # caching their objects would only displace the entries that speed
-          # up the build of the application itself.
+          # The prerequisites are built once: caching their objects would only
+          # displace the entries that speed up the build of the application.
           compiler-cache: "false"
       - name: Build base
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
-          # The dependencies of VTK and ITK, and nothing else. Naming their
-          # prerequisites rather than a hand-picked list keeps this stage
-          # derivable from the graph: `python` brings in zlib, bzip2, LZMA,
-          # LibFFI, sqlite and OpenSSL, `DCMTK` brings in OpenJPEG.
-          #
-          # Anything that merely *uses* VTK or ITK belongs in the last stage.
-          # Naming such a project here would build the whole of VTK in this
-          # stage instead, which is what teem used to do.
+          # What VTK and ITK need, and nothing else: `python` brings in zlib,
+          # bzip2, LZMA, LibFFI, sqlite and OpenSSL, `DCMTK` brings in OpenJPEG.
+          # A project that merely uses VTK or ITK belongs in the last stage:
+          # naming it here would build the whole of VTK in this stage.
           target: "python DCMTK tbb"
           archive-paths: "SR Slicer"
           archive-name: deps-stage
@@ -166,7 +153,6 @@ jobs:
       - name: Build ITK
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
-          # ITK needs VTK, because Slicer enables ITKVtkGlue.
           target: "ITK"
           restore-artifact: deps-stage2-${{ matrix.platform }}
           restore-archive: deps-stage
@@ -204,8 +190,6 @@ jobs:
       - name: Build CTK
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
-          # CTK needs VTK, ITK, Python and DCMTK, so it comes last on the
-          # critical path. It brings in PythonQt and QtTesting.
           target: "CTK"
           restore-artifact: deps-stage3-${{ matrix.platform }}
           restore-archive: deps-stage
@@ -245,11 +229,8 @@ jobs:
       - name: Build rest
         uses: ./.slicer-ci/.github/actions/slicer-build-stage
         with:
-          # Everything that was not on the critical path: teem, curl,
-          # LibArchive, RapidJSON, JsonCpp, SlicerExecutionModel, qRestAPI, the
-          # launcher, SimpleITK, the Python packages and the sources of the
-          # remote modules. Whatever is added to the superbuild lands here
-          # unless VTK or ITK needs it.
+          # Everything that was not on the critical path. Whatever is added
+          # to the superbuild lands here unless VTK or ITK needs it.
           target: "Slicer-dependencies"
           restore-artifact: deps-stage4-${{ matrix.platform }}
           restore-archive: deps-stage
@@ -267,9 +248,8 @@ jobs:
         run: |
           set -euo pipefail
           # The prerequisites are assets of a single pre-release, named after
-          # their key, rather than a release each. The release is created here
-          # when this is the first run; for Slicer it is the nightly release,
-          # whose notes the publish job fills in.
+          # their key. The release is created here on the first run; for Slicer
+          # it is the nightly release, whose notes publish-release.sh writes.
           gh release create "$TAG" --title "$TITLE" --prerelease --latest=false \
             --notes "Prebuilt prerequisites reused by the build workflow. The slicer-deps-* assets are regenerated on demand." \
             2>/dev/null || true
