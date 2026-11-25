@@ -43,7 +43,7 @@ env:
 
 jobs:
   deps-1:
-    name: "Deps 1/5: what VTK and ITK need (${{ matrix.platform }})"
+    name: "Stage 1/5 (${{ matrix.platform }})"
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     env:
@@ -84,7 +84,7 @@ jobs:
           upload-artifact: deps-stage1-${{ matrix.platform }}
 
   deps-2:
-    name: "Deps 2/5: VTK (${{ matrix.platform }})"
+    name: "Stage 2/5 (${{ matrix.platform }})"
     needs: deps-1
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
@@ -103,7 +103,7 @@ jobs:
           upload-artifact: deps-stage2-${{ matrix.platform }}
 
   deps-3:
-    name: "Deps 3/5: ITK (${{ matrix.platform }})"
+    name: "Stage 3/5 (${{ matrix.platform }})"
     needs: deps-2
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
@@ -122,7 +122,7 @@ jobs:
           upload-artifact: deps-stage3-${{ matrix.platform }}
 
   deps-4:
-    name: "Deps 4/5: CTK (${{ matrix.platform }})"
+    name: "Stage 4/5 (${{ matrix.platform }})"
     needs: deps-3
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
@@ -141,7 +141,7 @@ jobs:
           upload-artifact: deps-stage4-${{ matrix.platform }}
 
   deps-5:
-    name: "Deps 5/5: everything else (${{ matrix.platform }})"
+    name: "Stage 5/5 (${{ matrix.platform }})"
     needs: deps-4
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350

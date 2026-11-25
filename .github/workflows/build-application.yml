@@ -238,31 +238,16 @@ jobs:
       prerequisites-release: ${{ inputs.prerequisites-release }}
       prerequisites-release-title: ${{ inputs.prerequisites-release-title }}
 
-  # States whether the prerequisites of every platform are available. The
-  # stages are skipped both when there is nothing to build and when an earlier
-  # stage failed, so their result alone cannot be relied upon.
-  deps:
-    name: Prerequisites ready
-    needs: [deps-key, prerequisites]
-    if: always() && needs.deps-key.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check
-        shell: bash
-        env:
-          TODO: ${{ needs.deps-key.outputs.todo-count }}
-          RESULT: ${{ needs.prerequisites.result }}
-        run: |
-          echo "Platforms needing a build of the prerequisites: $TODO; result of the build: $RESULT"
-          [ "$TODO" = "0" ] || [ "$RESULT" = "success" ] || { echo "::error::Building the prerequisites did not succeed ($RESULT)."; exit 1; }
-
   application:
     name: ${{ inputs.name }} (${{ matrix.platform }})
-    needs: [deps-key, deps]
+    needs: [deps-key, prerequisites]
     # The prerequisites are skipped when they are already available, and
-    # GitHub carries that skip down the whole graph, past the gate job that ran
-    # and succeeded. Stating a condition here is what stops it.
-    if: ${{ !cancelled() && needs.deps.result == 'success' && needs.deps-key.outputs.desktop-count != '0' }}
+    # GitHub carries that skip down the graph: the condition says when the
+    # build goes on, which is when they were available or have been built.
+    if: >-
+      ${{ !cancelled() && needs.deps-key.result == 'success'
+          && needs.deps-key.outputs.desktop-count != '0'
+          && (needs.deps-key.outputs.todo-count == '0' || needs.prerequisites.result == 'success') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     permissions:
