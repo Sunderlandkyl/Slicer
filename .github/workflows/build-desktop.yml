@@ -224,8 +224,10 @@ jobs:
         uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
         with:
           path: ${{ env.SLICER_ROOT }}/ExternalData
-          key: slicer-testdata-${{ inputs.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
-          restore-keys: slicer-testdata-${{ inputs.platform }}-
+          # The platform first: the cache of the newest key starting with this
+          # one is restored, and macos starts macos-arm64.
+          key: ${{ inputs.platform }}-slicer-testdata-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
+          restore-keys: ${{ inputs.platform }}-slicer-testdata-
 
       - name: Download prerequisites
         shell: bash
