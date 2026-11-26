@@ -1,0 +1,476 @@
+name: Build a Slicer application for a desktop platform
+
+# Builds Slicer, or a custom application built on Slicer, for one of Linux,
+# macOS and Windows: its prerequisites, unless the prerequisites release holds
+# them already, then the application itself, which is packaged and optionally
+# tested. Called by build-application.yml once for each desktop platform, so
+# that no platform waits for another. The inputs are those of
+# build-application.yml, and what it computed for the platform.
+# See Docs/developer_guide/build_instructions/github_actions.md
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        type: string
+        default: "Application"
+      platform:
+        description: "linux, macos, macos-arm64 or windows"
+        type: string
+        required: true
+      runner:
+        description: "Runner image the platform is built on"
+        type: string
+        required: true
+      qt-version:
+        type: string
+        required: true
+      prerequisites-key:
+        description: "Key of the prerequisites, which the caller computes (slicer-ci.sh deps-key)"
+        type: string
+        required: true
+      prerequisites-cached:
+        description: "Whether the prerequisites release holds them already"
+        type: boolean
+        default: false
+      ci-repository:
+        type: string
+        default: "Slicer/Slicer"
+      ci-ref:
+        type: string
+        default: "main"
+      extra-cmake-options:
+        type: string
+        default: ""
+      prerequisites-release:
+        type: string
+        default: "prerequisites"
+      prerequisites-release-title:
+        type: string
+        default: "CI prerequisites"
+      run-tests:
+        type: boolean
+        default: true
+      test-exclude:
+        type: string
+        default: ""
+      fail-on-test-failures:
+        type: boolean
+        default: true
+      archive-build-trees:
+        type: boolean
+        default: false
+      publish-release:
+        type: string
+        default: ""
+      publish-dispatch-event:
+        type: string
+        default: ""
+      release-notes:
+        type: string
+        default: ""
+      macos-signing-identity:
+        type: string
+        default: ""
+    secrets:
+      MACOS_CERTIFICATE:
+        required: false
+      MACOS_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_API_KEY:
+        required: false
+      APPLE_API_KEY_ID:
+        required: false
+      APPLE_API_ISSUER_ID:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  SLICER_EXTRA_CMAKE_OPTIONS: ${{ inputs.extra-cmake-options }}
+
+jobs:
+  # The external projects of the superbuild (VTK, ITK, CTK, Python, DCMTK, ...),
+  # when the platform does not have them yet: built in one job and stored on
+  # the prerequisites release under their key, where the build of the
+  # application, of this run and of every later one with the same key, finds
+  # them.
+  Prerequisites:
+    name: Prerequisites
+    if: ${{ !inputs.prerequisites-cached }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 350
+    permissions:
+      contents: write
+    steps:
+      - name: Note start time
+        shell: bash
+        run: echo "SLICER_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
+      - &checkout-sources
+        name: Check out sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - &checkout-ci
+        name: Check out Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+
+      - name: Set up environment
+        uses: ./.slicer-ci/.github/actions/slicer-env
+        with:
+          qt-version: ${{ inputs.qt-version }}
+          # The prerequisites are built once: caching their objects would only
+          # displace the entries that speed up the build of the application.
+          compiler-cache: "false"
+
+      - name: Build prerequisites
+        uses: ./.slicer-ci/.github/actions/slicer-build-stage
+        with:
+          target: Slicer-dependencies
+          archive-name: deps-${{ inputs.platform }}
+
+      - name: Publish prerequisites
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ inputs.prerequisites-key }}
+          TAG: ${{ inputs.prerequisites-release }}
+          TITLE: ${{ inputs.prerequisites-release-title }}
+        run: |
+          set -euo pipefail
+          # The prerequisites are assets of a single pre-release, named after
+          # their key. The release is created here on the first run; for Slicer
+          # it is the nightly release, whose notes publish-release.sh writes.
+          gh release create "$TAG" --title "$TITLE" --prerelease --latest=false \
+            --notes "Prebuilt prerequisites reused by the build workflow. The slicer-deps-* assets are regenerated on demand." \
+            2>/dev/null || true
+
+          "$SLICER_CI" split "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst"
+          upload="$SLICER_OUTPUT_DIR/prerequisites"
+          rm -rf "$upload"; mkdir -p "$upload"
+          for f in "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst*; do
+            mv "$f" "$upload/$KEY${f##*/deps-${SLICER_PLATFORM}}"
+          done
+          gh release upload "$TAG" "$upload"/* --clobber
+          # The list of parts goes last: its presence marks the set as complete.
+          parts="$(cd "$upload" && ls)"
+          echo "$parts" > "$upload/$KEY.parts"
+          gh release upload "$TAG" "$upload/$KEY.parts" --clobber
+          rm -rf "$upload"
+
+          # Keep the three most recent sets of prerequisites of this platform;
+          # older ones correspond to external projects nothing builds any more.
+          # A set's list goes first, so that a half-removed set never counts as
+          # built.
+          names="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
+                     --jq '.assets[] | "\(.createdAt) \(.name)"')"
+          { grep -E " slicer-deps-${SLICER_PLATFORM}-[0-9a-f]+\.parts$" <<< "$names" || true; } \
+            | sort -r | tail -n +4 | while read -r _ list; do
+                old="${list%.parts}"
+                echo "Removing the superseded prerequisites $old"
+                gh release delete-asset "$TAG" "$list" -R "$GITHUB_REPOSITORY" --yes || true
+                awk '{print $2}' <<< "$names" | { grep -F "$old.tar.zst" || true; } | while read -r asset; do
+                  gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes || true
+                done
+              done
+
+      # A job is stopped after 6 hours, with nothing kept: said well before
+      # the prerequisites take that long to build.
+      - name: Check build time
+        shell: bash
+        run: |
+          minutes=$(( ($(date +%s) - SLICER_JOB_STARTED) / 60 ))
+          echo "The job has run for $minutes minutes."
+          if [ "$minutes" -gt 270 ]; then
+            echo "::warning::The prerequisites of $SLICER_PLATFORM took $minutes minutes to build, of the 360 a job may take."
+          fi
+
+  Application:
+    name: ${{ inputs.name }} (${{ inputs.platform }})
+    needs: Prerequisites
+    # The prerequisites are skipped when they are already available, and
+    # GitHub carries that skip down the graph: the condition says when the
+    # build goes on, which is when they were available or have been built.
+    if: ${{ !cancelled() && (inputs.prerequisites-cached || needs.Prerequisites.result == 'success') }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 350
+    permissions:
+      # To publish to the release (publish-release) and attest the package.
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - *checkout-sources
+      - *checkout-ci
+
+      - name: Set up environment
+        uses: ./.slicer-ci/.github/actions/slicer-env
+        with:
+          qt-version: ${{ inputs.qt-version }}
+
+      # Restore and save are separate steps: actions/cache only saves after a
+      # successful job, and this job fails whenever a test fails.
+      - name: Restore test data
+        id: testdata
+        if: inputs.run-tests
+        uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_ROOT }}/ExternalData
+          key: slicer-testdata-${{ inputs.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
+          restore-keys: slicer-testdata-${{ inputs.platform }}-
+
+      - name: Download prerequisites
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ inputs.prerequisites-key }}
+          TAG: ${{ inputs.prerequisites-release }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SLICER_OUTPUT_DIR/restore"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D "$SLICER_OUTPUT_DIR/restore" --clobber \
+            -p "$KEY.tar.zst*"
+          "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/$KEY.tar.zst"
+          rm -rf "$SLICER_OUTPUT_DIR/restore"
+
+      # Signing with a Developer ID, and notarizing, happen only when the
+      # secrets exist. Without them the bundle is signed ad-hoc.
+      - name: Import signing certificate
+        id: signing
+        if: startsWith(inputs.platform, 'macos') && env.MACOS_CERTIFICATE != ''
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ inputs.macos-signing-identity }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/slicer-signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          echo "SLICER_CODESIGN_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "Signing with: $MACOS_SIGNING_IDENTITY"
+
+      - name: Build ${{ inputs.name }}
+        uses: ./.slicer-ci/.github/actions/slicer-build-stage
+        with:
+          target: Slicer
+
+      - name: Save test data
+        if: always() && inputs.run-tests && steps.testdata.outputs.cache-hit != 'true'
+        uses: actions/cache/save@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_ROOT }}/ExternalData
+          key: ${{ steps.testdata.outputs.cache-primary-key }}
+
+      - name: Install software OpenGL
+        if: inputs.run-tests && inputs.platform == 'windows'
+        shell: bash
+        run: '"$SLICER_CI" install-software-opengl'
+
+      - name: Run tests
+        id: tests
+        if: inputs.run-tests
+        continue-on-error: true
+        shell: bash
+        env:
+          SLICER_CTEST_EXCLUDE: ${{ inputs.test-exclude }}
+        run: '"$SLICER_CI" test'
+
+      - name: Summarize tests
+        if: always() && inputs.run-tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/.slicer-ci/.github/scripts/test-summary.py" \
+            "$SLICER_OUTPUT_DIR/test-results.xml" "(${{ inputs.platform }})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test results
+        if: always() && inputs.run-tests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ inputs.platform }}
+          path: |
+            ${{ env.SLICER_OUTPUT_DIR }}/test-results.xml
+            ${{ env.SLICER_OUTPUT_DIR }}/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Package
+        id: package
+        shell: bash
+        run: '"$SLICER_CI" package'
+
+      # A bundle whose install names were not rewritten builds and packages
+      # cleanly, and only fails on a user's machine. Check before publishing.
+      - name: Verify package
+        id: verify
+        continue-on-error: true
+        shell: bash
+        run: '"$SLICER_CI" verify-package'
+
+      # The submission is rejected if anything in the bundle is unsigned or
+      # lacks the hardened runtime.
+      - name: Notarize and staple
+        if: startsWith(inputs.platform, 'macos') && steps.signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          PACKAGE: ${{ steps.package.outputs.package }}
+        run: |
+          set -euo pipefail
+          dmg="$SLICER_OUTPUT_DIR/$PACKAGE"
+          key="$RUNNER_TEMP/apple-api-key.p8"
+          echo "$APPLE_API_KEY" | base64 --decode > "$key"
+          echo "Submitting $PACKAGE to Apple"
+          xcrun notarytool submit "$dmg" \
+            --key "$key" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" \
+            --wait --timeout 45m
+          rm -f "$key"
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          # What Gatekeeper itself will decide.
+          spctl --assess --type open --context context:primary-signature -vv "$dmg"
+
+      - name: Upload package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: package-${{ inputs.platform }}
+          path: ${{ env.SLICER_OUTPUT_DIR }}/${{ steps.package.outputs.package }}
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Write manifest
+        if: inputs.archive-build-trees
+        shell: bash
+        env:
+          PACKAGE: ${{ steps.package.outputs.package }}
+          TAG: ${{ inputs.prerequisites-release }}
+        run: |
+          set -euo pipefail
+          "$SLICER_CI" manifest "$SLICER_OUTPUT_DIR/manifest-${SLICER_PLATFORM}.json" \
+            "qt_version=$SLICER_QT_VERSION" \
+            "commit=$GITHUB_SHA" \
+            "run_id=$GITHUB_RUN_ID" \
+            "package=$PACKAGE" \
+            "deps_release_tag=$TAG"
+
+      - name: Archive build tree
+        if: inputs.archive-build-trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Extensions never rebuild an external project, so the archived tree
+          # can be reduced. The prerequisites on the release keep their objects.
+          "$SLICER_CI" strip "$SLICER_SUPERBUILD_DIR"
+          # Three archives, so that consumers fetch only what they need: the
+          # source tree (SlicerConfig.cmake points into it), the inner build
+          # tree, and the rest of the superbuild tree (the prerequisites).
+          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-source-${SLICER_PLATFORM}.tar.zst" \
+            --exclude "*/.git" --exclude "*/.ccache" --exclude "*/.cache" Slicer
+          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/slicer-build-${SLICER_PLATFORM}.tar.zst" SR/Slicer-build
+          "$SLICER_CI" pack "$SLICER_OUTPUT_DIR/deps-${SLICER_PLATFORM}.tar.zst" --exclude "SR/Slicer-build*" SR
+          for a in "$SLICER_OUTPUT_DIR"/*.tar.zst; do "$SLICER_CI" split "$a"; done
+          ls -lh "$SLICER_OUTPUT_DIR"
+          # The manifest records the files it is published with: a build
+          # against them checks that what it downloaded is this very set.
+          "$SLICER_CI" manifest-files "$SLICER_OUTPUT_DIR/manifest-${SLICER_PLATFORM}.json" \
+            "$SLICER_OUTPUT_DIR"/slicer-source-${SLICER_PLATFORM}.tar.zst* \
+            "$SLICER_OUTPUT_DIR"/slicer-build-${SLICER_PLATFORM}.tar.zst* \
+            "$SLICER_OUTPUT_DIR"/deps-${SLICER_PLATFORM}.tar.zst*
+
+      - name: Upload build tree
+        if: inputs.archive-build-trees
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-${{ inputs.platform }}
+          path: |
+            ${{ env.SLICER_OUTPUT_DIR }}/manifest-${{ inputs.platform }}.json
+            ${{ env.SLICER_OUTPUT_DIR }}/slicer-source-${{ inputs.platform }}.tar.zst*
+            ${{ env.SLICER_OUTPUT_DIR }}/slicer-build-${{ inputs.platform }}.tar.zst*
+            ${{ env.SLICER_OUTPUT_DIR }}/deps-${{ inputs.platform }}.tar.zst*
+          retention-days: 5
+          compression-level: 0
+          if-no-files-found: error
+
+      # Each platform publishes as soon as it is built, without waiting for the
+      # others, and before the step that fails the job on test failures, which
+      # withhold nothing.
+      - name: Publish
+        if: inputs.archive-build-trees && inputs.publish-release != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.publish-release }}
+          TITLE: ${{ inputs.prerequisites-release-title }}
+          PACKAGE: ${{ steps.package.outputs.package }}
+          EVENT: ${{ inputs.publish-dispatch-event }}
+          RELEASE_NOTES: ${{ inputs.release-notes }}
+        run: |
+          set -euo pipefail
+          p="$SLICER_PLATFORM"
+          out="$SLICER_OUTPUT_DIR"
+          # This platform's assets: its archives, and its package, whose name
+          # carries the date (yesterday's has another name).
+          stale="^(slicer-source-$p\.tar\.zst|slicer-build-$p\.tar\.zst|deps-$p\.tar\.zst)"
+          suffix="$(sed -nE 's/.*(-(linux|macosx|win)-[A-Za-z0-9_]+\..*)$/\1/p' <<< "$PACKAGE")"
+          [ -z "$suffix" ] || stale="$stale|$suffix\$"
+          bash "$(dirname "$SLICER_CI")/publish-release.sh" "$TAG" "$TITLE" "$stale" \
+            "$out/manifest-$p.json" "$out/$PACKAGE" \
+            "$out"/slicer-source-$p.tar.zst* "$out"/slicer-build-$p.tar.zst* "$out"/deps-$p.tar.zst*
+          echo "Published $p to the release $TAG." >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$EVENT" ]; then
+            gh api "repos/$GH_REPO/dispatches" -f "event_type=$EVENT" \
+              || echo "::warning::Could not send the $EVENT event"
+          fi
+
+      # Provenance of the package, verifiable with "gh attestation verify".
+      # A failure to attest withholds nothing.
+      - name: Attest package
+        if: inputs.archive-build-trees && inputs.publish-release != ''
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.SLICER_OUTPUT_DIR }}/${{ steps.package.outputs.package }}
+
+      - name: Fail on test failures or unusable package
+        if: (steps.tests.outcome == 'failure' || steps.verify.outcome == 'failure') && inputs.fail-on-test-failures
+        shell: bash
+        run: |
+          if [ "${{ steps.verify.outcome }}" = "failure" ]; then
+            echo "::error::The application bundle is not self-contained."
+          fi
+          if [ "${{ steps.tests.outcome }}" = "failure" ]; then
+            echo "::error::The test suite reported failures."
+          fi
+          exit 1
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-${{ inputs.platform }}
+          path: ${{ env.SLICER_OUTPUT_DIR }}/*.log
+          retention-days: 5
+          if-no-files-found: ignore

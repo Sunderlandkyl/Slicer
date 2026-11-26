@@ -8,12 +8,13 @@ a custom application based on Slicer can build its installers the same way.
 
 ## How the build is organized
 
-The work is shared between three workflow files:
+The work is shared between four workflow files:
 
 | File | Role |
 |---|---|
 | `build.yml` | Slicer's `Build` workflow: decides what to build and publishes the nightly release. Each platform published is reported with a `reconcile-extensions` event, on which `extension-reconcile.yml` starts the extension builds |
-| `build-application.yml` | Reusable: computes the prerequisites key, builds the prerequisites of the platforms that lack them, then builds Slicer (or a custom application) and packages and tests it |
+| `build-application.yml` | Reusable: computes the prerequisites key of each platform, and calls the two below |
+| `build-desktop.yml` | Reusable, called by `build-application.yml` for each of Linux, macOS and Windows: builds the prerequisites if the platform lacks them, then builds Slicer (or a custom application) and packages and tests it |
 | `build-web.yml` | Reusable, called by `build-application.yml` when `web` is among the platforms: builds the WebAssembly runtime of [SlicerWeb](https://github.com/lassoan/SlicerWeb) in its toolchain container, split the same way into stored prerequisites and Slicer |
 
 A full Slicer Superbuild takes several hours and produces a build tree of
@@ -32,6 +33,10 @@ GitHub-hosted job is stopped after 6 hours with nothing kept, so that job
 warns when it has run for more than four and a half: the build then has to be
 split, or made to start from the prerequisites of an earlier build. A run that
 reuses the prerequisites shows the job as skipped.
+
+Each platform is a chain of its own, in a call of `build-desktop.yml` or
+`build-web.yml`: its application is built as soon as its own prerequisites
+are, whatever the other platforms still have to build.
 
 Adding or removing an external project does not require touching the
 workflow: `Slicer-dependencies` covers them all.
