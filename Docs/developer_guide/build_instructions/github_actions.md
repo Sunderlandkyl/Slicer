@@ -198,15 +198,13 @@ jobs:
     permissions:
       contents: write
     uses: Slicer/Slicer/.github/workflows/extension-build.yml@main
-    with:
-      publish: true
 ```
 
 A commit to the default branch and a manual run build, test and publish the
 packages (see below); a pull request builds and tests, and is never published.
 A push to another branch builds nothing, its pull request does: the run it
-starts ends at once. `push-branches` names other branches to build. Leave
-`publish` out to only build and test; `permissions` stays, as the workflow
+starts ends at once. `push-branches` names other branches to build. Pass
+`publish: false` to only build and test; `permissions` stays, as the workflow
 declares the permission whether it publishes or not, and a run is refused when
 its caller does not grant what it declares.
 
@@ -245,13 +243,13 @@ Inputs:
 | `slicer-ref` | `main` | Ref of Slicer providing the actions and the helper script; pin it to whatever the workflow is pinned to |
 | `release-tag` | `nightly` | Release to build against |
 | `web-build-subdirectory` | what SlicerWeb's catalog says, or `.` | For `web`, where the extension itself is built: `inner-build` with a superbuild, `.` without. A value given here is used instead of the catalog's |
-| `publish` | `false` | Publish the packages to a release of the extension's own repository. A pull request is never published |
+| `publish` | `true` | Publish the packages to a release of the extension's own repository. A pull request is never published |
 | `publish-tag` | `nightly` | Tag of that release |
 | `publish-build-tree` | `false` | Publish the build tree with the package, for the extensions that depend on this one |
 
 ### Publishing the packages
 
-With `publish: true`, the packages are published to a release of the
+Unless `publish` is `false`, the packages are published to a release of the
 extension's own repository, the way Slicer publishes its nightly. A called
 workflow cannot grant itself more than its caller has, so the calling job
 grants `contents: write`, as in the workflow above. Every run that builds then

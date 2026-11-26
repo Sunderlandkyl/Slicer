@@ -47,5 +47,7 @@ jobs:
       slicer-ref: ${{ github.sha }}
       release-tag: ${{ inputs.release-tag || 'nightly' }}
       artifact-prefix: ${{ matrix.extension }}
+      # The test extensions are not for anyone to install.
+      publish: false
       # The templates have no tests; loading them into Slicer is the check.
       run-tests: false
