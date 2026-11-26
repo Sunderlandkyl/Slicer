@@ -97,7 +97,9 @@ jobs:
   # application, of this run and of every later one with the same key, finds
   # them.
   Prerequisites:
-    name: Prerequisites
+    # With the platform, as the graph of a run shortens "Build / linux /
+    # Prerequisites" to "Build / ... / Prerequisites".
+    name: Prerequisites (${{ inputs.platform }})
     if: ${{ !inputs.prerequisites-cached }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 350
