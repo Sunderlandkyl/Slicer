@@ -82,7 +82,7 @@ on:
       publish:
         description: "Publish the packages to the release publish-tag of the calling repository; the calling job must grant `contents: write`. A pull request is never published"
         type: boolean
-        default: false
+        default: true
       publish-tag:
         description: "Tag of the release the packages are published to"
         type: string
