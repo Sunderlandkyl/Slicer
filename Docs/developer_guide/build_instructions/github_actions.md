@@ -554,8 +554,10 @@ for the action) to consume a fork's releases:
 | `nightly` | Run as the scheduled nightly does: publish, build nothing when the nightly release already holds the commit, and let failing tests withhold nothing |
 | `force` | With `nightly`, build even if the nightly release already holds the commit |
 
-Pull requests build and test Linux only. Pushes to the default branch, the
-nightly schedule and manual runs build every platform.
+Pull requests build and test Linux, and build the web runtime; the package and
+the runtime are artifacts of the run (`package-linux`, `package-web`). Pushes
+to the default branch, the nightly schedule and manual runs build every
+platform.
 
 The scheduled run exists to keep the `nightly` release in step with the default
 branch, so it stops early when no commit has landed since the last one: it

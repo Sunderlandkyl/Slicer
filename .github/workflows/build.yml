@@ -13,8 +13,6 @@ on:
       # Branches used to develop the CI itself.
       - "ci/**"
   pull_request:
-    branches:
-      - "*"
   schedule:
     # Nightly, after the preview branch has been updated. GitHub starts
     # scheduled runs late, so the relay (.github/extension-webhook) starts the
@@ -92,10 +90,11 @@ jobs:
           if [ "$EVENT" = "push" ] && [ "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH" ]; then
             on_default_branch=true
           fi
-          # Only Linux is built on pull requests and on the branches used to
-          # develop the CI itself, to keep the feedback fast and the cost low.
+          # A pull request builds Linux and the web, which gives it a package
+          # and a web runtime to try within the hour, and the branches used to
+          # develop the CI itself build Linux: fast feedback at a low cost.
           if [ "$EVENT" = "pull_request" ]; then
-            PLATFORMS="linux"
+            PLATFORMS="linux,web"
           elif [ "$EVENT" = "push" ] && [ "$on_default_branch" = "false" ]; then
             PLATFORMS="${SLICER_CI_PLATFORMS:-linux}"
           fi
