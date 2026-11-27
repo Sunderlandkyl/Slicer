@@ -15,6 +15,8 @@ name: Build Slicer for the web
 # The run produces these artifacts:
 #   package-web   slicerweb-wheels.zip, the wheels.zip that SlicerWeb's
 #                 publish_runtime.py uploads
+#   site-web      the web application with that runtime, to serve from one's
+#                 own computer (python serve.py)
 #   build-web     slicerweb-build.tar.zst (split in parts above 2 GB), /build of
 #                 SlicerWeb's container, and slicerweb-manifest.json, what it
 #                 was built from (archive-build-tree)
@@ -348,6 +350,41 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ env.SLICERWEB_ROOT }}/out/package/*
+      # The web application of SlicerWeb with this runtime, as files to serve
+      # from one's own computer: a way to try the build, a pull request's in
+      # particular, that needs no site. Last, so that it withholds nothing.
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Build site
+        working-directory: slicerweb/web
+        env:
+          SLICERWEB_WHEELS: ${{ env.SLICERWEB_ROOT }}/dist/wheels
+          # Neither extensions nor sample data: the folders do not exist.
+          SLICERWEB_EXTENSIONS: ${{ env.SLICERWEB_ROOT }}/out/no-extensions
+          SLICERWEB_SAMPLE_DATA: ${{ env.SLICERWEB_ROOT }}/out/no-sample-data
+          VITE_DOWNLOAD_PROXY: "0"
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          cp "$(dirname "$SLICERWEB_CI")/slicerweb-serve.py" dist/app/serve.py
+          {
+            echo "SlicerWeb, built from $GITHUB_REPOSITORY $GITHUB_SHA ($GITHUB_REF)."
+            echo ""
+            echo "To try it: unpack this folder, run \"python serve.py\" in it, and the"
+            echo "browser opens http://localhost:8000/. It has no extensions and no"
+            echo "sample data of its own."
+          } > dist/app/README.txt
+          du -sh dist/app
+      - name: Upload site
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: site-web
+          path: slicerweb/web/dist/app/
+          retention-days: 7
+          if-no-files-found: error
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

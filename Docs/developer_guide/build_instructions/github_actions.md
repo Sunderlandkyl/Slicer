@@ -555,7 +555,10 @@ for the action) to consume a fork's releases:
 | `force` | With `nightly`, build even if the nightly release already holds the commit |
 
 Pull requests build and test Linux, and build the web runtime; the package and
-the runtime are artifacts of the run (`package-linux`, `package-web`). Pushes
+the runtime are artifacts of the run (`package-linux`, `package-web`). So is
+`site-web`, the web application with that runtime: unpack it, run
+`python serve.py` in it, and the browser opens the build, served from one's own
+computer. It has no extensions and no sample data of its own. Pushes
 to the default branch, the nightly schedule and manual runs build every
 platform.
 
