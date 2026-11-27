@@ -1,0 +1,474 @@
+name: Build a Slicer application
+
+# Builds Slicer, or a custom application built on Slicer, on Linux, macOS and
+# Windows: the prerequisites (reused when they have not changed), then the
+# application itself, which is packaged and optionally tested.
+#
+# Slicer's own Build workflow calls it, and so can the repository of a custom
+# application, the top-level project of which fetches the Slicer sources and
+# adds them with add_subdirectory (as in the SlicerCustomAppTemplate):
+#
+#   jobs:
+#     build:
+#       uses: Slicer/Slicer/.github/workflows/build-application.yml@main
+#       permissions:
+#         contents: write
+#       with:
+#         name: MyApp
+#         ci-ref: main          # the same ref as on the `uses:` line
+#         run-tests: false
+#
+# The work is split in two phases so that it fits within the GitHub-hosted
+# runner limits (6 h per job) and so that the expensive part is done only when
+# it actually changes:
+#
+#   1. The prerequisites: the external projects of the superbuild (VTK, ITK,
+#      CTK, Python, DCMTK, ...), built in stages by build-prerequisites.yml and
+#      stored on a release of the calling repository, keyed on what describes
+#      them. Every later run whose key is unchanged restores them instead.
+#   2. The application: the very same superbuild tree, in which the external
+#      projects are already up to date, builds the inner project, then packages
+#      and tests it.
+#
+# Each repository builds its own prerequisites: an application never uses those
+# of Slicer, since its options and its Slicer revision differ.
+#
+# The run produces these artifacts, for the caller to publish as it sees fit:
+#   package-<platform>        the installer
+#   test-results-<platform>   the JUnit report and the CTest logs
+#   logs-<platform>           the packaging log
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: "Name shown for the job that builds the application"
+        type: string
+        default: "Application"
+      platforms:
+        description: "Platforms to build (comma separated: linux,macos,windows)"
+        type: string
+        default: "linux,macos,windows"
+      ci-repository:
+        description: >-
+          Repository providing the Slicer CI actions and scripts. Local actions
+          of a called workflow resolve against the caller's checkout, so they
+          are checked out from here.
+        type: string
+        default: "Slicer/Slicer"
+      ci-ref:
+        description: "Commit, branch or tag of ci-repository; use the ref of the `uses:` line"
+        type: string
+        default: "main"
+      qt-version:
+        type: string
+        default: "5.15.2"
+      deps-key-version:
+        description: "Bump to force a rebuild of the prerequisites of every platform"
+        type: string
+        default: "1"
+      rebuild-prerequisites:
+        description: "Rebuild the prerequisites even if they are available"
+        type: boolean
+        default: false
+      extra-cmake-options:
+        description: >-
+          Space separated -D options added to the superbuild configuration.
+          They are part of the prerequisites key.
+        type: string
+        default: ""
+      prerequisites-release:
+        description: "Release of the calling repository that holds the prerequisites"
+        type: string
+        default: "prerequisites"
+      prerequisites-release-title:
+        description: "Title given to that release if it has to be created"
+        type: string
+        default: "CI prerequisites"
+      run-tests:
+        type: boolean
+        default: true
+      test-exclude:
+        description: "Regular expression of the tests not to run"
+        type: string
+        default: ""
+      fail-on-test-failures:
+        description: "Fail the run when a test fails or the macOS bundle is not self-contained"
+        type: boolean
+        default: true
+      publish-release:
+        description: >-
+          Release each platform publishes its package to, with a manifest
+          saying what it was built from, as soon as it is built and without
+          waiting for the others. Empty: nothing is published.
+        type: string
+        default: ""
+      release-notes:
+        description: >-
+          Text the notes of publish-release end with, after what the release
+          holds of each platform; each platform writes them as it publishes.
+          Empty: the notes are left as they are.
+        type: string
+        default: ""
+    outputs:
+      matrix:
+        description: "The platforms built, as JSON: {include: [{platform, runner, qt, key, cached}]}"
+        value: ${{ jobs.deps-key.outputs.matrix }}
+
+permissions:
+  contents: read
+
+env:
+  SLICER_DEPS_KEY_VERSION: ${{ inputs.deps-key-version }}
+  SLICER_CI_QT_VERSION: ${{ inputs.qt-version }}
+  SLICER_EXTRA_CMAKE_OPTIONS: ${{ inputs.extra-cmake-options }}
+
+jobs:
+  #-----------------------------------------------------------------------------
+  # Compute the key of the prerequisites of every platform, from the files
+  # describing the external projects and the options they are configured with,
+  # and find which platforms already have them.
+  #-----------------------------------------------------------------------------
+  deps-key:
+    name: Prerequisites key
+    runs-on: ubuntu-latest
+    outputs:
+      # The matrix, with the prerequisites key and whether it has already been
+      # built added to every entry.
+      matrix: ${{ steps.key.outputs.matrix }}
+      # The subset of the entries whose prerequisites still have to be built,
+      # and how many there are. The stages are gated on the count: a matrix
+      # whose only vector is an empty "include" is rejected by GitHub, so the
+      # output falls back to the full matrix and the stages are skipped by
+      # their condition instead.
+      matrix-todo: ${{ steps.key.outputs.matrix-todo }}
+      todo-count: ${{ steps.key.outputs.todo-count }}
+    steps:
+      - name: Check out the sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Check out the Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+
+      - name: Compute keys
+        id: key
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.rebuild-prerequisites }}
+          PLATFORMS: ${{ inputs.platforms }}
+          QT_VERSION: ${{ inputs.qt-version }}
+          TAG: ${{ inputs.prerequisites-release }}
+        run: |
+          set -euo pipefail
+          ci=.slicer-ci/.github/scripts/slicer-ci.sh
+          chmod +x "$ci"
+          # The prerequisites are kept as assets of a release. A set counts as
+          # built once its .parts list, uploaded last, is present.
+          assets="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets \
+                      --jq '.assets[].name' 2>/dev/null || true)"
+          entries="[]"
+          {
+            echo "### Prerequisites"
+            echo ""
+            echo "| Platform | Key | Already built |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for platform in ${PLATFORMS//,/ }; do
+            # The runner image is part of the key: a new image brings a new
+            # compiler.
+            qt="$QT_VERSION"
+            case "$platform" in
+              linux)   runner="ubuntu-22.04" ;;
+              macos)   runner="macos-15-intel" ;;
+              windows) runner="windows-2022" ;;
+              *) echo "::warning::unknown platform '$platform'"; continue ;;
+            esac
+            key="slicer-deps-${platform}-$(
+              SLICER_PLATFORM="$platform" \
+              SLICER_RUNNER_IMAGE="$runner" \
+              SLICER_QT_VERSION="$qt" \
+              SLICER_SOURCE_DIR="$GITHUB_WORKSPACE" \
+              "$ci" deps-key)"
+            cached=false
+            if [ "$FORCE" != "true" ] && grep -qxF "$key.parts" <<< "$assets"; then
+              cached=true
+            fi
+            entries="$(echo "$entries" | jq -c \
+              --arg p "$platform" --arg r "$runner" --arg q "$qt" --arg k "$key" --argjson c "$cached" \
+              '. + [{platform: $p, runner: $r, qt: $q, key: $k, cached: $c}]')"
+            echo "| $platform | \`$key\` | $cached |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          [ "$(echo "$entries" | jq 'length')" -gt 0 ] || { echo "::error::no known platform in '$PLATFORMS'"; exit 1; }
+          todo="$(echo "$entries" | jq -c 'map(select(.cached | not))')"
+          count="$(echo "$todo" | jq 'length')"
+          if [ "$count" -eq 0 ]; then
+            # Never emit an empty "include": the stages are skipped by their
+            # condition, and this value is then never used.
+            todo="$entries"
+          fi
+          echo "matrix=$(echo "$entries" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
+          echo "matrix-todo=$(echo "$todo" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
+          echo "todo-count=$count" >> "$GITHUB_OUTPUT"
+          echo "Platforms whose prerequisites have to be built: $count"
+          echo "$entries" | jq .
+
+  # A single job, and a single skipped one when every platform already has its
+  # prerequisites, rather than one per stage and platform.
+  prerequisites:
+    name: Prerequisites
+    needs: deps-key
+    if: needs.deps-key.outputs.todo-count != '0'
+    uses: ./.github/workflows/build-prerequisites.yml
+    permissions:
+      contents: write
+    with:
+      matrix: ${{ needs.deps-key.outputs.matrix-todo }}
+      ci-repository: ${{ inputs.ci-repository }}
+      ci-ref: ${{ inputs.ci-ref }}
+      qt-version: ${{ inputs.qt-version }}
+      extra-cmake-options: ${{ inputs.extra-cmake-options }}
+      prerequisites-release: ${{ inputs.prerequisites-release }}
+      prerequisites-release-title: ${{ inputs.prerequisites-release-title }}
+
+  # Single place stating whether the prerequisites of every platform are
+  # available: either they were already built, or the stages produced them.
+  # The stages are skipped both when there is nothing to build and when an
+  # earlier stage failed, so their result alone cannot be relied upon.
+  deps:
+    name: Prerequisites ready
+    needs: [deps-key, prerequisites]
+    if: always() && needs.deps-key.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check
+        shell: bash
+        env:
+          TODO: ${{ needs.deps-key.outputs.todo-count }}
+          RESULT: ${{ needs.prerequisites.result }}
+        run: |
+          set -euo pipefail
+          todo="$TODO"
+          echo "Platforms needing a build of the prerequisites: $todo"
+          echo "Result of the prerequisites build: $RESULT"
+          if [ "$todo" -eq 0 ]; then
+            echo "All prerequisites were already available."
+            exit 0
+          fi
+          if [ "$RESULT" != "success" ]; then
+            echo "::error::Building the prerequisites did not succeed ($RESULT)."
+            exit 1
+          fi
+
+  #-----------------------------------------------------------------------------
+  # Build the application itself, package it and run the tests.
+  #-----------------------------------------------------------------------------
+  application:
+    name: ${{ inputs.name }} (${{ matrix.platform }})
+    needs: [deps-key, deps]
+    # The prerequisites are skipped when they are already available, and
+    # GitHub carries that skip down the whole graph, past the gate job that ran
+    # and succeeded. Stating a condition here is what stops it.
+    if: ${{ !cancelled() && needs.deps.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    permissions:
+      # A platform publishes what it built itself (publish-release).
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.deps-key.outputs.matrix) }}
+    steps:
+      - name: Check out the sources
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Check out the Slicer CI scripts
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: ${{ inputs.ci-repository }}
+          ref: ${{ inputs.ci-ref }}
+          path: .slicer-ci
+          sparse-checkout: .github
+
+      - name: Set up environment
+        id: env
+        uses: ./.slicer-ci/.github/actions/slicer-env
+        with:
+          qt-version: ${{ matrix.qt }}
+
+      # Restore and save are separate so the save can run even when the job
+      # fails. actions/cache only saves after a successful job, and this job
+      # fails whenever a test fails, so the test data was never cached and
+      # every run downloaded the whole set again.
+      - name: Restore the test data
+        id: testdata
+        if: inputs.run-tests
+        uses: actions/cache/restore@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_ROOT }}/ExternalData
+          key: slicer-testdata-${{ matrix.platform }}-${{ hashFiles('**/*.md5', '**/*.sha256', '**/*.sha512') }}
+          restore-keys: slicer-testdata-${{ matrix.platform }}-
+
+      - name: Download the prerequisites
+        if: matrix.cached
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ matrix.key }}
+          TAG: ${{ inputs.prerequisites-release }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SLICER_OUTPUT_DIR/restore"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D "$SLICER_OUTPUT_DIR/restore" --clobber \
+            -p "$KEY.tar.zst*"
+          "$SLICER_CI" unpack "$SLICER_OUTPUT_DIR/restore/$KEY.tar.zst"
+          rm -rf "$SLICER_OUTPUT_DIR/restore"
+
+      - name: Build ${{ inputs.name }}
+        uses: ./.slicer-ci/.github/actions/slicer-build-stage
+        with:
+          target: Slicer
+          # `a && b || c` returns c whenever b is falsy, so the empty string
+          # has to be the last operand.
+          restore-artifact: ${{ !matrix.cached && format('deps-{0}', matrix.platform) || '' }}
+          restore-archive: deps-${{ matrix.platform }}
+          # The last stage: nothing follows that would restore the tree.
+          archive-name: ""
+
+      - name: Summarize the prerequisites
+        if: always()
+        shell: bash
+        run: '"$SLICER_CI" stage-summary'
+
+      - name: Save the test data
+        if: always() && inputs.run-tests && steps.testdata.outputs.cache-hit != 'true'
+        uses: actions/cache/save@640a1c2554105b57832a23eea0b4672fc7a790d5 # v4.2.3
+        with:
+          path: ${{ env.SLICER_ROOT }}/ExternalData
+          key: ${{ steps.testdata.outputs.cache-primary-key }}
+
+      - name: Install software OpenGL
+        if: inputs.run-tests && matrix.platform == 'windows'
+        shell: bash
+        run: '"$SLICER_CI" install-software-opengl'
+
+      - name: Run the tests
+        id: tests
+        if: inputs.run-tests
+        continue-on-error: true
+        shell: bash
+        env:
+          SLICER_CTEST_EXCLUDE: ${{ inputs.test-exclude }}
+        run: '"$SLICER_CI" test'
+
+      - name: Summarize the tests
+        if: always() && inputs.run-tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/.slicer-ci/.github/scripts/test-summary.py" \
+            "$SLICER_OUTPUT_DIR/test-results.xml" "(${{ matrix.platform }})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the test results
+        if: always() && inputs.run-tests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ matrix.platform }}
+          path: |
+            ${{ env.SLICER_OUTPUT_DIR }}/test-results.xml
+            ${{ env.SLICER_OUTPUT_DIR }}/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Package
+        id: package
+        shell: bash
+        run: '"$SLICER_CI" package'
+
+      # A bundle whose install names were not rewritten builds and packages
+      # cleanly, and only fails on a user's machine. Check before publishing.
+      - name: Verify the package
+        id: verify
+        continue-on-error: true
+        shell: bash
+        run: '"$SLICER_CI" verify-package'
+
+      - name: Upload package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: package-${{ matrix.platform }}
+          path: ${{ env.SLICER_OUTPUT_DIR }}/${{ steps.package.outputs.package }}
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+      # What the package was built from: the scheduled run reads it to know
+      # whether the release already holds the commit.
+      - name: Write manifest
+        if: inputs.publish-release != ''
+        shell: bash
+        env:
+          PACKAGE: ${{ steps.package.outputs.package }}
+          TAG: ${{ inputs.prerequisites-release }}
+        run: |
+          set -euo pipefail
+          "$SLICER_CI" manifest "$SLICER_OUTPUT_DIR/manifest-${SLICER_PLATFORM}.json" \
+            "qt_version=$SLICER_QT_VERSION" \
+            "commit=$GITHUB_SHA" \
+            "run_id=$GITHUB_RUN_ID" \
+            "package=$PACKAGE" \
+            "deps_release_tag=$TAG"
+
+      # Each platform publishes as soon as it is built: a job that came after
+      # all of them would make the fastest wait for the slowest. Before the
+      # step that fails the job on test failures, which withhold nothing.
+      - name: Publish
+        if: inputs.publish-release != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.publish-release }}
+          TITLE: ${{ inputs.prerequisites-release-title }}
+          PACKAGE: ${{ steps.package.outputs.package }}
+          RELEASE_NOTES: ${{ inputs.release-notes }}
+        run: |
+          set -euo pipefail
+          p="$SLICER_PLATFORM"
+          out="$SLICER_OUTPUT_DIR"
+          # This platform's assets: its package, whose name carries the date
+          # (yesterday's has another name).
+          suffix="$(sed -nE 's/.*(-(linux|macosx|win)-[A-Za-z0-9_]+\..*)$/\1/p' <<< "$PACKAGE")"
+          [ -n "$suffix" ] || { echo "::error::Unexpected package name '$PACKAGE'"; exit 1; }
+          bash "$(dirname "$SLICER_CI")/publish-release.sh" "$TAG" "$TITLE" "$suffix\$" \
+            "$out/manifest-$p.json" "$out/$PACKAGE"
+          echo "Published $p to the release $TAG." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on test failures or an unusable package
+        if: (steps.tests.outcome == 'failure' || steps.verify.outcome == 'failure') && inputs.fail-on-test-failures
+        shell: bash
+        run: |
+          if [ "${{ steps.verify.outcome }}" = "failure" ]; then
+            echo "::error::The application bundle is not self-contained."
+          fi
+          if [ "${{ steps.tests.outcome }}" = "failure" ]; then
+            echo "::error::The test suite reported failures."
+          fi
+          exit 1
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: logs-${{ matrix.platform }}
+          path: ${{ env.SLICER_OUTPUT_DIR }}/*.log
+          retention-days: 5
+          if-no-files-found: ignore
+

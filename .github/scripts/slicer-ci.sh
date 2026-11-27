@@ -1,0 +1,820 @@
+#!/usr/bin/env bash
+#
+# Helper script used by the GitHub Actions workflows building Slicer.
+#
+# All paths are kept *fixed* per platform (see `default_root`) because the
+# CMake configuration files exported by a Slicer build tree (SlicerConfig.cmake,
+# SlicerTargets.cmake, VTKConfig.cmake, ...) embed absolute paths. Restoring a
+# build tree at the same location on another machine keeps it usable for the
+# later stages of the Slicer build.
+#
+# Layout under the root directory:
+#
+#   <root>/Slicer        Slicer source tree
+#   <root>/SR            Slicer superbuild tree (SR = "Slicer Release")
+#   <root>/SR/Slicer-build   Inner build tree
+#   <root>/Qt            Qt installation
+#
+# The script is written so that it runs unchanged on Linux, macOS and Windows
+# (Git Bash).
+#
+# Usage: slicer-ci.sh <command> [args...]
+#
+set -euo pipefail
+
+#------------------------------------------------------------------------------
+# Platform / paths
+#------------------------------------------------------------------------------
+
+detect_platform() {
+  case "$(uname -s)" in
+    Linux*) echo "linux" ;;
+    Darwin*) echo "macos" ;;
+    MINGW*|MSYS*|CYGWIN*|Windows*) echo "windows" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
+default_root() {
+  case "$1" in
+    linux) echo "/home/runner/S" ;;
+    macos) echo "/Users/runner/S" ;;
+    windows) echo "${SLICER_WINDOWS_ROOT:-C:/S}" ;;
+    *) echo "$HOME/S" ;;
+  esac
+}
+
+SLICER_PLATFORM="${SLICER_PLATFORM:-$(detect_platform)}"
+SLICER_ROOT="${SLICER_ROOT:-$(default_root "$SLICER_PLATFORM")}"
+SLICER_SOURCE_DIR="${SLICER_SOURCE_DIR:-$SLICER_ROOT/Slicer}"
+SLICER_SUPERBUILD_DIR="${SLICER_SUPERBUILD_DIR:-$SLICER_ROOT/SR}"
+SLICER_BUILD_DIR="${SLICER_BUILD_DIR:-$SLICER_SUPERBUILD_DIR/Slicer-build}"
+SLICER_BUILD_TYPE="${SLICER_BUILD_TYPE:-Release}"
+SLICER_OUTPUT_DIR="${SLICER_OUTPUT_DIR:-$SLICER_ROOT/out}"
+# Where ExternalData keeps the test data it downloads. Read by the top-level
+# CMakeLists.txt from the environment, so it has to be set before the tree is
+# configured for the first time.
+export ExternalData_OBJECT_STORES="${ExternalData_OBJECT_STORES:-$SLICER_ROOT/ExternalData}"
+nproc_count() {
+  if [ -n "${NUMBER_OF_PROCESSORS:-}" ]; then echo "$NUMBER_OF_PROCESSORS"
+  elif command -v nproc >/dev/null 2>&1; then nproc
+  elif command -v sysctl >/dev/null 2>&1; then sysctl -n hw.logicalcpu 2>/dev/null || echo 4
+  else getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4
+  fi
+}
+SLICER_PARALLEL="${SLICER_PARALLEL:-$(nproc_count)}"
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum
+  else shasum -a 256
+  fi
+}
+
+log() { echo "::group::$*"; }
+endlog() { echo "::endgroup::"; }
+info() { echo "[slicer-ci] $*"; }
+die() { echo "::error::$*" >&2; exit 1; }
+
+# Native path (for CMake/Windows tools) -> bash path (for cp/tar in Git Bash)
+bash_path() {
+  if [ "$SLICER_PLATFORM" = "windows" ] && command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$1"
+  else
+    echo "$1"
+  fi
+}
+
+# A value recorded in the SlicerConfig.cmake of the build tree.
+slicer_config_value() {
+  local config; config="$(bash_path "$SLICER_BUILD_DIR")/SlicerConfig.cmake"
+  [ -f "$config" ] || return 0
+  sed -n "s/^set($1[[:space:]]*\"\(.*\)\")[[:space:]]*$//p" "$config" | head -n 1
+}
+
+# Run cmake --build on the superbuild tree with the right config/parallelism.
+cmake_build() {
+  local dir="$1"; shift
+  local args=(--build "$dir" --parallel "$SLICER_PARALLEL")
+  if [ "$SLICER_PLATFORM" = "windows" ]; then
+    args+=(--config "$SLICER_BUILD_TYPE")
+  fi
+  cmake "${args[@]}" "$@"
+}
+
+# Show what CMake recorded about a failed configure, which is where the reason
+# usually is rather than in the output above.
+dump_cmake_logs() {
+  local dir; dir="$(bash_path "$1")"
+  local f
+  for f in "$dir/CMakeFiles/CMakeConfigureLog.yaml" "$dir/CMakeFiles/CMakeError.log" \
+    "$dir/CMakeFiles/CMakeOutput.log"; do
+    if [ -f "$f" ]; then
+      log "$(basename "$f")"
+      tail -n 200 "$f"
+      endlog
+    fi
+  done
+}
+
+# Run a program that needs a display and OpenGL. The runners have neither a
+# display on Linux nor a GPU anywhere, and Chromium's sandbox keeps
+# QtWebEngine's helper processes from reading their resources.
+run_headless() {
+  export QTWEBENGINE_DISABLE_SANDBOX=1
+  case "$SLICER_PLATFORM" in
+    linux)
+      export LIBGL_ALWAYS_SOFTWARE=1
+      xvfb-run -a -s "-screen 0 1920x1080x24" "$@"
+      ;;
+    windows)
+      # Mesa's software rasterizer, rather than a driver that needs a GPU.
+      export GALLIUM_DRIVER=llvmpipe
+      "$@"
+      ;;
+    *)
+      "$@"
+      ;;
+  esac
+}
+
+run_ctest() { run_headless ctest "$@"; }
+
+#------------------------------------------------------------------------------
+# Commands
+#------------------------------------------------------------------------------
+
+cmd_env() {
+  # Print (and export to $GITHUB_ENV when available) the variables used by the
+  # other commands, so that workflow steps can use them directly.
+  local vars=(SLICER_PLATFORM SLICER_ROOT SLICER_SOURCE_DIR SLICER_SUPERBUILD_DIR SLICER_BUILD_DIR SLICER_BUILD_TYPE SLICER_OUTPUT_DIR ExternalData_OBJECT_STORES)
+  for v in "${vars[@]}"; do
+    echo "$v=${!v}"
+    if [ -n "${GITHUB_ENV:-}" ]; then
+      echo "$v=${!v}" >> "$GITHUB_ENV"
+    fi
+  done
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    {
+      echo "platform=$SLICER_PLATFORM"
+      echo "root=$SLICER_ROOT"
+      echo "source-dir=$SLICER_SOURCE_DIR"
+      echo "superbuild-dir=$SLICER_SUPERBUILD_DIR"
+      echo "slicer-dir=$SLICER_BUILD_DIR"
+      echo "output-dir=$SLICER_OUTPUT_DIR"
+    } >> "$GITHUB_OUTPUT"
+  fi
+  mkdir -p "$(bash_path "$SLICER_ROOT")" "$(bash_path "$SLICER_OUTPUT_DIR")" \
+    "$(bash_path "$ExternalData_OBJECT_STORES")"
+}
+
+# Compute a key identifying the set of prerequisites. Any change to the files
+# describing the external projects (or to the toolchain) yields a new key and
+# therefore a fresh build of the prerequisites.
+#
+# The source tree is either Slicer itself or a custom application built on
+# Slicer (a top-level project that fetches the Slicer sources and adds them with
+# add_subdirectory, as in the SlicerCustomAppTemplate).
+cmd_deps_key() {
+  local src; src="$(bash_path "$SLICER_SOURCE_DIR")"
+  if [ -f "$src/SuperBuild.cmake" ]; then
+    _deps_key_slicer "$src"
+  elif [ -f "$src/CMakeLists.txt" ]; then
+    _deps_key_application "$src"
+  else
+    die "deps-key: $src is neither a Slicer source tree nor a custom application"
+  fi
+}
+
+# Key of a custom application. Its external projects are those of the Slicer
+# revision it fetches, plus any it adds in SuperBuild/, configured by the
+# options of its top-level CMakeLists.txt. That file pins the Slicer revision,
+# so it is hashed whole: changing the pin, or any option, rebuilds the
+# prerequisites. A revision pinned by branch name rather than by commit is not
+# followed; bump the key version to rebuild after the branch moves.
+_deps_key_application() {
+  local src="$1"
+  (
+    cd "$src"
+    {
+      echo "== application"
+      echo "== CMakeLists.txt"; cat CMakeLists.txt
+      if [ -d SuperBuild ]; then
+        find SuperBuild -type f | LC_ALL=C sort | while read -r f; do echo "== $f"; cat "$f"; done
+      fi
+      echo "== configure arguments"
+      SLICER_QT_DIR="" configure_args
+      echo "platform=$SLICER_PLATFORM"
+      echo "runner=${SLICER_RUNNER_IMAGE:-}"
+      echo "qt=${SLICER_QT_VERSION:-}"
+      echo "key-version=${SLICER_DEPS_KEY_VERSION:-1}"
+    } | tr -d '\r' | sha256 | cut -c1-16
+  )
+}
+
+# Key of Slicer itself. Kept byte for byte as it was when only Slicer was
+# built, so that existing prerequisites keep their key.
+_deps_key_slicer() {
+  local src="$1"
+  (
+    cd "$src"
+    {
+      # External project descriptions
+      find SuperBuild -type f | LC_ALL=C sort | while read -r f; do echo "== $f"; cat "$f"; done
+      echo "== SuperBuild.cmake"; cat SuperBuild.cmake
+      for f in CMake/ExternalProject*.cmake; do echo "== $f"; cat "$f"; done
+      # Options and version requirements defined in the top-level CMakeLists.txt
+      echo "== CMakeLists.txt (subset)"
+      grep -E 'option\(|Slicer_REQUIRED_|_VERSION|CMAKE_CXX_STANDARD|Slicer_VTK_|Slicer_ITK_|Slicer_USE_|Slicer_BUILD_' CMakeLists.txt || true
+      # The arguments the superbuild is configured with. Only these matter:
+      # editing anything else in this script does not invalidate hours of
+      # build, and an option added for one platform does not invalidate the
+      # prerequisites of the others.
+      echo "== configure arguments"
+      SLICER_QT_DIR="" configure_args
+      # Toolchain
+      echo "platform=$SLICER_PLATFORM"
+      echo "runner=${SLICER_RUNNER_IMAGE:-}"
+      echo "qt=${SLICER_QT_VERSION:-}"
+      echo "key-version=${SLICER_DEPS_KEY_VERSION:-1}"
+    } | tr -d '\r' | sha256 | cut -c1-16
+  )
+}
+
+# Print, one per line, the arguments the superbuild tree is configured with.
+#
+# This is also what identifies the prerequisites: two trees configured with the
+# same arguments contain the same external projects, built the same way.
+configure_args() {
+  local qt_dir="${SLICER_QT_DIR:-@QT_DIR@}"
+  local qt_major="${SLICER_QT_VERSION%%.*}"
+  [ -n "$qt_major" ] || qt_major=5
+
+  local args=(
+    -S "$SLICER_SOURCE_DIR"
+    -B "$SLICER_SUPERBUILD_DIR"
+    "-DQt${qt_major}_DIR:PATH=$qt_dir/lib/cmake/Qt${qt_major}"
+    "-DCMAKE_PREFIX_PATH:PATH=$qt_dir"
+    -DBUILD_TESTING:BOOL=ON
+    -DSlicer_BUILD_DOCUMENTATION:BOOL=OFF
+    -DSlicer_EP_UPDATE_DISCONNECTED:BOOL=ON
+  )
+  case "$SLICER_PLATFORM" in
+    windows)
+      # /MP is requested through the options the build system provides rather
+      # than through the CL environment variable, which breaks the compiler
+      # identification of the Visual Studio generator.
+      args+=(-G "Visual Studio 17 2022" -A x64
+             -DCMAKE_CXX_MP_FLAG:BOOL=ON
+             -DADDITIONAL_C_FLAGS:STRING=/MP
+             -DADDITIONAL_CXX_FLAGS:STRING=/MP)
+      ;;
+    macos)
+      args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
+             -DCMAKE_C_COMPILER:FILEPATH=/usr/bin/cc -DCMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++
+             "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${SLICER_MACOS_DEPLOYMENT_TARGET:-14.0}"
+             -DCMAKE_OSX_ARCHITECTURES:STRING=x86_64)
+      ;;
+    *)
+      args+=(-G Ninja "-DCMAKE_BUILD_TYPE:STRING=$SLICER_BUILD_TYPE"
+             -DCMAKE_C_COMPILER:FILEPATH=/usr/bin/cc -DCMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++)
+      ;;
+  esac
+  # Extra options provided by the workflow (space separated -D options)
+  if [ -n "${SLICER_EXTRA_CMAKE_OPTIONS:-}" ]; then
+    # shellcheck disable=SC2206
+    args+=(${SLICER_EXTRA_CMAKE_OPTIONS})
+  fi
+  printf '%s\n' "${args[@]}"
+}
+
+# Configure the superbuild tree.
+cmd_configure() {
+  mkdir -p "$(bash_path "$SLICER_SUPERBUILD_DIR")"
+  : "${SLICER_QT_DIR:?SLICER_QT_DIR must be set to the Qt prefix (e.g. .../Qt/5.15.2/gcc_64)}"
+  local args=()
+  while IFS= read -r line; do args+=("$line"); done < <(configure_args)
+  # A compiler launcher (ccache, sccache) is deliberately not part of
+  # `configure_args`: it does not change what is built, so enabling or
+  # disabling it must not invalidate prebuilt prerequisites.
+  if [ -n "${SLICER_COMPILER_LAUNCHER:-}" ]; then
+    args+=("-DCMAKE_C_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER"
+           "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=$SLICER_COMPILER_LAUNCHER")
+  fi
+  log "Configure superbuild"
+  info "cmake ${args[*]}"
+  local rc=0
+  if [ "$SLICER_PLATFORM" = "windows" ]; then
+    # Git Bash rewrites any argument that looks like an absolute POSIX path,
+    # which turns a compiler option such as /MP into C:/Program Files/Git/MP.
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cmake "${args[@]}" || rc=$?
+  else
+    cmake "${args[@]}" || rc=$?
+  fi
+  endlog
+  if [ $rc -ne 0 ]; then
+    dump_cmake_logs "$SLICER_SUPERBUILD_DIR"
+    die "configure failed"
+  fi
+}
+
+# Build one or more targets of the superbuild tree.
+#
+# Targets that are not part of the current configuration are silently skipped,
+# so a stage may name optional external projects (for example `tbb`, only built
+# for some VTK SMP backends) without having to know whether they are enabled.
+cmd_build() {
+  [ $# -gt 0 ] || die "build: missing target"
+  local available="$(bash_path "$SLICER_SUPERBUILD_DIR")/SlicerDependencies.txt"
+  local targets=()
+  local t
+  for t in "$@"; do
+    # Aggregate and inner targets are always defined by SuperBuild.cmake.
+    if [ "$t" = "Slicer" ] || [ "$t" = "Slicer-dependencies" ] || [ ! -f "$available" ]; then
+      targets+=("$t")
+    elif grep -qx "$t" "$available"; then
+      targets+=("$t")
+    else
+      info "skipping '$t' (not part of this configuration)"
+    fi
+  done
+  if [ ${#targets[@]} -eq 0 ]; then
+    info "nothing to build"
+    return 0
+  fi
+  # What an external project build completed is recorded by its stamp files,
+  # a cleaner source than the build output, which carries ANSI escapes and
+  # carriage returns.
+  _completed_projects() {
+    find "$(bash_path "$SLICER_SUPERBUILD_DIR")" -type f -name "*-done" 2>/dev/null \
+      | while read -r f; do b="${f##*/}"; echo "${b%-done}"; done \
+      | LC_ALL=C sort -u
+  }
+  local before after built count
+  before="$(_completed_projects)"
+
+  log "Build ${targets[*]}"
+  # Build the targets one by one: with the Visual Studio generator a single
+  # invocation cannot take several targets, and a failure is easier to locate.
+  local t
+  for t in "${targets[@]}"; do
+    echo "[slicer-ci] --- $t ---"
+    cmake_build "$SLICER_SUPERBUILD_DIR" --target "$t"
+  done
+  endlog
+
+  after="$(_completed_projects)"
+  built="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | sed '/^$/d')"
+  count="$(printf '%s' "$built" | grep -c . || true)"
+  info "external projects completed in this step: ${count}"
+  if [ "$count" -gt 0 ]; then
+    printf '%s\n' "$built" | sed 's/^/  /'
+  fi
+
+  # Report as soon as the stage finishes rather than saving it for the end:
+  # a cold build takes hours, and the run page should say what has been done
+  # so far.
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+      echo "### ${SLICER_STAGE_NAME:-Build} (${SLICER_PLATFORM})"
+      echo ""
+      echo "Asked for: ${targets[*]}"
+      echo ""
+      if [ "$count" -gt 0 ]; then
+        echo "Completed $count external projects:"
+        echo ""
+        printf '%s\n' "$built" | sed 's/^/- /'
+      else
+        echo "Nothing new: every project asked for was already built."
+      fi
+      echo ""
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
+
+  # Also kept in the tree, so the job that builds Slicer can show the whole
+  # picture on a run where the prerequisites came from a release and no stage
+  # ran. Each stage's archive carries the record to the next.
+  local record; record="$(bash_path "$SLICER_SUPERBUILD_DIR")/.ci-stages.tsv"
+  {
+    printf '%s\t%s\t%s\n' \
+      "${SLICER_STAGE_NAME:-Build}" "${targets[*]}" "$(printf '%s' "$built" | tr '\n' ' ')"
+  } >> "$record"
+
+  if [ "${SLICER_COMPILER_LAUNCHER:-}" = "ccache" ] && command -v ccache >/dev/null 2>&1; then
+    ccache --show-stats || true
+  fi
+}
+
+# Print the list of external projects of the configured superbuild tree.
+cmd_dependencies() {
+  local f="$(bash_path "$SLICER_SUPERBUILD_DIR")/SlicerDependencies.txt"
+  [ -f "$f" ] || die "dependencies: $f not found (configure first)"
+  cat "$f"
+}
+
+# Build the package (installer) of the inner build. Prints the package path.
+cmd_package() {
+  local build; build="$(bash_path "$SLICER_BUILD_DIR")"
+  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
+  mkdir -p "$out"
+  log "Package"
+  local logfile="$out/package.log"
+  # The package target is provided by the inner build tree. Run it through
+  # cmake --build so the multi-config generator picks the right configuration.
+  cmake_build "$SLICER_BUILD_DIR" --target package 2>&1 | tee "$logfile"
+  endlog
+  local pkg
+  pkg="$(grep -oE 'CPack: - package: (.*) generated\.' "$logfile" | tail -n1 | sed -E 's/CPack: - package: (.*) generated\./\1/')"
+  [ -n "$pkg" ] || die "package: could not find generated package in $logfile"
+  info "package: $pkg"
+  cp "$(bash_path "$pkg")" "$out/"
+  local name; name="$(basename "$pkg")"
+  echo "$name" > "$out/PACKAGE_FILE.txt"
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    echo "package=$name" >> "$GITHUB_OUTPUT"
+    echo "revision=$(slicer_config_value Slicer_REVISION)" >> "$GITHUB_OUTPUT"
+  fi
+}
+
+# Check that the package produced on macOS is self-contained, using the
+# 'packageverify' target the build system provides. Without it a bundle whose
+# install names were not rewritten builds, packages and uploads cleanly, and
+# only fails on a user's machine with a dyld "Library not loaded" error.
+cmd_verify_package() {
+  if [ "$SLICER_PLATFORM" != "macos" ]; then
+    info "verify-package: nothing to check on $SLICER_PLATFORM"
+    return 0
+  fi
+  log "Verify the application bundle"
+  local rc=0
+  cmake_build "$SLICER_BUILD_DIR" --target packageverify || rc=$?
+  endlog
+  if [ $rc -ne 0 ]; then
+    die "the application bundle is not self-contained"
+  fi
+}
+
+# Remove what is not needed to *use* a build tree: object files and the git
+# metadata of the external project sources.
+#
+#   strip [--objects] [--vcs] [<dir>]
+#
+# This must only be done to a tree that will never be built again. Rebuilding a
+# stripped tree recompiles every external project from scratch, because the
+# steps of an external project are re-run whenever a script it depends on in
+# the Slicer source tree is newer than its stamp, which is the case as soon as
+# the source tree is checked out again. Removing the git metadata additionally
+# breaks the external projects that CTK builds itself, whose update step is not
+# under the control of this build.
+cmd_strip() {
+  local objects=false vcs=false dir=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --objects) objects=true; shift ;;
+      --vcs) vcs=true; shift ;;
+      *) dir="$1"; shift ;;
+    esac
+  done
+  [ -n "$dir" ] || dir="$SLICER_SUPERBUILD_DIR"
+  dir="$(bash_path "$dir")"
+  [ -d "$dir" ] || die "strip: $dir does not exist"
+  if [ "$objects" = "false" ] && [ "$vcs" = "false" ]; then
+    info "strip: nothing to do"
+    return 0
+  fi
+  log "Strip $dir"
+  local before; before="$(du -sh "$dir" 2>/dev/null | cut -f1 || true)"
+  if [ "$objects" = "true" ]; then
+    find "$dir" -type f \( \
+        -name '*.o' -o -name '*.obj' -o -name '*.ilk' -o -name '*.pdb' -o -name '*.idb' \
+        -o -name '*.pch' -o -name '*.gch' -o -name '*.ipch' \
+      \) -delete
+  fi
+  if [ "$vcs" = "true" ]; then
+    find "$dir" -type d -name '.git' -prune -exec rm -rf {} + 2>/dev/null || true
+  fi
+  local after; after="$(du -sh "$dir" 2>/dev/null | cut -f1 || true)"
+  info "strip: $before -> $after"
+  endlog
+}
+
+# Create a zstd-compressed tar archive of paths relative to SLICER_ROOT.
+#   pack <archive> [--exclude PATTERN]... <relative path>...
+#
+# Exclude patterns are matched against the whole stored path by both GNU tar
+# and the bsdtar of macOS, so they have to be written accordingly: "*/.git"
+# rather than ".git", and "SR/Slicer-build*" rather than "SR/Slicer-build".
+cmd_pack() {
+  local archive="${1:?pack: missing archive}"; shift
+  local excludes=()
+  local paths=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --exclude) excludes+=(--exclude "$2"); shift 2 ;;
+      *) paths+=("$1"); shift ;;
+    esac
+  done
+  [ ${#paths[@]} -gt 0 ] || die "pack: no paths"
+  local root; root="$(bash_path "$SLICER_ROOT")"
+  mkdir -p "$(dirname "$(bash_path "$archive")")"
+  log "Pack ${paths[*]} -> $archive"
+  # Note: mtimes are preserved by tar, which is required for the superbuild
+  # stamps to remain valid after restore.
+  # ${a[@]+"${a[@]}"} rather than "${a[@]}": expanding an empty array under
+  # `set -u` is an error in the bash 3.2 that macOS ships.
+  tar -C "$root" ${excludes[@]+"${excludes[@]}"} -cf - "${paths[@]}"     | zstd -T0 -3 -q -o "$(bash_path "$archive")" --force
+  ls -lh "$(bash_path "$archive")"
+  endlog
+}
+
+# Extract an archive (created with pack, possibly split) into SLICER_ROOT.
+cmd_unpack() {
+  local archive="${1:?unpack: missing archive}"
+  archive="$(bash_path "$archive")"
+  local root; root="$(bash_path "$SLICER_ROOT")"
+  mkdir -p "$root"
+  log "Unpack $archive -> $root"
+  if [ ! -f "$archive" ] && ls "$archive".part-* >/dev/null 2>&1; then
+    info "joining parts"
+    cat "$archive".part-* > "$archive"
+    rm -f "$archive".part-*
+  fi
+  [ -f "$archive" ] || die "unpack: $archive not found"
+  zstd -d -q -c "$archive" | tar -C "$root" -xf -
+  endlog
+}
+
+# Split archives larger than the GitHub release asset limit (2 GiB) into parts.
+cmd_split() {
+  local archive="${1:?split: missing archive}"
+  archive="$(bash_path "$archive")"
+  local limit=$((1900 * 1024 * 1024))
+  local size
+  size="$(wc -c < "$archive")"
+  if [ "$size" -gt "$limit" ]; then
+    info "splitting $archive ($size bytes)"
+    split -b "${limit}" -d -a 2 "$archive" "$archive.part-"
+    rm -f "$archive"
+  fi
+}
+
+# Run the test suite of the inner build.
+cmd_test() {
+  local build; build="$(bash_path "$SLICER_BUILD_DIR")"
+  local out; out="$(bash_path "$SLICER_OUTPUT_DIR")"
+  mkdir -p "$out"
+  local args=(
+    --test-dir "$SLICER_BUILD_DIR"
+    --parallel "${SLICER_CTEST_PARALLEL:-$SLICER_PARALLEL}"
+    --timeout "${SLICER_CTEST_TIMEOUT:-900}"
+    --output-on-failure
+    --no-tests=error
+    --output-junit "$SLICER_OUTPUT_DIR/test-results.xml"
+  )
+  # Run a failed test once more before reporting it: a few GUI tests now and
+  # then fail on the shared runners (a settings file being read while another
+  # test writes it, the virtual display). Empty to disable.
+  local repeat="${SLICER_CTEST_REPEAT-until-pass:2}"
+  if [ -n "$repeat" ]; then
+    args+=(--repeat "$repeat")
+  fi
+  if [ "$SLICER_PLATFORM" = "windows" ]; then
+    args+=(--build-config "$SLICER_BUILD_TYPE")
+  fi
+  if [ -n "${SLICER_CTEST_EXCLUDE:-}" ]; then
+    args+=(--exclude-regex "$SLICER_CTEST_EXCLUDE")
+  fi
+  if [ -n "${SLICER_CTEST_INCLUDE:-}" ]; then
+    args+=(--tests-regex "$SLICER_CTEST_INCLUDE")
+  fi
+  local rc=0
+  log "Run tests"
+  run_ctest "${args[@]}" || rc=$?
+  endlog
+  cp -f "$build/Testing/Temporary/LastTest.log" "$out/" 2>/dev/null || true
+  cp -f "$build/Testing/Temporary/LastTestsFailed.log" "$out/" 2>/dev/null || true
+  if [ -f "$out/LastTestsFailed.log" ]; then
+    echo "::warning::Failed tests:"; cat "$out/LastTestsFailed.log"
+  fi
+  return $rc
+}
+
+# Write the manifest describing a platform build.
+#   manifest <file> key=value...
+cmd_manifest() {
+  local file="${1:?manifest: missing file}"; shift
+  file="$(bash_path "$file")"
+  mkdir -p "$(dirname "$file")"
+  local cache="$(bash_path "$SLICER_BUILD_DIR")/CMakeCache.txt"
+  local version="" revision="" qt=""
+  if [ -f "$cache" ]; then
+    version="$(grep -E '^Slicer_VERSION_FULL:' "$cache" | cut -d= -f2- || true)"
+  fi
+  # Slicer_REVISION is computed while configuring rather than cached, so it is
+  # read from the configuration Slicer exports, not from CMakeCache.txt.
+  revision="$(slicer_config_value Slicer_REVISION)"
+  if [ -z "$version" ] && [ -f "$(bash_path "$SLICER_BUILD_DIR")/SlicerConfigVersion.cmake" ]; then
+    version="$(grep -oE 'PACKAGE_VERSION "[^"]+"' "$(bash_path "$SLICER_BUILD_DIR")/SlicerConfigVersion.cmake" | head -n1 | cut -d'"' -f2 || true)"
+  fi
+  {
+    echo "{"
+    echo "  \"platform\": \"$SLICER_PLATFORM\","
+    echo "  \"root\": \"$SLICER_ROOT\","
+    echo "  \"source_dir\": \"$SLICER_SOURCE_DIR\","
+    echo "  \"superbuild_dir\": \"$SLICER_SUPERBUILD_DIR\","
+    echo "  \"slicer_dir\": \"$SLICER_BUILD_DIR\","
+    echo "  \"build_type\": \"$SLICER_BUILD_TYPE\","
+    echo "  \"slicer_version\": \"$version\","
+    echo "  \"slicer_revision\": \"$revision\","
+    echo "  \"date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+    for kv in "$@"; do
+      echo "  \"${kv%%=*}\": \"${kv#*=}\","
+    done
+    echo "  \"manifest_version\": 1"
+    echo "}"
+  } > "$file"
+  cat "$file"
+}
+
+# Free disk space on GitHub-hosted Linux runners.
+cmd_free_disk_space() {
+  [ "$SLICER_PLATFORM" = "linux" ] || return 0
+  log "Free disk space"
+  df -h / || true
+  sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+    /opt/hostedtoolcache/CodeQL /usr/local/share/powershell /usr/share/swift \
+    /usr/local/share/chromium /usr/local/lib/node_modules 2>/dev/null || true
+  sudo docker image prune --all --force >/dev/null 2>&1 || true
+  sudo apt-get clean >/dev/null 2>&1 || true
+  df -h / || true
+  endlog
+}
+
+# Install the system packages required to build and test Slicer.
+cmd_install_system_packages() {
+  case "$SLICER_PLATFORM" in
+    linux)
+      log "Install system packages"
+      sudo apt-get update -qq
+      # Packages required to build Slicer.
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+        build-essential ninja-build patch zstd xvfb \
+        libxt-dev libglu1-mesa-dev libgl1-mesa-dri
+      # Packages required at run time by Qt and QtWebEngine. The exact set of
+      # package names varies between Ubuntu releases (libasound2 became
+      # libasound2t64, libgl1-mesa-glx was dropped, ...), so keep only the ones
+      # this release actually provides.
+      local runtime_pkgs=(
+        mesa-utils libgl1-mesa-glx libgl1 libegl1 libopengl0
+        libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
+        libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xfixes0
+        libnss3 libxss1 libxtst6 libxcomposite1 libxdamage1 libxrandr2 libgbm1
+        libasound2 libasound2t64
+        libfontconfig1 libdbus-1-3 libxcursor1 libxi6 libpulse0 libsm6 libice6
+        libgstreamer-plugins-base1.0-0 libxkbfile1 libodbc1 libpq5
+      )
+      local available=()
+      local pkg
+      for pkg in "${runtime_pkgs[@]}"; do
+        if apt-cache show "$pkg" >/dev/null 2>&1; then
+          available+=("$pkg")
+        fi
+      done
+      info "installing: ${available[*]}"
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+        ${available[@]+"${available[@]}"}
+      endlog
+      ;;
+    macos)
+      log "Install system packages"
+      brew install ninja zstd >/dev/null || brew upgrade ninja zstd || true
+      endlog
+      ;;
+    windows)
+      log "Install system packages"
+      choco install -y --no-progress zstandard >/dev/null
+      endlog
+      ;;
+  esac
+}
+
+# The hosted runners have no GPU. On Linux, Mesa renders in software under xvfb.
+# The OpenGL that Windows provides without a GPU is too old for VTK to create a
+# render window, so Mesa is installed in its place. The version is pinned, and
+# its archive checked, so the renderer the tests run against does not change
+# underneath them.
+MESA_WINDOWS_VERSION="26.1.7"
+MESA_WINDOWS_SHA256="c6e90c3117233b66f7816df05026a5fb0f88eaf7829bd07a1724b981487ec0bb"
+
+cmd_install_software_opengl() {
+  if [ "$SLICER_PLATFORM" != "windows" ]; then
+    info "no software OpenGL to install on $SLICER_PLATFORM"
+    return 0
+  fi
+  local name="mesa3d-${MESA_WINDOWS_VERSION}-release-msvc"
+  local dir; dir="$(bash_path "${RUNNER_TEMP:-$SLICER_ROOT}")/$name"
+  log "Install Mesa ${MESA_WINDOWS_VERSION} software OpenGL"
+  curl -fsSL --retry 5 --retry-all-errors --connect-timeout 30 -o "$dir.7z" \
+    "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_WINDOWS_VERSION}/${name}.7z"
+  echo "${MESA_WINDOWS_SHA256}  $dir.7z" | sha256sum -c - || die "unexpected checksum for $name.7z"
+  rm -rf "$dir"
+  7z x -y -o"$dir" "$dir.7z" >/dev/null
+  # Choice 1 of the deployment utility installs Mesa as the desktop OpenGL
+  # driver. Its other numbered choices differ between Mesa releases, so no other
+  # is used.
+  ( cd "$dir" && MSYS_NO_PATHCONV=1 cmd.exe /c "systemwidedeploy.cmd 1" ) | tee "$dir.log"
+  grep -q "Desktop OpenGL drivers deploy complete" "$dir.log" \
+    || die "Mesa did not report deploying its desktop OpenGL drivers"
+  rm -rf "$dir" "$dir.7z" "$dir.log"
+  endlog
+}
+
+# Write one summary for this platform covering every stage that has run, from
+# the record each stage leaves in the superbuild tree.
+cmd_stage_summary() {
+  local record; record="$(bash_path "$SLICER_SUPERBUILD_DIR")/.ci-stages.tsv"
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
+  [ -f "$record" ] || return 0
+  {
+    echo "## Prerequisites (${SLICER_PLATFORM})"
+    echo ""
+    echo "| Stage | Asked for | Completed |"
+    echo "|---|---|---|"
+    while IFS=$'\t' read -r stage asked done_; do
+      [ -n "$stage" ] || continue
+      if [ -z "$done_" ]; then
+        done_="nothing new"
+      fi
+      echo "| ${stage} | ${asked} | ${done_} |"
+    done < "$record"
+    echo ""
+  } >> "$GITHUB_STEP_SUMMARY"
+  cat "$record"
+}
+
+# Print a disk usage report of the root directory.
+cmd_report() {
+  local root; root="$(bash_path "$SLICER_ROOT")"
+  echo "--- disk ---"
+  df -h 2>/dev/null | head -n 10 || true
+  echo "--- $root ---"
+  du -sh "$root"/* 2>/dev/null || true
+  echo "--- largest external projects ---"
+  du -sh "$root"/SR/* 2>/dev/null | sort -h | tail -n 20 || true
+}
+
+#------------------------------------------------------------------------------
+usage() {
+  cat <<EOF
+Usage: $0 <command> [args]
+
+Commands:
+  env                          Print/export the SLICER_* variables (and create the root dir)
+  deps-key                     Print the key identifying the prerequisites
+  free-disk-space              Remove unneeded tooling from Linux runners
+  install-system-packages      Install platform packages
+  install-software-opengl      Install a software OpenGL for headless tests
+  configure                    Configure the superbuild tree
+  build <target>...            Build superbuild targets (unknown ones are skipped)
+  dependencies                 List the external projects of the configured tree
+  package                      Build the package of the inner build
+  verify-package               Check that a macOS bundle is self-contained
+  strip [--objects] [--vcs] [dir]
+                               Remove what is not needed to use a build tree
+                               (only for a tree that will not be built again)
+  pack <archive> [--exclude P]... <relpath>...
+  unpack <archive>
+  split <archive>
+  test                         Run ctest on the inner build
+  manifest <file> [k=v...]     Write a build manifest
+  report                       Disk usage report
+  stage-summary                Summarize every prerequisite stage of this platform
+EOF
+}
+
+main() {
+  local cmd="${1:-}"; shift || true
+  case "$cmd" in
+    env) cmd_env "$@" ;;
+    deps-key) cmd_deps_key "$@" ;;
+    free-disk-space) cmd_free_disk_space "$@" ;;
+    install-system-packages) cmd_install_system_packages "$@" ;;
+    install-software-opengl) cmd_install_software_opengl "$@" ;;
+    configure) cmd_configure "$@" ;;
+    build) cmd_build "$@" ;;
+    dependencies) cmd_dependencies "$@" ;;
+    package) cmd_package "$@" ;;
+    verify-package) cmd_verify_package "$@" ;;
+    strip) cmd_strip "$@" ;;
+    pack) cmd_pack "$@" ;;
+    unpack) cmd_unpack "$@" ;;
+    split) cmd_split "$@" ;;
+    test) cmd_test "$@" ;;
+    manifest) cmd_manifest "$@" ;;
+    report) cmd_report "$@" ;;
+    stage-summary) cmd_stage_summary "$@" ;;
+    ""|-h|--help|help) usage ;;
+    *) die "unknown command: $cmd" ;;
+  esac
+}
+
+main "$@"
